@@ -29,27 +29,28 @@ const UNITS = [
   { v: "1", label: "1G" },
 ];
 
+/* 셋째 항목은 이름을 비워 둡니다 — 플레이스홀더가 "여기에 항목을 만드세요"를 말해 줍니다 */
 const DEFAULT_COLS = [
   { id: "c1", name: "잡힘", price: "10,000" },
   { id: "c2", name: "죽음", price: "30,000" },
-  { id: "c3", name: "기믹 유기", price: "100,000" },
+  { id: "c3", name: "", price: "100,000" },
 ];
 
 /* 예시 데이터는 모드마다 따로 둡니다.
-   항목별 — 잡힘 횟수를 세는 표 */
+   카운터 — 인원별 총액은 처음 예시 그대로 두고, 횟수를 1만·3만·10만 항목으로 조합합니다. */
 const DEFAULT_ROWS = [
-  ["눈가루", 9],
-  ["팔복", 34],
-  ["읍지", 32],
-  ["히휴", 11],
-  ["주키니", 45],
-  ["포셔", 17],
-  ["티모", 6],
-  ["이다", 18],
-].map(([name, caught], i) => ({
+  ["눈가루", 3, 2, 0], // 9만
+  ["팔복", 11, 1, 2], // 34만
+  ["읍지", 2, 10, 0], // 32만
+  ["히휴", 8, 1, 0], // 11만
+  ["주키니", 20, 5, 1], // 45만
+  ["포셔", 5, 4, 0], // 17만
+  ["티모", 0, 2, 0], // 6만
+  ["이다", 5, 1, 1], // 18만
+].map(([name, c1, c2, c3], i) => ({
   id: "r" + (i + 1),
   name,
-  counts: { c1: String(caught), c2: "" },
+  counts: { c1: c1 ? String(c1) : "", c2: c2 ? String(c2) : "", c3: c3 ? String(c3) : "" },
   extras: [],
 }));
 
@@ -88,9 +89,18 @@ const goldOf = (v) => {
    실제 글자 수로 잽니다 (999,999,999 = 11자). */
 const MAX_INPUT_CHARS = 12;
 const MAX_COUNT = 999999999;
-// 금액만 → 항목별로 넘어올 때 기타에 남기는 사유
-const CARRY_REASON = "'금액만'에서 이관";
-const CARRY_REASON_OLD = "금액만;"; // 예전 저장분 호환용
+// 메모장 → 카운터로 넘어올 때 기타에 남기는 사유
+const CARRY_REASON = "'메모장'에서 이관";
+// 카운터 구성이 동결된 사람의 메모장 수정분이 기타로 들어올 때의 사유
+const MEMO_REASON = "메모장에서 수정";
+/* 카운터 카드에서 총액을 직접 고치면 차액이 기타 한 줄로 쌓입니다.
+   취소(역분개)로 횟수가 못 덮는 차액도 기타로 갑니다. */
+const EDIT_REASON = "직접 수정";
+const CANCEL_REASON = "취소";
+const LOG_CAP = 200; // 기록은 최근 200줄만 남깁니다 (공유 링크엔 안 담김)
+/* ＋를 누른 직후 이 시간 안의 ↩는 기록까지 지우는 조용한 되돌리기입니다.
+   바꾸면 CSS 의 gs-ring 애니메이션 시간(5s)도 같이 바꿔야 합니다. */
+const GRACE_MS = 5000;
 
 /* 손대지 않은 예시 데이터인지. 맞으면 모드를 바꿀 때 조용히 상대 모드 예시로 갈아끼웁니다. */
 function isPristine(rows) {
@@ -398,11 +408,29 @@ function loadSaved() {
       feePercent: typeof s.feePercent === "string" ? s.feePercent : "5",
       mode: s.mode === "simple" ? "simple" : "items",
       unit: UNITS.some((u) => u.v === s.unit) ? s.unit : "10000",
+      memoFont: clampMemoFont(s.memoFont),
+      view: s.view === "scroll" ? "scroll" : "tabs",
+      tab: s.tab === "ledger" || s.tab === "mail" ? s.tab : "sheet",
+      log: Array.isArray(s.log) ? s.log.slice(-LOG_CAP) : [],
+      undoSnap:
+        s.undoSnap && Array.isArray(s.undoSnap.cols) && Array.isArray(s.undoSnap.rows)
+          ? s.undoSnap
+          : null,
+      memoFreeze:
+        s.memoFreeze && Array.isArray(s.memoFreeze.people) ? s.memoFreeze : null,
     };
   } catch (e) {
     return null;
   }
 }
+
+/* 메모장 글자 크기. 기본은 오른쪽 표의 이름 글자와 같은 27px.
+   방송 화면에서 확대 없이 읽히려면 25px 이상이 필요해서 상한을 40까지 엽니다. */
+const MEMO_FONT_DEFAULT = 27;
+const clampMemoFont = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(40, Math.max(12, Math.round(n))) : MEMO_FONT_DEFAULT;
+};
 
 function saveState(state) {
   if (typeof window === "undefined") return;
@@ -425,6 +453,11 @@ function nextSeq(data) {
     scan(x.id);
     (x.extras || []).forEach((e) => scan(e.id));
   });
+  // 기록 줄과 동결분의 기타 id 도 겹치면 안 됩니다 — 되감기·취소가 id 로 줄을 집기 때문
+  (data.log || []).forEach((l) => scan(l.id));
+  (((data.memoFreeze || {}).people) || []).forEach((p) =>
+    (p.extras || []).forEach((e) => scan(e.id))
+  );
   return m;
 }
 
@@ -662,6 +695,11 @@ const man = (v) => {
   const s = m === 0 ? c(rest) : rest === 0 ? `${c(m)}만` : `${c(m)}만${c(rest)}`;
   return (neg ? "−" : "") + s;
 };
+const signedMan = (g) => (g < 0 ? "−" : "+") + man(Math.abs(g));
+const hhmm = (t) => {
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 
 /* ================================================================ */
 
@@ -671,7 +709,9 @@ export default function GoldSettlement() {
   if (!boot.current) {
     const hashMode = readHashMode();
     const shared = readShared();
-    const saved = shared ? null : loadSaved();
+    const stored = loadSaved();
+    // 공유 링크로 열면 표는 링크 것을 쓰지만, 보기 방식(탭/세로)은 이 브라우저의 취향을 따릅니다
+    const saved = shared ? null : stored;
     const fallbackMode = hashMode || "simple"; // 처음 여는 사람은 금액만 모드로
     const data = shared ||
       saved || {
@@ -681,7 +721,15 @@ export default function GoldSettlement() {
         mode: fallbackMode,
       };
     // 주소에 적힌 모드가 저장된 모드보다 우선합니다 (모드별 주소를 열었을 때)
-    boot.current = { ...data, mode: hashMode || data.mode || "simple", seq: nextSeq(data) };
+    boot.current = {
+      ...data,
+      mode: hashMode || data.mode || "simple",
+      seq: nextSeq(data),
+      view: stored ? stored.view : "tabs",
+      tab: stored ? stored.tab : "sheet",
+      // 저장도, 공유 링크도 없는 진짜 첫 방문에만 모드 선택 화면을 띄웁니다
+      firstVisit: !shared && !stored && !hashMode,
+    };
   }
 
   const [cols, setCols] = useState(boot.current.cols);
@@ -689,14 +737,41 @@ export default function GoldSettlement() {
   const [feePercent, setFeePercent] = useState(boot.current.feePercent);
   const [mode, setMode] = useState(boot.current.mode || "simple");
   const [unit, setUnit] = useState(boot.current.unit || "10000");
+  const [memoFont, setMemoFont] = useState(clampMemoFont(boot.current.memoFont));
   const [flash, setFlash] = useState("");
   const [openRow, setOpenRow] = useState(null);
   const [ask, setAsk] = useState(null);
   const [share, setShare] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showHub, setShowHub] = useState(false);
+  /* 보기 방식 — 탭(한 카드만 크게, 방송용)과 세로(세 카드를 이어서). */
+  const [view, setView] = useState(boot.current.view);
+  const [tab, setTab] = useState(boot.current.tab);
+  /* 기록 — 카운터의 ＋·직접 수정이 델타로 한 줄씩 쌓입니다. 영수증이지 원본이 아니라서
+     정산·공유는 이 목록을 보지 않습니다. 취소는 줄을 지우지 않고 반대 기록을 덧붙입니다(역분개). */
+  const [log, setLog] = useState(boot.current.log || []);
+  const [showLog, setShowLog] = useState(false);
+  /* 실수 복구 — 인원·항목 삭제와 초기화 직전의 표를 한 슬롯 떠 둡니다.
+     다음 편집 전까지만 유효하고(통짜 복원이라 그 사이 편집을 같이 날리지 않게),
+     저장도 되어서 패닉 새로고침 후에도 편집 전이면 되돌릴 수 있습니다. */
+  const [undoSnap, setUndoSnap] = useState(boot.current.undoSnap || null);
+  const snapHold = useRef(false); // true 면 이번 rows/cols 변경은 스냅샷을 접지 않음
+  const snapBooted = useRef(false);
+  /* 첫 방문 — 모드를 고르고 시작합니다. 한 번 저장되면 다시 안 나옵니다. */
+  const [intro, setIntro] = useState(!!boot.current.firstVisit);
+  /* 카운터 → 메모장으로 갈 때 동결해 두는 구성. 돌아올 때 이름으로 대조해 복원합니다. */
+  const [memoFreeze, setMemoFreeze] = useState(boot.current.memoFreeze || null);
   const seq = useRef(boot.current.seq);
 
   const simple = mode === "simple";
+  const tabbed = view === "tabs";
+  const showSheet = !tabbed || tab === "sheet";
+  const showLedger = !tabbed || tab === "ledger";
+  const showMail = !tabbed || tab === "mail";
+  const pickTab = (k) => {
+    setTab(k);
+    window.scrollTo(0, 0);
+  };
 
   /* 금액만 모드는 왼쪽 메모장 ↔ 오른쪽 표가 같은 데이터를 봅니다.
      메모장에서 친 글자가 표를 덮어쓰고, 표에서 고친 값이 메모장 글로 돌아옵니다.
@@ -713,49 +788,69 @@ export default function GoldSettlement() {
   }, [rows, simple]);
 
   /* 장부는 하나입니다. 모드를 바꾸는 것이 곧 변환이고, 두 벌의 숫자가 공존하지 않습니다.
-     금액만 → 항목별은 무손실(금액이 기타 한 건이 됨), 반대는 내역을 잃습니다.
-     그래서 잃는 쪽에서만 한 번 물어봅니다. */
+     카운터 → 메모장은 그 순간의 구성(횟수·기타)을 동결해 두므로 잃는 것이 없고,
+     돌아올 때 이름으로 대조해 복원합니다. 그래서 이제 아무것도 묻지 않습니다. */
   const itemGold = (row) =>
     cols.reduce((a, c) => a + Math.round(num(row.counts[c.id]) * goldOf(c.price)), 0) +
     extraSum(row);
   const simpleGold = (row) => Math.round(num(row.counts[SIMPLE_ID]) * goldOf(unit));
-  /* 금액만으로 내려가도 잃을 게 없는 상태인지 — 빈 표이거나,
-     '금액만'에서 이관된 기타뿐이고 횟수는 하나도 안 적힌 경우 (무변경 왕복) */
-  const losslessToSimple = () =>
-    rows.every(
-      (x) =>
-        cols.every((c) => num(x.counts[c.id]) === 0) &&
-        extrasOf(x).every((e) => e.reason === CARRY_REASON || e.reason === CARRY_REASON_OLD)
-    );
 
-  const toSimpleRows = () => {
-    const per = goldOf(unit) || 1;
-    setRows((prev) =>
-      prev.map((x) => {
-        const g = itemGold(x);
-        return { ...x, counts: { [SIMPLE_ID]: g > 0 ? formatNumInput(String(g / per)) : "" }, extras: [] };
-      })
-    );
+  /* 메모장 → 카운터. 동결해 둔 구성을 이름으로 대조해 살립니다.
+     같은 이름·같은 합계 → 구성 그대로 복원 (무손실 왕복).
+     같은 이름·다른 합계 → 구성 복원 + 차액만 기타 한 줄, 기록에도 인원당 한 줄.
+     메모장에서 새로 적은 사람 → 기타 이관. 지운 사람 → 기록에 제외 한 줄.
+     이름 대조인 이유: 메모장은 줄 순서가 곧 정체성이라, 위치로 맞추면
+     중간 줄 하나만 지워도 아래 전원이 남의 횟수를 물려받습니다. */
+  const fromMemoRows = () => {
+    const frozen = (memoFreeze ? memoFreeze.people : []).map((p) => ({ ...p, used: false }));
+    const claim = (row, total) => {
+      let hit = frozen.find((p) => !p.used && p.name === row.name && p.total === total);
+      if (!hit) hit = frozen.find((p) => !p.used && p.name === row.name);
+      if (hit) hit.used = true;
+      return hit;
+    };
+    const lines = [];
+    const nextRows = rows.map((x) => {
+      const memoTotal = simpleGold(x);
+      const { [SIMPLE_ID]: _drop, ...restCounts } = x.counts || {};
+      const hit = claim(x, memoTotal);
+      if (hit) {
+        // 메모장에서 0으로 지웠으면 구성도 비운 것으로 봅니다
+        if (memoTotal === 0) {
+          if (hit.total !== 0)
+            lines.push({ kind: "memo", rowId: x.id, delta: -hit.total, name: x.name, after: 0 });
+          return { ...x, counts: restCounts, extras: [] };
+        }
+        const { [SIMPLE_ID]: _s, ...frozenCounts } = hit.counts || {};
+        const diff = memoTotal - hit.total;
+        let extras = hit.extras || [];
+        if (diff !== 0) {
+          extras = [
+            ...extras,
+            { id: "e" + seq.current++, amount: commafy(diff), reason: MEMO_REASON },
+          ];
+          lines.push({ kind: "memo", rowId: x.id, delta: diff, name: x.name, after: memoTotal });
+        }
+        return { ...x, counts: frozenCounts, extras };
+      }
+      if (memoTotal <= 0) return { ...x, counts: restCounts, extras: [] };
+      if (memoFreeze)
+        lines.push({ kind: "memo-new", rowId: x.id, delta: memoTotal, name: x.name, after: memoTotal });
+      return {
+        ...x,
+        counts: restCounts,
+        extras: [{ id: "e" + seq.current++, amount: commafy(memoTotal), reason: CARRY_REASON }],
+      };
+    });
+    frozen
+      .filter((p) => !p.used && p.total !== 0)
+      .forEach((p) => lines.push({ kind: "memo-del", delta: -p.total, name: p.name, after: 0 }));
+    setRows(nextRows);
+    lines.forEach((l) => appendLog(l));
+    setMemoFreeze(null);
   };
 
-  const toItemRows = () =>
-    setRows((prev) =>
-      prev.map((x) => {
-        const g = simpleGold(x);
-        const { [SIMPLE_ID]: _drop, ...counts } = x.counts || {};
-        if (g <= 0) return { ...x, counts };
-        return {
-          ...x,
-          counts,
-          extras: [
-            ...extrasOf(x),
-            { id: "e" + seq.current++, amount: formatNumInput(String(g)), reason: CARRY_REASON },
-          ],
-        };
-      })
-    );
-
-  const changeMode = (next, fromHash = false) => {
+  const changeMode = (next) => {
     if (next === mode) return;
     setOpenRow(null);
 
@@ -763,31 +858,53 @@ export default function GoldSettlement() {
     if (isPristine(rows)) {
       setRows(next === "simple" ? DEFAULT_ROWS_SIMPLE : DEFAULT_ROWS);
       if (next === "simple") setUnit("10000");
+      setMemoFreeze(null);
       setMode(next);
       return;
     }
     if (next === "items") {
-      toItemRows();
+      fromMemoRows();
       setMode(next);
       return;
     }
-    // 항목별 → 금액만. 잃을 내역이 없으면(빈 표·무변경 왕복) 그냥 넘어갑니다
-    if (losslessToSimple()) {
-      toSimpleRows();
-      setMode(next);
-      return;
-    }
-    setAsk({
-      title: "금액만으로 바꿀까요?",
-      body: "사람별 합계는 금액칸으로 넘어갑니다. 잡힘·죽음 같은 횟수 내역과 기타 사유는 사라지며, 되돌릴 수 없습니다.",
-      action: "합계만 남기기",
-      onYes: () => {
-        toSimpleRows();
-        setMode(next);
-      },
-      // 주소로 들어온 전환을 취소하면 주소도 되돌려 놓습니다
-      onCancel: fromHash ? () => syncHashMode(mode) : undefined,
+    // 카운터 → 메모장: 구성을 통째로 동결해 두므로 잃는 게 없습니다.
+    // 이름 없는 사람은 '임시n'을 붙여 내보냅니다 — 메모장에선 이름이 정체성이라,
+    // 숫자만 남은 줄은 돌아올 때 대조가 위험해집니다.
+    const taken = new Set(rows.map((x) => x.name).filter(Boolean));
+    let k = 1;
+    const named = rows.map((x) => {
+      if (x.name || itemGold(x) === 0) return x;
+      while (taken.has("임시" + k)) k++;
+      const nm = "임시" + k;
+      taken.add(nm);
+      return { ...x, name: nm };
     });
+    setMemoFreeze({
+      people: named.map((x) => ({
+        name: x.name,
+        counts: x.counts,
+        extras: extrasOf(x),
+        total: itemGold(x),
+      })),
+      t: Date.now(),
+    });
+    const per = goldOf(unit) || 1;
+    setRows(
+      named.map((x) => {
+        const g = itemGold(x);
+        return {
+          ...x,
+          counts: { [SIMPLE_ID]: g > 0 ? formatNumInput(String(g / per)) : "" },
+          extras: [],
+        };
+      })
+    );
+    setMode(next);
+  };
+
+  const pickIntro = (next) => {
+    setIntro(false);
+    if (next !== mode) changeMode(next); // 손 안 댄 기본값이라 예시가 조용히 갈아끼워집니다
   };
 
   const onMemo = (e) => {
@@ -803,6 +920,7 @@ export default function GoldSettlement() {
       if (shared.mode && shared.mode !== mode) setMode(shared.mode); // 불러오기라 변환 없이
       seq.current = Math.max(seq.current, nextSeq(shared));
       setOpenRow(null);
+      setMemoFreeze(null); // 표가 통째로 바뀌면 옛 동결은 남의 표 — 버립니다
       return; // 메모장 글은 rows 효과가 새로 써 줍니다
     }
 
@@ -836,19 +954,71 @@ export default function GoldSettlement() {
 
   // 고칠 때마다 저장해 두면 새로고침해도 그대로 돌아옵니다
   useEffect(() => {
-    saveState({ cols, rows, feePercent, mode, unit });
-  }, [cols, rows, feePercent, mode, unit]);
+    // 모드를 고르기 전엔 저장하지 않습니다 — 선택 없이 새로고침하면 선택 화면이 다시 나오게
+    if (intro) return;
+    saveState({
+      cols,
+      rows,
+      feePercent,
+      mode,
+      unit,
+      memoFont,
+      view,
+      tab,
+      log,
+      undoSnap,
+      memoFreeze,
+    });
+  }, [cols, rows, feePercent, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, intro]);
+
+  /* 복구 제안은 "다음 편집 전까지" — 표를 고치기 시작하면 조용히 접습니다 */
+  useEffect(() => {
+    if (!snapBooted.current) {
+      snapBooted.current = true;
+      return;
+    }
+    if (snapHold.current) {
+      snapHold.current = false;
+      return;
+    }
+    setUndoSnap((s) => (s ? null : s));
+  }, [cols, rows]);
+
+  const takeSnap = (label) => {
+    snapHold.current = true;
+    // 기본값은 수수료·입력 단위까지 덮으므로 그 둘도 같이 떠 둡니다
+    setUndoSnap({ cols, rows, log, feePercent, unit, label, t: Date.now() });
+  };
+  const restoreSnap = () => {
+    if (!undoSnap) return;
+    snapHold.current = true;
+    setCols(undoSnap.cols);
+    setRows(undoSnap.rows);
+    setLog(undoSnap.log || []);
+    if (undoSnap.feePercent != null) setFeePercent(undoSnap.feePercent);
+    if (undoSnap.unit != null) setUnit(undoSnap.unit);
+    seq.current = Math.max(
+      seq.current,
+      nextSeq({ cols: undoSnap.cols, rows: undoSnap.rows, log: undoSnap.log })
+    );
+    setOpenRow(null);
+    clearGrace();
+    setMemoFreeze(null); // 표가 스냅샷 시점으로 바뀌므로 동결도 무효
+    setUndoSnap(null);
+  };
 
   // 모드마다 주소가 달라지도록 (#m=items / #m=simple)
   useEffect(() => {
+    // 선택 전엔 주소도 건드리지 않습니다 — 해시가 생기면 첫 방문 판정이 깨집니다
+    if (intro) return;
     syncHashMode(mode);
-  }, [mode]);
+  }, [mode, intro]);
 
   // 주소를 직접 고치거나 뒤로가기를 눌러도 모드가 따라오게
   useEffect(() => {
     const onHash = () => {
       const m = readHashMode();
-      if (m) changeMode(m, true);
+      if (m) changeMode(m);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -908,6 +1078,184 @@ export default function GoldSettlement() {
         };
       })
     );
+  /* ---------- 기록(영수증) ---------- */
+  const appendLog = (entry) =>
+    setLog((prev) => {
+      const next = [...prev, { t: Date.now(), ...entry, id: entry.id || "L" + seq.current++ }];
+      return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
+    });
+
+  /* 되돌리기 유예 — 방금 누른 칸의 연속 누름(버스트)을 부호와 함께 기억합니다.
+     유예 중의 반대 버튼은 새로 적지 않고 마지막 누름을 기록까지 지우며 하나씩 되감습니다.
+     ＋ 실수는 −로, − 실수는 ＋로 — 실수했을 때 손이 가는 그 버튼이 곧 조용한 복구입니다.
+     시간이 다하면 두 버튼 다 평소처럼 기록되는 누름으로 돌아갑니다. */
+  const [grace, setGrace] = useState(null); // {rowId, colId, dir, ids, until, key}
+  /* 판단은 ref 로, 그림은 state 로 — 연타가 한 틱에 몰려도 되감기가 같은 줄을
+     두 번 집지 않도록 유예 상태는 동기적으로 갱신해 둡니다 */
+  const graceRef = useRef(null);
+  const graceTimer = useRef(null);
+  const putGrace = (g) => {
+    graceRef.current = g;
+    setGrace(g);
+  };
+  const startGrace = (rowId, colId, ids, dir) => {
+    clearTimeout(graceTimer.current);
+    graceTimer.current = setTimeout(() => putGrace(null), GRACE_MS);
+    putGrace({
+      rowId,
+      colId,
+      dir,
+      ids,
+      until: Date.now() + GRACE_MS,
+      key: (graceRef.current ? graceRef.current.key : 0) + 1,
+    });
+  };
+  const clearGrace = () => {
+    clearTimeout(graceTimer.current);
+    putGrace(null);
+  };
+  const graceActive = (row, colId) => {
+    const g = graceRef.current;
+    return (
+      g && g.rowId === row.id && g.colId === colId && g.ids.length > 0 && Date.now() <= g.until
+    );
+  };
+
+  /* 연타가 한 틱에 몰리면 rows 가 아직 안 갱신된 채로 다음 클릭이 들어옵니다.
+     기록의 누적액이 밀리지 않도록, 렌더 사이의 변화를 그림자 값으로 들고 갑니다. */
+  const live = useRef(null);
+  live.current = { total: {}, n: {} };
+  const liveTotal = (row) => live.current.total[row.id] ?? itemGold(row);
+  const liveN = (row, colId) => live.current.n[row.id + ":" + colId] ?? num(row.counts[colId]);
+
+  /* 유예 버스트의 마지막 누름을 기록까지 지우며 하나 되감습니다 */
+  const undoLast = (row, col) => {
+    const g = graceRef.current;
+    const lastId = g.ids[g.ids.length - 1];
+    const en = log.find((x) => x.id === lastId && !x.cancelled);
+    if (!en) return false;
+    live.current.n[row.id + ":" + col.id] = liveN(row, col.id) - en.n;
+    live.current.total[row.id] = liveTotal(row) - en.delta;
+    bump(row.id, col.id, -en.n);
+    setLog((prev) => prev.filter((x) => x.id !== lastId));
+    const ids = g.ids.slice(0, -1);
+    if (ids.length) startGrace(row.id, col.id, ids, g.dir);
+    else clearGrace();
+    return true;
+  };
+
+  /* 카운터 셀의 ＋/−. 횟수를 움직이고 한 줄 남깁니다. 이름·항목은 나중에 지워져도
+     읽히도록 그 시점 글자를 같이 적어 둡니다. 유예 중의 반대 버튼은 조용한 되감기. */
+  const pressCell = (row, col, dir = 1) => {
+    if (graceActive(row, col.id) && graceRef.current.dir === -dir && undoLast(row, col)) return;
+    const before = liveN(row, col.id);
+    if (dir > 0 ? before >= MAX_COUNT : before <= 0) return;
+    const priceG = Math.round(goldOf(col.price));
+    const after = liveTotal(row) + dir * priceG;
+    live.current.n[row.id + ":" + col.id] = before + dir;
+    live.current.total[row.id] = after;
+    bump(row.id, col.id, dir);
+    const id = "L" + seq.current++;
+    appendLog({
+      id,
+      kind: "press",
+      rowId: row.id,
+      colId: col.id,
+      n: dir,
+      delta: dir * priceG,
+      name: row.name,
+      item: col.name,
+      after,
+    });
+    const same = graceActive(row, col.id) && graceRef.current.dir === dir;
+    startGrace(row.id, col.id, same ? [...graceRef.current.ids, id] : [id], dir);
+  };
+
+  /* 같은 사유의 기타 한 줄에 금액을 누적합니다. 0이 되면 줄 자체를 지웁니다. */
+  const mergeExtra = (rowId, reason, diffG) =>
+    setRows((prev) =>
+      prev.map((x) => {
+        if (x.id !== rowId) return x;
+        const exs = extrasOf(x);
+        const hit = exs.find((e) => e.reason === reason);
+        const amt = (hit ? Math.round(goldOf(hit.amount)) : 0) + diffG;
+        const rest = hit ? exs.filter((e) => e !== hit) : exs;
+        return {
+          ...x,
+          extras:
+            amt === 0
+              ? rest
+              : [
+                  ...rest,
+                  hit
+                    ? { ...hit, amount: commafy(amt) }
+                    : { id: "e" + seq.current++, amount: commafy(amt), reason },
+                ],
+        };
+      })
+    );
+
+  /* 합계 직접 수정 — 차액이 기타 '직접 수정'으로 갑니다. 횟수는 건드리지 않습니다. */
+  const editTotal = (row, targetG) => {
+    const target = Math.round(targetG);
+    const diff = target - liveTotal(row);
+    if (!diff) return;
+    live.current.total[row.id] = target;
+    mergeExtra(row.id, EDIT_REASON, diff);
+    appendLog({
+      kind: "edit",
+      rowId: row.id,
+      delta: diff,
+      name: row.name,
+      after: target,
+    });
+  };
+
+  /* 취소(역분개) — 그 줄의 변화량만 반대로 적용합니다. 되감기가 아니라서 이후 줄들은
+     그대로 살아 있습니다. 횟수로 되돌릴 수 있는 만큼은 횟수로, 못 덮는 차액
+     (단가가 바뀌었거나 횟수를 이미 손댄 경우)은 기타로 보내 총액을 정확히 맞춥니다. */
+  const cancelEntry = (en) => {
+    if (en.cancelled || en.kind === "cancel") return;
+    const row = rows.find((x) => x.id === en.rowId);
+    if (!row) return;
+    clearGrace(); // 유예 중인 줄을 모달에서 취소했을 때 이중 되감기를 막습니다
+    let fromCounts = 0;
+    if (en.colId && en.n) {
+      const col = cols.find((c) => c.id === en.colId);
+      if (col) {
+        const priceG = Math.round(goldOf(col.price));
+        const avail = liveN(row, en.colId);
+        const next = Math.min(MAX_COUNT, Math.max(0, avail - en.n));
+        if (next !== avail) {
+          live.current.n[row.id + ":" + en.colId] = next;
+          bump(row.id, en.colId, next - avail);
+          fromCounts = (next - avail) * priceG;
+        }
+      }
+    }
+    const rest = -en.delta - fromCounts;
+    if (rest) mergeExtra(en.rowId, en.kind === "edit" ? EDIT_REASON : CANCEL_REASON, rest);
+    const after = liveTotal(row) - en.delta;
+    live.current.total[row.id] = after;
+    setLog((prev) => {
+      const next = [
+        ...prev.map((x) => (x.id === en.id ? { ...x, cancelled: true } : x)),
+        {
+          id: "L" + seq.current++,
+          t: Date.now(),
+          kind: "cancel",
+          refId: en.id,
+          rowId: en.rowId,
+          delta: -en.delta,
+          name: en.name,
+          item: en.item,
+          after,
+        },
+      ];
+      return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
+    });
+  };
+
   /* 금액만 모드에서는 빈 행을 만들면 메모장에 아무것도 안 남습니다.
      양쪽이 늘 같아야 하므로 '이름없음n 0' 으로 채워서 넣습니다. */
   const addRow = () =>
@@ -924,6 +1272,7 @@ export default function GoldSettlement() {
       return [...prev, { id: "r" + seq.current++, name, counts, extras: [] }];
     });
   const delRow = (id) => {
+    takeSnap("인원 삭제");
     setRows((prev) => prev.filter((x) => x.id !== id));
     setOpenRow((o) => (o === id ? null : o));
   };
@@ -968,6 +1317,7 @@ export default function GoldSettlement() {
   const addCol = () =>
     setCols((prev) => [...prev, { id: "c" + seq.current++, name: "", price: "10,000" }]);
   const delCol = (id) => {
+    takeSnap("항목 삭제");
     setCols((prev) => prev.filter((c) => c.id !== id));
     setRows((prev) =>
       prev.map((x) => {
@@ -979,19 +1329,24 @@ export default function GoldSettlement() {
 
   // 예시 데이터는 지금 보고 있는 모드의 것을 불러옵니다
   const reset = () => {
+    takeSnap("기본값");
     setCols(DEFAULT_COLS);
     setRows(simple ? DEFAULT_ROWS_SIMPLE : DEFAULT_ROWS);
     setFeePercent("5");
     if (simple) setUnit("10000");
     setOpenRow(null);
+    setLog([]); // 표가 새로 시작하니 영수증도 새로
+    clearGrace();
+    setMemoFreeze(null);
     clearHash();
   };
 
   // 실제로 쓰기 시작할 때. 인원·숫자는 비우고 항목은 기본값으로 되돌립니다.
   const clearAll = () => {
+    takeSnap("초기화");
     setCols(DEFAULT_COLS);
     setRows(
-      Array.from({ length: 4 }, () => ({
+      Array.from({ length: 8 }, () => ({
         id: "r" + seq.current++,
         name: "",
         counts: {},
@@ -999,6 +1354,9 @@ export default function GoldSettlement() {
       }))
     );
     setOpenRow(null);
+    setLog([]);
+    clearGrace();
+    setMemoFreeze(null);
     clearHash();
   };
 
@@ -1114,7 +1472,7 @@ export default function GoldSettlement() {
   };
 
   return (
-    <div className="gs">
+    <div className={"gs" + (tabbed ? " gs-tabbed" : "")}>
       <style>{CSS}</style>
 
       {/* ── 머리 ─────────────────────────────────────── */}
@@ -1123,36 +1481,116 @@ export default function GoldSettlement() {
           <span>MAIL SETTLEMENT</span>
           <i />
         </div>
-        <h1 className="gs-title">벌금 정산</h1>
+        <div className="gs-mastrow">
+          <h1 className="gs-title">벌금 정산</h1>
+          <div className="gs-mastside">
+            {tabbed && (
+              <nav className="gs-tabs" aria-label="화면 선택">
+                {[
+                  { k: "sheet", label: "벌금표" },
+                  { k: "ledger", label: "정산 장부" },
+                  { k: "mail", label: "보낼 우편" },
+                ].map((t) => (
+                  <button
+                    key={t.k}
+                    className={"gs-tab" + (tab === t.k ? " on" : "")}
+                    onClick={() => pickTab(t.k)}
+                    aria-current={tab === t.k ? "true" : undefined}
+                  >
+                    {t.label}
+                    {t.k === "ledger" && r && <em>{r.fines.length}명</em>}
+                    {/* 인게임에선 송금 1건 = 우편 1통 — 봉투(보내는 사람) 수가 아니라 송금 횟수 */}
+                    {t.k === "mail" && r && r.transfers.length > 0 && (
+                      <em>{r.transfers.length}통</em>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            )}
+            <span className="gs-viewseg" role="group" aria-label="보기 방식">
+              <span className="gs-tip">
+                <button
+                  className={tabbed ? "on" : ""}
+                  onClick={() => setView("tabs")}
+                  aria-label="탭으로 보기"
+                >
+                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <path
+                      d="M1.5 13.5v-10h4.2l1.2 2h7.6v8z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  <b>탭으로 보기</b> — 한 번에 한 카드만 크게 봅니다.
+                </span>
+              </span>
+              <span className="gs-tip">
+                <button
+                  className={tabbed ? "" : "on"}
+                  onClick={() => setView("scroll")}
+                  aria-label="세로로 이어 보기"
+                >
+                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" strokeWidth="1.4">
+                      <rect x="2" y="2" width="12" height="5" rx="1" />
+                      <rect x="2" y="9" width="12" height="5" rx="1" />
+                    </g>
+                  </svg>
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  <b>세로로 이어 보기</b> — 세 카드를 한 페이지에 잇습니다.
+                </span>
+              </span>
+            </span>
+          </div>
+        </div>
       </header>
 
       {/* ── 벌금표 ───────────────────────────────────── */}
+      {showSheet && (
       <section className="gs-card">
         <div className="gs-cardhead">
           <div className="gs-headleft">
             <h2 className="gs-h2">벌금표</h2>
-            <div className="gs-seg" role="group" aria-label="입력 방식">
+            <span className="gs-caplab">모드</span>
+            <div className="gs-seg" role="group" aria-label="모드">
               <span className="gs-tip">
                 <button className={simple ? "on" : ""} onClick={() => changeMode("simple")}>
-                  금액만
+                  메모장
                 </button>
                 <span className="gs-tip-body" role="tooltip">
-                  항목 없이 <b>이름과 금액만 적습니다.</b> 왼쪽 메모장에 '로마러 25'처럼 한 줄씩
-                  적으면 표가 따라 만들어지고, 숫자 하나가 얼마인지는 입력 단위(십만G·만G·1G)로
-                  정합니다.
+                  '로마러 25'처럼 <b>한 줄에 한 사람씩</b> 적으면 표가 됩니다.
                 </span>
               </span>
               <span className="gs-tip">
                 <button className={simple ? "" : "on"} onClick={() => changeMode("items")}>
-                  항목별
+                  카운터
                 </button>
                 <span className="gs-tip-body" role="tooltip">
-                  잡힘·죽음처럼 <b>벌금 사유를 항목으로 두고 횟수를 셉니다.</b> 항목마다 1회당
-                  단가를 정해두면 표에는 횟수만 적으면 됩니다. 항목으로 쪼갤 수 없는 벌금은 기타
-                  칸에 금액으로 넣습니다.
+                  칸의 <b>＋를 눌러 셉니다.</b> 항목마다 1회당 단가를 정해 둡니다.
                 </span>
               </span>
             </div>
+            {!simple && (
+              <button
+                className={"gs-btn gs-btn-ghost" + (showLog ? " gs-logbtn-on" : "")}
+                onClick={() => setShowLog((v) => !v)}
+                aria-expanded={showLog}
+              >
+                기록
+                {log.length > 0 && <em>{log.length}</em>}
+              </button>
+            )}
+            {/* 사고 직후에만 나타나는 복구 버튼 — 표를 고치기 시작하면 사라집니다 */}
+            {undoSnap && (
+              <button className="gs-btn gs-btn-ghost gs-undo" onClick={restoreSnap}>
+                ↩ {undoSnap.label} 되돌리기
+              </button>
+            )}
           </div>
 
           {/* 버튼은 성격끼리 묶고, 글자 수는 버튼 안으로 넣어 줄을 흐트러뜨리지 않습니다 */}
@@ -1174,8 +1612,8 @@ export default function GoldSettlement() {
             </span>
             <button
               className={"gs-qm" + (showHelp ? " gs-qm-on" : "")}
-              onClick={() => setShowHelp((v) => !v)}
-              aria-expanded={showHelp}
+              onClick={() => setShowHelp(true)}
+              aria-haspopup="dialog"
               aria-label="사용법 보기"
             >
               ?
@@ -1201,38 +1639,35 @@ export default function GoldSettlement() {
           </div>
         )}
 
-        {showHelp && (
-          <ul className="gs-help">
-            <li>
-              <b>항목별 ↔ 금액만</b> — 표가 그대로 변환됩니다. 잃는 내역이 있을 때만 물어봅니다.
-            </li>
-            <li>
-              <b>초기화</b> — 인원과 숫자를 비우고 항목을 기본값으로 되돌립니다.
-            </li>
-            <li>
-              <b>기본값</b> — 지금 보고 있는 모드의 예시 데이터를 불러옵니다.
-            </li>
-            <li>
-              <b>채팅 공유용 복사</b> — 이름과 벌금을 만 단위로 한 줄에 잇습니다. 인게임 채팅이
-              개행 없이 {CHAT_LIMIT}자까지라, 넘치면 이름을 한 글자씩 줄입니다.
-            </li>
-            <li>
-              <b>{canOwnUrl ? "공유 링크" : "공유 코드"}</b> — 지금 표가 통째로 담긴{" "}
-              {canOwnUrl ? "주소를" : "코드를"} 복사합니다. 받은 쪽은 메모장에 붙여넣으면 그대로
-              열립니다.
-            </li>
-          </ul>
-        )}
+        {/* 사용법은 카드 안에서 펼치지 않고 팝업으로 띄웁니다 — 탭 화면에서 표가 밀리지 않게 */}
 
         <div className={simple ? "gs-split" : undefined}>
           {simple && (
             <div className="gs-memo">
               <div className="gs-memo-head">
-                <span className="gs-caplab">메모장</span>
+                <span className="gs-memo-left">
+                  <span className="gs-caplab">메모장</span>
+                  <span className="gs-fontctl" role="group" aria-label="메모장 글자 크기">
+                    <button
+                      onClick={() => setMemoFont((f) => clampMemoFont(f - 1))}
+                      aria-label="글자 줄이기"
+                    >
+                      −
+                    </button>
+                    <b>{memoFont}</b>
+                    <button
+                      onClick={() => setMemoFont((f) => clampMemoFont(f + 1))}
+                      aria-label="글자 키우기"
+                    >
+                      +
+                    </button>
+                  </span>
+                </span>
                 {chatLine && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
               </div>
               <textarea
                 className="gs-ta gs-memo-ta"
+                style={{ fontSize: memoFont }}
                 value={memoText}
                 onChange={onMemo}
                 spellCheck={false}
@@ -1244,7 +1679,7 @@ export default function GoldSettlement() {
           )}
 
         <div className="gs-scroll">
-          <table className={"gs-grid" + (simple ? " gs-grid-narrow" : "")}>
+          <table className={"gs-grid" + (simple ? " gs-grid-narrow" : " gs-grid-count")}>
             <thead>
               <tr>
                 {simple ? (
@@ -1259,10 +1694,8 @@ export default function GoldSettlement() {
                 )}
                 {simple && (
                   <th className="gs-colh gs-simpleh">
+                    {/* 단위는 위 라디오에 이미 있으니 라벨 하나면 됩니다 */}
                     <div className="gs-disch-top gs-simple-lab">금액</div>
-                    <div className="gs-colh-price">
-                      1칸 = {UNITS.find((u) => u.v === unit)?.label}
-                    </div>
                   </th>
                 )}
                 {!simple &&
@@ -1304,11 +1737,8 @@ export default function GoldSettlement() {
                         + 항목
                       </button>
                       <span className="gs-tip-body" role="tooltip">
-                        <b>항목</b>은 벌금을 매기는 사유입니다. 1회당 단가를 정해두면 표에는 횟수만
-                        적으면 됩니다. 칸에 마우스를 올리면 +/− 가 나오고, 직접 고쳐 적어도 됩니다.
-                        <br />
-                        <br />
-                        눌러서 새 항목을 만듭니다.
+                        <b>항목</b>은 벌금 사유입니다. 1회당 단가를 정해두고, 칸의 ＋를 누르면 1회씩
+                        쌓입니다.
                       </span>
                     </span>
                   </th>
@@ -1364,7 +1794,79 @@ export default function GoldSettlement() {
                       </th>
                       {activeCols.map((c) => {
                         const cnt = row.counts[c.id] ?? "";
-                        const amt = Math.round(num(cnt) * goldOf(c.price));
+                        const n = num(cnt);
+                        if (!simple) {
+                          /* ＋ 버스트는 왼쪽 −가 ↩로, − 버스트는 오른쪽에 ↩가 나타납니다.
+                             양쪽 다 같은 사각 링 5초 — 반대 방향으로 하나씩 되감습니다. */
+                          const g0 = grace && grace.rowId === row.id && grace.colId === c.id;
+                          const inGrace = g0 && grace.dir > 0;
+                          const minusGrace = g0 && grace.dir < 0;
+                          return (
+                            <td key={c.id}>
+                              {/* 카운터 칸 — 누르는 게 곧 1회. 숫자 입력 대신 ＋와 ×N 만 둡니다.
+                                  누른 직후의 −는 기록 없는 되돌리기(게이지가 남은 동안),
+                                  그 뒤의 −는 기록되는 빼기입니다. */}
+                              <div className="gs-hitwrap">
+                                <button
+                                  className={"gs-hit" + (n > 0 ? " gs-hit-on" : "")}
+                                  onClick={() => pressCell(row, c, 1)}
+                                  aria-label={`${row.name || "이 사람"}의 ${c.name || "항목"} 1회 추가`}
+                                >
+                                  {/* 숫자가 주인공 — 누르기 전엔 옅은 ＋만, 누른 뒤엔 가운데 큰 횟수 */}
+                                  {n > 0 ? (
+                                    <span className="gs-hit-num" key={n}>
+                                      {commafy(n)}
+                                      <em>회</em>
+                                    </span>
+                                  ) : (
+                                    <span className="gs-hit-ghost" aria-hidden="true">
+                                      ＋
+                                    </span>
+                                  )}
+                                </button>
+                                <button
+                                  key={inGrace ? "g" + grace.key : "s"}
+                                  className={"gs-step gs-hit-minus" + (inGrace ? " gs-grace" : "")}
+                                  tabIndex={-1}
+                                  onClick={() => pressCell(row, c, -1)}
+                                  aria-label={
+                                    inGrace
+                                      ? "방금 누른 것 되돌리기"
+                                      : `${c.name || "항목"} 1 줄이기`
+                                  }
+                                >
+                                  {inGrace ? "↩" : "−"}
+                                  {inGrace && (
+                                    <svg className="gs-grace-ring" viewBox="0 0 24 24" aria-hidden="true">
+                                      {/* 12시에서 시작해 시계 방향으로 도는 경로 — 시계·쿨다운의 문법 */}
+                                      <path
+                                        d="M12 1 H20 A3 3 0 0 1 23 4 V20 A3 3 0 0 1 20 23 H4 A3 3 0 0 1 1 20 V4 A3 3 0 0 1 4 1 H12"
+                                        pathLength="100"
+                                      />
+                                    </svg>
+                                  )}
+                                </button>
+                                {minusGrace && (
+                                  <button
+                                    key={"u" + grace.key}
+                                    className="gs-step gs-hit-unminus"
+                                    tabIndex={-1}
+                                    onClick={() => pressCell(row, c, 1)}
+                                    aria-label="방금 뺀 것 되돌리기"
+                                  >
+                                    ↩
+                                    <svg className="gs-grace-ring" viewBox="0 0 24 24" aria-hidden="true">
+                                      <path
+                                        d="M12 1 H20 A3 3 0 0 1 23 4 V20 A3 3 0 0 1 20 23 H4 A3 3 0 0 1 1 20 V4 A3 3 0 0 1 4 1 H12"
+                                        pathLength="100"
+                                      />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        }
                         return (
                           <td key={c.id}>
                             {/* 칸 어디를 눌러도 입력이 잡히게 합니다 (+/− 는 제외) */}
@@ -1387,7 +1889,7 @@ export default function GoldSettlement() {
                                 </button>
                                 <NumInput
                                   className="gs-in gs-in-cnt"
-                                  style={{ width: cntWidth(cnt, simple ? 6 : 3) }}
+                                  style={{ width: cntWidth(cnt, 6) }}
                                   value={cnt}
                                   placeholder="0"
                                   data-cell={`${i}:${c.id}`}
@@ -1405,7 +1907,6 @@ export default function GoldSettlement() {
                                   +
                                 </button>
                               </div>
-                              <div className="gs-cnt-amt">{amt > 0 ? won(amt) : ""}</div>
                             </div>
                           </td>
                         );
@@ -1422,7 +1923,7 @@ export default function GoldSettlement() {
                           }`}
                         >
                           {ex.length === 0 ? (
-                            <span className="gs-disc-add">+</span>
+                            <span className="gs-disc-add">＋ 금액</span>
                           ) : (
                             <>
                               <span className="gs-disc-amt">{won(exSum)}</span>
@@ -1436,7 +1937,17 @@ export default function GoldSettlement() {
                         </button>
                       </td>
                       )}
-                      <td className="gs-sumcell">{r ? won(r.fines[i]) : "0"}</td>
+                      {simple ? (
+                        <td className="gs-sumcell">{r ? won(r.fines[i]) : "0"}</td>
+                      ) : (
+                        <td className="gs-sumcell gs-sumcell-edit">
+                          <TotalEdit
+                            display={r ? r.fines[i] : 0}
+                            base={itemGold(row)}
+                            onCommit={(g) => editTotal(row, g)}
+                          />
+                        </td>
+                      )}
                     </tr>
 
                     {!simple && open && (
@@ -1489,9 +2000,10 @@ export default function GoldSettlement() {
         </div>
 
       </section>
+      )}
 
       {/* ── 장부 ─────────────────────────────────────── */}
-      {r && (
+      {showLedger && r && (
         <section className="gs-card">
           <div className="gs-cardhead">
             <h2 className="gs-h2">정산 장부</h2>
@@ -1530,33 +2042,28 @@ export default function GoldSettlement() {
               </tbody>
             </table>
           </div>
-          <details className="gs-ask">
-            <summary>총무한테 전부 보내고 나누면 안 되나요?</summary>
-            <div className="gs-ask-body">
-              <table className="gs-vs">
-                <tbody>
-                  <tr>
-                    <th>총무 방식</th>
-                    <td>송금 {r.hubCount}회</td>
-                    <td className="gs-vs-fee">수수료 {G(r.hubFee)}</td>
-                  </tr>
-                  <tr>
-                    <th>지금 방식</th>
-                    <td>송금 {r.transfers.length}회</td>
-                    <td className="gs-vs-fee">수수료 {G(r.feeTotal)}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p>
-                총무를 거치면 같은 돈이 우편을 두 번 타서 수수료를 두 번 떼입니다.{" "}
-                <b>{G(r.hubFee - r.feeTotal)}</b> 차이입니다.
-              </p>
-            </div>
-          </details>
+          {/* 접으면 표가 아래로 밀려서, 펼치는 대신 팝업으로 띄웁니다 (탭 화면 배려) */}
+          <button className="gs-ask-open" onClick={() => setShowHub(true)}>
+            총무한테 전부 보내고 나누면 안 되나요?
+          </button>
+        </section>
+      )}
+
+      {/* 탭 화면에서 장부에 보여줄 사람이 아직 없을 때 */}
+      {showLedger && !r && tabbed && (
+        <section className="gs-card">
+          <div className="gs-cardhead">
+            <h2 className="gs-h2">정산 장부</h2>
+          </div>
+          <div className="gs-empty">
+            <p>정산할 사람이 없습니다.</p>
+            <p className="gs-empty-sub">벌금표에 인원을 적으면 장부가 여기에 만들어집니다.</p>
+          </div>
         </section>
       )}
 
       {/* ── 우편 ─────────────────────────────────────── */}
+      {showMail && (
       <section className="gs-mail">
         <div className="gs-cardhead">
           <div className="gs-headleft">
@@ -1618,7 +2125,178 @@ export default function GoldSettlement() {
           </>
         )}
       </section>
+      )}
 
+      {/* ── 첫 방문: 모드 선택 ─────────────────────────── */}
+      {intro && (
+        <div className="gs-intro" role="dialog" aria-modal="true" aria-label="모드 선택">
+          <div className="gs-intro-in">
+            <div className="gs-eyebrow">
+              <span>MAIL SETTLEMENT</span>
+              <i />
+            </div>
+            <h1 className="gs-title">벌금 정산</h1>
+            <p className="gs-intro-lead">
+              걷은 벌금을 나누고 보낼 우편까지 계산해 주는 장부입니다.
+              <br />
+              표를 어떻게 적을지 골라 주세요. 나중에 언제든 바꿀 수 있습니다.
+            </p>
+            <div className="gs-intro-cards">
+              <button className="gs-intro-card" onClick={() => pickIntro("simple")}>
+                <span className="gs-intro-name">메모장</span>
+                <span className="gs-io-vis">
+                  <span className="gs-io-memo">{"쿼카 25\n순두부 30\nㅈ냥이 44"}</span>
+                  <span className="gs-io-arr">→</span>
+                  <span className="gs-io-rows">
+                    <span>
+                      <b>쿼카</b>
+                      <i>25만</i>
+                    </span>
+                    <span>
+                      <b>순두부</b>
+                      <i>30만</i>
+                    </span>
+                    <span>
+                      <b>ㅈ냥이</b>
+                      <i>44만</i>
+                    </span>
+                  </span>
+                </span>
+                <span className="gs-intro-desc">
+                  이름과 금액을 한 줄에 하나씩 적으면 표가 됩니다. 받아 적기가 빠를 때, 채팅을
+                  붙여넣을 때.
+                </span>
+              </button>
+              <button className="gs-intro-card" onClick={() => pickIntro("items")}>
+                <span className="gs-intro-name">카운터</span>
+                <span className="gs-io-vis">
+                  <span className="gs-io-mini">
+                    <span className="gs-io-cap" />
+                    <span className="gs-io-cap">잡힘</span>
+                    <span className="gs-io-cap">죽음</span>
+                    <span className="gs-io-name">쿼카</span>
+                    <span className="gs-io-cell on">
+                      3<em>회</em>
+                    </span>
+                    <span className="gs-io-cell on">
+                      2<em>회</em>
+                    </span>
+                    <span className="gs-io-name">순두부</span>
+                    <span className="gs-io-cell">＋</span>
+                    <span className="gs-io-cell on">
+                      1<em>회</em>
+                    </span>
+                  </span>
+                </span>
+                <span className="gs-intro-desc">
+                  잡힘·죽음처럼 항목과 단가를 정해두고, 사고가 날 때마다 칸의 ＋ 한 번. 방송
+                  중 실시간으로 셀 때.
+                </span>
+              </button>
+            </div>
+            <p className="gs-intro-foot">
+              정산 장부와 보낼 우편은 표에서 자동으로 만들어집니다. 두 모드는 서로 변환됩니다.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {showHelp && (
+        <InfoModal title="사용법" onClose={() => setShowHelp(false)}>
+          <ul className="gs-help">
+            <li>
+              <b>탭 · 세로 보기</b> — 제목 오른쪽 아이콘으로 바꿉니다.
+            </li>
+            <li>
+              <b>메모장 ↔ 카운터</b> — 표가 그대로 변환됩니다. 카운터의 횟수 구성은 동결됐다가
+              돌아올 때 이름으로 대조해 복원되고, 메모장에서 고친 차액만 기타·기록에 남습니다.
+            </li>
+            <li>
+              <b>카운터</b> — 칸의 ＋가 1회, 올리면 나오는 −가 빼기. 누른 직후 5초는 반대
+              버튼이 기록 없는 되돌리기입니다. 합계를 누르면 직접 수정(차액은 기타로).
+            </li>
+            <li>
+              <b>기록</b> — ＋·수정이 한 줄씩 남고, 어떤 줄이든 취소하면 반대 기록이 붙습니다.
+            </li>
+            <li>
+              <b>실수 복구</b> — 인원·항목 삭제, 초기화, 기본값 직후엔 ↩ 되돌리기가 떠 있습니다.
+              표를 고치기 시작하면 사라집니다.
+            </li>
+            <li>
+              <b>초기화</b> — 인원과 숫자를 비웁니다.
+            </li>
+            <li>
+              <b>기본값</b> — 예시 데이터를 불러옵니다.
+            </li>
+            <li>
+              <b>채팅 공유용 복사</b> — 이름과 벌금을 만 단위로 한 줄에 잇습니다. {CHAT_LIMIT}자가
+              넘으면 이름을 줄입니다.
+            </li>
+            <li>
+              <b>{canOwnUrl ? "공유 링크" : "공유 코드"}</b> — 표가 통째로 담긴{" "}
+              {canOwnUrl ? "주소" : "코드"}입니다. 메모장에 붙여넣으면 열립니다.
+            </li>
+          </ul>
+        </InfoModal>
+      )}
+      {showLog && !simple && (
+        <InfoModal title="기록" wide onClose={() => setShowLog(false)}>
+          <p className="gs-log-note">
+            최근 {LOG_CAP}줄 · 취소는 줄을 지우지 않고 반대 기록을 덧붙입니다
+          </p>
+          {log.length === 0 ? (
+            <p>아직 기록이 없습니다. 칸의 ＋를 누르면 쌓입니다.</p>
+          ) : (
+            <ul className="gs-log-list">
+              {[...log].reverse().map((en) => (
+                <li key={en.id} className={en.cancelled ? "gs-log-xed" : ""}>
+                  <span className="gs-log-t">{hhmm(en.t)}</span>
+                  <span className="gs-log-nm">{en.name || "이름 없음"}</span>
+                  <span className="gs-log-what">
+                    {en.kind === "press" && `${en.item || "항목"} ${signedMan(en.delta)}`}
+                    {en.kind === "edit" && `직접 수정 ${signedMan(en.delta)}`}
+                    {en.kind === "memo" && `메모장에서 수정 ${signedMan(en.delta)}`}
+                    {en.kind === "memo-new" && `메모장에서 추가 ${signedMan(en.delta)}`}
+                    {en.kind === "memo-del" && `메모장에서 제외 ${signedMan(en.delta)}`}
+                    {en.kind === "cancel" &&
+                      `취소 — ${en.item ? en.item + " " : ""}${signedMan(en.delta)}`}
+                  </span>
+                  <span className="gs-log-after">→ {man(en.after)}</span>
+                  {en.kind !== "cancel" &&
+                    !en.cancelled &&
+                    rows.some((x) => x.id === en.rowId) && (
+                      <button className="gs-log-cancel" onClick={() => cancelEntry(en)}>
+                        취소
+                      </button>
+                    )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </InfoModal>
+      )}
+      {showHub && r && (
+        <InfoModal title="총무한테 전부 보내고 나누면 안 되나요?" onClose={() => setShowHub(false)}>
+          <table className="gs-vs">
+            <tbody>
+              <tr>
+                <th>총무 방식</th>
+                <td>송금 {r.hubCount}회</td>
+                <td className="gs-vs-fee">수수료 {G(r.hubFee)}</td>
+              </tr>
+              <tr>
+                <th>지금 방식</th>
+                <td>송금 {r.transfers.length}회</td>
+                <td className="gs-vs-fee">수수료 {G(r.feeTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            총무를 거치면 같은 돈이 우편을 두 번 타서 수수료를 두 번 떼입니다.{" "}
+            <b>{G(r.hubFee - r.feeTotal)}</b> 차이입니다.
+          </p>
+        </InfoModal>
+      )}
       {ask && (
         <Confirm
           ask={ask}
@@ -1656,6 +2334,46 @@ function ChatCopyBtn({ line, flash, onCopy }) {
         </>
       )}
     </button>
+  );
+}
+
+/* 카운터의 합계 칸 — 눌러서 고치고, blur/Enter 에 확정합니다. 차액은 기타 '직접 수정'으로.
+   Esc 는 버립니다. */
+function TotalEdit({ display, base, onCommit }) {
+  const [draft, setDraft] = useState(null); // null = 안 고치는 중
+  const esc = useRef(false);
+  if (draft === null)
+    return (
+      <button
+        className="gs-sumedit"
+        onClick={() => setDraft(base > 0 ? formatNumInput(String(base)) : "")}
+        aria-label="합계 직접 수정 (G)"
+      >
+        {won(display)}
+      </button>
+    );
+  return (
+    <input
+      className="gs-in gs-sumedit-in"
+      value={draft}
+      autoFocus
+      inputMode="numeric"
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => setDraft(formatNumInput(e.target.value))}
+      onBlur={() => {
+        if (!esc.current) onCommit(Math.round(num(draft)));
+        esc.current = false;
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.target.blur();
+        if (e.key === "Escape") {
+          esc.current = true;
+          e.target.blur();
+        }
+      }}
+      aria-label="합계 (G)"
+    />
   );
 }
 
@@ -1718,6 +2436,41 @@ function TextShare({ text, copied, onCopy, onClose }) {
           </button>
           <button className="gs-btn" onClick={() => onCopy(ta.current.value)}>
             {copied ? "복사됨" : "복사"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* 설명을 카드 안에서 펼치는 대신 띄우는 창 — 탭 화면에서 표가 밀리지 않게 팝업으로 봅니다 */
+function InfoModal({ title, onClose, children, wide }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="gs-modal"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className={"gs-dialog" + (wide ? " gs-dialog-wide" : "")}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <h3>{title}</h3>
+        {children}
+        <div className="gs-dialog-btns">
+          <button className="gs-btn gs-btn-ghost" onClick={onClose}>
+            닫기
           </button>
         </div>
       </div>
@@ -1926,7 +2679,7 @@ const CSS = `
     radial-gradient(120% 80% at 15% 0%, rgba(255,255,255,.16), transparent 55%),
     repeating-linear-gradient(92deg, rgba(90,60,20,.035) 0 1px, transparent 1px 5px),
     repeating-linear-gradient(4deg, rgba(90,60,20,.03) 0 1px, transparent 1px 7px);
-  padding:34px 20px 60px; min-height:100vh;
+  padding:20px 20px 60px; min-height:100vh;
   -webkit-font-smoothing:antialiased;
   /* 한국어는 어절 안에서 끊지 않는 편이 자연스럽습니다 */
   word-break:keep-all; overflow-wrap:break-word;
@@ -1940,14 +2693,45 @@ const CSS = `
 .gs-stick:focus-within{z-index:6}
 .gs-mast,.gs-card,.gs-mail{max-width:1080px; margin-left:auto; margin-right:auto}
 
-/* 머리 */
-.gs-mast{margin-bottom:26px}
+/* 머리 — 방송 화면에선 세로가 금이라 낮게 갑니다 */
+.gs-mast{margin-bottom:14px}
 .gs-eyebrow{display:flex; align-items:center; gap:12px; font-family:var(--mono);
-  font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--ink-2)}
+  font-size:10px; letter-spacing:.24em; text-transform:uppercase; color:var(--ink-2)}
 .gs-eyebrow i{flex:1; height:1px; opacity:.5;
   background:repeating-linear-gradient(90deg,var(--ink-2) 0 4px,transparent 4px 8px)}
 .gs-title{font-family:'Gowun Batang',serif; font-weight:700; letter-spacing:-.02em;
-  font-size:clamp(40px,7.5vw,68px); line-height:1; margin:14px 0 0}
+  font-size:clamp(24px,3.5vw,34px); line-height:1.1; margin:8px 0 0}
+
+/* 제목 오른쪽 — 탭과 보기 전환. 탭일 때는 밑줄 하나가 탭의 바닥선이 됩니다 */
+.gs-mastrow{position:relative; display:flex; align-items:flex-end; justify-content:space-between;
+  gap:10px 14px; flex-wrap:wrap}
+.gs-tabbed .gs-mastrow::after{content:''; position:absolute; left:0; right:0; bottom:0;
+  height:1px; background:var(--kraft-dk)}
+.gs-mastside{display:flex; align-items:flex-end; gap:12px; margin-left:auto}
+.gs-tabs{display:flex; align-items:flex-end; gap:4px}
+.gs-tab{font:inherit; font-size:14px; letter-spacing:.02em; cursor:pointer; color:#4a4136;
+  padding:8px 13px 9px; border:1px solid rgba(162,134,90,.75); border-bottom:none;
+  border-radius:7px 7px 0 0; background:rgba(34,29,23,.06); white-space:nowrap}
+.gs-tab:hover{background:rgba(34,29,23,.13)}
+/* 열린 탭은 종이색으로 바닥선을 덮어서, 아래 카드로 이어진 서류철처럼 보입니다 */
+.gs-tab.on{position:relative; z-index:1; background:var(--paper); border-color:var(--kraft-dk);
+  color:var(--ink); font-weight:600; padding:10px 15px 11px}
+.gs-tab em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2);
+  margin-left:6px}
+.gs-viewseg{display:inline-flex; border:1px solid rgba(34,29,23,.35); border-radius:2px;
+  background:rgba(255,255,255,.22); margin-bottom:7px}
+.gs-viewseg button{width:33px; height:32px; display:grid; place-items:center; border:none;
+  padding:0; background:transparent; color:var(--ink-2); cursor:pointer}
+.gs-viewseg button:hover{color:var(--ink); background:rgba(34,29,23,.07)}
+.gs-viewseg button.on{background:var(--ink); color:var(--paper)}
+.gs-viewseg .gs-tip + .gs-tip button{border-left:1px solid rgba(34,29,23,.3)}
+/* 탭 화면은 카드가 하나뿐이라 사이 여백을 조금 좁힙니다 */
+.gs-tabbed .gs-card,.gs-tabbed .gs-mail{margin-top:14px}
+@media (max-width:640px){
+  .gs-tab{font-size:13px; padding:7px 10px 8px}
+  .gs-tab.on{padding:9px 12px 10px}
+  .gs-mastside{gap:8px}
+}
 /* 카드 */
 .gs-card{background:var(--paper); border:1px solid var(--kraft-dk); padding:20px 18px 22px;
   margin-top:22px; box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 6px 18px rgba(60,40,15,.13)}
@@ -1966,6 +2750,48 @@ const CSS = `
 .gs-btn-sm{padding:6px 11px; font-size:12px}
 .gs-btn-danger{background:var(--red); border-color:var(--red); color:var(--paper)}
 .gs-btn-danger:hover{background:#7d211a; border-color:#7d211a}
+
+/* 첫 방문 모드 선택 — 앱과 같은 크라프트지 위에 카드 두 장 */
+.gs-intro{position:fixed; inset:0; z-index:60; overflow:auto; background:var(--kraft);
+  background-image:
+    radial-gradient(120% 80% at 15% 0%, rgba(255,255,255,.16), transparent 55%),
+    repeating-linear-gradient(92deg, rgba(90,60,20,.035) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(4deg, rgba(90,60,20,.03) 0 1px, transparent 1px 7px);
+  padding:42px 20px 60px}
+.gs-intro-in{max-width:780px; margin:0 auto}
+.gs-intro-lead{margin:16px 0 24px; font-size:14px; line-height:1.85; color:#4a4136}
+.gs-intro-cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px}
+.gs-intro-card{font:inherit; text-align:left; cursor:pointer; background:var(--paper);
+  border:1px solid var(--kraft-dk); padding:18px 18px 16px; display:flex; flex-direction:column;
+  gap:12px; box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 6px 18px rgba(60,40,15,.13)}
+.gs-intro-card:hover{border-color:var(--ink);
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 8px 22px rgba(60,40,15,.24)}
+.gs-intro-name{font-family:'Gowun Batang',serif; font-size:21px; font-weight:700}
+.gs-io-vis{display:flex; align-items:center; justify-content:center; gap:12px;
+  background:rgba(255,255,255,.3); border:1px dashed rgba(162,134,90,.6); padding:14px 12px;
+  min-height:104px}
+.gs-io-memo{white-space:pre; font-family:var(--mono); font-size:12.5px; line-height:1.9;
+  background:rgba(255,255,255,.5); border:1px solid rgba(34,29,23,.25); padding:7px 10px}
+.gs-io-arr{color:var(--ink-2)}
+.gs-io-rows{display:flex; flex-direction:column; gap:5px; font-size:12.5px; min-width:96px}
+.gs-io-rows > span{display:flex; gap:10px; justify-content:space-between;
+  border-bottom:1px dotted rgba(34,29,23,.3); padding-bottom:2px}
+.gs-io-rows b{color:var(--blue); font-weight:600}
+.gs-io-rows i{font-style:normal; font-family:var(--mono); color:var(--gold)}
+/* 카운터 축소판 — 이름 열 + 항목 두 열의 미니 표 */
+.gs-io-mini{display:grid; grid-template-columns:auto 58px 58px; gap:6px 10px;
+  align-items:center; justify-items:center}
+.gs-io-cap{font-size:10.5px; letter-spacing:.08em; color:var(--ink-2); min-height:13px}
+.gs-io-name{justify-self:start; font-family:'Gowun Batang',serif; font-weight:700;
+  font-size:14px}
+.gs-io-cell{display:flex; align-items:center; justify-content:center; width:58px; height:36px;
+  border:1px dashed rgba(162,134,90,.85); border-radius:3px; font-family:var(--mono);
+  font-size:17px; color:var(--ink); justify-self:stretch}
+.gs-io-cell.on{border-style:solid; background:rgba(255,255,255,.5)}
+.gs-io-cell em{font-style:normal; font-size:10px; color:var(--ink-2); margin-left:3px}
+.gs-io-cell:not(.on){color:var(--ink-2)}
+.gs-intro-desc{font-size:12.5px; line-height:1.75; color:#4a4136}
+.gs-intro-foot{margin-top:20px; font-size:12px; color:var(--ink-2)}
 
 /* 확인 창 */
 .gs-modal{position:fixed; inset:0; z-index:50; display:grid; place-items:center; padding:20px;
@@ -2035,6 +2861,8 @@ const CSS = `
 .gs-help{list-style:none; margin:0 0 15px; padding:12px 14px; border-left:2px solid var(--kraft-dk);
   background:rgba(196,168,120,.22); font-size:12px; line-height:1.7; color:#4a4136}
 .gs-help li + li{margin-top:5px}
+/* 사용법이 팝업으로 옮겨가서, 창 안에서는 제목과 붙습니다 */
+.gs-dialog .gs-help{margin:12px 0 0}
 .gs-help b{font-weight:600; color:var(--ink)}
 /* 버튼 줄: 성격끼리 묶고, 글자 수는 버튼 안에 넣어 높이를 흐트러뜨리지 않습니다 */
 .gs-grp{display:inline-flex; align-items:center; gap:6px}
@@ -2060,9 +2888,19 @@ const CSS = `
 .gs-memo{display:flex; flex-direction:column; min-width:0}
 .gs-memo-head{display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding-bottom:8px; border-bottom:1.5px solid var(--ink); min-height:46px}
+.gs-memo-left{display:inline-flex; align-items:center; gap:10px}
+.gs-fontctl{display:inline-flex; align-items:center; gap:4px}
+.gs-fontctl button{width:22px; height:22px; border:1px solid rgba(34,29,23,.35); background:transparent;
+  color:var(--ink-2); font:inherit; font-size:14px; line-height:1; cursor:pointer;
+  border-radius:2px; padding:0}
+.gs-fontctl button:hover{border-color:var(--ink); color:var(--ink); background:rgba(34,29,23,.06)}
+.gs-fontctl b{font-family:var(--mono); font-weight:400; font-size:11px; color:var(--ink-2);
+  min-width:16px; text-align:center}
 .gs-memo-note{margin:7px 0 0; font-size:10.5px; color:var(--ink-2); text-align:right}
-.gs-memo-ta{margin-top:10px; min-height:320px; font-size:14px; line-height:2.06;
-  white-space:pre-wrap}
+/* 글자 크기는 인라인 스타일로 조절되고, 기본은 오른쪽 이름 글자 크기를 따릅니다.
+   높이는 화면을 따라 늘어나 방송 중 전광판 역할을 합니다. */
+.gs-memo-ta{margin-top:10px; min-height:max(460px, calc(100vh - 420px)); font-size:15px;
+  line-height:2.06; white-space:pre-wrap}
 @media (max-width:820px){
   .gs-split{grid-template-columns:minmax(0,1fr)}
   .gs-memo-ta{min-height:180px}
@@ -2096,6 +2934,81 @@ const CSS = `
 .gs-grid{border-collapse:separate; border-spacing:0; width:100%; min-width:600px}
 /* 금액만 모드는 3열뿐이라 가로 스크롤이 필요 없습니다 */
 .gs-grid-narrow{min-width:0}
+/* 금액만 모드는 시청자도 읽는 표라서 핵심(이름·금액) 27px, 서브도 한 단계씩 올립니다 */
+.gs-grid-narrow .gs-in-name{font-size:27px; padding:12px 0}
+.gs-grid-narrow .gs-in-cnt{font-size:27px}
+.gs-grid-narrow .gs-sumcell{font-size:22px}
+.gs-grid-narrow .gs-simple-lab{font-size:16px}
+.gs-grid-narrow .gs-caplab{font-size:12px}
+.gs-grid-narrow tfoot .gs-foot,.gs-grid-narrow .gs-foot-grand{font-size:20px !important}
+
+/* 카운터 표 — 핵심(이름·×N·합계) 25px. 셀이 곧 버튼이라 큼직하게 둡니다.
+   합계·기타 열도 최소 폭을 깔아 두어 자릿수가 늘어도 표가 안 밀립니다. */
+.gs-grid-count .gs-in-name{font-size:25px; padding:10px 0}
+.gs-grid-count .gs-sumcell{font-size:25px; min-width:10ch}
+.gs-grid-count td.gs-disc{min-width:88px}
+.gs-hitwrap{position:relative; display:flex; padding:6px 4px}
+/* 숫자 중심 셀 — 누르기 전엔 옅은 ＋, 누른 뒤엔 가운데 큰 횟수가 주인공입니다 */
+.gs-hit{font:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  width:100%; min-height:56px; padding:6px 10px; border-radius:3px;
+  border:1px dashed rgba(162,134,90,.85); background:rgba(255,255,255,.25)}
+.gs-hit:hover{background:rgba(255,255,255,.6); border-color:var(--ink)}
+.gs-hit:active{transform:scale(.96)}
+.gs-hit-on{border-style:solid; background:rgba(255,255,255,.5)}
+.gs-hit-ghost{font-size:18px; line-height:1; color:rgba(162,134,90,.95)}
+.gs-hit:hover .gs-hit-ghost{color:var(--ink-2)}
+/* 폭 4ch 를 예약해 두면 가운데 숫자라 자릿수가 늘어도 표가 안 밀립니다 */
+.gs-hit-num{min-width:4ch; text-align:center; white-space:nowrap; font-family:var(--mono);
+  font-size:25px; line-height:1; color:var(--ink); animation:gs-npop .16s ease-out}
+.gs-hit-num em{font-style:normal; font-size:12px; color:var(--ink-2); margin-left:5px}
+@keyframes gs-npop{from{transform:scale(1.35)} to{transform:scale(1)}}
+/* 빼기는 칸 왼쪽에 숨어 있다가 행에 올리면 나옵니다 (기존 gs-step 규칙이 보여줍니다) */
+.gs-hit-minus{position:absolute; left:10px; top:50%; transform:translateY(-50%); z-index:1}
+/* 되돌리기 유예 — ＋를 누른 직후엔 −가 ↩로 바뀌어 항상 보이고, 버튼 테두리를 도는
+   빨간 사각 링이 다 돌면 조용한 되돌리기 시간이 끝난 것입니다. 셀 안에 딱 맞는
+   정사각 버튼이라 밖으로 삐져나오지 않습니다. 시간은 GRACE_MS(5초)와 맞춥니다. */
+.gs-hit-minus.gs-grace{opacity:1; color:var(--red); width:24px; height:24px; padding:0;
+  border-radius:3px; font-size:13px; line-height:1}
+/* − 버스트의 ↩ — 복구가 ＋(셀) 쪽이라 오른쪽에 나타납니다. ↩를 눌러도 셀을 눌러도 같습니다. */
+.gs-hit-unminus{position:absolute; right:10px; top:50%; transform:translateY(-50%); z-index:1;
+  color:var(--red); width:24px; height:24px; padding:0; opacity:1;
+  border-radius:3px; font-size:13px; line-height:1}
+.gs-grace-ring{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
+/* 음수 offset 이라야 빈 부분이 경로 시작점(12시)에서 시계 방향으로 먹어 들어갑니다 */
+.gs-grace-ring path{fill:none; stroke:var(--red); stroke-width:2;
+  stroke-dasharray:100; stroke-dashoffset:0; animation:gs-ring 5s linear forwards}
+@keyframes gs-ring{to{stroke-dashoffset:-100}}
+@media (prefers-reduced-motion:reduce){
+  .gs-hit-num{animation:none}
+}
+
+/* 합계 직접 수정 — 글자를 누르면 입력칸으로 바뀝니다 */
+.gs-sumedit{font:inherit; font-family:var(--mono); font-size:inherit; color:inherit;
+  border:0; background:transparent; cursor:pointer; padding:9px 0; width:100%; text-align:right;
+  border-bottom:1px dashed rgba(138,100,21,.35)}
+.gs-sumedit:hover{border-bottom-color:var(--gold)}
+.gs-sumedit-in{font-family:var(--mono); font-size:inherit; color:var(--gold); text-align:right;
+  width:100%; min-width:9ch; padding:9px 0}
+
+/* 기록 — 팝업 안에 영수증처럼 쌓입니다. 길어지면 창이 아니라 목록 안에서 스크롤됩니다. */
+.gs-logbtn-on{background:var(--ink); color:var(--paper)}
+/* 삭제·초기화 직후의 복구 버튼 — 사고용이라 빨간 유령 버튼 */
+.gs-undo{border-color:var(--red); color:var(--red)}
+.gs-undo:hover{background:rgba(156,43,34,.08)}
+.gs-dialog .gs-log-note{font-size:11.5px; color:var(--ink-2)}
+.gs-log-list{list-style:none; margin:12px 0 0; padding:0 2px 0 0;
+  max-height:min(430px,58vh); overflow-y:auto; font-family:var(--mono)}
+.gs-log-list li{display:flex; align-items:baseline; gap:10px; padding:6px 2px;
+  border-bottom:1px dotted rgba(34,29,23,.22); font-size:13.5px}
+.gs-log-t{color:var(--ink-2); font-size:12px; flex:none}
+.gs-log-nm{color:var(--blue); flex:none; max-width:9em; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap}
+.gs-log-what{white-space:nowrap}
+.gs-log-after{margin-left:auto; color:var(--gold); white-space:nowrap}
+.gs-log-cancel{flex:none; font:inherit; font-size:11px; color:var(--red); cursor:pointer;
+  border:1px solid var(--red); background:transparent; border-radius:2px; padding:2px 8px}
+.gs-log-cancel:hover{background:var(--red); color:var(--paper)}
+.gs-log-xed .gs-log-what,.gs-log-xed .gs-log-after{text-decoration:line-through; opacity:.55}
 .gs-grid th,.gs-grid td{padding:0; vertical-align:middle}
 .gs-stick{position:sticky; left:0; z-index:2; background:var(--paper); min-width:104px;
   padding-right:10px !important; box-shadow:1px 0 0 rgba(34,29,23,.12)}
@@ -2114,7 +3027,7 @@ const CSS = `
 .gs-disch{min-width:132px}
 .gs-disch-top{display:flex; align-items:center; justify-content:center; gap:5px;
   font-size:13.5px; font-weight:600; padding:4px 0; color:var(--red)}
-.gs-unit{font-size:11px; letter-spacing:.06em; color:var(--ink-2)}
+.gs-unit{font-size:12.5px; letter-spacing:.06em; color:var(--ink-2)}
 .gs-sumh{min-width:88px; text-align:right; padding-right:6px !important}
 
 .gs-grid tbody tr th,.gs-grid tbody tr td{border-bottom:1px dotted rgba(34,29,23,.26)}
@@ -2156,7 +3069,8 @@ const CSS = `
 .gs-disc-btn{width:100%; border:0; background:transparent; font:inherit; cursor:pointer;
   padding:7px 4px; border-radius:2px; display:block; text-align:center}
 .gs-disc-btn:hover{background:rgba(156,43,34,.08)}
-.gs-disc-add{font-family:var(--mono); font-size:16px; color:rgba(34,29,23,.22)}
+/* 셀의 ＋(횟수)와 헷갈리지 않게 글자로 적습니다 — 여기는 금액을 그대로 넣는 곳 */
+.gs-disc-add{font-size:12px; color:rgba(34,29,23,.38); white-space:nowrap}
 .gs-disc-btn:hover .gs-disc-add{color:var(--red)}
 .gs-disc-amt{display:block; font-family:var(--mono); font-size:15px; color:var(--red)}
 .gs-disc-sub{display:block; font-size:10.5px; color:var(--ink-2); margin-top:2px;
@@ -2200,30 +3114,31 @@ const CSS = `
 .gs-env-body::after{content:''; position:absolute; inset:0; pointer-events:none;
   background:radial-gradient(90% 120% at 100% 0%, rgba(196,168,120,.22), transparent 60%)}
 .gs-env-main{min-width:0}
-.gs-addr{display:flex; align-items:baseline; gap:10px; padding:3px 0; max-width:340px;
+/* 우편 — 핵심(사람 이름·금액) 27px, 서브는 한 단계씩 */
+.gs-addr{display:flex; align-items:baseline; gap:10px; padding:3px 0; max-width:430px;
   border-bottom:1px dotted rgba(34,29,23,.3)}
-.gs-addr-lab{font-size:10px; letter-spacing:.1em; color:var(--ink-2); width:66px; flex:none}
-.gs-addr-nm{font-family:'Gowun Batang',serif; font-size:21px; font-weight:700}
+.gs-addr-lab{font-size:12px; letter-spacing:.1em; color:var(--ink-2); width:80px; flex:none}
+.gs-addr-nm{font-family:'Gowun Batang',serif; font-size:27px; font-weight:700}
 
 /* 카드 한 장 안의 받는 사람 줄들 */
 .gs-lines{list-style:none; margin:10px 0 0; padding:0}
 .gs-lines li{display:flex; align-items:baseline; justify-content:space-between; gap:14px;
-  flex-wrap:wrap; padding:9px 0; border-bottom:1px dotted rgba(34,29,23,.28)}
+  flex-wrap:wrap; padding:11px 0; border-bottom:1px dotted rgba(34,29,23,.28)}
 .gs-line-who{display:flex; align-items:baseline; gap:10px; min-width:0}
-.gs-line-nm{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; color:var(--blue)}
+.gs-line-nm{font-family:'Gowun Batang',serif; font-size:27px; font-weight:700; color:var(--blue)}
 .gs-line-money{display:flex; align-items:baseline; gap:4px; white-space:nowrap}
-.gs-line-amt{font-family:var(--mono); font-size:24px; line-height:1; color:var(--gold)}
-.gs-line-unit{font-size:12px; color:var(--ink-2)}
-.gs-line-money em{font-style:normal; font-family:var(--mono); font-size:11.5px;
+.gs-line-amt{font-family:var(--mono); font-size:27px; line-height:1; color:var(--gold)}
+.gs-line-unit{font-size:14px; color:var(--ink-2)}
+.gs-line-money em{font-style:normal; font-family:var(--mono); font-size:14px;
   color:var(--ink-2); margin-left:9px}
-.gs-env-foot{margin-top:10px; font-size:11.5px; letter-spacing:.04em; color:var(--ink-2)}
-.gs-env-foot b{font-family:var(--mono); font-weight:400; font-size:13px; color:var(--ink)}
-.gs-stamp{position:relative; z-index:1; flex:none; width:82px; text-align:center;
-  padding:9px 4px 8px; border:2px dashed var(--red); background:var(--paper-2); color:var(--red);
+.gs-env-foot{margin-top:12px; font-size:14px; letter-spacing:.04em; color:var(--ink-2)}
+.gs-env-foot b{font-family:var(--mono); font-weight:400; font-size:17px; color:var(--ink)}
+.gs-stamp{position:relative; z-index:1; flex:none; width:96px; text-align:center;
+  padding:10px 5px 9px; border:2px dashed var(--red); background:var(--paper-2); color:var(--red);
   transform:rotate(-3.5deg); display:flex; flex-direction:column; gap:2px}
-.gs-stamp-lab{font-size:9px; letter-spacing:.14em}
-.gs-stamp-num{font-family:var(--mono); font-size:16px; line-height:1.1}
-.gs-stamp-pct{font-family:var(--mono); font-size:10px; opacity:.75}
+.gs-stamp-lab{font-size:10px; letter-spacing:.14em}
+.gs-stamp-num{font-family:var(--mono); font-size:19px; line-height:1.1}
+.gs-stamp-pct{font-family:var(--mono); font-size:11px; opacity:.75}
 .gs-mark{position:absolute; right:62px; top:14px; width:56px; height:56px; border-radius:50%;
   border:1.5px solid var(--red); box-shadow:0 0 0 3px var(--paper), 0 0 0 4.5px var(--red);
   display:grid; place-items:center; transform:rotate(-14deg); opacity:.42;
@@ -2239,41 +3154,38 @@ const CSS = `
 .gs-empty p{margin:0; font-family:'Gowun Batang',serif; font-size:17px}
 .gs-empty-sub{margin-top:8px !important; font-family:'IBM Plex Sans KR',sans-serif !important;
   font-size:13px !important; color:var(--ink-2)}
-.gs-proof{margin:15px 0 0; font-family:var(--mono); font-size:12px; line-height:1.8;
+.gs-proof{margin:15px 0 0; font-family:var(--mono); font-size:13.5px; line-height:1.8;
   color:#4a4136; border-left:2px solid var(--ink); padding-left:11px; max-width:70ch}
 .gs-proof b{color:var(--red)}
 
-/* 정산 장부 */
+/* 정산 장부 — 핵심(이름·만 표기 금액) 24px, 서브는 한 단계씩 */
 .gs-ledger{width:100%; border-collapse:collapse; font-family:var(--mono);
-  font-size:13.5px; min-width:460px}
-.gs-ledger th{font-family:'IBM Plex Sans KR',sans-serif; font-size:10.5px; letter-spacing:.12em;
-  color:var(--ink-2); font-weight:500; text-align:right; padding:0 10px 7px;
+  font-size:13.5px; min-width:520px}
+.gs-ledger th{font-family:'IBM Plex Sans KR',sans-serif; font-size:12.5px; letter-spacing:.12em;
+  color:var(--ink-2); font-weight:500; text-align:right; padding:0 10px 8px;
   border-bottom:1.5px solid var(--ink); white-space:nowrap}
-.gs-ledger td{text-align:right; padding:9px 10px; white-space:nowrap;
+.gs-ledger td{text-align:right; padding:12px 10px; white-space:nowrap;
   border-bottom:1px dotted rgba(34,29,23,.26)}
 .gs-ledger .gs-l{text-align:left}
-.gs-man{display:block; font-size:15px; line-height:1.25}
-.gs-raw{display:block; font-size:10.5px; line-height:1.3; color:rgba(34,29,23,.42); margin-top:1px}
-.gs-nm{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
+.gs-man{display:block; font-size:24px; line-height:1.25}
+.gs-raw{display:block; font-size:13px; line-height:1.35; color:rgba(34,29,23,.42); margin-top:2px}
+.gs-nm{font-family:'Gowun Batang',serif; font-size:24px; font-weight:700}
 .gs-pos{color:var(--blue)}
 .gs-neg{color:var(--red)}
-.gs-ledger em{font-style:normal; font-size:10.5px; color:var(--ink-2); margin-left:9px;
+.gs-ledger em{font-style:normal; font-size:13px; color:var(--ink-2); margin-left:9px;
   font-family:'IBM Plex Sans KR',sans-serif}
-.gs-dim{color:rgba(34,29,23,.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:12px}
+.gs-dim{color:rgba(34,29,23,.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:14px}
 
 .gs-note{margin:14px 0 0; font-size:12px; line-height:1.85; color:#4a4136; max-width:74ch}
 .gs-note b{font-weight:600; color:var(--ink)}
 /* 접히는 문답 */
-.gs-ask{margin:14px 0 0; border-left:2px solid var(--red); padding-left:11px}
-.gs-ask summary{cursor:pointer; font-size:12.5px; color:var(--red); padding:2px 0;
-  list-style:none; display:flex; align-items:baseline; gap:6px}
-.gs-ask summary::-webkit-details-marker{display:none}
-.gs-ask summary::before{content:'＋'; font-size:11px; opacity:.8}
-.gs-ask[open] summary::before{content:'－'}
-.gs-ask summary:hover{text-decoration:underline}
-.gs-ask p{margin:9px 0 2px; font-size:12px; line-height:1.85; color:var(--red); max-width:74ch}
-.gs-ask-body{padding-top:2px}
-.gs-vs{border-collapse:collapse; margin-top:9px; font-size:12px; color:var(--red)}
+/* 총무 질문 — 펼치는 대신 팝업을 여는 글줄 버튼 */
+.gs-ask-open{margin:14px 0 0; border:none; border-left:2px solid var(--red); padding:2px 0 2px 11px;
+  background:none; font:inherit; font-size:12.5px; color:var(--red); cursor:pointer;
+  display:flex; align-items:baseline; gap:6px}
+.gs-ask-open::before{content:'＋'; font-size:11px; opacity:.8}
+.gs-ask-open:hover{text-decoration:underline}
+.gs-vs{border-collapse:collapse; margin-top:12px; font-size:12px; color:var(--red)}
 .gs-vs th{text-align:left; font-weight:500; padding:4px 16px 4px 0; white-space:nowrap}
 .gs-vs td{padding:4px 16px 4px 0; font-family:var(--mono); white-space:nowrap}
 .gs-vs-fee{font-size:13px}
