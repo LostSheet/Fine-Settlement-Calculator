@@ -1559,7 +1559,14 @@ export default function GoldSettlement() {
       {/* ── 우편 ─────────────────────────────────────── */}
       <section className="gs-mail">
         <div className="gs-cardhead">
-          <h2 className="gs-h2">보낼 우편</h2>
+          <div className="gs-headleft">
+            <h2 className="gs-h2">보낼 우편</h2>
+            {r && r.transfers.length > 0 && (
+              <button className="gs-btn" onClick={openMail}>
+                디코 공유용 복사
+              </button>
+            )}
+          </div>
           <div className="gs-tools">
             <label className="gs-fee">
               <span>수수료</span>
@@ -1571,11 +1578,6 @@ export default function GoldSettlement() {
               />
               <span>%</span>
             </label>
-            {r && r.transfers.length > 0 && (
-              <button className="gs-btn" onClick={openMail}>
-                송금 내역 공유
-              </button>
-            )}
           </div>
         </div>
 
@@ -1685,7 +1687,7 @@ function NumInput({ value, onChange, ...rest }) {
   return <input ref={ref} value={value} inputMode="decimal" onChange={handle} {...rest} />;
 }
 
-/* 송금 내역 — 디스코드처럼 개행이 되는 곳에 붙일 용도.
+/* 송금 명세서 — 디스코드처럼 개행이 되는 곳에 붙일 용도.
    그대로 복사해도 되고, 창 안에서 고쳐서 복사해도 됩니다. */
 function TextShare({ text, copied, onCopy, onClose }) {
   const ta = useRef(null);
@@ -1706,8 +1708,8 @@ function TextShare({ text, copied, onCopy, onClose }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="gs-dialog gs-dialog-wide" role="dialog" aria-modal="true" aria-label="송금 내역">
-        <h3>송금 내역</h3>
+      <div className="gs-dialog gs-dialog-wide" role="dialog" aria-modal="true" aria-label="송금 명세서">
+        <h3>송금 명세서</h3>
         <p>디스코드 등에 붙여넣으세요. 고쳐서 복사해도 됩니다.</p>
         <textarea ref={ta} className="gs-ta" defaultValue={text} spellCheck={false} />
         <div className="gs-dialog-btns">
@@ -1990,16 +1992,22 @@ const CSS = `
 
 /* 항목·기타 옆 물음표: 올리면 설명이 뜹니다 */
 .gs-tip{position:relative; display:inline-flex; vertical-align:middle}
-.gs-tip-body{position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%);
+/* 숨김은 display:none 이어야 합니다 — visibility:hidden 은 absolute 요소여도
+   문서 폭에 계산돼서, 좁은 화면에서 보이지 않는 가로 스크롤을 만듭니다. */
+.gs-tip-body{display:none; position:absolute; top:calc(100% + 8px); left:50%;
+  transform:translateX(-50%);
   width:240px; padding:10px 12px; background:var(--ink); color:var(--paper);
   font-family:'IBM Plex Sans KR',sans-serif; font-size:11.5px; font-weight:400; line-height:1.7;
   letter-spacing:0; text-align:left; border-radius:2px; box-shadow:0 6px 18px rgba(40,26,8,.3);
-  opacity:0; visibility:hidden; transition:opacity .12s; z-index:30; pointer-events:none}
+  z-index:30; pointer-events:none}
 .gs-tip-body b{color:#e8c98a; font-weight:600}
 .gs-tip-r{left:auto; right:-6px; transform:none}
 /* focus-within 을 쓰면 버튼을 클릭한 뒤에도(포커스가 남아) 툴팁이 안 사라집니다.
    키보드 포커스(focus-visible)에만 반응시키고, 마우스는 hover 로만 띄웁니다. */
-.gs-tip:hover .gs-tip-body,.gs-tip:has(:focus-visible) .gs-tip-body{opacity:1; visibility:visible}
+.gs-tip:hover .gs-tip-body,.gs-tip:has(:focus-visible) .gs-tip-body{display:block;
+  animation:gs-tipin .12s ease-out}
+@keyframes gs-tipin{from{opacity:0} to{opacity:1}}
+@media (prefers-reduced-motion:reduce){ .gs-tip-body{animation:none !important} }
 /* 좁은 화면에서는 표가 가로로 잘리므로, 폭을 줄이고 잘리지 않는 쪽으로 폅니다 */
 @media (max-width:640px){
   .gs-tip-body{width:min(176px,54vw)}
