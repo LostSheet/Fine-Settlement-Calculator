@@ -1,0 +1,29 @@
+# 벌금 정산 (Fine Settlement Calculator)
+
+벌금을 적으면 **최소 송금 조합**과 우편 수수료까지 계산해 주는 정산기.
+서버 없이 브라우저 안에서만 동작하는 단일 페이지 앱입니다.
+
+- **금액만 모드** — 메모장에 `이름 금액`을 줄마다 적으면 표가 만들어집니다. 입력 단위(십만G·만G·1G) 선택.
+- **항목별 모드** — 잡힘·죽음처럼 항목과 단가를 정해 두고 횟수만 셉니다. 즉석 벌금은 '기타'로.
+- 걷은 벌금을 인원수로 균등 분배하고, 송금 횟수가 이론적 최소가 되는 조합을 찾습니다 (비트마스크 DP).
+- 우편 1홉이라 받는 쪽 전원이 정확히 (100−수수료)% 를 수령합니다.
+- 공유: 표 전체가 담긴 URL(`#m=simple&d=도읍지25-…`), 인게임 채팅용 50자 요약, 디스코드용 송금 내역.
+- 새로고침해도 표가 남습니다 (localStorage).
+
+## 개발
+
+```bash
+npm install
+npm run dev        # http://localhost:5175 — 저장 후 새로고침만 하면 반영
+```
+
+소스는 [src/GoldSettlement.jsx](src/GoldSettlement.jsx) 한 파일입니다.
+
+## 빌드·배포
+
+```bash
+npm run build      # docs/index.html 한 파일로 빌드 (React 포함 전부 인라인)
+```
+
+GitHub Pages 를 `main` 브랜치의 `/docs` 폴더로 설정하면 그대로 서빙됩니다.
+`docs/index.html` 은 자기완결이라 아무 정적 호스트(Netlify·Cloudflare Pages 등)에 올려도 됩니다.
