@@ -172,8 +172,13 @@ function parseMemoLine(line) {
   return { name: m[1].trim(), amount: formatNumInput(m[2]) };
 }
 
+const blankMemoRow = (x) =>
+  !(x.name || "").trim() &&
+  !(x.extras || []).length &&
+  Object.values(x.counts || {}).every((v) => !parseFloat(String(v || "").replace(/[,\s]/g, "")));
+
 function memoToRows(text, prev) {
-  return text
+  const made = text
     .split("\n")
     .map(parseMemoLine)
     .filter(Boolean)
@@ -183,12 +188,26 @@ function memoToRows(text, prev) {
       counts: { ...(prev[i] ? prev[i].counts : {}), [SIMPLE_ID]: p.amount },
       extras: (prev[i] && prev[i].extras) || [],
     }));
+  /* 글에 안 잡힌 뒤쪽의 빈 슬롯 행은 남깁니다 — 초기화 직후의 빈 행들이 첫 타자에
+     몽땅 사라지지 않게. 내용이 있던 행은 줄이 줄면 지워집니다(줄 삭제 = 사람 삭제). */
+  for (let i = made.length; i < prev.length; i++) {
+    if (blankMemoRow(prev[i])) made.push(prev[i]);
+  }
+  return made;
 }
 
 const rowsToMemo = (rows) =>
   rows
     .map((r) => [r.name, r.counts?.[SIMPLE_ID] || ""].filter(Boolean).join(" "))
-    .join("\n");
+    .join("\n")
+    // 뒤쪽 빈 슬롯 행의 빈 줄은 메모에 안 적습니다 (위 보존 규칙과 왕복이 맞습니다)
+    .replace(/\s+$/, "");
+
+/* 빈 자리는 "(이름입력n)"이라는 실제 이름으로 채워 둡니다 — 메모장에도 줄로 보여서
+   그대로 덮어 쓰면 되고, 끝의 닫는 괄호 덕에 숫자로 끝나도 금액으로 안 읽힙니다.
+   이 이름에 벌금이 0이면 정산 인원에서 빠집니다. */
+const FILL_NAME = (k) => `(이름입력${k})`;
+const isFillName = (s) => /^\(이름입력\d+\)$/.test(s || "");
 
 const extrasOf = (row) => row.extras || [];
 const extraSum = (row) => extrasOf(row).reduce((a, e) => a + Math.round(goldOf(e.amount)), 0);
@@ -784,7 +803,9 @@ export default function GoldSettlement() {
       fromMemo.current = false;
       return;
     }
-    setMemoText(rowsToMemo(rows));
+    const t = rowsToMemo(rows);
+    // 빈 행뿐이면 개행만 남는데, 그러면 플레이스홀더(입력 예시)가 안 보입니다. 빈 값으로.
+    setMemoText(/^\s*$/.test(t) ? "" : t);
   }, [rows, simple]);
 
   /* 장부는 하나입니다. 모드를 바꾸는 것이 곧 변환이고, 두 벌의 숫자가 공존하지 않습니다.
@@ -868,14 +889,14 @@ export default function GoldSettlement() {
       return;
     }
     // 카운터 → 메모장: 구성을 통째로 동결해 두므로 잃는 게 없습니다.
-    // 이름 없는 사람은 '임시n'을 붙여 내보냅니다 — 메모장에선 이름이 정체성이라,
+    // 이름 없는 사람은 "(이름입력n)"을 붙여 내보냅니다 — 메모장에선 이름이 정체성이라,
     // 숫자만 남은 줄은 돌아올 때 대조가 위험해집니다.
     const taken = new Set(rows.map((x) => x.name).filter(Boolean));
     let k = 1;
     const named = rows.map((x) => {
       if (x.name || itemGold(x) === 0) return x;
-      while (taken.has("임시" + k)) k++;
-      const nm = "임시" + k;
+      while (taken.has(FILL_NAME(k))) k++;
+      const nm = FILL_NAME(k);
       taken.add(nm);
       return { ...x, name: nm };
     });
@@ -1024,20 +1045,28 @@ export default function GoldSettlement() {
     return () => window.removeEventListener("hashchange", onHash);
   });
 
+  /* 정산은 '실제 인원'만 봅니다. 이름이 없거나 "(이름입력n)" 그대로면서 벌금도 없는
+     빈 자리 행은 분배 인원수에 끼면 안 되니까요. 표와 메모장에는 그대로 보입니다. */
+  const isBlankRow = (x) =>
+    (!(x.name || "").trim() || isFillName(x.name)) &&
+    !extrasOf(x).length &&
+    Object.values(x.counts || {}).every((v) => !num(v));
+  const party = useMemo(() => rows.filter((x) => !isBlankRow(x)), [rows]);
+
   const r = useMemo(
-    () => computeSettlement(rows, activeCols, feePercent, !simple),
-    [rows, activeCols, feePercent, simple]
+    () => computeSettlement(party, activeCols, feePercent, !simple),
+    [party, activeCols, feePercent, simple]
   );
 
   /* 인게임 채팅에 그대로 붙일 한 줄. 개행이 안 먹고 50자 제한이 있어서
      여백도 콤마도 없이 이름+숫자만 잇습니다. 벌금이 0인 사람은 뺍니다. */
   const chatLine = useMemo(() => {
     if (!r) return "";
-    const entries = rows
+    const entries = party
       .map((row, i) => ({ name: row.name || "?", num: chatNum(r.fines[i]), v: r.fines[i] }))
       .filter((e) => e.v > 0);
     return entries.length ? chatLineOf(entries) : "";
-  }, [r, rows]);
+  }, [r, party]);
 
   // 우편은 보내는 사람 하나당 카드 하나. transfers 는 이미 금액 내림차순이라 그 순서가 유지됩니다.
   const mails = useMemo(() => {
@@ -1256,20 +1285,21 @@ export default function GoldSettlement() {
     });
   };
 
-  /* 금액만 모드에서는 빈 행을 만들면 메모장에 아무것도 안 남습니다.
-     양쪽이 늘 같아야 하므로 '이름없음n 0' 으로 채워서 넣습니다. */
+  /* 새 행도 "(이름입력n)"으로 — 메모장에도 줄이 생기고, 카운터에도 이름 자리가 보입니다 */
   const addRow = () =>
     setRows((prev) => {
-      let name = "";
-      let counts = {};
-      if (simple) {
-        const taken = new Set(prev.map((x) => x.name));
-        let k = prev.length + 1;
-        while (taken.has("이름없음" + k)) k++;
-        name = "이름없음" + k;
-        counts = { [SIMPLE_ID]: "0" };
-      }
-      return [...prev, { id: "r" + seq.current++, name, counts, extras: [] }];
+      const taken = new Set(prev.map((x) => x.name));
+      let k = prev.length + 1;
+      while (taken.has(FILL_NAME(k))) k++;
+      return [
+        ...prev,
+        {
+          id: "r" + seq.current++,
+          name: FILL_NAME(k),
+          counts: simple ? { [SIMPLE_ID]: "0" } : {},
+          extras: [],
+        },
+      ];
     });
   const delRow = (id) => {
     takeSnap("인원 삭제");
@@ -1329,7 +1359,7 @@ export default function GoldSettlement() {
 
   // 예시 데이터는 지금 보고 있는 모드의 것을 불러옵니다
   const reset = () => {
-    takeSnap("기본값");
+    takeSnap("예시 입력");
     setCols(DEFAULT_COLS);
     setRows(simple ? DEFAULT_ROWS_SIMPLE : DEFAULT_ROWS);
     setFeePercent("5");
@@ -1346,10 +1376,10 @@ export default function GoldSettlement() {
     takeSnap("초기화");
     setCols(DEFAULT_COLS);
     setRows(
-      Array.from({ length: 8 }, () => ({
+      Array.from({ length: 4 }, (_, i) => ({
         id: "r" + seq.current++,
-        name: "",
-        counts: {},
+        name: FILL_NAME(i + 1),
+        counts: { [SIMPLE_ID]: "0" },
         extras: [],
       }))
     );
@@ -1386,9 +1416,9 @@ export default function GoldSettlement() {
     });
   const askReset = () =>
     setAsk({
-      title: "예시 표로 되돌릴까요?",
+      title: "예시 데이터를 불러올까요?",
       body: "지금 적어둔 인원과 숫자가 모두 사라지고, 사용법을 보여주기 위한 예시 데이터로 바뀝니다.",
-      action: "되돌리기",
+      action: "불러오기",
       onYes: reset,
     });
   const askClearAll = () =>
@@ -1436,9 +1466,9 @@ export default function GoldSettlement() {
       "",
       // 카드와 같게, 보내는 사람 단위로 묶어서 적습니다
       ...mails.flatMap((m) => [
-        `${rows[m.from].name || "?"} — 우편 ${m.items.length}통 · ${G(m.total)}`,
+        `${party[m.from].name || "?"} — 우편 ${m.items.length}통 · ${G(m.total)}`,
         ...m.items.map(
-          (t) => `  → ${rows[t.to].name || "?"}  ${G(t.amount)} (수령 ${G(t.received)})`
+          (t) => `  → ${party[t.to].name || "?"}  ${G(t.amount)} (수령 ${G(t.received)})`
         ),
       ]),
       "",
@@ -1600,7 +1630,7 @@ export default function GoldSettlement() {
                 초기화
               </button>
               <button className="gs-btn gs-btn-ghost" onClick={askReset}>
-                기본값
+                예시 입력
               </button>
             </span>
             <span className="gs-grp">
@@ -1671,7 +1701,7 @@ export default function GoldSettlement() {
                 value={memoText}
                 onChange={onMemo}
                 spellCheck={false}
-                placeholder={"로마러 25\n도읍지 30\n조이냥 44"}
+                placeholder={"쿼카 25\n순두부 30\nㅈ냥이 44"}
                 aria-label="이름과 금액을 줄마다 적기"
               />
               <p className="gs-memo-note">한 줄에 한 사람 · 줄 끝 숫자가 금액</p>
@@ -1796,11 +1826,9 @@ export default function GoldSettlement() {
                         const cnt = row.counts[c.id] ?? "";
                         const n = num(cnt);
                         if (!simple) {
-                          /* ＋ 버스트는 왼쪽 −가 ↩로, − 버스트는 오른쪽에 ↩가 나타납니다.
-                             양쪽 다 같은 사각 링 5초 — 반대 방향으로 하나씩 되감습니다. */
+                          /* ↩는 어느 쪽 실수든 항상 셀 오른쪽 같은 자리 — 방금 누른 것을
+                             반대 방향으로 하나씩, 기록까지 지우며 되감습니다. */
                           const g0 = grace && grace.rowId === row.id && grace.colId === c.id;
-                          const inGrace = g0 && grace.dir > 0;
-                          const minusGrace = g0 && grace.dir < 0;
                           return (
                             <td key={c.id}>
                               {/* 카운터 칸 — 누르는 게 곧 1회. 숫자 입력 대신 ＋와 ×N 만 둡니다.
@@ -1825,37 +1853,24 @@ export default function GoldSettlement() {
                                   )}
                                 </button>
                                 <button
-                                  key={inGrace ? "g" + grace.key : "s"}
-                                  className={"gs-step gs-hit-minus" + (inGrace ? " gs-grace" : "")}
+                                  className="gs-step gs-hit-minus"
                                   tabIndex={-1}
                                   onClick={() => pressCell(row, c, -1)}
-                                  aria-label={
-                                    inGrace
-                                      ? "방금 누른 것 되돌리기"
-                                      : `${c.name || "항목"} 1 줄이기`
-                                  }
+                                  aria-label={`${c.name || "항목"} 1 줄이기`}
                                 >
-                                  {inGrace ? "↩" : "−"}
-                                  {inGrace && (
-                                    <svg className="gs-grace-ring" viewBox="0 0 24 24" aria-hidden="true">
-                                      {/* 12시에서 시작해 시계 방향으로 도는 경로 — 시계·쿨다운의 문법 */}
-                                      <path
-                                        d="M12 1 H20 A3 3 0 0 1 23 4 V20 A3 3 0 0 1 20 23 H4 A3 3 0 0 1 1 20 V4 A3 3 0 0 1 4 1 H12"
-                                        pathLength="100"
-                                      />
-                                    </svg>
-                                  )}
+                                  −
                                 </button>
-                                {minusGrace && (
+                                {g0 && (
                                   <button
                                     key={"u" + grace.key}
-                                    className="gs-step gs-hit-unminus"
+                                    className="gs-step gs-hit-undo"
                                     tabIndex={-1}
-                                    onClick={() => pressCell(row, c, 1)}
-                                    aria-label="방금 뺀 것 되돌리기"
+                                    onClick={() => pressCell(row, c, -grace.dir)}
+                                    aria-label="방금 누른 것 되돌리기"
                                   >
                                     ↩
                                     <svg className="gs-grace-ring" viewBox="0 0 24 24" aria-hidden="true">
+                                      {/* 12시에서 시작해 시계 방향으로 도는 경로 — 시계·쿨다운의 문법 */}
                                       <path
                                         d="M12 1 H20 A3 3 0 0 1 23 4 V20 A3 3 0 0 1 20 23 H4 A3 3 0 0 1 1 20 V4 A3 3 0 0 1 4 1 H12"
                                         pathLength="100"
@@ -1937,12 +1952,14 @@ export default function GoldSettlement() {
                         </button>
                       </td>
                       )}
+                      {/* 합계는 행에서 직접 계산합니다 — 정산(r)은 빈 슬롯을 뺀 목록이라
+                          표의 행 번호와 어긋날 수 있어서요 */}
                       {simple ? (
-                        <td className="gs-sumcell">{r ? won(r.fines[i]) : "0"}</td>
+                        <td className="gs-sumcell">{won(Math.max(0, simpleGold(row)))}</td>
                       ) : (
                         <td className="gs-sumcell gs-sumcell-edit">
                           <TotalEdit
-                            display={r ? r.fines[i] : 0}
+                            display={Math.max(0, itemGold(row))}
                             base={itemGold(row)}
                             onCommit={(g) => editTotal(row, g)}
                           />
@@ -2021,7 +2038,8 @@ export default function GoldSettlement() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => {
+                {/* 장부는 정산 인원(party)만 — 빈 슬롯 행은 여기 안 나옵니다 */}
+                {party.map((row, i) => {
                   const net = r.nets[i];
                   return (
                     <tr key={row.id}>
@@ -2100,9 +2118,9 @@ export default function GoldSettlement() {
                 <Envelope
                   key={m.from}
                   idx={k}
-                  from={rows[m.from].name || "이름 없음"}
+                  from={party[m.from].name || "이름 없음"}
                   items={m.items.map((t) => ({
-                    to: rows[t.to].name || "이름 없음",
+                    to: party[t.to].name || "이름 없음",
                     amount: t.amount,
                     received: t.received,
                   }))}
@@ -2219,14 +2237,14 @@ export default function GoldSettlement() {
               <b>기록</b> — ＋·수정이 한 줄씩 남고, 어떤 줄이든 취소하면 반대 기록이 붙습니다.
             </li>
             <li>
-              <b>실수 복구</b> — 인원·항목 삭제, 초기화, 기본값 직후엔 ↩ 되돌리기가 떠 있습니다.
-              표를 고치기 시작하면 사라집니다.
+              <b>실수 복구</b> — 인원·항목 삭제, 초기화, 예시 입력 직후엔 ↩ 되돌리기가 떠
+              있습니다. 표를 고치기 시작하면 사라집니다.
             </li>
             <li>
               <b>초기화</b> — 인원과 숫자를 비웁니다.
             </li>
             <li>
-              <b>기본값</b> — 예시 데이터를 불러옵니다.
+              <b>예시 입력</b> — 예시 데이터를 불러옵니다.
             </li>
             <li>
               <b>채팅 공유용 복사</b> — 이름과 벌금을 만 단위로 한 줄에 잇습니다. {CHAT_LIMIT}자가
@@ -2964,14 +2982,12 @@ const CSS = `
 @keyframes gs-npop{from{transform:scale(1.35)} to{transform:scale(1)}}
 /* 빼기는 칸 왼쪽에 숨어 있다가 행에 올리면 나옵니다 (기존 gs-step 규칙이 보여줍니다) */
 .gs-hit-minus{position:absolute; left:10px; top:50%; transform:translateY(-50%); z-index:1}
-/* 되돌리기 유예 — ＋를 누른 직후엔 −가 ↩로 바뀌어 항상 보이고, 버튼 테두리를 도는
-   빨간 사각 링이 다 돌면 조용한 되돌리기 시간이 끝난 것입니다. 셀 안에 딱 맞는
-   정사각 버튼이라 밖으로 삐져나오지 않습니다. 시간은 GRACE_MS(5초)와 맞춥니다. */
-.gs-hit-minus.gs-grace{opacity:1; color:var(--red); width:24px; height:24px; padding:0;
-  border-radius:3px; font-size:13px; line-height:1}
-/* − 버스트의 ↩ — 복구가 ＋(셀) 쪽이라 오른쪽에 나타납니다. ↩를 눌러도 셀을 눌러도 같습니다. */
-.gs-hit-unminus{position:absolute; right:10px; top:50%; transform:translateY(-50%); z-index:1;
-  color:var(--red); width:24px; height:24px; padding:0; opacity:1;
+/* 되돌리기 ↩ — ＋든 −든 누른 직후 5초 동안 항상 셀 오른쪽 같은 자리에 나타나고,
+   테두리를 도는 빨간 사각 링이 다 돌면 조용한 되돌리기 시간이 끝난 것입니다.
+   .gs-step 기본 숨김(opacity:0)을 확실히 이기도록 겹친 선택자로 씁니다.
+   시간은 GRACE_MS(5초)와 맞춥니다. */
+.gs-step.gs-hit-undo{position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  z-index:1; opacity:1; color:var(--red); width:24px; height:24px; padding:0;
   border-radius:3px; font-size:13px; line-height:1}
 .gs-grace-ring{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
 /* 음수 offset 이라야 빈 부분이 경로 시작점(12시)에서 시계 방향으로 먹어 들어갑니다 */
