@@ -91,12 +91,9 @@ const MAX_INPUT_CHARS = 12;
 const MAX_COUNT = 999999999;
 // 메모장 → 카운터로 넘어올 때 기타에 남기는 사유
 const CARRY_REASON = "'메모장'에서 이관";
-// 카운터 구성이 동결된 사람의 메모장 수정분이 기타로 들어올 때의 사유
-const MEMO_REASON = "메모장에서 수정";
-/* 카운터 카드에서 총액을 직접 고치면 차액이 기타 한 줄로 쌓입니다.
-   취소(역분개)로 횟수가 못 덮는 차액도 기타로 갑니다. */
-const EDIT_REASON = "직접 수정";
-const CANCEL_REASON = "취소";
+/* 시스템이 만드는 기타 차액(합계 직접 수정·메모장 수정분·취소 잔액)은 전부 이 한 단어로.
+   기타 사유 칸은 암살·지각 같은 '왜'의 자리라, '어떻게'(경로)는 기록이 말하게 둡니다. */
+const ADJUST_REASON = "조정";
 const LOG_CAP = 200; // 기록은 최근 200줄만 남깁니다 (공유 링크엔 안 담김)
 /* ＋를 누른 직후 이 시간 안의 ↩는 기록까지 지우는 조용한 되돌리기입니다.
    바꾸면 CSS 의 gs-ring 애니메이션 시간(5s)도 같이 바꿔야 합니다. */
@@ -782,6 +779,9 @@ export default function GoldSettlement() {
   /* 기록 모달의 사람 필터 — 이름 칸의 '기록'으로 들어오면 그 사람 것만 봅니다.
      벌금 시비는 사람 단위로 붙어서, 전체 로그를 훑는 것보다 이쪽이 빠릅니다. */
   const [logRow, setLogRow] = useState(null);
+  /* 단가 변경 직후의 쪽지 — '지난 횟수는 옛 단가로' 원클릭 전환용. 그 열에 새 누름이
+     생기면 접습니다(과거 재계산을 받아들인 것으로 봅니다). */
+  const [priceSlip, setPriceSlip] = useState(null);
   /* 실수 복구 — 인원·항목 삭제와 초기화 직전의 표를 한 슬롯 떠 둡니다.
      다음 편집 전까지만 유효하고(통짜 복원이라 그 사이 편집을 같이 날리지 않게),
      저장도 되어서 패닉 새로고침 후에도 편집 전이면 되돌릴 수 있습니다. */
@@ -875,7 +875,7 @@ export default function GoldSettlement() {
         if (diff !== 0) {
           extras = [
             ...extras,
-            { id: "e" + seq.current++, amount: commafy(diff), reason: MEMO_REASON },
+            { id: "e" + seq.current++, amount: commafy(diff), reason: ADJUST_REASON },
           ];
           lines.push({ kind: "memo", rowId: x.id, delta: diff, name: x.name, after: memoTotal });
         }
@@ -1219,6 +1219,9 @@ export default function GoldSettlement() {
   /* 카운터 셀의 ＋/−. 횟수를 움직이고 한 줄 남깁니다. 이름·항목은 나중에 지워져도
      읽히도록 그 시점 글자를 같이 적어 둡니다. 유예 중의 반대 버튼은 조용한 되감기. */
   const pressCell = (row, col, dir = 1) => {
+    // 단가 쪽지가 걸린 열에 새 누름이 오면 쪽지를 접습니다 — 이후 전환하면 새 누름까지
+    // 옛 단가로 밀려가 버리므로, 전환은 누르기 전에만 허용합니다.
+    if (priceSlip && priceSlip.colId === col.id) setPriceSlip(null);
     if (graceActive(row, col.id) && graceRef.current.dir === -dir && undoLast(row, col)) return;
     const before = liveN(row, col.id);
     if (dir > 0 ? before >= MAX_COUNT : before <= 0) return;
@@ -1273,7 +1276,7 @@ export default function GoldSettlement() {
     const diff = target - liveTotal(row);
     if (!diff) return;
     live.current.total[row.id] = target;
-    mergeExtra(row.id, EDIT_REASON, diff);
+    mergeExtra(row.id, ADJUST_REASON, diff);
     appendLog({
       kind: "edit",
       rowId: row.id,
@@ -1306,7 +1309,7 @@ export default function GoldSettlement() {
       }
     }
     const rest = -en.delta - fromCounts;
-    if (rest) mergeExtra(en.rowId, en.kind === "edit" ? EDIT_REASON : CANCEL_REASON, rest);
+    if (rest) mergeExtra(en.rowId, ADJUST_REASON, rest);
     const after = liveTotal(row) - en.delta;
     live.current.total[row.id] = after;
     setLog((prev) => {
@@ -1385,6 +1388,48 @@ export default function GoldSettlement() {
         x.id === rowId ? { ...x, extras: extrasOf(x).filter((e) => e.id !== exId) } : x
       )
     );
+
+  /* 단가 변경 — 묻지 않습니다. 고치는 즉시 과거까지 새 단가로 계산되고(오타 정정이
+     다수라서), 대신 쪽지가 떠서 "지금부터 1데스 10만!" 같은 규칙 변경이면 한 번의
+     클릭으로 지난 횟수를 옛 단가 열로 분리할 수 있습니다. 기록에도 한 줄 남습니다. */
+  const priceEdit = useRef({});
+
+  /* 열 분리 — 이 항목은 옛 단가로 되돌리고, 같은 이름의 새 항목을 바로 옆에 만듭니다.
+     헤더에 1회 단가가 찍히니 '죽음 3만'과 '죽음 10만'이 서로 구분됩니다. */
+  const splitCol = (col, before, after) =>
+    setCols((prev) => {
+      const i = prev.findIndex((c) => c.id === col.id);
+      if (i < 0) return prev;
+      const next = prev.slice();
+      next[i] = { ...next[i], price: before };
+      next.splice(i + 1, 0, { id: "c" + seq.current++, name: col.name, price: after });
+      return next;
+    });
+
+  const commitPrice = (col, typed) => {
+    const before = priceEdit.current[col.id];
+    delete priceEdit.current[col.id];
+    if (before == null) return;
+    const oldG = Math.round(goldOf(before));
+    const newG = Math.round(goldOf(typed));
+    if (oldG === newG) return;
+    const n = rows.reduce((a, x) => a + num(x.counts[col.id]), 0);
+    if (n <= 0) return; // 아무도 안 센 항목이면 조용히 바뀝니다
+    const id = "L" + seq.current++;
+    appendLog({ id, kind: "price", colId: col.id, item: col.name, from: oldG, to: newG, mode: "retro" });
+    setPriceSlip({ colId: col.id, name: col.name, beforeStr: before, oldG, newG, n, logId: id });
+  };
+
+  /* 쪽지의 '지난 횟수는 옛 단가로' — 그제서야 열을 나눕니다 */
+  const priceForward = () => {
+    const s = priceSlip;
+    setPriceSlip(null);
+    if (!s) return;
+    const col = cols.find((c) => c.id === s.colId);
+    if (!col) return;
+    splitCol(col, s.beforeStr, col.price);
+    setLog((prev) => prev.map((x) => (x.id === s.logId ? { ...x, mode: "forward" } : x)));
+  };
 
   /* 열 조작 */
   const patchCol = (id, key, value) =>
@@ -1768,23 +1813,44 @@ export default function GoldSettlement() {
           </div>
         )}
 
-        {simple && (
-          <div className="gs-unitbar">
-            <span className="gs-caplab">입력 단위</span>
-            {UNITS.map((u) => (
-              <label key={u.v} className={unit === u.v ? "on" : ""}>
-                <input
-                  type="radio"
-                  name="gs-unit"
-                  checked={unit === u.v}
-                  onChange={() => setUnit(u.v)}
-                />
-                {u.label}
-              </label>
-            ))}
-            <span className="gs-unitnote">칸에 적은 숫자 하나가 이 금액입니다.</span>
+        {/* 단가 변경 직후 — 과거는 이미 새 단가로 계산됐고, 규칙 변경이었다면 여기서 분리 */}
+        {priceSlip && !simple && (
+          <div className="gs-slip gs-slip-info" role="status">
+            <span className="gs-slip-msg">
+              '{priceSlip.name || "항목"}' 단가 {man(priceSlip.oldG)} → {man(priceSlip.newG)} ·
+              지난 {commafy(priceSlip.n)}회도 새 단가로 다시 계산됐습니다
+            </span>
+            <button className="gs-btn gs-btn-sm gs-slip-act" onClick={priceForward}>
+              지난 횟수는 옛 단가로
+            </button>
+            <button
+              className="gs-x gs-slip-x"
+              onClick={() => setPriceSlip(null)}
+              aria-label="알림 닫기"
+            >
+              ×
+            </button>
           </div>
         )}
+
+        {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
+        <div className="gs-unitbar">
+          <span className="gs-caplab">입력 단위</span>
+          {UNITS.map((u) => (
+            <label key={u.v} className={unit === u.v ? "on" : ""}>
+              <input
+                type="radio"
+                name="gs-unit"
+                checked={unit === u.v}
+                onChange={() => setUnit(u.v)}
+              />
+              {u.label}
+            </label>
+          ))}
+          <span className="gs-unitnote">
+            {simple ? "칸에 적은 숫자 하나가 이 금액입니다." : "합계를 고칠 때 숫자 하나가 이 금액입니다."}
+          </span>
+        </div>
 
         {/* 사용법은 카드 안에서 펼치지 않고 팝업으로 띄웁니다 — 탭 화면에서 표가 밀리지 않게 */}
 
@@ -1870,6 +1936,14 @@ export default function GoldSettlement() {
                         className="gs-in gs-in-price"
                         value={c.price}
                         onChange={(v) => patchCol(c.id, "price", v)}
+                        onFocus={(e) => {
+                          priceEdit.current[c.id] = c.price;
+                          e.target.select();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") e.target.blur();
+                        }}
+                        onBlur={(e) => commitPrice(c, e.target.value)}
                         aria-label="1회당 단가 (G)"
                       />
                       <span>G</span>
@@ -2089,6 +2163,8 @@ export default function GoldSettlement() {
                           <TotalEdit
                             display={Math.max(0, itemGold(row))}
                             base={itemGold(row)}
+                            per={goldOf(unit) || 1}
+                            suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
                             onCommit={(g) => editTotal(row, g)}
                           />
                         </td>
@@ -2130,14 +2206,18 @@ export default function GoldSettlement() {
                 </th>
                 {activeCols.map((c) => (
                   <td key={c.id} className="gs-foot">
-                    {r ? won(r.colTotals[c.id]) : "0"}
+                    {r ? (simple ? won(r.colTotals[c.id]) : man(r.colTotals[c.id])) : "0"}
                   </td>
                 ))}
                 {!simple && <td className="gs-addcolcell" />}
                 {!simple && (
-                  <td className="gs-foot gs-foot-disc">{r ? won(r.discTotal) : "0"}</td>
+                  <td className="gs-foot gs-foot-disc">
+                    {r ? (simple ? won(r.discTotal) : man(r.discTotal)) : "0"}
+                  </td>
                 )}
-                <td className="gs-foot gs-foot-grand">{r ? won(r.total) : "0"}</td>
+                <td className="gs-foot gs-foot-grand">
+                  {r ? (simple ? won(r.total) : man(r.total)) : "0"}
+                </td>
               </tr>
             </tfoot>
           </table>
@@ -2363,7 +2443,12 @@ export default function GoldSettlement() {
             </li>
             <li>
               <b>카운터</b> — 칸의 ＋가 1회, 올리면 나오는 −가 빼기. 누른 직후 5초는 반대
-              버튼이 기록 없는 되돌리기입니다. 합계를 누르면 직접 수정(차액은 기타로).
+              버튼이 기록 없는 되돌리기입니다. 합계를 누르면 입력 단위 기준으로 직접
+              수정(차액은 기타 '조정'으로).
+            </li>
+            <li>
+              <b>단가 변경</b> — 바꾸면 지난 횟수도 새 단가로 다시 계산됩니다. 규칙이 바뀐
+              거라면 쪽지의 '지난 횟수는 옛 단가로'를 누르세요 — 항목이 둘로 나뉩니다.
             </li>
             <li>
               <b>기록</b> — ＋·수정이 한 줄씩 남고, 어떤 줄이든 취소하면 반대 기록이 붙습니다.
@@ -2417,8 +2502,14 @@ export default function GoldSettlement() {
               {[...shownLog].reverse().map((en) => (
                 <li key={en.id} className={en.cancelled ? "gs-log-xed" : ""}>
                   <span className="gs-log-t">{hhmm(en.t)}</span>
-                  <span className="gs-log-nm">{en.name || "이름 없음"}</span>
+                  <span className={"gs-log-nm" + (en.kind === "price" ? " gs-log-sys" : "")}>
+                    {en.kind === "price" ? en.item || "항목" : en.name || "이름 없음"}
+                  </span>
                   <span className="gs-log-what">
+                    {en.kind === "price" &&
+                      `단가 ${man(en.from)} → ${man(en.to)}${
+                        en.mode === "forward" ? " (지금부터)" : ""
+                      }`}
                     {en.kind === "press" && `${en.item || "항목"} ${signedMan(en.delta)}`}
                     {en.kind === "edit" && `직접 수정 ${signedMan(en.delta)}`}
                     {en.kind === "memo" && `메모장에서 수정 ${signedMan(en.delta)}`}
@@ -2427,7 +2518,7 @@ export default function GoldSettlement() {
                     {en.kind === "cancel" &&
                       `취소 — ${en.item ? en.item + " " : ""}${signedMan(en.delta)}`}
                   </span>
-                  <span className="gs-log-after">→ {man(en.after)}</span>
+                  {en.kind !== "price" && <span className="gs-log-after">→ {man(en.after)}</span>}
                   {en.kind !== "cancel" &&
                     !en.cancelled &&
                     rows.some((x) => x.id === en.rowId) && (
@@ -2503,43 +2594,49 @@ function ChatCopyBtn({ line, flash, onCopy }) {
   );
 }
 
-/* 카운터의 합계 칸 — 눌러서 고치고, blur/Enter 에 확정합니다. 차액은 기타 '직접 수정'으로.
-   Esc 는 버립니다. */
-function TotalEdit({ display, base, onCommit }) {
+/* 카운터의 합계 칸 — 표시는 '45만'처럼 만 표기, 눌러서 고칠 땐 입력 단위(라디오) 기준.
+   현재 값이 미리 채워져 나오므로 단위 해석이 화면에서 바로 배워집니다.
+   blur/Enter 에 확정, Esc 는 버립니다. 차액은 기타 '조정'으로. */
+function TotalEdit({ display, base, per, suffix, onCommit }) {
   const [draft, setDraft] = useState(null); // null = 안 고치는 중
   const esc = useRef(false);
   if (draft === null)
     return (
       <button
         className="gs-sumedit"
-        onClick={() => setDraft(base > 0 ? formatNumInput(String(base)) : "")}
-        aria-label="합계 직접 수정 (G)"
+        onClick={() =>
+          setDraft(base > 0 ? formatNumInput(String(+(base / per).toFixed(4))) : "")
+        }
+        aria-label={`합계 직접 수정 (${suffix})`}
       >
-        {won(display)}
+        {man(display)}
       </button>
     );
   return (
-    <input
-      className="gs-in gs-sumedit-in"
-      value={draft}
-      autoFocus
-      inputMode="numeric"
-      onFocus={(e) => e.target.select()}
-      onChange={(e) => setDraft(formatNumInput(e.target.value))}
-      onBlur={() => {
-        if (!esc.current) onCommit(Math.round(num(draft)));
-        esc.current = false;
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.target.blur();
-        if (e.key === "Escape") {
-          esc.current = true;
-          e.target.blur();
-        }
-      }}
-      aria-label="합계 (G)"
-    />
+    <span className="gs-sumedit-wrap">
+      <input
+        className="gs-in gs-sumedit-in"
+        value={draft}
+        autoFocus
+        inputMode="decimal"
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => setDraft(formatNumInput(e.target.value))}
+        onBlur={() => {
+          if (!esc.current) onCommit(Math.round(num(draft) * per));
+          esc.current = false;
+          setDraft(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.target.blur();
+          if (e.key === "Escape") {
+            esc.current = true;
+            e.target.blur();
+          }
+        }}
+        aria-label={`합계 (${suffix})`}
+      />
+      <em className="gs-sumedit-unit">{suffix}</em>
+    </span>
   );
 }
 
@@ -2670,9 +2767,21 @@ function Confirm({ ask, onCancel, onDone }) {
           <button className="gs-btn gs-btn-ghost" onClick={onCancel}>
             취소
           </button>
+          {/* 선택지가 둘인 경우(단가 변경) — 되돌리기 어려운 쪽을 유령 버튼으로 둡니다 */}
+          {ask.alt && (
+            <button
+              className="gs-btn gs-btn-ghost"
+              onClick={() => {
+                ask.alt.onPick();
+                onDone();
+              }}
+            >
+              {ask.alt.label}
+            </button>
+          )}
           <button
             ref={yesRef}
-            className="gs-btn gs-btn-danger"
+            className={"gs-btn" + (ask.tone === "safe" ? "" : " gs-btn-danger")}
             onClick={() => {
               ask.onYes();
               onDone();
@@ -3138,6 +3247,9 @@ const CSS = `
 .gs-grid-count .gs-in-name{font-size:25px; padding:10px 0}
 .gs-grid-count .gs-sumcell{font-size:25px; min-width:10ch}
 .gs-grid-count td.gs-disc{min-width:88px}
+/* 바닥줄 — 총합이 방송의 최종 숫자라 행 합계와 같은 급으로. 항목별 소계는 한 단계 아래 */
+.gs-grid-count tfoot .gs-foot{font-size:16px; color:var(--ink)}
+.gs-grid-count .gs-foot-grand{font-size:25px !important; color:var(--gold) !important}
 .gs-hitwrap{position:relative; display:flex; padding:6px 4px}
 /* 숫자 중심 셀 — 누르기 전엔 옅은 ＋, 누른 뒤엔 가운데 큰 횟수가 주인공입니다 */
 .gs-hit{font:inherit; color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -3176,8 +3288,10 @@ const CSS = `
   border:0; background:transparent; cursor:pointer; padding:9px 0; width:100%; text-align:right;
   border-bottom:1px dashed rgba(var(--gold-rgb),.35)}
 .gs-sumedit:hover{border-bottom-color:var(--gold)}
+.gs-sumedit-wrap{display:flex; align-items:baseline; gap:5px; justify-content:flex-end}
 .gs-sumedit-in{font-family:var(--mono); font-size:inherit; color:var(--gold); text-align:right;
-  width:100%; min-width:9ch; padding:9px 0}
+  width:100%; min-width:6ch; padding:9px 0}
+.gs-sumedit-unit{flex:none; font-style:normal; font-size:12px; color:var(--ink-2)}
 
 /* 기록 — 팝업 안에 영수증처럼 쌓입니다. 길어지면 창이 아니라 목록 안에서 스크롤됩니다. */
 .gs-logbtn-on{background:var(--chip-bg); color:var(--chip-fg)}
@@ -3194,6 +3308,13 @@ const CSS = `
 .gs-slip .gs-undo{margin-left:auto}
 .gs-slip-x{flex:none; color:var(--red); opacity:.7; font-size:15px}
 .gs-slip-x:hover{opacity:1}
+/* 단가 쪽지 — 경고가 아니라 정보라서 금색 계열 */
+.gs-slip-info{border-left-color:var(--gold); background:rgba(var(--gold-rgb),.1)}
+.gs-slip-info .gs-slip-msg{color:var(--gold)}
+.gs-slip-info .gs-slip-act{margin-left:auto; border-color:var(--gold); color:var(--gold);
+  background:transparent}
+.gs-slip-info .gs-slip-act:hover{background:rgba(var(--gold-rgb),.12)}
+.gs-slip-info .gs-slip-x{color:var(--gold)}
 @media (prefers-reduced-motion:reduce){ .gs-slip{animation:none} }
 /* 파괴적인 묶음과 자주 쓰는 묶음 사이를 벌립니다 */
 .gs-tools .gs-grp-risky{margin-right:12px}
@@ -3210,6 +3331,8 @@ const CSS = `
 .gs-log-t{color:var(--ink-2); font-size:12px; flex:none}
 .gs-log-nm{color:var(--blue); flex:none; max-width:9em; overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap}
+/* 사람이 아니라 규칙이 바뀐 줄 (단가 변경) */
+.gs-log-sys{color:var(--ink)}
 .gs-log-what{white-space:nowrap}
 .gs-log-after{margin-left:auto; color:var(--gold); white-space:nowrap}
 .gs-log-cancel{flex:none; font:inherit; font-size:11px; color:var(--red); cursor:pointer;
