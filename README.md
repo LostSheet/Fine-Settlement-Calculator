@@ -10,6 +10,9 @@
 - 우편 1홉이라 받는 쪽 전원이 정확히 (100−수수료)% 를 수령합니다.
 - 공유: 표 전체가 담긴 URL(`#m=simple&d=도읍지25-…`), 인게임 채팅용 50자 요약, 디스코드용 송금 내역.
 - 새로고침해도 표가 남습니다 (localStorage).
+- **설치형(PWA)** — 주소창의 설치 아이콘을 누르면 브라우저 껍데기 없는 창으로 뜹니다.
+  방송 캡처에 탭·주소창이 안 잡히고, 인터넷이 끊겨도 열립니다.
+  페이지는 항상 최신을 받아오고(네트워크 우선), 오프라인일 때만 캐시를 씁니다.
 
 ## 개발
 
@@ -23,8 +26,11 @@ npm run dev        # http://localhost:5175 — 저장 후 새로고침만 하면
 ## 빌드·배포
 
 ```bash
-npm run build      # docs/index.html 한 파일로 빌드 (React 포함 전부 인라인)
+npm run build      # docs/ 로 빌드 (index.html 한 파일 + 매니페스트·서비스워커·아이콘)
+node serve-docs.js # http://localhost:5180 — 설치·오프라인 동작을 실제로 확인할 때
 ```
+
+아이콘은 [icon.js](icon.js) 가 빌드 때마다 그려서 만듭니다 (외부 도구 없음).
 
 GitHub Pages 를 `main` 브랜치의 `/docs` 폴더로 설정하면 그대로 서빙됩니다.
 `docs/index.html` 은 자기완결이라 아무 정적 호스트(Netlify·Cloudflare Pages 등)에 올려도 됩니다.
