@@ -35,12 +35,14 @@ const html = `<!doctype html>
 <meta property="og:title" content="벌금 정산">
 <meta property="og:description" content="벌금을 적으면 최소 송금 조합과 우편 수수료까지 계산합니다.">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#c3a97f">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#c3a97f">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#241f19">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
 @font-face{font-family:'Cutive Mono';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,${font}) format('woff2')}
 html,body{margin:0;padding:0;background:#c3a97f}
+@media (prefers-color-scheme:dark){html,body{background:#241f19}}
 </style>
 </head>
 <body>

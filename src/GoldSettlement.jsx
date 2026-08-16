@@ -437,6 +437,7 @@ function loadSaved() {
           : null,
       memoFreeze:
         s.memoFreeze && Array.isArray(s.memoFreeze.people) ? s.memoFreeze : null,
+      theme: s.theme === "light" || s.theme === "dark" ? s.theme : "system",
     };
   } catch (e) {
     return null;
@@ -746,6 +747,8 @@ export default function GoldSettlement() {
       seq: nextSeq(data),
       view: stored ? stored.view : "tabs",
       tab: stored ? stored.tab : "sheet",
+      // 화면 밝기 취향은 표와 무관하니 공유 링크로 들어와도 이 브라우저 것을 씁니다
+      theme: stored ? stored.theme : "system",
       // 저장도, 공유 링크도 없는 진짜 첫 방문에만 모드 선택 화면을 띄웁니다
       firstVisit: !shared && !stored && !hashMode,
     };
@@ -780,6 +783,21 @@ export default function GoldSettlement() {
   const [intro, setIntro] = useState(!!boot.current.firstVisit);
   /* 카운터 → 메모장으로 갈 때 동결해 두는 구성. 돌아올 때 이름으로 대조해 복원합니다. */
   const [memoFreeze, setMemoFreeze] = useState(boot.current.memoFreeze || null);
+  /* 화면 밝기 — 기본은 시스템 설정을 따르고, 원하면 낮/밤으로 고정합니다.
+     긴 방송에서 눈이 덜 아프게 밤 팔레트는 순검정 대신 어두운 갈색입니다. */
+  const [theme, setTheme] = useState(boot.current.theme || "system");
+  const [sysDark, setSysDark] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mq) return;
+    const on = (e) => setSysDark(e.matches);
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () =>
+      mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on);
+  }, []);
+  const dark = theme === "dark" || (theme === "system" && sysDark);
   const seq = useRef(boot.current.seq);
 
   const simple = mode === "simple";
@@ -989,8 +1007,9 @@ export default function GoldSettlement() {
       log,
       undoSnap,
       memoFreeze,
+      theme,
     });
-  }, [cols, rows, feePercent, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, intro]);
+  }, [cols, rows, feePercent, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro]);
 
   /* 복구 제안은 "다음 편집 전까지" — 표를 고치기 시작하면 조용히 접습니다 */
   useEffect(() => {
@@ -1502,7 +1521,7 @@ export default function GoldSettlement() {
   };
 
   return (
-    <div className={"gs" + (tabbed ? " gs-tabbed" : "")}>
+    <div className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "")}>
       <style>{CSS}</style>
 
       {/* ── 머리 ─────────────────────────────────────── */}
@@ -1573,6 +1592,62 @@ export default function GoldSettlement() {
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
                   <b>세로로 이어 보기</b> — 세 카드를 한 페이지에 잇습니다.
+                </span>
+              </span>
+            </span>
+            {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
+            <span className="gs-viewseg">
+              <span className="gs-tip">
+                <button
+                  className={theme === "system" ? "" : "on"}
+                  onClick={() =>
+                    setTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")
+                  }
+                  aria-label={`화면 밝기: ${
+                    theme === "system" ? "시스템 설정" : theme === "light" ? "밝게" : "어둡게"
+                  }`}
+                >
+                  {theme === "light" ? (
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <circle cx="8" cy="8" r="3.1" />
+                        <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" />
+                      </g>
+                    </svg>
+                  ) : theme === "dark" ? (
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                      <path
+                        d="M13 10.3A5.6 5.6 0 0 1 5.7 3a5.8 5.8 0 1 0 7.3 7.3z"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                      />
+                      <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
+                    </svg>
+                  )}
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  <b>
+                    {theme === "system"
+                      ? "시스템 설정을 따릅니다"
+                      : theme === "light"
+                      ? "밝게 고정"
+                      : "어둡게 고정"}
+                  </b>{" "}
+                  — 눌러서 {theme === "system" ? "밝게" : theme === "light" ? "어둡게" : "시스템"}
+                  로 바꿉니다.
                 </span>
               </span>
             </span>
@@ -2689,22 +2764,47 @@ function Envelope({ idx, from, items, total, fee, feePct }) {
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Cutive+Mono&display=swap');
 
+/* 낮 팔레트 — 크라프트 종이. 알파가 붙는 색은 삼원색만 변수로 두어
+   어두운 팔레트에서 통째로 갈아끼울 수 있게 했습니다. */
 .gs{
   --kraft:#c3a97f; --kraft-dk:#a2865a;
-  --paper:#f1e9d9; --paper-2:#e4d7bd;
-  --ink:#221d17; --ink-2:#6d6152;
-  --red:#9c2b22; --blue:#23486b; --gold:#8a6415;
+  --paper:#f1e9d9; --paper-2:#e4d7bd; --paper-3:#e8ddc6;
+  --ink:#221d17; --ink-2:#6d6152; --ink-body:#4a4136; --ink-hover:#3a322a;
+  --red:#9c2b22; --red-dk:#7d211a; --blue:#23486b; --gold:#8a6415;
+  --chip-bg:#221d17; --chip-fg:#f1e9d9; --tip-em:#e8c98a;
+  --ink-rgb:34,29,23;      /* 선·그림자처럼 잉크에 알파를 준 자리 */
+  --lift-rgb:255,255,255;  /* 종이 위로 떠 보이게 하는 흰 기운 */
+  --kraft-rgb:196,168,120; --kraftdk-rgb:162,134,90;
+  --cell:rgba(255,255,255,.25); --cell-on:rgba(255,255,255,.5); --cell-hover:rgba(255,255,255,.6);
+  --tex-rgb:90,60,20;      /* 종이결 무늬 */
+  --shadow-rgb:60,40,15; --red-rgb:156,43,34; --gold-rgb:138,100,21;
   --mono:'Cutive Mono',monospace;
   font-family:'IBM Plex Sans KR',system-ui,sans-serif;
   color:var(--ink); background:var(--kraft);
   background-image:
-    radial-gradient(120% 80% at 15% 0%, rgba(255,255,255,.16), transparent 55%),
-    repeating-linear-gradient(92deg, rgba(90,60,20,.035) 0 1px, transparent 1px 5px),
-    repeating-linear-gradient(4deg, rgba(90,60,20,.03) 0 1px, transparent 1px 7px);
+    radial-gradient(120% 80% at 15% 0%, rgba(var(--lift-rgb),.16), transparent 55%),
+    repeating-linear-gradient(92deg, rgba(var(--tex-rgb),.035) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(4deg, rgba(var(--tex-rgb),.03) 0 1px, transparent 1px 7px);
   padding:20px 20px 60px; min-height:100vh;
   -webkit-font-smoothing:antialiased;
   /* 한국어는 어절 안에서 끊지 않는 편이 자연스럽습니다 */
   word-break:keep-all; overflow-wrap:break-word;
+}
+/* 밤 팔레트 — 같은 종이를 어두운 책상에서 보는 느낌으로. 장시간 방송용이라
+   순검정 대신 따뜻한 갈색 계열로 낮추고, 대비는 유지합니다. */
+.gs-dark{
+  --kraft:#241f19; --kraft-dk:#4a4036;
+  --paper:#302a22; --paper-2:#3a3229; --paper-3:#413830;
+  --ink:#ece4d6; --ink-2:#a1968a; --ink-body:#cabfae; --ink-hover:#6a5b49;
+  --red:#e0776b; --red-dk:#c85a4e; --blue:#8db7e2; --gold:#dcae5e;
+  --chip-bg:#574a3c; --chip-fg:#f4ece0; --tip-em:#e8c98a;
+  --ink-rgb:236,228,214;
+  --lift-rgb:0,0,0;        /* 밝은 기운 대신 어둡게 눌러서 칸을 파 보이게 */
+  --kraft-rgb:120,104,84; --kraftdk-rgb:150,130,105;
+  /* 밤에도 '센 칸'은 떠 보이게 — 어둡게 누르면 빈 칸과 구별이 흐려집니다 */
+  --cell:rgba(255,255,255,.04); --cell-on:rgba(255,255,255,.1); --cell-hover:rgba(255,255,255,.14);
+  --tex-rgb:0,0,0;
+  --shadow-rgb:0,0,0; --red-rgb:224,119,107; --gold-rgb:220,174,94;
 }
 .gs *{box-sizing:border-box}
 .gs p{text-wrap:pretty}
@@ -2731,22 +2831,22 @@ const CSS = `
   height:1px; background:var(--kraft-dk)}
 .gs-mastside{display:flex; align-items:flex-end; gap:12px; margin-left:auto}
 .gs-tabs{display:flex; align-items:flex-end; gap:4px}
-.gs-tab{font:inherit; font-size:14px; letter-spacing:.02em; cursor:pointer; color:#4a4136;
-  padding:8px 13px 9px; border:1px solid rgba(162,134,90,.75); border-bottom:none;
-  border-radius:7px 7px 0 0; background:rgba(34,29,23,.06); white-space:nowrap}
-.gs-tab:hover{background:rgba(34,29,23,.13)}
+.gs-tab{font:inherit; font-size:14px; letter-spacing:.02em; cursor:pointer; color:var(--ink-body);
+  padding:8px 13px 9px; border:1px solid rgba(var(--kraftdk-rgb),.75); border-bottom:none;
+  border-radius:7px 7px 0 0; background:rgba(var(--ink-rgb),.06); white-space:nowrap}
+.gs-tab:hover{background:rgba(var(--ink-rgb),.13)}
 /* 열린 탭은 종이색으로 바닥선을 덮어서, 아래 카드로 이어진 서류철처럼 보입니다 */
 .gs-tab.on{position:relative; z-index:1; background:var(--paper); border-color:var(--kraft-dk);
   color:var(--ink); font-weight:600; padding:10px 15px 11px}
 .gs-tab em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2);
   margin-left:6px}
-.gs-viewseg{display:inline-flex; border:1px solid rgba(34,29,23,.35); border-radius:2px;
-  background:rgba(255,255,255,.22); margin-bottom:7px}
+.gs-viewseg{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px;
+  background:rgba(var(--lift-rgb),.22); margin-bottom:7px}
 .gs-viewseg button{width:33px; height:32px; display:grid; place-items:center; border:none;
   padding:0; background:transparent; color:var(--ink-2); cursor:pointer}
-.gs-viewseg button:hover{color:var(--ink); background:rgba(34,29,23,.07)}
-.gs-viewseg button.on{background:var(--ink); color:var(--paper)}
-.gs-viewseg .gs-tip + .gs-tip button{border-left:1px solid rgba(34,29,23,.3)}
+.gs-viewseg button:hover{color:var(--ink); background:rgba(var(--ink-rgb),.07)}
+.gs-viewseg button.on{background:var(--chip-bg); color:var(--chip-fg)}
+.gs-viewseg .gs-tip + .gs-tip button{border-left:1px solid rgba(var(--ink-rgb),.3)}
 /* 탭 화면은 카드가 하나뿐이라 사이 여백을 조금 좁힙니다 */
 .gs-tabbed .gs-card,.gs-tabbed .gs-mail{margin-top:14px}
 @media (max-width:640px){
@@ -2756,7 +2856,7 @@ const CSS = `
 }
 /* 카드 */
 .gs-card{background:var(--paper); border:1px solid var(--kraft-dk); padding:20px 18px 22px;
-  margin-top:22px; box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 6px 18px rgba(60,40,15,.13)}
+  margin-top:22px; box-shadow:0 1px 0 rgba(var(--lift-rgb),.4) inset, 0 6px 18px rgba(var(--shadow-rgb),.13)}
 .gs-mail{margin-top:26px}
 .gs-cardhead{display:flex; align-items:center; justify-content:space-between; gap:14px;
   flex-wrap:wrap; margin-bottom:15px}
@@ -2764,40 +2864,40 @@ const CSS = `
 .gs-card > .gs-h2{margin-bottom:15px}
 .gs-tools{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 .gs-btn{font:inherit; font-size:12.5px; letter-spacing:.04em; cursor:pointer; padding:8px 14px;
-  border:1px solid var(--ink); background:var(--ink); color:var(--paper); border-radius:2px;
+  border:1px solid var(--chip-bg); background:var(--chip-bg); color:var(--chip-fg); border-radius:2px;
   white-space:nowrap}
-.gs-btn:hover{background:#3a322a}
+.gs-btn:hover{background:var(--ink-hover)}
 .gs-btn-ghost{background:transparent; color:var(--ink)}
-.gs-btn-ghost:hover{background:rgba(34,29,23,.08)}
+.gs-btn-ghost:hover{background:rgba(var(--ink-rgb),.08)}
 .gs-btn-sm{padding:6px 11px; font-size:12px}
 .gs-btn-danger{background:var(--red); border-color:var(--red); color:var(--paper)}
-.gs-btn-danger:hover{background:#7d211a; border-color:#7d211a}
+.gs-btn-danger:hover{background:var(--red-dk); border-color:var(--red-dk)}
 
 /* 첫 방문 모드 선택 — 앱과 같은 크라프트지 위에 카드 두 장 */
 .gs-intro{position:fixed; inset:0; z-index:60; overflow:auto; background:var(--kraft);
   background-image:
-    radial-gradient(120% 80% at 15% 0%, rgba(255,255,255,.16), transparent 55%),
-    repeating-linear-gradient(92deg, rgba(90,60,20,.035) 0 1px, transparent 1px 5px),
-    repeating-linear-gradient(4deg, rgba(90,60,20,.03) 0 1px, transparent 1px 7px);
+    radial-gradient(120% 80% at 15% 0%, rgba(var(--lift-rgb),.16), transparent 55%),
+    repeating-linear-gradient(92deg, rgba(var(--tex-rgb),.035) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(4deg, rgba(var(--tex-rgb),.03) 0 1px, transparent 1px 7px);
   padding:42px 20px 60px}
 .gs-intro-in{max-width:780px; margin:0 auto}
-.gs-intro-lead{margin:16px 0 24px; font-size:14px; line-height:1.85; color:#4a4136}
+.gs-intro-lead{margin:16px 0 24px; font-size:14px; line-height:1.85; color:var(--ink-body)}
 .gs-intro-cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px}
 .gs-intro-card{font:inherit; text-align:left; cursor:pointer; background:var(--paper);
   border:1px solid var(--kraft-dk); padding:18px 18px 16px; display:flex; flex-direction:column;
-  gap:12px; box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 6px 18px rgba(60,40,15,.13)}
+  gap:12px; box-shadow:0 1px 0 rgba(var(--lift-rgb),.4) inset, 0 6px 18px rgba(var(--shadow-rgb),.13)}
 .gs-intro-card:hover{border-color:var(--ink);
-  box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 8px 22px rgba(60,40,15,.24)}
+  box-shadow:0 1px 0 rgba(var(--lift-rgb),.4) inset, 0 8px 22px rgba(var(--shadow-rgb),.24)}
 .gs-intro-name{font-family:'Gowun Batang',serif; font-size:21px; font-weight:700}
 .gs-io-vis{display:flex; align-items:center; justify-content:center; gap:12px;
-  background:rgba(255,255,255,.3); border:1px dashed rgba(162,134,90,.6); padding:14px 12px;
+  background:var(--cell); border:1px dashed rgba(var(--kraftdk-rgb),.6); padding:14px 12px;
   min-height:104px}
 .gs-io-memo{white-space:pre; font-family:var(--mono); font-size:12.5px; line-height:1.9;
-  background:rgba(255,255,255,.5); border:1px solid rgba(34,29,23,.25); padding:7px 10px}
+  background:var(--cell-on); border:1px solid rgba(var(--ink-rgb),.25); padding:7px 10px}
 .gs-io-arr{color:var(--ink-2)}
 .gs-io-rows{display:flex; flex-direction:column; gap:5px; font-size:12.5px; min-width:96px}
 .gs-io-rows > span{display:flex; gap:10px; justify-content:space-between;
-  border-bottom:1px dotted rgba(34,29,23,.3); padding-bottom:2px}
+  border-bottom:1px dotted rgba(var(--ink-rgb),.3); padding-bottom:2px}
 .gs-io-rows b{color:var(--blue); font-weight:600}
 .gs-io-rows i{font-style:normal; font-family:var(--mono); color:var(--gold)}
 /* 카운터 축소판 — 이름 열 + 항목 두 열의 미니 표 */
@@ -2807,36 +2907,36 @@ const CSS = `
 .gs-io-name{justify-self:start; font-family:'Gowun Batang',serif; font-weight:700;
   font-size:14px}
 .gs-io-cell{display:flex; align-items:center; justify-content:center; width:58px; height:36px;
-  border:1px dashed rgba(162,134,90,.85); border-radius:3px; font-family:var(--mono);
+  border:1px dashed rgba(var(--kraftdk-rgb),.85); border-radius:3px; font-family:var(--mono);
   font-size:17px; color:var(--ink); justify-self:stretch}
-.gs-io-cell.on{border-style:solid; background:rgba(255,255,255,.5)}
+.gs-io-cell.on{border-style:solid; background:var(--cell-on)}
 .gs-io-cell em{font-style:normal; font-size:10px; color:var(--ink-2); margin-left:3px}
 .gs-io-cell:not(.on){color:var(--ink-2)}
-.gs-intro-desc{font-size:12.5px; line-height:1.75; color:#4a4136}
+.gs-intro-desc{font-size:12.5px; line-height:1.75; color:var(--ink-body)}
 .gs-intro-foot{margin-top:20px; font-size:12px; color:var(--ink-2)}
 
 /* 확인 창 */
 .gs-modal{position:fixed; inset:0; z-index:50; display:grid; place-items:center; padding:20px;
-  background:rgba(34,29,23,.45); animation:gs-fade .14s ease-out}
+  background:rgba(var(--ink-rgb),.45); animation:gs-fade .14s ease-out}
 @keyframes gs-fade{from{opacity:0} to{opacity:1}}
 .gs-dialog{width:100%; max-width:376px; background:var(--paper); border:1px solid var(--kraft-dk);
-  padding:20px 20px 16px; box-shadow:0 16px 44px rgba(40,26,8,.4)}
+  padding:20px 20px 16px; box-shadow:0 16px 44px rgba(var(--shadow-rgb),.4)}
 .gs-dialog h3{margin:0; font-family:'Gowun Batang',serif; font-size:17px; font-weight:700}
-.gs-dialog p{margin:9px 0 0; font-size:12.5px; line-height:1.8; color:#4a4136}
+.gs-dialog p{margin:9px 0 0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
 .gs-dialog-btns{display:flex; justify-content:flex-end; gap:8px; margin-top:18px}
 .gs-dialog-wide{max-width:560px}
 .gs-ta{width:100%; margin-top:12px; min-height:230px; resize:vertical; box-sizing:border-box;
-  padding:11px 12px; border:1px solid rgba(34,29,23,.3); border-radius:2px;
-  background:rgba(255,255,255,.42); color:var(--ink);
+  padding:11px 12px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px;
+  background:rgba(var(--lift-rgb),.42); color:var(--ink);
   font-family:var(--mono); font-size:12.5px; line-height:1.7; white-space:pre; overflow:auto}
 .gs-ta:focus{outline:2px solid var(--blue); outline-offset:1px}
 /* 버튼 줄과 높이를 맞춥니다 (gs-btn 이 37px) */
-.gs-qm{width:37px; height:37px; border:1px solid rgba(34,29,23,.35); background:transparent;
+.gs-qm{width:37px; height:37px; border:1px solid rgba(var(--ink-rgb),.35); background:transparent;
   color:var(--ink-2); font:inherit; font-size:13px; line-height:1; cursor:pointer;
   border-radius:50%; padding:0; flex:none}
 .gs-qm:hover{border-color:var(--ink); color:var(--ink)}
-.gs-qm-on{background:var(--ink); border-color:var(--ink); color:var(--paper)}
-.gs-qm-sm{width:17px; height:17px; font-size:10px; border-color:rgba(34,29,23,.3)}
+.gs-qm-on{background:var(--chip-bg); border-color:var(--chip-bg); color:var(--chip-fg)}
+.gs-qm-sm{width:17px; height:17px; font-size:10px; border-color:rgba(var(--ink-rgb),.3)}
 
 /* 항목·기타 옆 물음표: 올리면 설명이 뜹니다 */
 .gs-tip{position:relative; display:inline-flex; vertical-align:middle}
@@ -2844,11 +2944,11 @@ const CSS = `
    문서 폭에 계산돼서, 좁은 화면에서 보이지 않는 가로 스크롤을 만듭니다. */
 .gs-tip-body{display:none; position:absolute; top:calc(100% + 8px); left:50%;
   transform:translateX(-50%);
-  width:240px; padding:10px 12px; background:var(--ink); color:var(--paper);
+  width:240px; padding:10px 12px; background:var(--chip-bg); color:var(--chip-fg);
   font-family:'IBM Plex Sans KR',sans-serif; font-size:11.5px; font-weight:400; line-height:1.7;
-  letter-spacing:0; text-align:left; border-radius:2px; box-shadow:0 6px 18px rgba(40,26,8,.3);
+  letter-spacing:0; text-align:left; border-radius:2px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.3);
   z-index:30; pointer-events:none}
-.gs-tip-body b{color:#e8c98a; font-weight:600}
+.gs-tip-body b{color:var(--tip-em); font-weight:600}
 .gs-tip-r{left:auto; right:-6px; transform:none}
 /* focus-within 을 쓰면 버튼을 클릭한 뒤에도(포커스가 남아) 툴팁이 안 사라집니다.
    키보드 포커스(focus-visible)에만 반응시키고, 마우스는 hover 로만 띄웁니다. */
@@ -2864,16 +2964,16 @@ const CSS = `
 
 /* 항목 열과 기타 사이의 좁은 열. 아래쪽 '+ 인원 추가' 와 같은 조용한 텍스트 버튼입니다 */
 .gs-addcolh{width:72px; padding:0 6px !important}
-.gs-addcol{border:0; background:transparent; font:inherit; font-size:12px; color:rgba(34,29,23,.42);
+.gs-addcol{border:0; background:transparent; font:inherit; font-size:12px; color:rgba(var(--ink-rgb),.42);
   cursor:pointer; padding:5px 4px; letter-spacing:.03em; white-space:nowrap; border-radius:2px}
-.gs-addcol:hover{color:var(--ink); background:rgba(34,29,23,.07)}
+.gs-addcol:hover{color:var(--ink); background:rgba(var(--ink-rgb),.07)}
 .gs-addcolcell{width:72px}
 
 /* 코너 칸: 행은 이름, 열은 항목이라는 걸 사선으로 보여줍니다 */
 .gs-corner{position:relative; height:48px}
 .gs-corner::after{content:''; position:absolute; left:0; right:6px; top:2px; bottom:8px;
   background:linear-gradient(to top right, transparent calc(50% - .5px),
-    rgba(34,29,23,.28) calc(50% - .5px), rgba(34,29,23,.28) calc(50% + .5px),
+    rgba(var(--ink-rgb),.28) calc(50% - .5px), rgba(var(--ink-rgb),.28) calc(50% + .5px),
     transparent calc(50% + .5px));
   pointer-events:none}
 .gs-corner-col,.gs-corner-row{position:absolute; font-size:10.5px; letter-spacing:.12em;
@@ -2881,7 +2981,7 @@ const CSS = `
 .gs-corner-col{top:3px; right:10px}
 .gs-corner-row{bottom:9px; left:0}
 .gs-help{list-style:none; margin:0 0 15px; padding:12px 14px; border-left:2px solid var(--kraft-dk);
-  background:rgba(196,168,120,.22); font-size:12px; line-height:1.7; color:#4a4136}
+  background:rgba(var(--kraft-rgb),.22); font-size:12px; line-height:1.7; color:var(--ink-body)}
 .gs-help li + li{margin-top:5px}
 /* 사용법이 팝업으로 옮겨가서, 창 안에서는 제목과 붙습니다 */
 .gs-dialog .gs-help{margin:12px 0 0}
@@ -2896,13 +2996,13 @@ const CSS = `
 /* 모드·규칙 전환 */
 .gs-headleft{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
 /* overflow:hidden 을 두면 안쪽 툴팁이 잘립니다. 모서리는 2px 라 티가 안 나 그냥 뺍니다. */
-.gs-seg{display:inline-flex; border:1px solid rgba(34,29,23,.3); border-radius:2px}
+.gs-seg{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px}
 .gs-seg button{border:0; background:transparent; font:inherit; font-size:12px; cursor:pointer;
   padding:6px 12px; color:var(--ink-2); white-space:nowrap}
-.gs-seg > .gs-tip + .gs-tip button,.gs-seg button + button{border-left:1px solid rgba(34,29,23,.3)}
+.gs-seg > .gs-tip + .gs-tip button,.gs-seg button + button{border-left:1px solid rgba(var(--ink-rgb),.3)}
 .gs-seg .gs-tip-body{width:250px}
-.gs-seg button:hover{background:rgba(34,29,23,.07); color:var(--ink)}
-.gs-seg button.on{background:var(--ink); color:var(--paper)}
+.gs-seg button:hover{background:rgba(var(--ink-rgb),.07); color:var(--ink)}
+.gs-seg button.on{background:var(--chip-bg); color:var(--chip-fg)}
 
 /* 금액만 모드: 왼쪽 메모장 + 오른쪽 표 */
 .gs-split{display:grid; grid-template-columns:minmax(210px,.85fr) minmax(0,1.15fr); gap:18px;
@@ -2912,10 +3012,10 @@ const CSS = `
   padding-bottom:8px; border-bottom:1.5px solid var(--ink); min-height:46px}
 .gs-memo-left{display:inline-flex; align-items:center; gap:10px}
 .gs-fontctl{display:inline-flex; align-items:center; gap:4px}
-.gs-fontctl button{width:22px; height:22px; border:1px solid rgba(34,29,23,.35); background:transparent;
+.gs-fontctl button{width:22px; height:22px; border:1px solid rgba(var(--ink-rgb),.35); background:transparent;
   color:var(--ink-2); font:inherit; font-size:14px; line-height:1; cursor:pointer;
   border-radius:2px; padding:0}
-.gs-fontctl button:hover{border-color:var(--ink); color:var(--ink); background:rgba(34,29,23,.06)}
+.gs-fontctl button:hover{border-color:var(--ink); color:var(--ink); background:rgba(var(--ink-rgb),.06)}
 .gs-fontctl b{font-family:var(--mono); font-weight:400; font-size:11px; color:var(--ink-2);
   min-width:16px; text-align:center}
 .gs-memo-note{margin:7px 0 0; font-size:10.5px; color:var(--ink-2); text-align:right}
@@ -2930,7 +3030,7 @@ const CSS = `
 
 /* 간단 모드 단위 라디오 */
 .gs-unitbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 15px;
-  padding:10px 12px; border-left:2px solid var(--kraft-dk); background:rgba(196,168,120,.22)}
+  padding:10px 12px; border-left:2px solid var(--kraft-dk); background:rgba(var(--kraft-rgb),.22)}
 .gs-unitbar label{display:inline-flex; align-items:center; gap:5px; font-size:12.5px;
   cursor:pointer; color:var(--ink-2)}
 .gs-unitbar label.on{color:var(--ink); font-weight:600}
@@ -2944,10 +3044,10 @@ const CSS = `
 /* 입력 공통 */
 .gs-in{border:0; background:transparent; font:inherit; color:var(--ink); padding:6px 2px;
   width:100%; border-radius:0}
-.gs-in::placeholder{color:rgba(34,29,23,.28)}
-.gs-x{border:0; background:transparent; color:rgba(34,29,23,.36); font-size:17px; line-height:1;
+.gs-in::placeholder{color:rgba(var(--ink-rgb),.28)}
+.gs-x{border:0; background:transparent; color:rgba(var(--ink-rgb),.36); font-size:17px; line-height:1;
   cursor:pointer; padding:3px 5px; border-radius:2px}
-.gs-x:hover{color:var(--red); background:rgba(156,43,34,.1)}
+.gs-x:hover{color:var(--red); background:rgba(var(--red-rgb),.1)}
 .gs-caplab{font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
 
 /* 벌금표 */
@@ -2971,13 +3071,13 @@ const CSS = `
 .gs-grid-count td.gs-disc{min-width:88px}
 .gs-hitwrap{position:relative; display:flex; padding:6px 4px}
 /* 숫자 중심 셀 — 누르기 전엔 옅은 ＋, 누른 뒤엔 가운데 큰 횟수가 주인공입니다 */
-.gs-hit{font:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center;
+.gs-hit{font:inherit; color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center;
   width:100%; min-height:56px; padding:6px 10px; border-radius:3px;
-  border:1px dashed rgba(162,134,90,.85); background:rgba(255,255,255,.25)}
-.gs-hit:hover{background:rgba(255,255,255,.6); border-color:var(--ink)}
+  border:1px dashed rgba(var(--kraftdk-rgb),.85); background:var(--cell)}
+.gs-hit:hover{background:var(--cell-hover); border-color:var(--ink)}
 .gs-hit:active{transform:scale(.96)}
-.gs-hit-on{border-style:solid; background:rgba(255,255,255,.5)}
-.gs-hit-ghost{font-size:18px; line-height:1; color:rgba(162,134,90,.95)}
+.gs-hit-on{border-style:solid; background:var(--cell-on)}
+.gs-hit-ghost{font-size:18px; line-height:1; color:rgba(var(--kraftdk-rgb),.95)}
 .gs-hit:hover .gs-hit-ghost{color:var(--ink-2)}
 /* 폭 4ch 를 예약해 두면 가운데 숫자라 자릿수가 늘어도 표가 안 밀립니다 */
 .gs-hit-num{min-width:4ch; text-align:center; white-space:nowrap; font-family:var(--mono);
@@ -3005,21 +3105,21 @@ const CSS = `
 /* 합계 직접 수정 — 글자를 누르면 입력칸으로 바뀝니다 */
 .gs-sumedit{font:inherit; font-family:var(--mono); font-size:inherit; color:inherit;
   border:0; background:transparent; cursor:pointer; padding:9px 0; width:100%; text-align:right;
-  border-bottom:1px dashed rgba(138,100,21,.35)}
+  border-bottom:1px dashed rgba(var(--gold-rgb),.35)}
 .gs-sumedit:hover{border-bottom-color:var(--gold)}
 .gs-sumedit-in{font-family:var(--mono); font-size:inherit; color:var(--gold); text-align:right;
   width:100%; min-width:9ch; padding:9px 0}
 
 /* 기록 — 팝업 안에 영수증처럼 쌓입니다. 길어지면 창이 아니라 목록 안에서 스크롤됩니다. */
-.gs-logbtn-on{background:var(--ink); color:var(--paper)}
+.gs-logbtn-on{background:var(--chip-bg); color:var(--chip-fg)}
 /* 삭제·초기화 직후의 복구 버튼 — 사고용이라 빨간 유령 버튼 */
 .gs-undo{border-color:var(--red); color:var(--red)}
-.gs-undo:hover{background:rgba(156,43,34,.08)}
+.gs-undo:hover{background:rgba(var(--red-rgb),.08)}
 .gs-dialog .gs-log-note{font-size:11.5px; color:var(--ink-2)}
 .gs-log-list{list-style:none; margin:12px 0 0; padding:0 2px 0 0;
   max-height:min(430px,58vh); overflow-y:auto; font-family:var(--mono)}
 .gs-log-list li{display:flex; align-items:baseline; gap:10px; padding:6px 2px;
-  border-bottom:1px dotted rgba(34,29,23,.22); font-size:13.5px}
+  border-bottom:1px dotted rgba(var(--ink-rgb),.22); font-size:13.5px}
 .gs-log-t{color:var(--ink-2); font-size:12px; flex:none}
 .gs-log-nm{color:var(--blue); flex:none; max-width:9em; overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap}
@@ -3031,7 +3131,7 @@ const CSS = `
 .gs-log-xed .gs-log-what,.gs-log-xed .gs-log-after{text-decoration:line-through; opacity:.55}
 .gs-grid th,.gs-grid td{padding:0; vertical-align:middle}
 .gs-stick{position:sticky; left:0; z-index:2; background:var(--paper); min-width:104px;
-  padding-right:10px !important; box-shadow:1px 0 0 rgba(34,29,23,.12)}
+  padding-right:10px !important; box-shadow:1px 0 0 rgba(var(--ink-rgb),.12)}
 .gs-grid .gs-l{text-align:left}
 .gs-grid thead th{border-bottom:1.5px solid var(--ink); padding-bottom:8px !important;
   vertical-align:bottom}
@@ -3043,14 +3143,14 @@ const CSS = `
 .gs-colh-price{display:flex; align-items:center; justify-content:center; gap:3px;
   font-size:10px; color:var(--ink-2); margin-top:1px; white-space:nowrap}
 .gs-in-price{font-family:var(--mono); font-size:12.5px; width:66px; text-align:center;
-  padding:2px 0; border-bottom:1px dotted rgba(34,29,23,.5); color:var(--gold)}
+  padding:2px 0; border-bottom:1px dotted rgba(var(--ink-rgb),.5); color:var(--gold)}
 .gs-disch{min-width:132px}
 .gs-disch-top{display:flex; align-items:center; justify-content:center; gap:5px;
   font-size:13.5px; font-weight:600; padding:4px 0; color:var(--red)}
 .gs-unit{font-size:12.5px; letter-spacing:.06em; color:var(--ink-2)}
 .gs-sumh{min-width:88px; text-align:right; padding-right:6px !important}
 
-.gs-grid tbody tr th,.gs-grid tbody tr td{border-bottom:1px dotted rgba(34,29,23,.26)}
+.gs-grid tbody tr th,.gs-grid tbody tr td{border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
 .gs-in-name{font-size:15px; font-family:'Gowun Batang',serif; font-weight:700; padding:9px 0}
 .gs-in-cnt{font-family:var(--mono); font-size:16px; text-align:center; padding:9px 0}
 .gs-sumcell{font-family:var(--mono); font-size:14px; text-align:right;
@@ -3073,12 +3173,12 @@ const CSS = `
   min-height:15px; line-height:15px; white-space:nowrap}
 .gs-step{flex:none; width:21px; border:0; background:transparent; cursor:pointer;
   font:inherit; font-size:15px; line-height:1; padding:7px 0; border-radius:2px;
-  color:rgba(34,29,23,.4); opacity:0; transition:opacity .12s}
+  color:rgba(var(--ink-rgb),.4); opacity:0; transition:opacity .12s}
 .gs-grid tbody tr:hover .gs-step,
 .gs-cnt:focus-within .gs-step{opacity:1}
-.gs-step:hover{color:var(--ink); background:rgba(34,29,23,.09)}
-.gs-rowopen > th,.gs-rowopen > td{border-bottom:0 !important; background:rgba(196,168,120,.16)}
-.gs-rowopen > .gs-stick{background:#e8ddc6}
+.gs-step:hover{color:var(--ink); background:rgba(var(--ink-rgb),.09)}
+.gs-rowopen > th,.gs-rowopen > td{border-bottom:0 !important; background:rgba(var(--kraft-rgb),.16)}
+.gs-rowopen > .gs-stick{background:var(--paper-3)}
 .gs-addrow th,.gs-addrow td{border-bottom:0 !important}
 .gs-add{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--ink-2);
   cursor:pointer; padding:10px 0; letter-spacing:.03em}
@@ -3088,32 +3188,32 @@ const CSS = `
 .gs-disc{padding:0 6px !important}
 .gs-disc-btn{width:100%; border:0; background:transparent; font:inherit; cursor:pointer;
   padding:7px 4px; border-radius:2px; display:block; text-align:center}
-.gs-disc-btn:hover{background:rgba(156,43,34,.08)}
+.gs-disc-btn:hover{background:rgba(var(--red-rgb),.08)}
 /* 셀의 ＋(횟수)와 헷갈리지 않게 글자로 적습니다 — 여기는 금액을 그대로 넣는 곳 */
-.gs-disc-add{font-size:12px; color:rgba(34,29,23,.38); white-space:nowrap}
+.gs-disc-add{font-size:12px; color:rgba(var(--ink-rgb),.38); white-space:nowrap}
 .gs-disc-btn:hover .gs-disc-add{color:var(--red)}
 .gs-disc-amt{display:block; font-family:var(--mono); font-size:15px; color:var(--red)}
 .gs-disc-sub{display:block; font-size:10.5px; color:var(--ink-2); margin-top:2px;
   max-width:124px; margin-inline:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
 /* 기타 편집기 */
-.gs-exrow > td{background:rgba(196,168,120,.16); padding:2px 14px 14px !important}
+.gs-exrow > td{background:rgba(var(--kraft-rgb),.16); padding:2px 14px 14px !important}
 .gs-ex-head{display:flex; align-items:baseline; gap:9px; padding-bottom:9px;
-  border-bottom:1px dashed rgba(34,29,23,.3)}
+  border-bottom:1px dashed rgba(var(--ink-rgb),.3)}
 .gs-ex-who{font-family:'Gowun Batang',serif; font-size:15px; font-weight:700}
 .gs-ex-cap{flex:1; font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
-.gs-fold{border:1px solid rgba(34,29,23,.3); background:transparent; font:inherit; font-size:11.5px;
+.gs-fold{border:1px solid rgba(var(--ink-rgb),.3); background:transparent; font:inherit; font-size:11.5px;
   color:var(--ink-2); cursor:pointer; padding:4px 10px; border-radius:2px}
-.gs-fold:hover{color:var(--ink); border-color:var(--ink); background:rgba(34,29,23,.06)}
+.gs-fold:hover{color:var(--ink); border-color:var(--ink); background:rgba(var(--ink-rgb),.06)}
 .gs-ex-list{list-style:none; margin:0; padding:0}
 .gs-ex-list li,.gs-ex-add{display:flex; align-items:center; gap:8px; padding:7px 0}
-.gs-ex-list li{border-bottom:1px dotted rgba(34,29,23,.2)}
+.gs-ex-list li{border-bottom:1px dotted rgba(var(--ink-rgb),.2)}
 .gs-ex-add{padding-top:10px}
 .gs-ex-amt{flex:none; width:92px; font-family:var(--mono); font-size:14px;
-  text-align:right; color:var(--red); border-bottom:1px dotted rgba(34,29,23,.45); padding:3px 2px}
+  text-align:right; color:var(--red); border-bottom:1px dotted rgba(var(--ink-rgb),.45); padding:3px 2px}
 .gs-ex-g{flex:none; font-size:11px; color:var(--ink-2)}
 .gs-ex-why{flex:1; min-width:0; font-size:13px;
-  border-bottom:1px dotted rgba(34,29,23,.45); padding:3px 2px}
+  border-bottom:1px dotted rgba(var(--ink-rgb),.45); padding:3px 2px}
 
 .gs-grid tfoot td{border-top:1.5px solid var(--ink); padding-top:9px !important;
   font-family:var(--mono); font-size:13px; text-align:center; color:var(--ink-2)}
@@ -3126,24 +3226,24 @@ const CSS = `
 .gs-envs{display:flex; flex-direction:column; gap:14px}
 .gs-env{animation:gs-in .5s cubic-bezier(.2,.7,.3,1) backwards; animation-delay:calc(var(--i,0) * 65ms)}
 @keyframes gs-in{from{opacity:0; transform:translateY(10px) rotate(-.4deg)} to{opacity:1; transform:none}}
-.gs-env-air{padding:6px; box-shadow:0 6px 18px rgba(60,40,15,.16);
+.gs-env-air{padding:6px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.16);
   background:repeating-linear-gradient(45deg,
     var(--red) 0 9px, var(--paper) 9px 18px, var(--blue) 18px 27px, var(--paper) 27px 36px)}
 .gs-env-body{position:relative; background:var(--paper); padding:18px 20px; display:flex;
   align-items:flex-start; justify-content:space-between; gap:16px; overflow:hidden}
 .gs-env-body::after{content:''; position:absolute; inset:0; pointer-events:none;
-  background:radial-gradient(90% 120% at 100% 0%, rgba(196,168,120,.22), transparent 60%)}
+  background:radial-gradient(90% 120% at 100% 0%, rgba(var(--kraft-rgb),.22), transparent 60%)}
 .gs-env-main{min-width:0}
 /* 우편 — 핵심(사람 이름·금액) 27px, 서브는 한 단계씩 */
 .gs-addr{display:flex; align-items:baseline; gap:10px; padding:3px 0; max-width:430px;
-  border-bottom:1px dotted rgba(34,29,23,.3)}
+  border-bottom:1px dotted rgba(var(--ink-rgb),.3)}
 .gs-addr-lab{font-size:12px; letter-spacing:.1em; color:var(--ink-2); width:80px; flex:none}
 .gs-addr-nm{font-family:'Gowun Batang',serif; font-size:27px; font-weight:700}
 
 /* 카드 한 장 안의 받는 사람 줄들 */
 .gs-lines{list-style:none; margin:10px 0 0; padding:0}
 .gs-lines li{display:flex; align-items:baseline; justify-content:space-between; gap:14px;
-  flex-wrap:wrap; padding:11px 0; border-bottom:1px dotted rgba(34,29,23,.28)}
+  flex-wrap:wrap; padding:11px 0; border-bottom:1px dotted rgba(var(--ink-rgb),.28)}
 .gs-line-who{display:flex; align-items:baseline; gap:10px; min-width:0}
 .gs-line-nm{font-family:'Gowun Batang',serif; font-size:27px; font-weight:700; color:var(--blue)}
 .gs-line-money{display:flex; align-items:baseline; gap:4px; white-space:nowrap}
@@ -3175,7 +3275,7 @@ const CSS = `
 .gs-empty-sub{margin-top:8px !important; font-family:'IBM Plex Sans KR',sans-serif !important;
   font-size:13px !important; color:var(--ink-2)}
 .gs-proof{margin:15px 0 0; font-family:var(--mono); font-size:13.5px; line-height:1.8;
-  color:#4a4136; border-left:2px solid var(--ink); padding-left:11px; max-width:70ch}
+  color:var(--ink-body); border-left:2px solid var(--ink); padding-left:11px; max-width:70ch}
 .gs-proof b{color:var(--red)}
 
 /* 정산 장부 — 핵심(이름·만 표기 금액) 24px, 서브는 한 단계씩 */
@@ -3185,18 +3285,18 @@ const CSS = `
   color:var(--ink-2); font-weight:500; text-align:right; padding:0 10px 8px;
   border-bottom:1.5px solid var(--ink); white-space:nowrap}
 .gs-ledger td{text-align:right; padding:12px 10px; white-space:nowrap;
-  border-bottom:1px dotted rgba(34,29,23,.26)}
+  border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
 .gs-ledger .gs-l{text-align:left}
 .gs-man{display:block; font-size:24px; line-height:1.25}
-.gs-raw{display:block; font-size:13px; line-height:1.35; color:rgba(34,29,23,.42); margin-top:2px}
+.gs-raw{display:block; font-size:13px; line-height:1.35; color:rgba(var(--ink-rgb),.42); margin-top:2px}
 .gs-nm{font-family:'Gowun Batang',serif; font-size:24px; font-weight:700}
 .gs-pos{color:var(--blue)}
 .gs-neg{color:var(--red)}
 .gs-ledger em{font-style:normal; font-size:13px; color:var(--ink-2); margin-left:9px;
   font-family:'IBM Plex Sans KR',sans-serif}
-.gs-dim{color:rgba(34,29,23,.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:14px}
+.gs-dim{color:rgba(var(--ink-rgb),.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:14px}
 
-.gs-note{margin:14px 0 0; font-size:12px; line-height:1.85; color:#4a4136; max-width:74ch}
+.gs-note{margin:14px 0 0; font-size:12px; line-height:1.85; color:var(--ink-body); max-width:74ch}
 .gs-note b{font-weight:600; color:var(--ink)}
 /* 접히는 문답 */
 /* 총무 질문 — 펼치는 대신 팝업을 여는 글줄 버튼 */
