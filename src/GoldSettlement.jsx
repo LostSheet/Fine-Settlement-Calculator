@@ -716,6 +716,12 @@ const man = (v) => {
   return (neg ? "−" : "") + s;
 };
 const signedMan = (g) => (g < 0 ? "−" : "+") + man(Math.abs(g));
+/* 받침에 따라 조사를 고릅니다 — 닉네임이 들어가는 안내문이 어색하지 않게 */
+const josa = (word, withJong, noJong) => {
+  const c = String(word || "").charCodeAt(String(word).length - 1);
+  if (c >= 0xac00 && c <= 0xd7a3) return (c - 0xac00) % 28 ? withJong : noJong;
+  return `${withJong}(${noJong})`; // 영문·숫자 끝이면 병기
+};
 const hhmm = (t) => {
   const d = new Date(t);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -773,6 +779,9 @@ export default function GoldSettlement() {
      정산·공유는 이 목록을 보지 않습니다. 취소는 줄을 지우지 않고 반대 기록을 덧붙입니다(역분개). */
   const [log, setLog] = useState(boot.current.log || []);
   const [showLog, setShowLog] = useState(false);
+  /* 기록 모달의 사람 필터 — 이름 칸의 '기록'으로 들어오면 그 사람 것만 봅니다.
+     벌금 시비는 사람 단위로 붙어서, 전체 로그를 훑는 것보다 이쪽이 빠릅니다. */
+  const [logRow, setLogRow] = useState(null);
   /* 실수 복구 — 인원·항목 삭제와 초기화 직전의 표를 한 슬롯 떠 둡니다.
      다음 편집 전까지만 유효하고(통짜 복원이라 그 사이 편집을 같이 날리지 않게),
      저장도 되어서 패닉 새로고침 후에도 편집 전이면 되돌릴 수 있습니다. */
@@ -941,6 +950,21 @@ export default function GoldSettlement() {
     setMode(next);
   };
 
+  const shownLog = logRow ? log.filter((e) => e.rowId === logRow) : log;
+  const logName = logRow
+    ? (rows.find((x) => x.id === logRow) || {}).name ||
+      (shownLog.length ? shownLog[shownLog.length - 1].name : "")
+    : "";
+
+  const openLog = (rowId) => {
+    setLogRow(rowId);
+    setShowLog(true);
+  };
+  const closeLog = () => {
+    setShowLog(false);
+    setLogRow(null);
+  };
+
   const pickIntro = (next) => {
     setIntro(false);
     if (next !== mode) changeMode(next); // 손 안 댄 기본값이라 예시가 조용히 갈아끼워집니다
@@ -1024,10 +1048,10 @@ export default function GoldSettlement() {
     setUndoSnap((s) => (s ? null : s));
   }, [cols, rows]);
 
-  const takeSnap = (label) => {
+  const takeSnap = (label, msg) => {
     snapHold.current = true;
-    // 기본값은 수수료·입력 단위까지 덮으므로 그 둘도 같이 떠 둡니다
-    setUndoSnap({ cols, rows, log, feePercent, unit, label, t: Date.now() });
+    // 예시 입력은 수수료·입력 단위까지 덮으므로 그 둘도 같이 떠 둡니다
+    setUndoSnap({ cols, rows, log, feePercent, unit, label, msg, t: Date.now() });
   };
   const restoreSnap = () => {
     if (!undoSnap) return;
@@ -1321,7 +1345,9 @@ export default function GoldSettlement() {
       ];
     });
   const delRow = (id) => {
-    takeSnap("인원 삭제");
+    const who = rows.find((x) => x.id === id);
+    const nm = (who && who.name) || "이름 없는 인원";
+    takeSnap("인원 삭제", `${nm}${josa(nm, "을", "를")} 지웠습니다.`);
     setRows((prev) => prev.filter((x) => x.id !== id));
     setOpenRow((o) => (o === id ? null : o));
   };
@@ -1366,7 +1392,9 @@ export default function GoldSettlement() {
   const addCol = () =>
     setCols((prev) => [...prev, { id: "c" + seq.current++, name: "", price: "10,000" }]);
   const delCol = (id) => {
-    takeSnap("항목 삭제");
+    const col = cols.find((c) => c.id === id);
+    const cn = (col && col.name) || "이름 없는 항목";
+    takeSnap("항목 삭제", `항목 '${cn}'${josa(cn, "을", "를")} 지웠습니다.`);
     setCols((prev) => prev.filter((c) => c.id !== id));
     setRows((prev) =>
       prev.map((x) => {
@@ -1378,7 +1406,7 @@ export default function GoldSettlement() {
 
   // 예시 데이터는 지금 보고 있는 모드의 것을 불러옵니다
   const reset = () => {
-    takeSnap("예시 입력");
+    takeSnap("예시 입력", "예시 데이터를 불러왔습니다.");
     setCols(DEFAULT_COLS);
     setRows(simple ? DEFAULT_ROWS_SIMPLE : DEFAULT_ROWS);
     setFeePercent("5");
@@ -1392,7 +1420,7 @@ export default function GoldSettlement() {
 
   // 실제로 쓰기 시작할 때. 인원·숫자는 비우고 항목은 기본값으로 되돌립니다.
   const clearAll = () => {
-    takeSnap("초기화");
+    takeSnap("초기화", "초기화했습니다.");
     setCols(DEFAULT_COLS);
     setRows(
       Array.from({ length: 4 }, (_, i) => ({
@@ -1683,25 +1711,20 @@ export default function GoldSettlement() {
             {!simple && (
               <button
                 className={"gs-btn gs-btn-ghost" + (showLog ? " gs-logbtn-on" : "")}
-                onClick={() => setShowLog((v) => !v)}
-                aria-expanded={showLog}
+                onClick={() => openLog(null)}
+                aria-haspopup="dialog"
               >
                 기록
                 {log.length > 0 && <em>{log.length}</em>}
-              </button>
-            )}
-            {/* 사고 직후에만 나타나는 복구 버튼 — 표를 고치기 시작하면 사라집니다 */}
-            {undoSnap && (
-              <button className="gs-btn gs-btn-ghost gs-undo" onClick={restoreSnap}>
-                ↩ {undoSnap.label} 되돌리기
               </button>
             )}
           </div>
 
           {/* 버튼은 성격끼리 묶고, 글자 수는 버튼 안으로 넣어 줄을 흐트러뜨리지 않습니다 */}
           <div className="gs-tools">
-            <span className="gs-grp">
-              <button className="gs-btn gs-btn-ghost" onClick={askClearAll}>
+            {/* 파괴적인 둘은 자주 쓰는 버튼과 사이를 벌려 둡니다 (오클릭 방지) */}
+            <span className="gs-grp gs-grp-risky">
+              <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={askClearAll}>
                 초기화
               </button>
               <button className="gs-btn gs-btn-ghost" onClick={askReset}>
@@ -1725,6 +1748,25 @@ export default function GoldSettlement() {
             </button>
           </div>
         </div>
+
+        {/* 사고 직후의 안내 쪽지 — 버튼 줄을 밀지 않도록 헤더 아래 한 줄로 붙습니다.
+            표를 고치기 시작하면 조용히 사라집니다. */}
+        {undoSnap && (
+          <div className="gs-slip" role="status">
+            <span className="gs-slip-msg">{undoSnap.msg || `${undoSnap.label} 했습니다`}</span>
+            <button className="gs-btn gs-btn-sm gs-undo" onClick={restoreSnap}>
+              ↩ 되돌리기
+            </button>
+            {/* 되돌릴 생각이 없으면 바로 닫습니다 — 표를 고칠 때까지 기다릴 필요 없이 */}
+            <button
+              className="gs-x gs-slip-x"
+              onClick={() => setUndoSnap(null)}
+              aria-label="알림 닫기"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {simple && (
           <div className="gs-unitbar">
@@ -1888,6 +1930,17 @@ export default function GoldSettlement() {
                             onChange={(e) => patchRow(row.id, "name", e.target.value)}
                             aria-label="이름"
                           />
+                          {/* 사람별 기록 — 파괴적인 ×가 항상 맨 끝이도록 왼쪽에 둡니다 */}
+                          {!simple && (
+                            <button
+                              className="gs-rowlog gs-rowdel"
+                              onClick={() => openLog(row.id)}
+                              aria-haspopup="dialog"
+                              aria-label={`${row.name || "이 사람"}의 기록 보기`}
+                            >
+                              기록
+                            </button>
+                          )}
                           <button
                             className="gs-x gs-rowdel"
                             onClick={() => askDelRow(row)}
@@ -2337,15 +2390,31 @@ export default function GoldSettlement() {
         </InfoModal>
       )}
       {showLog && !simple && (
-        <InfoModal title="기록" wide onClose={() => setShowLog(false)}>
-          <p className="gs-log-note">
-            최근 {LOG_CAP}줄 · 취소는 줄을 지우지 않고 반대 기록을 덧붙입니다
-          </p>
-          {log.length === 0 ? (
-            <p>아직 기록이 없습니다. 칸의 ＋를 누르면 쌓입니다.</p>
+        <InfoModal
+          title={logRow ? `${logName || "이 사람"} · 기록` : "기록"}
+          wide
+          onClose={closeLog}
+        >
+          <div className="gs-log-head">
+            <p className="gs-log-note">
+              최근 {LOG_CAP}줄 · 취소는 줄을 지우지 않고 반대 기록을 덧붙입니다
+            </p>
+            {logRow && (
+              <span className="gs-seg gs-seg-sm" role="group" aria-label="기록 범위">
+                <button className="on">이 사람만</button>
+                <button onClick={() => setLogRow(null)}>전체</button>
+              </span>
+            )}
+          </div>
+          {shownLog.length === 0 ? (
+            <p>
+              {logRow
+                ? "이 사람의 기록이 없습니다."
+                : "아직 기록이 없습니다. 칸의 ＋를 누르면 쌓입니다."}
+            </p>
           ) : (
             <ul className="gs-log-list">
-              {[...log].reverse().map((en) => (
+              {[...shownLog].reverse().map((en) => (
                 <li key={en.id} className={en.cancelled ? "gs-log-xed" : ""}>
                   <span className="gs-log-t">{hhmm(en.t)}</span>
                   <span className="gs-log-nm">{en.name || "이름 없음"}</span>
@@ -3113,9 +3182,27 @@ const CSS = `
 /* 기록 — 팝업 안에 영수증처럼 쌓입니다. 길어지면 창이 아니라 목록 안에서 스크롤됩니다. */
 .gs-logbtn-on{background:var(--chip-bg); color:var(--chip-fg)}
 /* 삭제·초기화 직후의 복구 버튼 — 사고용이라 빨간 유령 버튼 */
-.gs-undo{border-color:var(--red); color:var(--red)}
-.gs-undo:hover{background:rgba(var(--red-rgb),.08)}
-.gs-dialog .gs-log-note{font-size:11.5px; color:var(--ink-2)}
+.gs-undo{border-color:var(--red); color:var(--red); background:transparent}
+.gs-undo:hover{background:rgba(var(--red-rgb),.1)}
+/* 사고 직후의 안내 쪽지 — 버튼 줄 대신 헤더 아래 한 줄을 차지합니다.
+   가로로 밀리지 않으니 과녁이 안 움직이고, 무게는 더 실립니다. */
+.gs-slip{display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  margin:0 0 14px; padding:9px 13px; border-left:2px solid var(--red);
+  background:rgba(var(--red-rgb),.09); animation:gs-slipin .16s ease-out}
+@keyframes gs-slipin{from{opacity:0; transform:translateY(-3px)} to{opacity:1; transform:none}}
+.gs-slip-msg{font-size:12.5px; color:var(--red); line-height:1.6}
+.gs-slip .gs-undo{margin-left:auto}
+.gs-slip-x{flex:none; color:var(--red); opacity:.7; font-size:15px}
+.gs-slip-x:hover{opacity:1}
+@media (prefers-reduced-motion:reduce){ .gs-slip{animation:none} }
+/* 파괴적인 묶음과 자주 쓰는 묶음 사이를 벌립니다 */
+.gs-tools .gs-grp-risky{margin-right:12px}
+.gs-btn-warn{border-color:rgba(var(--red-rgb),.55); color:var(--red)}
+.gs-btn-warn:hover{background:rgba(var(--red-rgb),.1); border-color:var(--red)}
+.gs-dialog .gs-log-note{font-size:11.5px; color:var(--ink-2); margin:9px 0 0}
+.gs-log-head{display:flex; align-items:center; justify-content:space-between; gap:12px;
+  flex-wrap:wrap}
+.gs-seg-sm button{font-size:11px; padding:5px 10px}
 .gs-log-list{list-style:none; margin:12px 0 0; padding:0 2px 0 0;
   max-height:min(430px,58vh); overflow-y:auto; font-family:var(--mono)}
 .gs-log-list li{display:flex; align-items:baseline; gap:10px; padding:6px 2px;
@@ -3156,8 +3243,13 @@ const CSS = `
 .gs-sumcell{font-family:var(--mono); font-size:14px; text-align:right;
   padding-right:6px !important; color:var(--gold); white-space:nowrap}
 
-/* 이름 칸: 행 삭제 버튼은 평소 숨기고 그 행에 마우스를 올렸을 때만 */
-.gs-namecell{display:flex; align-items:center; gap:2px}
+/* 이름 칸: 행 삭제·기록 버튼은 평소 숨기고 그 행에 마우스를 올렸을 때만.
+   이름 열은 방송에서 제일 많이 읽히는 자리라 평소엔 글자만 남깁니다. */
+.gs-rowlog{flex:none; font:inherit; font-size:10.5px; letter-spacing:.02em; cursor:pointer;
+  color:var(--ink-2); background:transparent; border:1px solid rgba(var(--ink-rgb),.3);
+  border-radius:2px; padding:2px 6px; white-space:nowrap}
+.gs-rowlog:hover{color:var(--ink); border-color:var(--ink)}
+.gs-namecell{display:flex; align-items:center; gap:4px}
 .gs-rowdel{flex:none; opacity:0; transition:opacity .12s}
 .gs-grid tbody tr:hover .gs-rowdel,
 .gs-namecell:focus-within .gs-rowdel,
