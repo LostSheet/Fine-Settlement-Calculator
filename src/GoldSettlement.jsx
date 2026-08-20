@@ -845,6 +845,17 @@ export default function GoldSettlement() {
   const [discAsk, setDiscAsk] = useState(null);
   /* 치던 숫자는 사람별로 부모가 들고 있습니다 — 다른 행에 갔다 와도 안 날아가게 */
   const [discDraft, setDiscDraft] = useState({});
+  /* 기타 편집기가 열려 있는 동안 바깥 어딘가를 클릭하면 닫습니다.
+     편집기 내부는 stopPropagation 이라 여기 안 옵니다. */
+  useEffect(() => {
+    if (!discRow) return;
+    const onDown = (e) => {
+      if (e.target.closest && e.target.closest(".gs-disc")) return;
+      setDiscRow(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [discRow]);
   /* 명단(프리셋) — 이름만 담아 두고 새 판에서 불러옵니다 */
   const [crews, setCrews] = useState(loadCrews);
   const [crewOpen, setCrewOpen] = useState(false);
@@ -1534,7 +1545,6 @@ export default function GoldSettlement() {
   /* 단가 변경 — 묻지 않습니다. 고치는 즉시 과거까지 새 단가로 계산되고(오타 정정이
      다수라서), 대신 쪽지가 떠서 "지금부터 1데스 10만!" 같은 규칙 변경이면 한 번의
      클릭으로 지난 횟수를 옛 단가 열로 분리할 수 있습니다. 기록에도 한 줄 남습니다. */
-  const priceEdit = useRef({});
 
   /* 열 분리 — 이 항목은 옛 단가로 되돌리고, 같은 이름의 새 항목을 바로 옆에 만듭니다.
      헤더에 1회 단가가 찍히니 '죽음 3만'과 '죽음 10만'이 서로 구분됩니다. */
@@ -1557,34 +1567,23 @@ export default function GoldSettlement() {
       })
     );
 
-  const commitPrice = (col, typed) => {
-    const before = priceEdit.current[col.id];
-    delete priceEdit.current[col.id];
-    if (before == null) return;
-    const oldG = Math.round(goldOf(before));
-    const newG = Math.round(goldOf(typed));
-    if (oldG === newG) return;
-    const n = rows.reduce((a, x) => a + num(x.counts[col.id]), 0);
-    if (n <= 0) return; // 아무도 안 센 항목이면 물어볼 것이 없습니다
-    const item = col.name || "항목";
-    setAsk({
-      title: `'${item}' 1회 단가를 ${man(oldG)} → ${man(newG)}`,
-      body: `지금까지 센 ${commafy(n)}회는 ${man(oldG)}으로 계산돼 있어요.`,
-      action: `이제부터 세는 것만 ${man(newG)}`,
-      tone: "safe",
-      onYes: () => {
-        freezeCol(col.id, oldG);
-        appendLog({ kind: "price", colId: col.id, item: col.name, from: oldG, to: newG, mode: "forward" });
-      },
-      alt: {
-        label: `지금까지 센 ${commafy(n)}회도 ${man(newG)}으로`,
-        onPick: () => {
-          thawCol(col.id);
-          appendLog({ kind: "price", colId: col.id, item: col.name, from: oldG, to: newG, mode: "retro" });
-        },
-      },
-      onCancel: () => patchCol(col.id, "price", before),
+  /* 단가 창 — 센 기록이 있는 항목의 단가는 여기서 고칩니다.
+     창을 여는 것 자체는 아무것도 바꾸지 않아서, 취소하면 되돌릴 것도 없습니다. */
+  const [priceAsk, setPriceAsk] = useState(null);
+  const applyPrice = (col, newG, retro) => {
+    const oldG = Math.round(goldOf(col.price));
+    if (retro) thawCol(col.id);
+    else freezeCol(col.id, oldG);
+    patchCol(col.id, "price", commafy(newG));
+    appendLog({
+      kind: "price",
+      colId: col.id,
+      item: col.name,
+      from: oldG,
+      to: newG,
+      mode: retro ? "retro" : "forward",
     });
+    setPriceAsk(null);
   };
 
   /* 열 조작 */
@@ -2020,8 +2019,12 @@ export default function GoldSettlement() {
               {/* 금액만 모드에서는 이 버튼이 메모장 머리로 올라갑니다 */}
               {!simple && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
               <span className="gs-tip">
-                <button className="gs-btn" onClick={copyLink}>
-                  {flash === "link" ? "복사됨" : canOwnUrl ? "공유 링크" : "공유 코드"}
+                <button
+                  className={"gs-btn gs-copybtn" + (flash === "link" ? " is-copied" : "")}
+                  onClick={copyLink}
+                >
+                  <span className="gs-copy-idle">{canOwnUrl ? "공유 링크" : "공유 코드"}</span>
+                  <span className="gs-copy-done">복사됨</span>
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
                   지금 표 전체가 담긴 {canOwnUrl ? "주소를" : "코드를"} 복사해요.
@@ -2160,16 +2163,29 @@ export default function GoldSettlement() {
                     </div>
                     <div className="gs-colh-price">
                       <span>1회</span>
-                      <PriceEdit
-                        gold={goldOf(c.price)}
-                        per={goldOf(unit) || 1}
-                        onStart={() => (priceEdit.current[c.id] = c.price)}
-                        onCommit={(g) => {
-                          patchCol(c.id, "price", commafy(g));
-                          commitPrice(c, commafy(g));
-                        }}
-                      />
-                      <span>{(UNITS.find((u) => u.v === unit) || {}).label || "G"}</span>
+                      {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
+                        /* 센 기록이 있으면 창에서 — 지난 횟수를 어찌할지 골라야 해서 */
+                        <span className="gs-pricewrap">
+                          <button
+                            className="gs-in gs-in-price gs-pricebtn"
+                            onClick={() => setPriceAsk(c.id)}
+                            aria-label="1회당 단가 고치기"
+                          >
+                            {formatNumInput(String(+(goldOf(c.price) / (goldOf(unit) || 1)).toFixed(4)))}
+                          </button>
+                          <span className="gs-price-suffix">
+                            {(UNITS.find((u) => u.v === unit) || {}).label || "G"}
+                          </span>
+                        </span>
+                      ) : (
+                        /* 아직 안 센 항목은 물어볼 과거가 없으니 그냥 칩니다 */
+                        <PriceFree
+                          gold={goldOf(c.price)}
+                          per={goldOf(unit) || 1}
+                          suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
+                          onChange={(g) => patchCol(c.id, "price", commafy(g))}
+                        />
+                      )}
                     </div>
                   </th>
                 ))}
@@ -2356,7 +2372,9 @@ export default function GoldSettlement() {
                         className="gs-disc"
                         onMouseEnter={() => setDiscRow(row.id)}
                         onMouseLeave={(e) => {
-                          // 초안은 사람별로 남아서 다시 올리면 이어서 칠 수 있으니, 나가면 그냥 닫습니다
+                          /* 한 글자라도 쳤으면 잠금 — 마우스가 나가도 타이핑이 안 끊깁니다.
+                             스치기만 한 경우엔 바로 닫혀서 유령 패널이 안 남습니다. */
+                          if ((discDraft[row.id] || "").trim()) return;
                           if (e.currentTarget.contains(document.activeElement))
                             document.activeElement.blur();
                           setDiscRow((v) => (v === row.id ? null : v));
@@ -2705,8 +2723,8 @@ export default function GoldSettlement() {
               수정(차액은 기타 '조정'으로).
             </li>
             <li>
-              <b>단가 변경</b> — 바꿀 때 '이제부터 세는 것만'과 '지금까지 센 횟수까지' 중에
-              고르는 창이 떠요. 이미 센 금액은 그때 단가 그대로 둘 수 있어요.
+              <b>단가 변경</b> — 단가를 누르면 '이제부터 세는 것만'과 '지금까지 센 횟수까지'
+              중에 고르는 창이 떠요. 아직 세지 않은 항목은 창 없이 바로 고쳐져요.
             </li>
             <li>
               <b>기록</b> — ＋·수정이 한 줄씩 남고, 어떤 줄이든 취소하면 반대 기록이 붙어요.
@@ -2816,6 +2834,16 @@ export default function GoldSettlement() {
           </p>
         </InfoModal>
       )}
+      {priceAsk && cols.some((c) => c.id === priceAsk) && (
+        <PriceModal
+          col={cols.find((c) => c.id === priceAsk)}
+          rows={rows}
+          per={goldOf(unit) || 1}
+          unitLabel={unitLabel}
+          onApply={applyPrice}
+          onClose={() => setPriceAsk(null)}
+        />
+      )}
       {ask && (
         <Confirm
           ask={ask}
@@ -2842,17 +2870,18 @@ export default function GoldSettlement() {
 function ChatCopyBtn({ line, flash, onCopy }) {
   return (
     <span className="gs-tip">
-      <button className="gs-btn gs-btn-ghost" onClick={onCopy} disabled={!line}>
-        {flash === "chat" ? (
-          "복사됨"
-        ) : (
-          <>
-            채팅 공유용 복사
-            <em className={line.length > CHAT_LIMIT ? "gs-over" : ""}>
-              {line.length}/{CHAT_LIMIT}
-            </em>
-          </>
-        )}
+      <button
+        className={"gs-btn gs-btn-ghost gs-copybtn" + (flash === "chat" ? " is-copied" : "")}
+        onClick={onCopy}
+        disabled={!line}
+      >
+        <span className="gs-copy-idle">
+          채팅 공유용 복사
+          <em className={line.length > CHAT_LIMIT ? "gs-over" : ""}>
+            {line.length}/{CHAT_LIMIT}
+          </em>
+        </span>
+        <span className="gs-copy-done">복사됨</span>
       </button>
       <span className="gs-tip-body gs-tip-r" role="tooltip">
         이름과 벌금을 <b>만 단위 한 줄</b>로 만들어요. 인게임 채팅 한도가 {CHAT_LIMIT}자라,
@@ -3059,7 +3088,7 @@ function QuickExtra({ unitLabel, summary, value, onChange, onAdd, onReason, onLi
     const g = num(v);
     if (g > 0) onAdd(g);
     setV("");
-    ref.current?.focus();
+    onClose(); // 등록이 곧 마무리 — 닫습니다
   };
   return (
     <div className="gs-qx" onMouseDown={(e) => e.stopPropagation()}>
@@ -3101,36 +3130,112 @@ function QuickExtra({ unitLabel, summary, value, onChange, onAdd, onReason, onLi
 
 /* 항목 단가 — 입력 단위 기준으로 적고 보여 줍니다 (만G면 3 = 3만, 2.5 = 2만5,000).
    폭은 내용에 맞춰 줄어서, 단가 줄이 열 너비를 붙잡지 않습니다. */
-function PriceEdit({ gold, per, onStart, onCommit }) {
+/* 아직 센 기록이 없는 항목의 단가 — 항목명처럼 치는 대로 반영됩니다 */
+function PriceFree({ gold, per, suffix, onChange }) {
   const [draft, setDraft] = useState(null);
-  const esc = useRef(false);
   const shown = draft === null ? formatNumInput(String(+(gold / per).toFixed(4))) : draft;
   return (
-    <input
-      className="gs-in gs-in-price"
-      style={{ width: `calc(${Math.max(2, String(shown).length)}ch + 6px)` }}
-      value={shown}
-      inputMode="decimal"
-      onFocus={(e) => {
-        onStart();
-        setDraft(shown);
-        e.target.select();
+    <span className="gs-pricewrap">
+      <input
+        className="gs-in gs-in-price"
+        style={{ width: `calc(${Math.max(2, String(shown).length)}ch + 6px)` }}
+        value={shown}
+        inputMode="decimal"
+        onFocus={(e) => {
+          setDraft(shown);
+          e.target.select();
+        }}
+        onChange={(e) => {
+          const v = formatNumInput(e.target.value);
+          setDraft(v);
+          onChange(Math.round(num(v) * per));
+        }}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Escape") e.target.blur();
+        }}
+        aria-label="1회당 단가"
+      />
+      <span className="gs-price-suffix">{suffix}</span>
+    </span>
+  );
+}
+
+/* 단가 창 — 값을 치면 두 선택지의 결과가 그 자리에서 갱신됩니다.
+   '지금까지 N회는 얼마'라고 요약하지 않는 이유: 단가를 여러 번 바꿨다면 건마다 다른
+   단가로 굳어 있어서, 보증할 수 있는 건 굳은 합(curG)과 새로 계산한 합(retroG)뿐입니다. */
+function PriceModal({ col, rows, per, unitLabel, onApply, onClose }) {
+  const oldG = Math.round(goldOf(col.price));
+  const [draft, setDraft] = useState(formatNumInput(String(+(oldG / per).toFixed(4))));
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const n = rows.reduce((a, x) => a + num(x.counts[col.id]), 0);
+  const curG = rows.reduce(
+    (a, x) => (num(x.counts[col.id]) > 0 ? a + cellGold(x, col.id, oldG) : a),
+    0
+  );
+  const newG = Math.round(num(draft) * per);
+  const changed = draft.trim() !== "" && newG !== oldG;
+  const retroG = n * newG;
+  const item = col.name || "항목";
+  return (
+    <div
+      className="gs-modal"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
-      onChange={(e) => setDraft(formatNumInput(e.target.value))}
-      onBlur={() => {
-        if (!esc.current) onCommit(Math.round(num(draft) * per));
-        esc.current = false;
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.target.blur();
-        if (e.key === "Escape") {
-          esc.current = true;
-          e.target.blur();
-        }
-      }}
-      aria-label="1회당 단가"
-    />
+    >
+      <div
+        className="gs-dialog gs-dialog-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${item} 1회 단가`}
+      >
+        <h3>{`'${item}' 1회 단가`}</h3>
+        <div className="gs-pm-row">
+          <span className="gs-pm-now">지금 {man(oldG)}</span>
+          <span className="gs-pm-arrow" aria-hidden="true">→</span>
+          <input
+            ref={ref}
+            className="gs-in gs-pm-in"
+            value={draft}
+            inputMode="decimal"
+            onChange={(e) => setDraft(formatNumInput(e.target.value))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && changed) onApply(col, newG, false);
+            }}
+            aria-label={`1회당 단가 (${unitLabel})`}
+          />
+          <em className="gs-pm-unit">{unitLabel}</em>
+        </div>
+        <div className="gs-dialog-btns gs-pm-btns">
+          <button
+            className="gs-btn gs-btn-ghost"
+            disabled={!changed}
+            onClick={() => onApply(col, newG, true)}
+          >
+            지금까지 센 {commafy(n)}회도 {man(changed ? newG : oldG)}으로
+            <em className={"gs-pm-sub" + (changed && retroG !== curG ? " on" : "")}>
+              {changed && retroG !== curG ? `${man(curG)} → ${man(retroG)}` : ""}
+            </em>
+          </button>
+          <button className="gs-btn" disabled={!changed} onClick={() => onApply(col, newG, false)}>
+            이제부터 세는 것만 {man(changed ? newG : oldG)}으로
+          </button>
+          <button className="gs-btn gs-btn-ghost" onClick={onClose}>
+            취소
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3191,8 +3296,12 @@ function TextShare({ text, copied, onCopy, onClose }) {
           <button className="gs-btn gs-btn-ghost" onClick={onClose}>
             닫기
           </button>
-          <button className="gs-btn" onClick={() => onCopy(ta.current.value)}>
-            {copied ? "복사됨" : "복사"}
+          <button
+            className={"gs-btn gs-copybtn" + (copied ? " is-copied" : "")}
+            onClick={() => onCopy(ta.current.value)}
+          >
+            <span className="gs-copy-idle">복사</span>
+            <span className="gs-copy-done">복사됨</span>
           </button>
         </div>
       </div>
@@ -3273,6 +3382,7 @@ function Confirm({ ask, onCancel, onDone }) {
               }}
             >
               {ask.alt.label}
+              {ask.alt.sub && <em>{ask.alt.sub}</em>}
             </button>
           )}
           <button
@@ -3629,7 +3739,13 @@ const CSS = `
   padding:20px 20px 16px; box-shadow:0 16px 44px rgba(var(--shadow-rgb),.4)}
 .gs-dialog h3{margin:0; font-family:'Gowun Batang',serif; font-size:17px; font-weight:700}
 .gs-dialog p{margin:9px 0 0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
-.gs-dialog-btns{display:flex; justify-content:flex-end; gap:8px; margin-top:18px; flex-wrap:wrap}
+.gs-dialog-btns{display:flex; justify-content:flex-end; align-items:stretch; gap:8px;
+  margin-top:18px; flex-wrap:wrap}
+/* 결과 금액을 안고 있는 버튼 — 라벨 아래 한 줄. 옆 버튼들은 같은 높이로 맞춥니다 */
+.gs-dialog-btns .gs-btn{display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:3px; line-height:1.35}
+.gs-dialog-btns .gs-btn em{font-style:normal; font-family:var(--mono); font-size:11px;
+  margin-left:0; opacity:.75; letter-spacing:.02em}
 .gs-dialog-wide{max-width:560px}
 .gs-ta{width:100%; margin-top:12px; min-height:230px; resize:vertical; box-sizing:border-box;
   padding:11px 12px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px;
@@ -3697,6 +3813,13 @@ const CSS = `
 /* 버튼 줄: 성격끼리 묶고, 글자 수는 버튼 안에 넣어 높이를 흐트러뜨리지 않습니다 */
 .gs-grp{display:inline-flex; align-items:center; gap:6px}
 .gs-tools{gap:14px}
+/* 복사 버튼 — '복사됨'으로 바뀌어도 폭이 그대로여야 옆 버튼들이 안 밀립니다.
+   두 라벨을 같은 그리드 칸에 겹쳐 두고 보이는 쪽만 바꿉니다. */
+.gs-copybtn{display:inline-grid; place-items:center}
+.gs-copybtn > span{grid-area:1/1; display:inline-flex; align-items:baseline; white-space:nowrap}
+.gs-copybtn > .gs-copy-done{visibility:hidden}
+.gs-copybtn.is-copied > .gs-copy-idle{visibility:hidden}
+.gs-copybtn.is-copied > .gs-copy-done{visibility:visible}
 .gs-btn em{font-style:normal; font-family:var(--mono); font-size:10.5px; margin-left:7px;
   opacity:.55}
 .gs-btn em.gs-over{color:var(--red); opacity:1}
@@ -3888,6 +4011,26 @@ const CSS = `
   font-size:10px; color:var(--ink-2); margin-top:1px; white-space:nowrap}
 .gs-in-price{font-family:var(--mono); font-size:12.5px; min-width:2ch; text-align:center;
   padding:2px 0; border-bottom:1px dotted rgba(var(--ink-rgb),.5); color:var(--gold)}
+.gs-pricewrap{display:inline-flex; align-items:center; gap:3px}
+/* 센 기록이 있는 항목의 단가 — 버튼이지만 입력칸과 같은 얼굴 (버튼은 색을 상속하지 않아 명시) */
+.gs-pricebtn{background:transparent; border:0; border-bottom:1px dotted rgba(var(--ink-rgb),.5);
+  cursor:pointer; color:var(--gold); font-family:var(--mono); font-size:12.5px; padding:2px 0;
+  min-width:2ch; text-align:center}
+.gs-pricebtn:hover{border-bottom-style:solid}
+/* 단가 창의 입력 줄 — '지금 3만 → [5] 만G' 가 한 문장으로 읽히게 가운데 배치 */
+.gs-pm-row{display:flex; align-items:baseline; justify-content:center; gap:10px;
+  margin:24px 0 8px}
+.gs-pm-now{font-size:14px; color:var(--ink-2)}
+.gs-pm-arrow{font-size:14px; color:var(--ink-2)}
+.gs-pm-in{width:96px; font-family:var(--mono); font-size:22px; text-align:center; color:var(--gold);
+  padding:4px 2px; border-bottom:2px solid rgba(var(--ink-rgb),.35)}
+.gs-pm-in:focus{border-bottom-color:var(--gold)}
+.gs-pm-unit{font-style:normal; font-size:12.5px; color:var(--ink-2)}
+/* 결과 줄(78만 → 130만)은 흐름 밖(절대배치) — 라벨은 늘 제자리, 숫자만 바닥에 떠오릅니다 */
+.gs-pm-btns .gs-btn{min-height:56px; position:relative}
+.gs-pm-btns .gs-btn em.gs-pm-sub{position:absolute; left:0; right:0; bottom:4px;
+  line-height:1; opacity:0; transition:opacity .15s ease}
+.gs-pm-btns .gs-btn em.gs-pm-sub.on{opacity:.75}
 .gs-disch{min-width:112px}
 .gs-disch-top{display:flex; align-items:center; justify-content:center; gap:5px;
   font-size:13.5px; font-weight:600; padding:4px 0; color:var(--red)}
