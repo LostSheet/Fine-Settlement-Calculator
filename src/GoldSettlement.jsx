@@ -67,6 +67,96 @@ const DEFAULT_ROWS_SIMPLE = DEFAULT_PEOPLE.map(([name, c1, c2, c3], i) => ({
   extras: [],
 }));
 
+/* 예시 표에 딸린 기록 — 이 표가 어떻게 채워졌는지 보여주는 한 판 분량입니다.
+   숫자는 예시와 정확히 맞습니다. 잘못 눌러 취소한 한 줄은 취소가 상쇄하고,
+   단가 변경은 '죽음'을 아무도 세기 전에 일어나서 지금 표(횟수 × 단가)와 어긋나지 않습니다. */
+function demoLog(now) {
+  const at = typeof now === "number" ? now : Date.now();
+  const PRICE = { c1: 10000, c2: 30000, c3: 100000 };
+  const ITEM = { c1: "잡힘", c2: "죽음", c3: "" };
+  /* 매번 같은 기록이 나오도록 고정 씨앗을 씁니다 */
+  let seed = 20250822;
+  const rnd = (k) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % k);
+
+  /* 누를 것을 전부 모아 한 번에 섞습니다 — 라운드로 돌리면 횟수 많은 사람만
+     뒤에 몰려서, 마지막 열 줄이 한 사람으로 채워집니다 */
+  const presses = [];
+  DEFAULT_PEOPLE.forEach(([name, c1, c2, c3], i) => {
+    const rowId = "r" + (i + 1);
+    [["c1", c1], ["c2", c2], ["c3", c3]].forEach(([colId, cnt]) => {
+      for (let k = 0; k < cnt; k++) presses.push({ rowId, name, colId });
+    });
+  });
+  for (let i = presses.length - 1; i > 0; i--) {
+    const j = rnd(i + 1);
+    const tmp = presses[i];
+    presses[i] = presses[j];
+    presses[j] = tmp;
+  }
+
+  const out = [];
+  const total = {};
+  let t = at - 100 * 60 * 1000;
+  let id = 1;
+  const tick = () => (t += 20000 + rnd(80) * 1000); // 20초~100초 간격
+
+  out.push({
+    id: "x" + id++,
+    t: tick(),
+    kind: "price",
+    colId: "c2",
+    item: "죽음",
+    from: 20000,
+    to: 30000,
+    mode: "forward",
+  });
+
+  const push = (x, extra) => {
+    const g = PRICE[x.colId];
+    total[x.rowId] = (total[x.rowId] || 0) + g;
+    const en = {
+      id: "x" + id++,
+      t: tick(),
+      kind: "press",
+      rowId: x.rowId,
+      colId: x.colId,
+      n: 1,
+      delta: g,
+      name: x.name,
+      item: ITEM[x.colId],
+      after: total[x.rowId],
+      ...extra,
+    };
+    out.push(en);
+    return en;
+  };
+
+  /* 잘못 누르고 몇 번 뒤에 취소한 자리 — 기록이 어떻게 남는지 보이라고 한 줄 넣어 둡니다 */
+  const OOPS = Math.floor(presses.length * 0.45);
+  let oopsId = null;
+  presses.forEach((x, i) => {
+    if (i === OOPS) {
+      oopsId = push({ rowId: "r6", name: "포셔", colId: "c1" }, { cancelled: true }).id;
+    }
+    if (i === OOPS + 3 && oopsId) {
+      total.r6 -= PRICE.c1;
+      out.push({
+        id: "x" + id++,
+        t: tick(),
+        kind: "cancel",
+        refId: oopsId,
+        rowId: "r6",
+        delta: -PRICE.c1,
+        name: "포셔",
+        item: "잡힘",
+        after: total.r6,
+      });
+    }
+    push(x);
+  });
+  return out;
+}
+
 const num = (v) => {
   const n = parseFloat(String(v ?? "").replace(/[,\s]/g, ""));
   return Number.isFinite(n) ? n : 0;
@@ -162,6 +252,40 @@ function parseMemoLine(line) {
   return { name: m[1].trim(), amount: formatNumInput(m[2]) };
 }
 
+/* 한 줄에 여러 사람이 붙어 있는 메모 — '눈가루5 팔복15 읍지14 …'. 실제 메모장이 이렇게 생겼습니다.
+   공백으로 쪼개서 '이름+숫자' 토큰이 있고 토큰이 둘 이상이면 토큰마다 한 사람으로 읽습니다.
+   '도읍지 25'처럼 띄어 쓴 기존 형식(이름+숫자 토큰이 없음)은 그대로 한 줄 한 사람입니다.
+   섞여 있어도 됩니다: '눈가루5 팔복 15' → 눈가루/5, 팔복/15. */
+function parseMemoEntries(line) {
+  const s = line.trim();
+  if (!s) return [];
+  const toks = s.split(/\s+/);
+  const GLUED = /^(.*?[^0-9,.\s])([0-9][0-9,.]*)$/; // 이름+숫자 (이름은 숫자로 안 끝남)
+  const NUM = /^[0-9][0-9,.]*$/;
+  const glued = toks.filter((t) => GLUED.test(t)).length;
+  if (glued === 0 || toks.length < 2) return [parseMemoLine(s)].filter(Boolean);
+  const out = [];
+  let pending = null; // 숫자를 기다리는 이름
+  toks.forEach((t, i) => {
+    const next = toks[i + 1];
+    const g = GLUED.exec(t);
+    if (NUM.test(t)) {
+      out.push({ name: pending || "", amount: formatNumInput(t) });
+      pending = null;
+    } else if (g && !(next && NUM.test(next))) {
+      /* 뒤에 숫자 토큰이 따로 오면 이 토큰은 숫자로 끝나도 통째로 이름입니다 —
+         '인기3 5'의 띄어쓰기가 곧 경계. 닉이 숫자로 끝날 때 쓰는 탈출구입니다. */
+      if (pending) out.push({ name: pending, amount: "" });
+      pending = null;
+      out.push({ name: g[1], amount: formatNumInput(g[2]) });
+    } else {
+      pending = pending ? pending + " " + t : t;
+    }
+  });
+  if (pending) out.push({ name: pending, amount: "" });
+  return out;
+}
+
 const blankMemoRow = (x) =>
   !(x.name || "").trim() &&
   !(x.extras || []).length &&
@@ -170,8 +294,7 @@ const blankMemoRow = (x) =>
 function memoToRows(text, prev) {
   const made = text
     .split("\n")
-    .map(parseMemoLine)
-    .filter(Boolean)
+    .flatMap(parseMemoEntries)
     .map((p, i) => ({
       id: prev[i] ? prev[i].id : "memo" + i,
       name: p.name,
@@ -860,22 +983,6 @@ export default function GoldSettlement() {
      다음 편집 전까지만 유효하고(통짜 복원이라 그 사이 편집을 같이 날리지 않게),
      저장도 되어서 패닉 새로고침 후에도 편집 전이면 되돌릴 수 있습니다. */
   const [undoSnap, setUndoSnap] = useState(boot.current.undoSnap || null);
-  /* 우클릭=빼기 안내 — 한 번 보고 닫으면(또는 실제로 우클릭해 보면) 다시 안 나옵니다 */
-  const [rcHint, setRcHint] = useState(() => {
-    try {
-      return !window.localStorage.getItem("goldSettlement.hint.rclick");
-    } catch (e) {
-      return true;
-    }
-  });
-  const closeRcHint = () => {
-    setRcHint(false);
-    try {
-      window.localStorage.setItem("goldSettlement.hint.rclick", "1");
-    } catch (e) {
-      /* 저장 불가 환경 */
-    }
-  };
   const snapHold = useRef(false); // true 면 이번 rows/cols 변경은 스냅샷을 접지 않음
   const snapBooted = useRef(false);
   /* 첫 방문 — 모드를 고르고 시작합니다. 한 번 저장되면 다시 안 나옵니다. */
@@ -1322,7 +1429,6 @@ export default function GoldSettlement() {
   /* 카운터 셀의 ＋/−. 횟수를 움직이고 한 줄 남깁니다. 이름·항목은 나중에 지워져도
      읽히도록 그 시점 글자를 같이 적어 둡니다. 왼클릭 +1, 우클릭 −1, 둘 다 기록됩니다. */
   const pressCell = (row, col, dir = 1) => {
-    if (dir < 0 && rcHint) closeRcHint();
     const before = liveN(row, col.id);
     if (dir > 0 ? before >= MAX_COUNT : before <= 0) return;
     const priceG = Math.round(goldOf(col.price));
@@ -1569,7 +1675,7 @@ export default function GoldSettlement() {
     setFeePercent("5");
     if (simple) setUnit("10000");
     setOpenRow(null);
-    setLog([]); // 표가 새로 시작하니 영수증도 새로
+    setLog(demoLog()); // 예시 표가 어떻게 채워졌는지 기록도 같이
     setMemoFreeze(null);
     clearHash();
   };
@@ -2014,17 +2120,6 @@ export default function GoldSettlement() {
             </button>
           </div>
         )}
-        {!simple && rcHint && !undoSnap && (
-          <div className="gs-slip gs-slip-info" role="status">
-            <span className="gs-slip-msg">
-              칸을 누르면 1회 쌓이고, <b>우클릭하면 1회 빠져요</b>.
-            </span>
-            <button className="gs-x gs-slip-x" onClick={closeRcHint} aria-label="안내 닫기">
-              ×
-            </button>
-          </div>
-        )}
-
         {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
         <div className="gs-unitbar">
           <span className="gs-caplab">입력 단위</span>
@@ -2043,6 +2138,10 @@ export default function GoldSettlement() {
             {simple ? "칸에 적은 숫자 하나가 이 금액이에요." : "합계를 고칠 때 숫자 하나가 이 금액이에요."}
           </span>
         </div>
+        {/* 카운터 조작법 — 표 바로 위에 늘 붙어 있습니다 */}
+        {!simple && (
+          <p className="gs-cellnote">칸을 누르면 1회 쌓이고, 우클릭하면 1회 빠져요.</p>
+        )}
 
         {/* 사용법은 카드 안에서 펼치지 않고 팝업으로 띄웁니다 — 탭 화면에서 표가 밀리지 않게 */}
 
@@ -2387,13 +2486,7 @@ export default function GoldSettlement() {
                     + 인원 추가
                   </button>
                 </th>
-                <td colSpan={simple ? 2 : cols.length + 3} className="gs-addnote">
-                  {!simple && (
-                    <span>
-                      <i aria-hidden="true">·</i> 칸을 누르면 <b>1회</b>, 우클릭하면 <b>1회 빼기</b>
-                    </span>
-                  )}
-                </td>
+                <td colSpan={simple ? 2 : cols.length + 3} />
               </tr>
             </tbody>
 
@@ -3809,6 +3902,9 @@ const CSS = `
 .gs-unitbar label{display:inline-flex; align-items:center; gap:5px; font-size:12.5px;
   cursor:pointer; color:var(--ink-2)}
 .gs-unitbar label.on{color:var(--ink); font-weight:600}
+/* 카운터 조작법 — 입력 단위 상자 바로 아래, 표 머리 위 */
+.gs-cellnote{margin:-9px 0 13px; padding-left:2px; font-size:11.5px; color:var(--ink-2);
+  letter-spacing:.01em}
 .gs-unitbar input{accent-color:var(--ink); margin:0}
 .gs-unitnote{flex:1; min-width:180px; font-size:11.5px; color:var(--ink-2)}
 .gs-simpleh{min-width:150px}
@@ -3903,11 +3999,6 @@ const CSS = `
 .gs-slip .gs-undo{margin-left:auto}
 .gs-slip-x{flex:none; color:var(--red); opacity:.7; font-size:15px}
 .gs-slip-x:hover{opacity:1}
-/* 안내용 쪽지 — 사고 알림(빨강)이 아니라 정보라 잉크 톤으로 낮춥니다 */
-.gs-slip-info{border-left-color:var(--kraft-dk); background:rgba(var(--ink-rgb),.05)}
-.gs-slip-info .gs-slip-msg{color:var(--ink-body)}
-.gs-slip-info .gs-slip-msg b{color:var(--ink)}
-.gs-slip-info .gs-slip-x{color:var(--ink-2); margin-left:auto}
 @media (prefers-reduced-motion:reduce){ .gs-slip{animation:none} }
 /* 파괴적인 묶음과 자주 쓰는 묶음 사이를 벌립니다 */
 .gs-tools .gs-grp-risky{margin-right:12px}
@@ -4009,12 +4100,6 @@ const CSS = `
 .gs-rowopen > th,.gs-rowopen > td{border-bottom:0 !important; background:rgba(var(--kraft-rgb),.16)}
 .gs-rowopen > .gs-stick{background:var(--paper-3)}
 .gs-addrow th,.gs-addrow td{border-bottom:0 !important}
-/* 카운터 조작법은 설명 대상(칸) 바로 아래에 상주합니다 — 방송 화면을 어지럽히지 않게 조용히 */
-.gs-addnote{text-align:left; padding-left:10px !important; vertical-align:middle}
-.gs-addnote span{font-size:11.5px; color:var(--ink-2); letter-spacing:.01em}
-.gs-addnote b{color:var(--ink-body); font-weight:600}
-/* 앞의 가운뎃점은 이 줄이 각주(항목)라는 표시 — 별표는 본문의 * 를 받는 기호라 안 씁니다 */
-.gs-addnote i{font-style:normal; opacity:.55; margin-right:5px}
 .gs-add{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--ink-2);
   cursor:pointer; padding:10px 0; letter-spacing:.03em}
 .gs-add:hover{color:var(--ink)}
