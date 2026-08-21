@@ -91,9 +91,6 @@ const CARRY_REASON = "'메모장'에서 이관";
    기타 사유 칸은 암살·지각 같은 '왜'의 자리라, '어떻게'(경로)는 기록이 말하게 둡니다. */
 const ADJUST_REASON = "조정";
 const LOG_CAP = 200; // 기록은 최근 200줄만 남깁니다 (공유 링크엔 안 담김)
-/* ＋를 누른 직후 이 시간 안의 ↩는 기록까지 지우는 조용한 되돌리기입니다.
-   바꾸면 CSS 의 gs-ring 애니메이션 시간(5s)도 같이 바꿔야 합니다. */
-const GRACE_MS = 5000;
 
 /* 손대지 않은 예시 데이터인지. 맞으면 모드를 바꿀 때 조용히 상대 모드 예시로 갈아끼웁니다. */
 function isPristine(rows) {
@@ -863,6 +860,22 @@ export default function GoldSettlement() {
      다음 편집 전까지만 유효하고(통짜 복원이라 그 사이 편집을 같이 날리지 않게),
      저장도 되어서 패닉 새로고침 후에도 편집 전이면 되돌릴 수 있습니다. */
   const [undoSnap, setUndoSnap] = useState(boot.current.undoSnap || null);
+  /* 우클릭=빼기 안내 — 한 번 보고 닫으면(또는 실제로 우클릭해 보면) 다시 안 나옵니다 */
+  const [rcHint, setRcHint] = useState(() => {
+    try {
+      return !window.localStorage.getItem("goldSettlement.hint.rclick");
+    } catch (e) {
+      return true;
+    }
+  });
+  const closeRcHint = () => {
+    setRcHint(false);
+    try {
+      window.localStorage.setItem("goldSettlement.hint.rclick", "1");
+    } catch (e) {
+      /* 저장 불가 환경 */
+    }
+  };
   const snapHold = useRef(false); // true 면 이번 rows/cols 변경은 스냅샷을 접지 않음
   const snapBooted = useRef(false);
   /* 첫 방문 — 모드를 고르고 시작합니다. 한 번 저장되면 다시 안 나옵니다. */
@@ -1094,7 +1107,6 @@ export default function GoldSettlement() {
     );
     setOpenRow(null);
     setLog([]);
-    clearGrace();
     setMemoFreeze(null);
     clearHash();
     setCrewOpen(false);
@@ -1201,7 +1213,6 @@ export default function GoldSettlement() {
       nextSeq({ cols: undoSnap.cols, rows: undoSnap.rows, log: undoSnap.log })
     );
     setOpenRow(null);
-    clearGrace();
     setMemoFreeze(null); // 표가 스냅샷 시점으로 바뀌므로 동결도 무효
     setUndoSnap(null);
   };
@@ -1301,42 +1312,6 @@ export default function GoldSettlement() {
       return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
     });
 
-  /* 되돌리기 유예 — 방금 누른 칸의 연속 누름(버스트)을 부호와 함께 기억합니다.
-     유예 중의 반대 버튼은 새로 적지 않고 마지막 누름을 기록까지 지우며 하나씩 되감습니다.
-     ＋ 실수는 −로, − 실수는 ＋로 — 실수했을 때 손이 가는 그 버튼이 곧 조용한 복구입니다.
-     시간이 다하면 두 버튼 다 평소처럼 기록되는 누름으로 돌아갑니다. */
-  const [grace, setGrace] = useState(null); // {rowId, colId, dir, ids, until, key}
-  /* 판단은 ref 로, 그림은 state 로 — 연타가 한 틱에 몰려도 되감기가 같은 줄을
-     두 번 집지 않도록 유예 상태는 동기적으로 갱신해 둡니다 */
-  const graceRef = useRef(null);
-  const graceTimer = useRef(null);
-  const putGrace = (g) => {
-    graceRef.current = g;
-    setGrace(g);
-  };
-  const startGrace = (rowId, colId, ids, dir) => {
-    clearTimeout(graceTimer.current);
-    graceTimer.current = setTimeout(() => putGrace(null), GRACE_MS);
-    putGrace({
-      rowId,
-      colId,
-      dir,
-      ids,
-      until: Date.now() + GRACE_MS,
-      key: (graceRef.current ? graceRef.current.key : 0) + 1,
-    });
-  };
-  const clearGrace = () => {
-    clearTimeout(graceTimer.current);
-    putGrace(null);
-  };
-  const graceActive = (row, colId) => {
-    const g = graceRef.current;
-    return (
-      g && g.rowId === row.id && g.colId === colId && g.ids.length > 0 && Date.now() <= g.until
-    );
-  };
-
   /* 연타가 한 틱에 몰리면 rows 가 아직 안 갱신된 채로 다음 클릭이 들어옵니다.
      기록의 누적액이 밀리지 않도록, 렌더 사이의 변화를 그림자 값으로 들고 갑니다. */
   const live = useRef(null);
@@ -1344,26 +1319,10 @@ export default function GoldSettlement() {
   const liveTotal = (row) => live.current.total[row.id] ?? itemGold(row);
   const liveN = (row, colId) => live.current.n[row.id + ":" + colId] ?? num(row.counts[colId]);
 
-  /* 유예 버스트의 마지막 누름을 기록까지 지우며 하나 되감습니다 */
-  const undoLast = (row, col) => {
-    const g = graceRef.current;
-    const lastId = g.ids[g.ids.length - 1];
-    const en = log.find((x) => x.id === lastId && !x.cancelled);
-    if (!en) return false;
-    live.current.n[row.id + ":" + col.id] = liveN(row, col.id) - en.n;
-    live.current.total[row.id] = liveTotal(row) - en.delta;
-    bump(row.id, col.id, -en.n, -en.delta);
-    setLog((prev) => prev.filter((x) => x.id !== lastId));
-    const ids = g.ids.slice(0, -1);
-    if (ids.length) startGrace(row.id, col.id, ids, g.dir);
-    else clearGrace();
-    return true;
-  };
-
   /* 카운터 셀의 ＋/−. 횟수를 움직이고 한 줄 남깁니다. 이름·항목은 나중에 지워져도
-     읽히도록 그 시점 글자를 같이 적어 둡니다. 유예 중의 반대 버튼은 조용한 되감기. */
+     읽히도록 그 시점 글자를 같이 적어 둡니다. 왼클릭 +1, 우클릭 −1, 둘 다 기록됩니다. */
   const pressCell = (row, col, dir = 1) => {
-    if (graceActive(row, col.id) && graceRef.current.dir === -dir && undoLast(row, col)) return;
+    if (dir < 0 && rcHint) closeRcHint();
     const before = liveN(row, col.id);
     if (dir > 0 ? before >= MAX_COUNT : before <= 0) return;
     const priceG = Math.round(goldOf(col.price));
@@ -1392,8 +1351,6 @@ export default function GoldSettlement() {
       item: col.name,
       after,
     });
-    const same = graceActive(row, col.id) && graceRef.current.dir === dir;
-    startGrace(row.id, col.id, same ? [...graceRef.current.ids, id] : [id], dir);
   };
 
   /* 같은 사유의 기타 한 줄에 금액을 누적합니다. 0이 되면 줄 자체를 지웁니다. */
@@ -1443,7 +1400,6 @@ export default function GoldSettlement() {
     if (en.cancelled || en.kind === "cancel") return;
     const row = rows.find((x) => x.id === en.rowId);
     if (!row) return;
-    clearGrace(); // 유예 중인 줄을 모달에서 취소했을 때 이중 되감기를 막습니다
     let fromCounts = 0;
     if (en.colId && en.n) {
       const col = cols.find((c) => c.id === en.colId);
@@ -1614,7 +1570,6 @@ export default function GoldSettlement() {
     if (simple) setUnit("10000");
     setOpenRow(null);
     setLog([]); // 표가 새로 시작하니 영수증도 새로
-    clearGrace();
     setMemoFreeze(null);
     clearHash();
   };
@@ -1640,7 +1595,6 @@ export default function GoldSettlement() {
     });
     setOpenRow(null);
     setLog([]);
-    clearGrace();
     setMemoFreeze(null);
     clearHash();
   };
@@ -2060,8 +2014,16 @@ export default function GoldSettlement() {
             </button>
           </div>
         )}
-
-
+        {!simple && rcHint && !undoSnap && (
+          <div className="gs-slip gs-slip-info" role="status">
+            <span className="gs-slip-msg">
+              칸을 누르면 1회 쌓이고, <b>우클릭하면 1회 빠져요</b>.
+            </span>
+            <button className="gs-x gs-slip-x" onClick={closeRcHint} aria-label="안내 닫기">
+              ×
+            </button>
+          </div>
+        )}
 
         {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
         <div className="gs-unitbar">
@@ -2197,8 +2159,8 @@ export default function GoldSettlement() {
                         + 항목
                       </button>
                       <span className="gs-tip-body" role="tooltip">
-                        <b>항목</b>은 벌금 사유예요. 1회당 단가를 정해 두고, 칸의 ＋를 눌러
-                        횟수를 세요.
+                        <b>항목</b>은 벌금 사유예요. 1회당 단가를 정해 두고, 칸을 눌러 횟수를
+                        세요. 우클릭하면 1회 빠져요.
                       </span>
                     </span>
                   </th>
@@ -2266,19 +2228,20 @@ export default function GoldSettlement() {
                         const cnt = row.counts[c.id] ?? "";
                         const n = num(cnt);
                         if (!simple) {
-                          /* ↩는 어느 쪽 실수든 항상 셀 오른쪽 같은 자리 — 방금 누른 것을
-                             반대 방향으로 하나씩, 기록까지 지우며 되감습니다. */
-                          const g0 = grace && grace.rowId === row.id && grace.colId === c.id;
                           return (
                             <td key={c.id}>
-                              {/* 카운터 칸 — 누르는 게 곧 1회. 숫자 입력 대신 ＋와 ×N 만 둡니다.
-                                  누른 직후의 −는 기록 없는 되돌리기(게이지가 남은 동안),
-                                  그 뒤의 −는 기록되는 빼기입니다. */}
+                              {/* 카운터 칸 — 왼클릭 = 1회, 우클릭 = 1회 빼기 (게임 인벤토리 문법).
+                                  둘 다 기록에 남고, 실수는 반대 클릭이나 기록에서 바로잡습니다.
+                                  보조 버튼을 칸 위에 겹치지 않아 오클릭 여지가 없습니다. */}
                               <div className="gs-hitwrap">
                                 <button
                                   className={"gs-hit" + (n > 0 ? " gs-hit-on" : "")}
                                   onClick={() => pressCell(row, c, 1)}
-                                  aria-label={`${row.name || "이 사람"}의 ${c.name || "항목"} 1회 추가`}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    pressCell(row, c, -1);
+                                  }}
+                                  aria-label={`${row.name || "이 사람"}의 ${c.name || "항목"} 1회 추가 (우클릭: 1회 빼기)`}
                                 >
                                   {/* 숫자가 주인공 — 누르기 전엔 옅은 ＋만, 누른 뒤엔 가운데 큰 횟수 */}
                                   {n > 0 ? (
@@ -2292,32 +2255,6 @@ export default function GoldSettlement() {
                                     </span>
                                   )}
                                 </button>
-                                <button
-                                  className="gs-step gs-hit-minus"
-                                  tabIndex={-1}
-                                  onClick={() => pressCell(row, c, -1)}
-                                  aria-label={`${c.name || "항목"} 1 줄이기`}
-                                >
-                                  −
-                                </button>
-                                {g0 && (
-                                  <button
-                                    key={"u" + grace.key}
-                                    className="gs-step gs-hit-undo"
-                                    tabIndex={-1}
-                                    onClick={() => pressCell(row, c, -grace.dir)}
-                                    aria-label="방금 누른 것 되돌리기"
-                                  >
-                                    ↩
-                                    <svg className="gs-grace-ring" viewBox="0 0 24 24" aria-hidden="true">
-                                      {/* 12시에서 시작해 시계 방향으로 도는 경로 — 시계·쿨다운의 문법 */}
-                                      <path
-                                        d="M12 1 H20 A3 3 0 0 1 23 4 V20 A3 3 0 0 1 20 23 H4 A3 3 0 0 1 1 20 V4 A3 3 0 0 1 4 1 H12"
-                                        pathLength="100"
-                                      />
-                                    </svg>
-                                  </button>
-                                )}
                               </div>
                             </td>
                           );
@@ -2450,7 +2387,13 @@ export default function GoldSettlement() {
                     + 인원 추가
                   </button>
                 </th>
-                <td colSpan={simple ? 2 : cols.length + 3} />
+                <td colSpan={simple ? 2 : cols.length + 3} className="gs-addnote">
+                  {!simple && (
+                    <span>
+                      <i aria-hidden="true">·</i> 칸을 누르면 <b>1회</b>, 우클릭하면 <b>1회 빼기</b>
+                    </span>
+                  )}
+                </td>
               </tr>
             </tbody>
 
@@ -2718,8 +2661,8 @@ export default function GoldSettlement() {
               돌아올 때 이름으로 대조해 복원되고, 메모장에서 고친 차액만 기타·기록에 남아요.
             </li>
             <li>
-              <b>카운터</b> — 칸의 ＋가 1회, 올리면 나오는 −가 빼기. 누른 직후 5초는 반대
-              버튼이 기록 없는 되돌리기예요. 합계를 누르면 입력 단위 기준으로 직접
+              <b>카운터</b> — 칸을 누르면 1회, 우클릭하면 1회 빼기. 실수는 반대 클릭으로 바로
+              잡고, 기록에서도 취소할 수 있어요. 합계를 누르면 입력 단위 기준으로 직접
               수정(차액은 기타 '조정'으로).
             </li>
             <li>
@@ -3675,6 +3618,7 @@ const CSS = `
 .gs-h2{font-family:'Gowun Batang',serif; font-size:19px; font-weight:700; margin:0; letter-spacing:.02em}
 .gs-card > .gs-h2{margin-bottom:15px}
 .gs-headnote{font-size:12px; color:var(--ink-2); letter-spacing:.01em}
+.gs-headnote b{color:var(--ink); font-weight:600}
 .gs-tools{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 .gs-btn{font:inherit; font-size:12.5px; letter-spacing:.04em; cursor:pointer; padding:8px 14px;
   border:1px solid var(--chip-bg); background:var(--chip-bg); color:var(--chip-fg); border-radius:2px;
@@ -3915,7 +3859,8 @@ const CSS = `
 .gs-grid-count .gs-foot-grand{font-size:25px !important; color:var(--gold) !important}
 .gs-hitwrap{position:relative; display:flex; padding:6px 4px}
 /* 숫자 중심 셀 — 누르기 전엔 옅은 ＋, 누른 뒤엔 가운데 큰 횟수가 주인공입니다 */
-.gs-hit{font:inherit; color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center;
+.gs-hit{font:inherit; color:var(--ink); cursor:pointer; position:relative;
+  display:flex; align-items:center; justify-content:center;
   width:100%; min-height:56px; padding:6px 10px; border-radius:3px;
   border:1px dashed rgba(var(--kraftdk-rgb),.85); background:var(--cell)}
 .gs-hit:hover{background:var(--cell-hover); border-color:var(--ink)}
@@ -3928,20 +3873,7 @@ const CSS = `
   font-size:25px; line-height:1; color:var(--ink); animation:gs-npop .16s ease-out}
 .gs-hit-num em{font-style:normal; font-size:12px; color:var(--ink-2); margin-left:5px}
 @keyframes gs-npop{from{transform:scale(1.35)} to{transform:scale(1)}}
-/* 빼기는 칸 왼쪽에 숨어 있다가 행에 올리면 나옵니다 (기존 gs-step 규칙이 보여줍니다) */
-.gs-hit-minus{position:absolute; left:10px; top:50%; transform:translateY(-50%); z-index:1}
-/* 되돌리기 ↩ — ＋든 −든 누른 직후 5초 동안 항상 셀 오른쪽 같은 자리에 나타나고,
-   테두리를 도는 빨간 사각 링이 다 돌면 조용한 되돌리기 시간이 끝난 것입니다.
-   .gs-step 기본 숨김(opacity:0)을 확실히 이기도록 겹친 선택자로 씁니다.
-   시간은 GRACE_MS(5초)와 맞춥니다. */
-.gs-step.gs-hit-undo{position:absolute; right:10px; top:50%; transform:translateY(-50%);
-  z-index:1; opacity:1; color:var(--red); width:24px; height:24px; padding:0;
-  border-radius:3px; font-size:13px; line-height:1}
-.gs-grace-ring{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
-/* 음수 offset 이라야 빈 부분이 경로 시작점(12시)에서 시계 방향으로 먹어 들어갑니다 */
-.gs-grace-ring path{fill:none; stroke:var(--red); stroke-width:2;
-  stroke-dasharray:100; stroke-dashoffset:0; animation:gs-ring 5s linear forwards}
-@keyframes gs-ring{to{stroke-dashoffset:-100}}
+
 @media (prefers-reduced-motion:reduce){
   .gs-hit-num{animation:none}
 }
@@ -3971,6 +3903,11 @@ const CSS = `
 .gs-slip .gs-undo{margin-left:auto}
 .gs-slip-x{flex:none; color:var(--red); opacity:.7; font-size:15px}
 .gs-slip-x:hover{opacity:1}
+/* 안내용 쪽지 — 사고 알림(빨강)이 아니라 정보라 잉크 톤으로 낮춥니다 */
+.gs-slip-info{border-left-color:var(--kraft-dk); background:rgba(var(--ink-rgb),.05)}
+.gs-slip-info .gs-slip-msg{color:var(--ink-body)}
+.gs-slip-info .gs-slip-msg b{color:var(--ink)}
+.gs-slip-info .gs-slip-x{color:var(--ink-2); margin-left:auto}
 @media (prefers-reduced-motion:reduce){ .gs-slip{animation:none} }
 /* 파괴적인 묶음과 자주 쓰는 묶음 사이를 벌립니다 */
 .gs-tools .gs-grp-risky{margin-right:12px}
@@ -4072,6 +4009,12 @@ const CSS = `
 .gs-rowopen > th,.gs-rowopen > td{border-bottom:0 !important; background:rgba(var(--kraft-rgb),.16)}
 .gs-rowopen > .gs-stick{background:var(--paper-3)}
 .gs-addrow th,.gs-addrow td{border-bottom:0 !important}
+/* 카운터 조작법은 설명 대상(칸) 바로 아래에 상주합니다 — 방송 화면을 어지럽히지 않게 조용히 */
+.gs-addnote{text-align:left; padding-left:10px !important; vertical-align:middle}
+.gs-addnote span{font-size:11.5px; color:var(--ink-2); letter-spacing:.01em}
+.gs-addnote b{color:var(--ink-body); font-weight:600}
+/* 앞의 가운뎃점은 이 줄이 각주(항목)라는 표시 — 별표는 본문의 * 를 받는 기호라 안 씁니다 */
+.gs-addnote i{font-style:normal; opacity:.55; margin-right:5px}
 .gs-add{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--ink-2);
   cursor:pointer; padding:10px 0; letter-spacing:.03em}
 .gs-add:hover{color:var(--ink)}
