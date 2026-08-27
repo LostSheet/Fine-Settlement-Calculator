@@ -463,7 +463,7 @@ const MODE_KEY = "m";
 const LIVE_KEY = "live"; // #live=ROOMID 로 들어오면 읽기 전용 뷰어
 
 /* ================= OBS 중계 =================
-   서기의 앱만 상태를 밀어 올리고, OBS와 뷰어는 읽기 전용으로 구독합니다.
+   장부 관리자의 앱만 상태를 밀어 올리고, OBS와 뷰어는 읽기 전용으로 구독합니다.
    서버는 저장소가 아니라 릴레이입니다 — 진본은 이 브라우저에 있습니다.
    기록(로그)은 보내지 않습니다. */
 const RELAY_BASE = (() => {
@@ -1040,9 +1040,9 @@ export default function GoldSettlement() {
   const boot = useRef(null);
   if (!boot.current) {
     /* #live=ROOMID 로 들어오면 읽기 전용 뷰어입니다. 이 브라우저에 저장된 장부는
-       손대지 않고(저장도 안 하고), 서기가 밀어 주는 상태만 비춥니다. */
+       손대지 않고(저장도 안 하고), 장부 관리자가 밀어 주는 상태만 비춥니다. */
     const liveRoom = readLiveRoom();
-    /* 단, 서기 본인이 자기 공유 주소를 열었다면 — 쓰기 열쇠가 이 브라우저에 있으니
+    /* 단, 장부 관리자 본인이 자기 공유 주소를 열었다면 — 쓰기 열쇠가 이 브라우저에 있으니
        구경꾼 화면 대신 그 파티의 장부(입력 화면)로 들어갑니다 */
     const ownLabel = liveRoom
       ? (Object.entries(loadRelay().rooms).find(([, r]) => r.roomId === liveRoom) || [null])[0]
@@ -1158,7 +1158,7 @@ export default function GoldSettlement() {
   // 정산 방식도 수수료처럼 파티 장부에 붙어 다닙니다
   const [splitMode, setSplitMode] = useState(boot.current.splitMode === "solo" ? "solo" : "pot");
   const [showSplitHelp, setShowSplitHelp] = useState(false);
-  /* 공유 받은 방송인의 오버레이 테마 — 서기와 무관하게 자기 주소(파라미터)에 담습니다 */
+  /* 공유 받은 방송인의 오버레이 테마 — 장부 관리자와 무관하게 자기 주소(파라미터)에 담습니다 */
   const [viewerLookOpen, setViewerLookOpen] = useState(false);
   const [viewerLook, setViewerLook] = useState(() => {
     try {
@@ -1720,7 +1720,7 @@ export default function GoldSettlement() {
     t: Date.now(),
   });
 
-  /* --- 서기: 바뀔 때마다 밀어 올립니다 (디바운스 300ms) --- */
+  /* --- 장부 관리자: 바뀔 때마다 밀어 올립니다 (디바운스 300ms) --- */
   const pushTimer = useRef(null);
   const pushRef = useRef(null);
   pushRef.current = liveSnapshot;
@@ -1776,7 +1776,7 @@ export default function GoldSettlement() {
       onYes: obsReissue,
     });
 
-  /* --- 뷰어: 구독해서 서기 화면을 그대로 비춥니다 --- */
+  /* --- 뷰어: 구독해서 장부 관리자 화면을 그대로 비춥니다 --- */
   useEffect(() => {
     if (!readOnly) return;
     let ws = null,
@@ -2414,7 +2414,7 @@ export default function GoldSettlement() {
                 </span>
               </span>
             )}
-            {/* 뷰어의 OBS 자리 — 서기의 'OBS 공유 설정'과 같은 위치에 앉습니다 */}
+            {/* 뷰어의 OBS 자리 — 장부 관리자의 'OBS 공유 설정'과 같은 위치에 앉습니다 */}
             {readOnly && liveRoom && (
               <button className="gs-btn gs-btn-ghost gs-obsbtn-vw" onClick={() => setViewerLookOpen(true)}>
                 OBS용 테마
@@ -2701,10 +2701,10 @@ export default function GoldSettlement() {
           >
             <span className="gs-slip-msg">
               {liveState === "dead" ? (
-                "이 주소는 더 이상 갱신되지 않아요. 서기에게 새 주소를 받아 주세요."
+                "이 주소는 더 이상 갱신되지 않아요. 장부 관리자에게 새 주소를 받아 주세요."
               ) : liveState === "on" ? (
                 <>
-                  <b>읽기 전용 화면</b>이에요 — 서기가 기록하면 <b>실시간으로 바뀌어요</b>.
+                  <b>읽기 전용 화면</b>이에요 — 장부 관리자가 기록하면 <b>실시간으로 바뀌어요</b>.
                   기록을 한 사람에게 맡기면 중복 입력 사고가 없어요.
                 </>
               ) : liveState === "empty" ? (
@@ -3830,7 +3830,7 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
   const label = activeLabel === DEFAULT_ROOM_LABEL ? "기본" : activeLabel;
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(null); // "url" | "msg"
   const [showGuide, setShowGuide] = useState(false);
   const [code, setCode] = useState(null);
   const [codeShown, setCodeShown] = useState(false);
@@ -3852,12 +3852,12 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
     "· OBS 브라우저 소스에 이 주소를 넣으면 오버레이가 떠요\n" +
     "· 브라우저로 열면 자세한 현황을 볼 수 있고, OBS용 테마도 고를 수 있어요";
 
-  const copyMsg = () =>
+  const copy2 = (kind, text) =>
     navigator.clipboard
-      .writeText(msg())
+      .writeText(text)
       .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        setCopied(kind);
+        setTimeout(() => setCopied(null), 2000);
       })
       .catch(() => setErr("복사하지 못했어요"));
 
@@ -3949,7 +3949,7 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
         <p>
           아래 주소를 <b>OBS 브라우저 소스에 붙여넣으면</b>, '{label}'의 벌금 현황이 방송
           화면에 실시간으로 떠요. 브라우저로 열면 정산 장부와 보낼 우편까지 볼 수 있어요.
-          기록은 이 브라우저(서기)에서만 되고 <b>파티원 화면은 읽기 전용</b>이에요 — 한
+          기록은 이 브라우저(장부 관리자)에서만 되고 <b>파티원 화면은 읽기 전용</b>이에요 — 한
           사람이 기록해야 중복 입력 사고가 없어서요.
         </p>
 
@@ -3961,12 +3961,18 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
             </button>
           </div>
         ) : (
-          <button className={"gs-obs-copybox" + (copied ? " copied" : "")} onClick={copyMsg}>
+          <div className="gs-obs-copybox">
             <span className="gs-obs-urltext">{url}</span>
-            <span className="gs-obs-copyhint">
-              {copied ? "복사됐어요 — 디스코드에 붙여넣으세요" : "누르면 파티원에게 보낼 메시지가 복사돼요"}
-            </span>
-          </button>
+            {/* 복사는 둘 — 관리자 자신의 OBS용 맨주소가 주, 파티원 메시지가 보조입니다 */}
+            <div className="gs-obs-copyrow">
+              <button className="gs-btn" onClick={() => copy2("url", url)}>
+                {copied === "url" ? "복사됐어요 — OBS 소스 URL에 붙여넣으세요" : "OBS용 주소 복사"}
+              </button>
+              <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", msg())}>
+                {copied === "msg" ? "복사됐어요 — 디스코드에 붙여넣으세요" : "파티원 메시지 복사"}
+              </button>
+            </div>
+          </div>
         )}
 
         <div className="gs-obs-look">
@@ -5683,11 +5689,12 @@ const CSS = `
 .gs-obs-claim{width:110px; font-family:var(--mono); font-size:14px; letter-spacing:.12em;
   text-align:center; padding:6px 4px; border-bottom:1px solid rgba(var(--ink-rgb),.35)}
 .gs-obs-err{margin-top:10px; font-size:12px; color:var(--red)}
-/* 복사 상자 — 드래그 금지, 클릭이 곧 복사. 복사물은 파티원 메시지 하나뿐입니다 */
+/* 복사 상자 — 드래그 대신 버튼 복사 둘: OBS용 맨주소(주), 파티원 메시지(보조) */
 .gs-obs-copybox{display:block; width:100%; text-align:left; cursor:pointer; margin-top:14px;
   padding:12px 14px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:3px;
   background:rgba(var(--lift-rgb),.3); user-select:none; font:inherit}
-.gs-obs-copybox:hover{border-color:var(--gold)}
+.gs-obs-copybox{cursor:auto}
+.gs-obs-copyrow{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:11px}
 .gs-obs-copybox.copied{border-color:var(--gold); background:rgba(var(--gold-rgb),.08)}
 .gs-obs-urltext{display:block; font-family:var(--mono); font-size:13px; color:var(--ink);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap}

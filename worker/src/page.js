@@ -1,6 +1,6 @@
 /* ---------------- 공유 주소가 가는 두 곳 ----------------
    OBS 브라우저 소스(window.obsstudio 주입됨) → 여기서 투명 오버레이를 그립니다.
-   일반 브라우저 → 앱의 읽기 전용 화면으로 넘깁니다. 뷰어는 서기와 같은 3탭을 봐야 하고,
+   일반 브라우저 → 앱의 읽기 전용 화면으로 넘깁니다. 뷰어는 장부 관리자와 같은 3탭을 봐야 하고,
    그 화면은 앱이 이미 갖고 있으니 여기서 다시 그리지 않습니다. */
 
 export const APP_URL = "https://lostsheet.github.io/Fine-Settlement-Calculator/";
@@ -79,7 +79,7 @@ export const PAGE_HTML = `<!doctype html>
   var bg = parseInt(urlBg, 10);
   if (!isNaN(bg)) root.style.setProperty("--bg", Math.min(100, Math.max(0, bg)) / 100);
 
-  /* 서기가 고른 테마가 상태에 실려 옵니다 — OBS 소스 URL을 안 바꿔도 즉시 갈아입습니다 */
+  /* 장부 관리자가 고른 테마가 상태에 실려 옵니다 — OBS 소스 URL을 안 바꿔도 즉시 갈아입습니다 */
   var applyLook = function (lk) {
     if (!lk || urlTheme) return;
     root.dataset.t = typeof lk.t === "string" ? lk.t : "dark";
@@ -177,7 +177,7 @@ export const PAGE_HTML = `<!doctype html>
         if (!st || st.streaming || st.recording) return;
         var el = document.getElementById("notice");
         if (!el) return;
-        el.textContent = "이 주소는 더 이상 갱신되지 않아요. 서기에게 새 주소를 받아 URL만 바꿔주세요.";
+        el.textContent = "이 주소는 더 이상 갱신되지 않아요. 장부 관리자에게 새 주소를 받아 URL만 바꿔주세요.";
         root.dataset.notice = "1";
       });
     } catch (e) { /* 권한 없음 → 침묵 */ }
