@@ -3233,7 +3233,7 @@ export default function GoldSettlement() {
           <div className="gs-card gs-ledgerbox">
             <div className="gs-empty">
               <p>정산할 사람이 없어요.</p>
-              <p className="gs-empty-sub">벌금표에 인원을 적으면 장부가 여기에 만들어져요.</p>
+              <p className="gs-empty-sub">벌금표에 금액을 입력하면 장부가 여기에 만들어져요.</p>
             </div>
           </div>
         </section>
@@ -4180,10 +4180,9 @@ function PartyLobby({ list, active, rooms, onPick, onCreate, onDelete, onRename,
         <button className="gs-backrow" onClick={onClose}>
           <i aria-hidden="true">‹</i> 돌아가기
         </button>
-        <h1 className="gs-title">파티</h1>
+        <h1 className="gs-title">파티 목록</h1>
         <p className="gs-lobby-lead">
-          파티 하나가 장부 하나예요. 표와 기록, 공유 주소가 파티에 붙어 다녀요.
-          파티를 누르면 그 장부를 이어서 쓸 수 있어요.
+          파티마다 표와 기록, 공유 주소가 따로 있어요. 바꿔도 하던 장부는 그대로 남아요.
         </p>
         <div className="gs-lobby-list">
           {list.map((x) => {
@@ -4761,8 +4760,8 @@ const COURSE_STEPS = [
       </>
     ),
   },
-  { sel: ".gs-tab-ledger", text: "정산 장부 탭을 눌러 보세요 — 방금 누른 게 벌써 정산돼 있어요." },
-  { sel: ".gs-tab-mail", text: "보낼 우편 탭도 눌러 보세요 — 누가 누구에게 얼마를 보낼지까지 나와 있어요." },
+  { sel: ".gs-tab-ledger", text: "정산 장부 탭을 눌러 보세요 — 방금 누른 게 정산돼 있어요." },
+  { sel: ".gs-tab-mail", text: "보낼 우편 탭도 눌러 보세요 — 누가 누구에게 얼마를 보낼지 나와 있어요." },
   { sel: ".gs-obsbtn", text: "이 현황을 방송 화면에 실시간으로 띄우려면 여기예요.", action: "다음" },
   {
     sel: ".gs-party-dd",
