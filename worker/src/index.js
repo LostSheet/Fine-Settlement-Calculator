@@ -1,0 +1,263 @@
+/* 벌금 현황판 릴레이.
+   서기의 로컬 앱이 상태를 밀어 올리면, OBS와 브라우저가 읽기 전용으로 구독합니다.
+   방(Room)은 명단마다 하나이고, 주소는 서기가 재발급하기 전까지 영구입니다.
+   서버는 저장소가 아니라 릴레이입니다 — 진본은 언제나 서기의 브라우저에 있습니다. */
+
+import { PAGE_HTML, APP_URL } from "./page.js";
+
+const ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"; // 헷갈리는 글자(I,L,O,U,0,1) 제외
+const rid = (n) =>
+  Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => ALPHABET[b % ALPHABET.length]).join("");
+
+const ID6 = "[ABCDEFGHJKMNPQRSTVWXYZ23456789]{6}";
+
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
+  "access-control-allow-headers": "content-type",
+};
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", ...CORS },
+  });
+
+/* 상태 크기 상한 — 이름 여덟 줄짜리 현황판에 32KB면 차고 넘칩니다. 남용 방지용 */
+const MAX_STATE_BYTES = 32 * 1024;
+/* 90일 동안 갱신이 없으면 방을 통째로 지웁니다 (죽은 공대 청소).
+   내용을 미리 지우지는 않습니다 — 링크가 살아 있는 한 이름이 보여야
+   "이름이 보이면 정상"이라는 진단이 성립하니까요. */
+const IDLE_WIPE_MS = 90 * 86400 * 1000;
+
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url);
+    const p = url.pathname;
+    if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+
+    /* 방 만들기 — 주소와 쓰기 열쇠를 함께 발급합니다.
+       6자 주소가 겹치면(희박) 몇 번 다시 뽑습니다. */
+    if (p === "/api/rooms" && req.method === "POST") {
+      for (let i = 0; i < 5; i++) {
+        const roomId = rid(6);
+        const key = rid(26);
+        const stub = env.ROOM.get(env.ROOM.idFromName(roomId));
+        const r = await stub.fetch("https://do/create", {
+          method: "POST",
+          body: JSON.stringify({ key }),
+        });
+        if (r.ok) return json({ roomId, key });
+      }
+      return json({ error: "could not allocate room" }, 503);
+    }
+
+    // 기기 이사·예비 열쇠 — 열쇠 꾸러미를 한 번 쓰는 6자리 코드로 옮깁니다
+    if (p === "/api/handoff" || new RegExp(`^/api/handoff/${ID6}$`).test(p)) {
+      const stub = env.HANDOFF.get(env.HANDOFF.idFromName("global"));
+      return stub.fetch(req);
+    }
+
+    // 방 API — /api/r/:id/(state|live|kill|peek)
+    const api = p.match(new RegExp(`^/api/r/(${ID6})/(state|live|kill|peek)$`));
+    if (api) {
+      const stub = env.ROOM.get(env.ROOM.idFromName(api[1]));
+      return stub.fetch(new Request("https://do/" + api[2], req));
+    }
+
+    // 공유 페이지 — OBS면 오버레이를 그리고, 브라우저면 앱의 읽기 전용 화면으로 넘깁니다
+    const page = p.match(new RegExp(`^/r/(${ID6})$`));
+    if (page) {
+      return new Response(
+        PAGE_HTML.replaceAll("__ROOM__", page[1]).replaceAll("__APP__", APP_URL),
+        {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-cache",
+          },
+        }
+      );
+    }
+
+    if (p === "/") {
+      return new Response("벌금 현황판 릴레이입니다. 공유받은 /r/XXXXXX 주소로 접속하세요.", {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
+    return json({ error: "not found" }, 404);
+  },
+};
+
+/* ---------------- 방 하나 = Durable Object 하나 ---------------- */
+
+export class Room {
+  constructor(ctx) {
+    this.ctx = ctx;
+    /* 구독자의 keepalive 는 DO를 깨우지 않고 런타임이 대신 답합니다 (하이버네이션 유지) */
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  async fetch(req) {
+    const path = new URL(req.url).pathname;
+
+    if (path === "/create") {
+      if (await this.ctx.storage.get("key")) return json({ error: "exists" }, 409);
+      const { key } = await req.json();
+      if (typeof key !== "string" || key.length < 16) return json({ error: "bad key" }, 400);
+      await this.ctx.storage.put("key", key);
+      await this.ctx.storage.setAlarm(Date.now() + IDLE_WIPE_MS);
+      return json({ ok: true });
+    }
+
+    // 서기의 앱이 미는 스냅샷. 열쇠가 맞아야만 씁니다
+    if (path === "/state") {
+      const body = await req.text();
+      if (body.length > MAX_STATE_BYTES) return json({ error: "too big" }, 413);
+      let key, state;
+      try {
+        ({ key, state } = JSON.parse(body));
+      } catch (e) {
+        return json({ error: "bad json" }, 400);
+      }
+      const real = await this.ctx.storage.get("key");
+      if (!real || key !== real) return json({ error: "unauthorized" }, 403);
+      if (await this.ctx.storage.get("dead")) return json({ error: "dead" }, 410);
+      await this.ctx.storage.put("state", state);
+      await this.ctx.storage.setAlarm(Date.now() + IDLE_WIPE_MS);
+      const msg = JSON.stringify({ kind: "state", state });
+      const socks = this.ctx.getWebSockets();
+      for (const ws of socks) {
+        try {
+          ws.send(msg);
+        } catch (e) {
+          /* 끊긴 구독자는 무시 */
+        }
+      }
+      return json({ ok: true, watchers: socks.length });
+    }
+
+    /* 주소 재발급의 뒷정리 — 옛 방을 닫습니다 (새 방 생성은 앱이 따로 합니다) */
+    if (path === "/kill") {
+      let key;
+      try {
+        ({ key } = await req.json());
+      } catch (e) {
+        return json({ error: "bad json" }, 400);
+      }
+      const real = await this.ctx.storage.get("key");
+      if (!real || key !== real) return json({ error: "unauthorized" }, 403);
+      await this.ctx.storage.put("dead", true);
+      await this.ctx.storage.delete("state");
+      const bye = JSON.stringify({ kind: "dead" });
+      for (const ws of this.ctx.getWebSockets()) {
+        try {
+          ws.send(bye);
+          ws.close(1000, "dead");
+        } catch (e) {}
+      }
+      return json({ ok: true });
+    }
+
+    // 구독 — 읽기 전용 WebSocket. 접속 즉시 현재 상태 한 번, 이후 변경분
+    if (path === "/live") {
+      if (req.headers.get("Upgrade") !== "websocket") return json({ error: "upgrade required" }, 426);
+      const pair = new WebSocketPair();
+      this.ctx.acceptWebSocket(pair[1]);
+      const [dead, known, state] = await Promise.all([
+        this.ctx.storage.get("dead"),
+        this.ctx.storage.get("key"),
+        this.ctx.storage.get("state"),
+      ]);
+      pair[1].send(
+        JSON.stringify(dead || !known ? { kind: "dead" } : { kind: "state", state: state ?? null })
+      );
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+
+    // 페이지 첫 렌더용 폴백
+    if (path === "/peek") {
+      const [dead, known, state] = await Promise.all([
+        this.ctx.storage.get("dead"),
+        this.ctx.storage.get("key"),
+        this.ctx.storage.get("state"),
+      ]);
+      return json(dead || !known ? { dead: true } : { state: state ?? null });
+    }
+
+    return json({ error: "not found" }, 404);
+  }
+
+  webSocketMessage() {
+    /* 구독자는 읽기 전용 — 어떤 메시지도 상태를 못 바꿉니다 */
+  }
+  webSocketClose() {}
+  webSocketError() {}
+
+  async alarm() {
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1000, "expired");
+      } catch (e) {}
+    }
+    await this.ctx.storage.deleteAll();
+  }
+}
+
+/* -------- 기기 이사·예비 열쇠: 한 번 쓰는 6자리 코드 보관소 -------- */
+
+const HANDOFF_TTL_MS = 5 * 60 * 1000;
+
+export class Handoff {
+  constructor(ctx) {
+    this.ctx = ctx;
+  }
+
+  async fetch(req) {
+    const url = new URL(req.url);
+
+    // 코드 발급 — 열쇠 꾸러미를 5분간 맡아둡니다. 발급도 상한을 둡니다 (저장소 채우기 방지)
+    if (url.pathname === "/api/handoff" && req.method === "POST") {
+      const now = Date.now();
+      let ig = (await this.ctx.storage.get("iguard")) || { n: 0, until: 0 };
+      if (ig.until > now && ig.n >= 30) return json({ error: "slow down" }, 429);
+      if (ig.until < now) ig = { n: 0, until: now + 10 * 60 * 1000 };
+      ig.n++;
+      await this.ctx.storage.put("iguard", ig);
+      const body = await req.text();
+      if (body.length > MAX_STATE_BYTES) return json({ error: "too big" }, 413);
+      const code = rid(6);
+      await this.ctx.storage.put("c:" + code, { body, exp: Date.now() + HANDOFF_TTL_MS });
+      await this.ctx.storage.setAlarm(Date.now() + HANDOFF_TTL_MS + 60 * 1000);
+      return json({ code, expiresIn: HANDOFF_TTL_MS / 1000 });
+    }
+
+    // 코드 수령 — 맞으면 꾸러미를 주고 즉시 태웁니다 (1회용)
+    const take = url.pathname.match(new RegExp(`^/api/handoff/(${ID6})$`));
+    if (take && req.method === "GET") {
+      /* 무차별 대입 방지 — 10분 창에 실패 30번이면 잠급니다 */
+      const now = Date.now();
+      let guard = (await this.ctx.storage.get("guard")) || { n: 0, until: 0 };
+      if (guard.until > now && guard.n >= 30) return json({ error: "slow down" }, 429);
+      const item = await this.ctx.storage.get("c:" + take[1]);
+      if (!item || item.exp < now) {
+        if (guard.until < now) guard = { n: 0, until: now + 10 * 60 * 1000 };
+        guard.n++;
+        await this.ctx.storage.put("guard", guard);
+        return json({ error: "no such code" }, 404);
+      }
+      await this.ctx.storage.delete("c:" + take[1]);
+      return new Response(item.body, {
+        headers: { "content-type": "application/json; charset=utf-8", ...CORS },
+      });
+    }
+
+    return json({ error: "not found" }, 404);
+  }
+
+  // 만료된 코드 청소
+  async alarm() {
+    const now = Date.now();
+    const all = await this.ctx.storage.list({ prefix: "c:" });
+    for (const [k, v] of all) if (v.exp < now) await this.ctx.storage.delete(k);
+  }
+}
+

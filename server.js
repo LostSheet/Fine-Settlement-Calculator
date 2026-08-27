@@ -41,6 +41,16 @@ ReactDOM.createRoot(document.getElementById("root")).render(<GoldSettlement />);
 
 http
   .createServer((req, res) => {
+    // 가이드 이미지 — 배포본(docs/)의 것을 개발 중에도 그대로 보여줍니다
+    const img = req.url.match(/^\/docs\/(obs-guide\/[\w.-]+\.png)$/);
+    if (img) {
+      fs.readFile(path.join(__dirname, "docs", img[1]), (err, buf) => {
+        if (err) return res.writeHead(404).end();
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
+        res.end(buf);
+      });
+      return;
+    }
     if (req.url !== "/" && req.url !== "/index.html") {
       res.writeHead(404).end();
       return;

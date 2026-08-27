@@ -1,0 +1,224 @@
+/* ---------------- 공유 주소가 가는 두 곳 ----------------
+   OBS 브라우저 소스(window.obsstudio 주입됨) → 여기서 투명 오버레이를 그립니다.
+   일반 브라우저 → 앱의 읽기 전용 화면으로 넘깁니다. 뷰어는 서기와 같은 3탭을 봐야 하고,
+   그 화면은 앱이 이미 갖고 있으니 여기서 다시 그리지 않습니다. */
+
+export const APP_URL = "https://lostsheet.github.io/Fine-Settlement-Calculator/";
+
+export const PAGE_HTML = `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>벌금 현황판</title>
+<style>
+  :root{--ink:#f5f0e6; --gold:#e8c66a}
+  *{margin:0; padding:0; box-sizing:border-box}
+  html,body{background:transparent; overflow:hidden}
+  body{font-family:'Segoe UI','Malgun Gothic',sans-serif; color:var(--ink)}
+
+  .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw}
+  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.8vw}
+  .ov-name-t{font-size:4.2vw; font-weight:600; letter-spacing:.03em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .ov-total{margin-left:auto; font-size:3.4vw; font-weight:600; color:var(--gold);
+    font-variant-numeric:tabular-nums; white-space:nowrap}
+  .ov-row{display:flex; align-items:baseline; gap:1.6vw; padding:.85vw .4vw;
+    font-size:4.4vw; font-weight:500; line-height:1.2;
+    transition:transform .35s cubic-bezier(.22,1,.36,1)}
+  .ov-rank{width:5.2vw; font-size:3vw; opacity:.68; font-variant-numeric:tabular-nums; flex:none}
+  .ov-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:2.4vw}
+  .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none}
+  .ov-row.zero{opacity:.5}
+
+  /* 투명 테마 — 글자 외곽을 여러 겹 눌러 게임 화면 위에서도 버팁니다 */
+  html[data-t="clear"] .ov{text-shadow:
+    0 0 12px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,1),
+    0 2px 4px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,1)}
+  html[data-t="cleardark"] .ov{--ink:#171310; --gold:#6d5210;
+    text-shadow:
+    0 0 12px rgba(255,255,255,.95), 0 0 5px rgba(255,255,255,1),
+    0 2px 4px rgba(255,255,255,.95), 0 0 1px rgba(255,255,255,1)}
+  html[data-t="dark"] .ov{background:rgba(20,17,14,var(--bg,.82));
+    border-radius:max(12px, 1.4vw)}
+  html[data-t="light"] .ov{--ink:#221c14; --gold:#8a6415;
+    background:rgba(248,244,236,var(--bg,.88)); border-radius:max(12px, 1.4vw)}
+
+  /* 방송 중이 아님이 확인될 때만 JS가 켭니다 */
+  .ov-notice{display:none; font-size:2.6vw; line-height:1.6; color:#f0b8b0; padding:1.2vw 1.6vw;
+    text-shadow:0 1px 3px rgba(0,0,0,.9)}
+  html[data-notice="1"] .ov-notice{display:block}
+
+  @media (prefers-reduced-motion:reduce){ .ov-row{transition:none} }
+</style>
+</head>
+<body><div id="app"></div>
+<script>
+(function () {
+  var ROOM = "__ROOM__";
+  var q = new URLSearchParams(location.search);
+  var forced = q.get("mode");
+  var inOBS = forced === "overlay" || (forced !== "page" && !!window.obsstudio);
+
+  /* 브라우저로 열었으면 앱의 읽기 전용 화면으로 넘깁니다 */
+  if (!inOBS) {
+    var dest = "__APP__";
+    if (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+      dest = "http://localhost:5175/";
+    location.replace(dest + "#live=" + ROOM);
+    return;
+  }
+
+  var root = document.documentElement;
+  root.dataset.mode = "overlay";
+  /* 기본은 어디서든 읽히는 어두운 판. 주소에 직접 적은 테마가 있으면 그쪽이 우선 */
+  var urlTheme = q.get("t");
+  var urlBg = q.get("bg");
+  root.dataset.t = urlTheme || "dark";
+  var bg = parseInt(urlBg, 10);
+  if (!isNaN(bg)) root.style.setProperty("--bg", Math.min(100, Math.max(0, bg)) / 100);
+
+  /* 서기가 고른 테마가 상태에 실려 옵니다 — OBS 소스 URL을 안 바꿔도 즉시 갈아입습니다 */
+  var applyLook = function (lk) {
+    if (!lk || urlTheme) return;
+    root.dataset.t = typeof lk.t === "string" ? lk.t : "dark";
+    if (urlBg == null && lk.bg != null)
+      root.style.setProperty("--bg", Math.min(100, Math.max(0, lk.bg)) / 100);
+  };
+  var s = parseInt(q.get("s"), 10);
+  if (!isNaN(s)) document.body.style.fontSize = Math.min(300, Math.max(50, s)) + "%";
+
+  var app = document.getElementById("app");
+  var board = null;   // [{n,g}] — 앱이 계산해서 보내줍니다
+  var name = "";
+  var dead = false;
+
+  /* 앱과 같은 만 단위 표기 */
+  var man = function (g) {
+    g = Math.round(g || 0);
+    var neg = g < 0; g = Math.abs(g);
+    var m = Math.floor(g / 10000), r = g % 10000;
+    var c = function (x) { return x.toLocaleString("ko-KR"); };
+    var out = m === 0 ? c(r) : r === 0 ? c(m) + "만" : c(m) + "만" + c(r);
+    return (neg ? "\\u2212" : "") + out;
+  };
+
+  /* 순위: 금액 내림차순, 동률은 표에 적힌 순서 유지 */
+  var ranked = function (rows) {
+    return rows.map(function (r, i) { return { n: r.n, g: r.g || 0, i: i }; })
+      .sort(function (a, b) { return b.g - a.g || a.i - b.i; });
+  };
+
+  var esc = function (t) {
+    return String(t == null ? "" : t).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  };
+
+  var rowsHtml = function (rows) {
+    return ranked(rows).map(function (r, i) {
+      return '<div class="ov-row' + (r.g ? "" : " zero") + '" data-k="' + esc(r.n) + '">' +
+        '<span class="ov-rank">' + (i + 1) + '</span>' +
+        '<span class="ov-name">' + esc(r.n) + '</span>' +
+        '<span class="ov-gold">' + man(r.g) + '</span></div>';
+    }).join("");
+  };
+
+  /* FLIP — 순위가 바뀌면 줄이 제자리에서 미끄러져 이동합니다 */
+  var flip = function (box, draw) {
+    var was = {};
+    [].forEach.call(box.children, function (el) {
+      if (el.dataset.k) was[el.dataset.k] = el.getBoundingClientRect().top;
+    });
+    draw();
+    [].forEach.call(box.children, function (el) {
+      var k = el.dataset.k;
+      if (!k || was[k] == null) return;
+      var d = was[k] - el.getBoundingClientRect().top;
+      if (!d) return;
+      el.style.transition = "none";
+      el.style.transform = "translateY(" + d + "px)";
+      void el.offsetHeight;
+      el.style.transition = "";
+      el.style.transform = "";
+    });
+  };
+
+  var ovBoard = null;
+  var render = function () {
+    if (dead || !board || !board.length) {
+      ovBoard = null;
+      app.innerHTML = '<div class="ov-notice" id="notice"></div>';
+      maybeNotice();
+      return;
+    }
+    root.dataset.notice = "0";
+    if (!ovBoard) {
+      app.innerHTML = '<div class="ov"><div class="ov-head">' +
+        '<span class="ov-name-t" id="ovname"></span>' +
+        '<span class="ov-total" id="ovtotal"></span></div><div id="ovboard"></div></div>';
+      ovBoard = document.getElementById("ovboard");
+      ovBoard.innerHTML = rowsHtml(board);
+    } else {
+      flip(ovBoard, function () { ovBoard.innerHTML = rowsHtml(board); });
+    }
+    /* 오버레이 제목은 파티명이 아니라 '벌금표' — 방송 화면에 뜨는 건 표지판이지 명패가 아닙니다 */
+    document.getElementById("ovname").textContent = "벌금표";
+    document.getElementById("ovtotal").textContent =
+      man(board.reduce(function (a, r) { return a + (r.g || 0); }, 0));
+  };
+
+  /* 방송 중이 아님이 확인될 때만 알립니다. 판별 실패는 침묵(안전한 쪽) */
+  var maybeNotice = function () {
+    if (!dead || !window.obsstudio || typeof window.obsstudio.getStatus !== "function") return;
+    try {
+      window.obsstudio.getStatus(function (st) {
+        if (!st || st.streaming || st.recording) return;
+        var el = document.getElementById("notice");
+        if (!el) return;
+        el.textContent = "이 주소는 더 이상 갱신되지 않아요. 서기에게 새 주소를 받아 URL만 바꿔주세요.";
+        root.dataset.notice = "1";
+      });
+    } catch (e) { /* 권한 없음 → 침묵 */ }
+  };
+
+  /* 구독 — 접속 즉시 스냅샷 한 번, 이후 변경분. 끊기면 물러났다 다시 붙습니다 */
+  var wait = 1000;
+  var connect = function () {
+    var ws;
+    try {
+      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") +
+        location.host + "/api/r/" + ROOM + "/live");
+    } catch (e) { setTimeout(connect, wait); return; }
+    var beat = setInterval(function () { if (ws.readyState === 1) ws.send("ping"); }, 50000);
+    ws.onmessage = function (ev) {
+      if (ev.data === "pong") return;
+      try {
+        var m = JSON.parse(ev.data);
+        if (m.kind === "dead") { dead = true; board = null; }
+        else if (m.kind === "state") {
+          dead = false;
+          board = m.state && m.state.board ? m.state.board : null;
+          name = (m.state && m.state.name) || "";
+          applyLook(m.state && m.state.look);
+        } else return;
+        wait = 1000;
+        render();
+      } catch (e) {}
+    };
+    ws.onclose = function () {
+      clearInterval(beat);
+      if (dead) return;            // 죽은 방은 다시 붙지 않습니다
+      setTimeout(connect, wait);
+      wait = Math.min(wait * 2, 15000);
+    };
+    ws.onerror = function () { try { ws.close(); } catch (e) {} };
+  };
+
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>`;
