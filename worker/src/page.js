@@ -28,9 +28,41 @@ export const PAGE_HTML = `<!doctype html>
     font-size:4.4vw; font-weight:500; line-height:1.2;
     transition:transform .35s cubic-bezier(.22,1,.36,1)}
   .ov-rank{width:5.2vw; font-size:3vw; opacity:.68; font-variant-numeric:tabular-nums; flex:none}
+  /* 순위 변동 자리 — 비어 있어도 폭을 차지해서 이름 열이 밀리지 않습니다 */
+  .ov-move{width:5.6vw; flex:none; font-size:2.9vw; font-weight:700; text-align:center;
+    font-variant-numeric:tabular-nums}
   .ov-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:2.4vw}
   .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none}
+  /* 증감액 — 폭 0이라 금액 열의 오른쪽 끝을 밀지 않고, 오른쪽 여백을 잠깐 침범합니다 */
+  .ov-delta{flex:none; width:10.5vw; padding-left:1.4vw; white-space:nowrap;
+    font-size:3.4vw; font-weight:600; color:var(--gold)}
+  .ov-delta.plus{color:#8fd89b}
   .ov-row.zero{opacity:.5}
+
+  /* 1위 — 금색 순위와 살짝 밝은 이름으로 초점을 만듭니다 */
+  .ov-row.top .ov-rank{color:var(--gold); opacity:1; font-weight:700}
+  .ov-row.top .ov-name{font-weight:700}
+
+  /* 방금 벌금이 붙은 줄 — 잠깐 번쩍이고 오른쪽에 증감이 떠올랐다 사라집니다 */
+  .ov-row.hit{animation:ov-flash 1.6s ease-out}
+  @keyframes ov-flash{
+    from{background:rgba(232,198,106,.28)}
+    to{background:transparent}
+  }
+  .ov-delta.plus,.ov-delta.minus{animation:ov-rise 4.2s ease-out forwards}
+  .ov-delta.minus{color:#e0776b}
+  @keyframes ov-rise{
+    0%{opacity:0; transform:translateY(.7vw)}
+    9%{opacity:1; transform:none}
+    80%{opacity:1; transform:none}
+    100%{opacity:0; transform:translateY(-.7vw)}
+  }
+
+  /* 순위 변동 — 몇 계단 올랐는지 잠깐 보여주고 지웁니다 */
+  .ov-move.up,.ov-move.down{animation:ov-hold 6s ease-out forwards}
+  .ov-move.up{color:#8fd89b}
+  .ov-move.down{color:#e59a90}
+  @keyframes ov-hold{0%,82%{opacity:1} 100%{opacity:0}}
 
   /* 투명 테마 — 글자 외곽을 여러 겹 눌러 게임 화면 위에서도 버팁니다 */
   html[data-t="clear"] .ov{text-shadow:
@@ -57,12 +89,15 @@ export const PAGE_HTML = `<!doctype html>
 <script>
 (function () {
   var ROOM = "__ROOM__";
+  /* 예시 방 — 서버에 방을 만들지 않고 페이지가 스스로 굴립니다. 지워질 일도, 만료될 일도 없어요. */
+  var DEMO_ROOM = "CAFE22";
+  var isDemo = ROOM === DEMO_ROOM;
   var q = new URLSearchParams(location.search);
   var forced = q.get("mode");
   var inOBS = forced === "overlay" || (forced !== "page" && !!window.obsstudio);
 
   /* 브라우저로 열었으면 앱의 읽기 전용 화면으로 넘깁니다 */
-  if (!inOBS) {
+  if (!inOBS && !isDemo) {
     var dest = "__APP__";
     if (location.hostname === "localhost" || location.hostname === "127.0.0.1")
       dest = "http://localhost:5175/";
@@ -91,6 +126,7 @@ export const PAGE_HTML = `<!doctype html>
 
   var app = document.getElementById("app");
   var board = null;   // [{n,g}] — 앱이 계산해서 보내줍니다
+  var prev = {};      // 이름 → {g, rank} — 증감과 순위 변동을 재는 기준점
   var name = "";
   var dead = false;
 
@@ -117,12 +153,26 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   var rowsHtml = function (rows) {
-    return ranked(rows).map(function (r, i) {
-      return '<div class="ov-row' + (r.g ? "" : " zero") + '" data-k="' + esc(r.n) + '">' +
+    var list = ranked(rows);
+    var html = list.map(function (r, i) {
+      var was = prev[r.n];
+      var d = was ? r.g - was.g : 0;
+      /* 순위는 위로 갈수록 숫자가 작아지니, 이전 순위에서 뺀 값이 오른 계단 수입니다 */
+      var mv = was ? was.rank - (i + 1) : 0;
+      var cls = "ov-row" + (r.g ? "" : " zero") + (d !== 0 ? " hit" : "") +
+        (i === 0 && r.g ? " top" : "");
+      return '<div class="' + cls + '" data-k="' + esc(r.n) + '">' +
         '<span class="ov-rank">' + (i + 1) + '</span>' +
+        '<span class="ov-move ' + (mv > 0 ? "up" : mv < 0 ? "down" : "") + '">' +
+          (mv !== 0 ? (mv > 0 ? "▲" : "▼") + Math.abs(mv) : "") + '</span>' +
         '<span class="ov-name">' + esc(r.n) + '</span>' +
-        '<span class="ov-gold">' + man(r.g) + '</span></div>';
+        '<span class="ov-gold">' + man(r.g) + '</span>' +
+        '<span class="ov-delta ' + (d > 0 ? "plus" : d < 0 ? "minus" : "") + '">' +
+          (d !== 0 ? (d > 0 ? "+" : "−") + man(Math.abs(d)) : "") + '</span></div>';
     }).join("");
+    prev = {};
+    list.forEach(function (r, i) { prev[r.n] = { g: r.g, rank: i + 1 }; });
+    return html;
   };
 
   /* FLIP — 순위가 바뀌면 줄이 제자리에서 미끄러져 이동합니다 */
@@ -149,6 +199,7 @@ export const PAGE_HTML = `<!doctype html>
   var render = function () {
     if (dead || !board || !board.length) {
       ovBoard = null;
+      prev = {};
       app.innerHTML = '<div class="ov-notice" id="notice"></div>';
       maybeNotice();
       return;
@@ -216,8 +267,26 @@ export const PAGE_HTML = `<!doctype html>
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
   };
 
-  render();
-  connect();
+  /* 예시: 몇 초마다 한 사람에게 벌금이 붙고, 순위가 바뀌면 줄이 미끄러집니다 */
+  var startDemo = function () {
+    var BASE = [["주키니", 450000], ["팔복", 340000], ["읍지", 320000], ["이다", 180000],
+                ["포셔", 170000], ["히휴", 110000], ["눈가루", 90000], ["티모", 60000]];
+    var reset = function () {
+      board = BASE.map(function (p) { return { n: p[0], g: p[1] }; });
+    };
+    reset();
+    render();
+    setInterval(function () {
+      var total = board.reduce(function (a, r) { return a + r.g; }, 0);
+      if (total > 4000000) reset();
+      else board[Math.floor(Math.random() * board.length)].g +=
+        [10000, 30000, 100000][Math.floor(Math.random() * 3)];
+      render();
+    }, 3200);
+  };
+
+  if (isDemo) startDemo();
+  else { render(); connect(); }
 })();
 </script>
 </body>
