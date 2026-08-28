@@ -6055,6 +6055,51 @@ const CSS = `
   .gs-stamp{width:70px}
 }
 
+/* ---- 좁은 화면: 누르려고 옆으로 밀지 않게 ----
+   벌금표에서 입력에 쓰는 열(이름 + 항목)만 한 화면에 넣습니다.
+   합계와 기타는 파생·부가라서 스크롤 뒤에 있어도 입력에 지장이 없습니다.
+   글씨가 작아지는 건 감수합니다 — 여기는 읽는 화면이 아니라 누르는 화면입니다. */
+@media (max-width:560px){
+  .gs-card{padding:13px 9px 15px}
+  /* 이름 열 */
+  .gs-stick{min-width:64px; padding-right:5px !important}
+  .gs-nm{font-size:15px}
+  .gs-grid .gs-stick .gs-in{font-size:14px}
+  /* 항목 열 */
+  .gs-colh{min-width:62px; padding:0 2px !important}
+  .gs-colh-top{font-size:14px}
+  .gs-colh-price{font-size:10px}
+  .gs-hitwrap{padding:3px 2px}
+  .gs-hit{min-height:46px; padding:4px 2px}
+  .gs-hit-num{min-width:3ch; font-size:17px}
+  .gs-hit-num em{font-size:10px; margin-left:2px}
+  .gs-hit-ghost{font-size:15px}
+  /* 파생·부가 열은 좁게 */
+  .gs-sumh{min-width:52px; padding-right:2px !important}
+  .gs-sumcell{font-size:12px}
+  .gs-disc,.gs-disch{padding:0 3px !important}
+  .gs-addcolh,.gs-addcolcell{padding:0 2px !important}
+  /* 열 폭을 정하는 건 min-width 가 아니라 이 입력칸들입니다 */
+  .gs-grid-count .gs-in-name{font-size:16px; padding:6px 0; width:62px}
+  .gs-grid-narrow .gs-in-name{font-size:18px; padding:8px 0}
+  .gs-grid-count .gs-in-col{font-size:15px; padding:3px 0}
+  .gs-in-col{width:44px}
+  .gs-namecell{gap:2px}
+  /* 데스크톱에서 깔아 둔 최소 폭들이 좁은 화면에서는 표를 밀어냅니다 */
+  .gs-grid{min-width:0}
+  .gs-grid-count .gs-stick{min-width:96px}
+  .gs-grid-count .gs-colh,.gs-grid-count .gs-disch{min-width:62px}
+  .gs-grid-count .gs-sumcell{font-size:13px; min-width:5ch}
+  .gs-grid-count td.gs-disc,.gs-grid-count th.gs-disch{width:76px; min-width:76px; max-width:76px}
+  .gs-grid-count .gs-in-col{font-size:15px; font-weight:700; padding:3px 0}
+  .gs-grid-count .gs-in-name{font-size:16px; width:52px}
+  .gs-colh-price{font-size:9px}
+  .gs-in-col{width:34px; min-width:0}
+  /* 시스템 줄이 넘쳐서 사용법 물음표가 잘리던 것 — 넘치면 줄을 바꿉니다 */
+  .gs-sysbar-in{flex-wrap:wrap; row-gap:6px}
+  .gs-grid-count .gs-colh,.gs-grid-count .gs-disch{min-width:56px}
+}
+
 .gs-empty{background:var(--paper); border:1px dashed var(--kraft-dk); padding:34px 22px; text-align:center}
 .gs-empty p{margin:0; font-family:'Gowun Batang',serif; font-size:17px}
 .gs-empty-sub{margin-top:8px !important; font-family:'IBM Plex Sans KR',sans-serif !important;
