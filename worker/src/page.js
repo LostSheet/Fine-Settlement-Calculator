@@ -222,8 +222,17 @@ export const PAGE_HTML = `<!doctype html>
   var play = null;      // 방송이 제 시계로 재생하는 상태
   var spinTimer = null; // 도는 글자
   var stepTimer = null; // 다음 걸음
-  /* 방송은 앱보다 느긋하게 — 긴장감이 남게 */
-  var OV_ROLL = 1700, OV_HOLD = 1100, OV_END = 1600;
+  /* 속도는 판마다 옵니다. 앱·방송·파티원 화면이 같은 속도로 돌아야 따로 놀지 않습니다 */
+  var SPINS = {
+    fast: { roll: 1200, hold: 700, end: 1100 },
+    normal: { roll: 2200, hold: 1200, end: 1700 },
+    slow: { roll: 3400, hold: 1700, end: 2200 },
+  };
+  var OV_ROLL = 2200, OV_HOLD = 1200, OV_END = 1700;
+  var useSpeed = function (sp) {
+    var v = SPINS[(sp && sp.spd) || "normal"] || SPINS.normal;
+    OV_ROLL = v.roll; OV_HOLD = v.hold; OV_END = v.end;
+  };
   var prev = {};      // 이름 → {g, rank} — 증감과 순위 변동을 재는 기준점
   /* 이름 → 최근 변화와 그 시각. 다른 사람이 벌금을 먹어도 내 표시가 사라지지 않게
      렌더 횟수가 아니라 시간으로 유지하고, 표시가 살아 있는 동안 생긴 변화는 누적합니다.
@@ -460,6 +469,7 @@ export const PAGE_HTML = `<!doctype html>
 
   var startPlay = function (sp) {
     clearPlayTimers();
+    useSpeed(sp);
     play = { sp: sp, i: 0, rolling: true, over: false };
     drawPlay();
     rollStep();
