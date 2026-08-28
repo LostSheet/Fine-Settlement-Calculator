@@ -19,7 +19,8 @@ export const PAGE_HTML = `<!doctype html>
   body{font-family:'Segoe UI','Malgun Gothic',sans-serif; color:var(--ink)}
 
   .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw}
-  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.8vw}
+  /* 총액을 금액 열과 같은 선에 세웁니다 — 증감액 열 10.5 + 열 간격 1.6 + 줄 안쪽 여백 .4 */
+  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.8vw; padding-right:12.5vw}
   .ov-name-t{font-size:4.2vw; font-weight:600; letter-spacing:.03em;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .ov-total{margin-left:auto; font-size:3.4vw; font-weight:600; color:var(--gold);
@@ -33,7 +34,7 @@ export const PAGE_HTML = `<!doctype html>
     font-variant-numeric:tabular-nums}
   .ov-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:2.4vw}
   .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none}
-  /* 증감액 — 폭 0이라 금액 열의 오른쪽 끝을 밀지 않고, 오른쪽 여백을 잠깐 침범합니다 */
+  /* 증감액 — 금액 뒤의 고정폭 열. 판 안에 머물면서 금액 열의 오른쪽 끝은 안 밉니다 */
   .ov-delta{flex:none; width:10.5vw; padding-left:1.4vw; white-space:nowrap;
     font-size:3.4vw; font-weight:600; color:var(--gold)}
   .ov-delta.plus{color:#8fd89b}
