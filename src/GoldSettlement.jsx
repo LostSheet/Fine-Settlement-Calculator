@@ -2936,7 +2936,10 @@ export default function GoldSettlement() {
                       <th className="gs-stick gs-l">
                         <div className="gs-namecell">
                           <input
-                            className="gs-in gs-in-name"
+                            className={
+                              "gs-in gs-in-name" +
+                              (!(row.name || "").trim() && itemGold(row) > 0 ? " gs-name-todo" : "")
+                            }
                             value={row.name}
                             placeholder="이름"
                             onChange={(e) => patchRow(row.id, "name", e.target.value)}
@@ -5641,6 +5644,9 @@ const CSS = `
 .gs-sumh{min-width:88px; text-align:right; padding-right:6px !important}
 
 .gs-grid tbody tr th,.gs-grid tbody tr td{border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
+/* 벌금이 찍힌 줄인데 이름이 비었을 때. 배너 대신 채울 자리를 직접 가리킵니다 */
+.gs-name-todo{box-shadow:inset 0 -2px 0 var(--gold-ink,#8a6415)}
+.gs-name-todo::placeholder{color:var(--gold-ink,#8a6415); opacity:.95}
 .gs-in-name{font-size:15px; font-family:'Gowun Batang',serif; font-weight:700; padding:9px 0}
 .gs-in-cnt{font-family:var(--mono); font-size:16px; text-align:center; padding:9px 0}
 .gs-sumcell{font-family:var(--mono); font-size:14px; text-align:right;
