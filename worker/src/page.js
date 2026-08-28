@@ -373,6 +373,7 @@ export const PAGE_HTML = `<!doctype html>
   var drawHit = function () {
     var el = document.getElementById("ovhit");
     if (!el || !play) return;
+    if (play.who) return; // 사람 원판은 제 값을 따로 넣습니다
     var key = play.sp.sid + ":" + play.i + ":" + (play.rolling ? "r" : "s");
     if (key === hitKey) return;
     hitKey = key;
@@ -386,7 +387,7 @@ export const PAGE_HTML = `<!doctype html>
     var sbox = document.getElementById("ovspin");
     if (!sbox) return;
     if (!play) { sbox.innerHTML = ""; playKey = null; return; }
-    if (playKey !== play.sp.sid) {
+    if (playKey !== play.sp.sid && !play.who) {
       playKey = play.sp.sid;
       wheelRot = 0;
       hitKey = null;
@@ -400,7 +401,7 @@ export const PAGE_HTML = `<!doctype html>
         box.className = "ov-sp" + (passSeen ? " pass" : "");
         var top = box.querySelector(".ov-sp-top");
         var mult = seen.length ? seen[seen.length - 1].m : 1;
-        if (top) {
+        if (top && !play.who) {
           top.innerHTML =
             '<span class="ov-sp-who">' + esc(play.sp.who) + ' <em>' + esc(play.sp.item) + "</em></span>" +
             (passSeen ? '<span class="ov-sp-pass">양도권</span>' : "") +
@@ -408,7 +409,8 @@ export const PAGE_HTML = `<!doctype html>
         }
         var out = box.querySelector(".ov-sp-out");
         var txt = play.over
-          ? esc(play.sp.n) + (mult > 1 ? " \u00d7 " + esc(mult) : "") + " = " + man(play.sp.gold)
+          ? esc(play.sp.n) + (mult > 1 ? " \u00d7 " + esc(mult) : "") + " = " + man(play.sp.gold) +
+            (play.sp.pass2 ? " \u2192 " + esc(play.sp.pass2.name) : "")
           : "";
         if (!out) {
           out = document.createElement("div");
@@ -428,6 +430,26 @@ export const PAGE_HTML = `<!doctype html>
     else spinTo(play.sp.faces, play.sp.w, play.sp.steps[play.i].k);
   };
 
+  /* 랜덤 양도면 사람 원판을 한 번 더 돌립니다 */
+  var whoWheel = function (pl) {
+    var sp = pl.sp;
+    var el = document.getElementById("ovspin");
+    if (!el) return;
+    var box = el.querySelector(".ov-sp");
+    if (!box) return;
+    var top = box.querySelector(".ov-sp-top");
+    if (top) {
+      top.innerHTML =
+        '<span class="ov-sp-who">' + esc(sp.who) + ' <em>누가 물까요?</em></span>';
+    }
+    var wrap = box.querySelector(".ov-wheel");
+    if (wrap) {
+      wrap.outerHTML = wheelHtml(sp.pass2.faces, {});
+      wheelRot = 0;
+      hitKey = null;
+    }
+  };
+
   var stepPlay = function () {
     if (!play) return;
     if (play.rolling) {
@@ -443,6 +465,26 @@ export const PAGE_HTML = `<!doctype html>
       drawPlay();
       rollStep();
       stepTimer = setTimeout(stepPlay, OV_ROLL);
+      return;
+    }
+    /* 랜덤 양도 — 사람 원판을 한 번 더 */
+    if (play.sp.pass2 && !play.who) {
+      play.who = "roll";
+      whoWheel(play);
+      spinTo(play.sp.pass2.faces, {}, play.sp.pass2.name);
+      stepTimer = setTimeout(stepPlay, OV_ROLL);
+      return;
+    }
+    if (play.who === "roll") {
+      play.who = "land";
+      var hit = document.getElementById("ovhit");
+      if (hit) {
+        hit.textContent = play.sp.pass2.name;
+        hit.classList.remove("on");
+        void hit.offsetWidth;
+        hit.classList.add("on");
+      }
+      stepTimer = setTimeout(stepPlay, OV_HOLD);
       return;
     }
     if (!play.over) {

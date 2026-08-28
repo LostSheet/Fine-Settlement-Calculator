@@ -381,6 +381,12 @@ const SPINS = {
 const spinSpeed = (k) => SPINS[k] || SPINS.slow;
 const colSpeed = (col) => ((col && col.spd) in SPINS ? col.spd : "slow");
 
+/* 양도권이 나왔을 때 누가 무느냐 — 사람 원판을 한 번 더 돌리거나(랜덤, 기본),
+   서기가 고르거나(지정). 랜덤일 때 본인은 기본으로 뺍니다 — 양도인데 본인이 다시
+   걸리면 김이 새고, 방송에서도 "넘겼다"는 그림이 안 나옵니다. */
+const passMode = (col) => ((col && col.passMode) === "pick" ? "pick" : "random");
+const passSelf = (col) => (col && col.passSelf) === true;
+
 /* 돌아가는 모습 — 원판이 기본이고, 숫자만 크게 보고 싶으면 바꿉니다 */
 const wheelLook = (col) => ((col && col.look) === "num" ? "num" : "wheel");
 /* 원판 칸 색 — 글자를 안 쓰니 색으로 구분합니다. 양도권·곱하기는 고정색,
@@ -1850,6 +1856,8 @@ export default function GoldSettlement() {
       w: spin.w || {},
       look: spin.look || "wheel",
       spd: spin.spd || "slow",
+      /* 랜덤 양도면 사람 원판도 같이 — 방송과 파티원 화면이 같은 장면을 봅니다 */
+      pass2: spin.pass2 ? { faces: spin.pass2.faces, name: spin.pass2.name } : null,
       steps: spin.steps.map((x) => ({ k: x.k, m: x.mult })),
       n: spin.res.n,
       gold: Math.round(spin.priceG * spin.res.count),
@@ -1986,20 +1994,23 @@ export default function GoldSettlement() {
   useEffect(() => {
     if (!vplay) return;
     /* 양도 대기 중에는 여기서 아무것도 안 합니다 — 서기가 고를 때까지 띄워 둡니다 */
-    if (vplay.over && vplay.sp.phase === "pick") return;
+    if (vplay.over && vplay.sp.phase === "pick" && !vplay.sp.pass2) return;
     const sp2 = spinSpeed(vplay.sp.spd);
-    const ms = vplay.rolling ? sp2.roll : vplay.over ? sp2.end : sp2.hold;
+    const ms = vplay.rolling || vplay.who === "roll" ? sp2.roll : vplay.over ? sp2.end : sp2.hold;
     const t = setTimeout(() => {
       setVplay((x) => {
         if (!x) return x;
         if (x.rolling) return { ...x, rolling: false };
         if (x.i + 1 < x.sp.steps.length) return { ...x, i: x.i + 1, rolling: true };
+        /* 랜덤 양도면 사람 원판을 한 번 더 */
+        if (x.sp.pass2 && !x.who) return { ...x, who: "roll" };
+        if (x.who === "roll") return { ...x, who: "land" };
         if (!x.over) return { ...x, over: true };
         return null;
       });
     }, ms);
     return () => clearTimeout(t);
-  }, [vplay && vplay.i, vplay && vplay.rolling, vplay && vplay.over, vplay && vplay.sp.phase, !vplay]);
+  }, [vplay && vplay.i, vplay && vplay.rolling, vplay && vplay.who, vplay && vplay.over, vplay && vplay.sp.phase, !vplay]);
 
   /* 서기가 양도를 끝내면(판이 사라지면) 파티원 화면도 잠깐 뒤 닫습니다 */
   useEffect(() => {
@@ -2240,7 +2251,24 @@ export default function GoldSettlement() {
   const startSpin = (row, col) => {
     if (readOnly || spin) return;
     const res = spinRoulette(weightsOf(col), null, facesOf(col));
+    /* 랜덤 양도면 누가 물지도 지금 정해 둡니다 — 화면은 그걸 보여 주기만 합니다.
+       이름이 겹치면 원판의 칸을 구분할 수 없어서 뒤에 번호를 붙입니다. */
+    let pass2 = null;
+    if (res.pass && passMode(col) === "random") {
+      const cands = rows.filter((x) => passSelf(col) || x.id !== row.id);
+      if (cands.length) {
+        const seen = {};
+        const faces = cands.map((x, i) => {
+          const base = (x.name || "").trim() || "이름 없음" + (i + 1);
+          seen[base] = (seen[base] || 0) + 1;
+          return seen[base] > 1 ? base + " " + seen[base] : base;
+        });
+        const k = Math.floor(Math.random() * cands.length);
+        pass2 = { faces, idx: k, rowId: cands[k].id, name: faces[k] };
+      }
+    }
     setSpin({
+      pass2,
       sid: "s" + seq.current++, // 오버레이가 새 판인지 알아보는 표
       faces: facesOf(col),
       w: weightsOf(col),
@@ -2284,16 +2312,37 @@ export default function GoldSettlement() {
       setSpin((x) => {
         if (!x) return x;
         if (x.i + 1 < x.steps.length) return { ...x, i: x.i + 1, rolling: true };
-        return { ...x, phase: x.res.pass ? "pick" : "done" };
+        if (!x.res.pass) return { ...x, phase: "done" };
+        /* 랜덤이면 사람 원판을 한 번 더 돌립니다 */
+        return x.pass2
+          ? { ...x, phase: "who", whoRolling: true }
+          : { ...x, phase: "pick" };
       });
     }, spin.skipped ? 120 : HOLD_MS);
     return () => clearTimeout(t);
   }, [spin && spin.phase, spin && spin.rolling, spin && spin.i]);
 
+  /* 사람 원판 — 한 바퀴 돌고 멈춘 뒤 그 사람에게 붙습니다 */
+  useEffect(() => {
+    if (!spin || spin.phase !== "who") return;
+    if (spin.whoRolling) {
+      const t = setTimeout(
+        () => setSpin((x) => (x ? { ...x, whoRolling: false } : x)),
+        spin.skipped ? 0 : ROLL_MS
+      );
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(
+      () => setSpin((x) => (x ? { ...x, phase: "done", target: x.pass2.rowId } : x)),
+      spin.skipped ? 120 : HOLD_MS
+    );
+    return () => clearTimeout(t);
+  }, [spin && spin.phase, spin && spin.whoRolling, spin && spin.skipped]);
+
   /* 양도권이 안 나온 판은 돌린 사람에게 바로 붙습니다 */
   useEffect(() => {
     if (!spin || spin.phase !== "done") return;
-    applySpin(spin, spin.rowId);
+    applySpin(spin, spin.target || spin.rowId);
     const t = setTimeout(() => setSpin(null), HOLD_MS);
     return () => clearTimeout(t);
   }, [spin && spin.phase]);
@@ -2332,11 +2381,12 @@ export default function GoldSettlement() {
 
   /* 도는 걸 다 볼 필요는 없습니다. 누르면 마지막 면으로 건너뜁니다 */
   const skipSpin = () =>
-    setSpin((x) =>
-      !x || x.phase !== "roll"
-        ? x
-        : { ...x, i: x.steps.length - 1, rolling: false, skipped: true }
-    );
+    setSpin((x) => {
+      if (!x) return x;
+      if (x.phase === "who") return { ...x, whoRolling: false, skipped: true };
+      if (x.phase !== "roll") return x;
+      return { ...x, i: x.steps.length - 1, rolling: false, skipped: true };
+    });
 
   /* 양도 대상 고르기. 자기 자신을 고르면 한 번 물어봅니다 */
   const pickPassTarget = (row) => {
@@ -4166,6 +4216,16 @@ export default function GoldSettlement() {
               )
             )
           }
+          onPass={(v) =>
+            setCols((prev) =>
+              prev.map((c) => (c.id === rouletteCfg ? { ...c, passMode: v } : c))
+            )
+          }
+          onPassSelf={(v) =>
+            setCols((prev) =>
+              prev.map((c) => (c.id === rouletteCfg ? { ...c, passSelf: v } : c))
+            )
+          }
           onSpeed={(v) =>
             setCols((prev) =>
               prev.map((c) => (c.id === rouletteCfg ? { ...c, spd: v } : c))
@@ -4256,10 +4316,23 @@ function ViewSpinPanel({ pl }) {
       <div className={"gs-spin" + (passSeen ? " gs-spin-pick" : "")}>
         <div className="gs-spin-who">
           <b>{sp.who}</b>
-          <span>{sp.item}</span>
+          <span>{pl.who ? "누가 물까요?" : sp.item}</span>
         </div>
         <div className="gs-spin-stage">
-          {sp.look === "wheel" ? (
+          {pl.who ? (
+            <SpinWheel
+              spin={{
+                sid: sp.sid + ":who",
+                faces: sp.pass2.faces,
+                w: {},
+                steps: [{ k: sp.pass2.name }],
+                i: 0,
+                rolling: pl.who === "roll",
+                spd: sp.spd,
+              }}
+              landed={pl.who === "land" ? sp.pass2.name : null}
+            />
+          ) : sp.look === "wheel" ? (
             <SpinWheel spin={asWheel} landed={!pl.rolling ? faceLabel(cur.k) : null} />
           ) : (
             <div className={"gs-spin-face" + (pl.rolling ? " gs-spin-rolling" : " gs-spin-land")}>
@@ -4276,7 +4349,9 @@ function ViewSpinPanel({ pl }) {
                 {mult > 1 ? " × " + mult : ""} = {man(sp.gold)}
               </b>
               <span className="gs-spin-ask">
-                {sp.phase === "pick"
+                {sp.pass2
+                  ? sp.pass2.name + "에게 넘어갔어요."
+                  : sp.phase === "pick"
                   ? "양도권이 나왔어요. 서기가 넘길 사람을 고르는 중이에요."
                   : (sp.who || "이 사람") + "에게 붙었어요."}
               </span>
@@ -4359,10 +4434,24 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
     <div className={"gs-spin" + (picking ? " gs-spin-pick" : "")}>
       <div className="gs-spin-who">
         <b>{spin.who || "이름 없음"}</b>
-        <span>{spin.item || "룰렛"}</span>
+        <span>{spin.phase === "who" ? "누가 물까요?" : spin.item || "룰렛"}</span>
       </div>
       <div className="gs-spin-stage">
-        {spin.look === "wheel" && !picking ? (
+        {spin.phase === "who" ? (
+          <SpinWheel
+            spin={{
+              sid: spin.sid + ":who",
+              faces: spin.pass2.faces,
+              w: {},
+              steps: [{ k: spin.pass2.name }],
+              i: 0,
+              rolling: spin.whoRolling,
+              spd: spin.spd,
+              skipped: spin.skipped,
+            }}
+            landed={!spin.whoRolling ? spin.pass2.name : null}
+          />
+        ) : spin.look === "wheel" && !picking ? (
           <SpinWheel spin={spin} landed={!spin.rolling ? faceLabel(cur.k) : null} />
         ) : (
           <div
@@ -4393,7 +4482,11 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
                 </button>
               </span>
             ) : (
-              <span className="gs-spin-ask">{spin.who || "이 사람"}에게 붙었어요.</span>
+              <span className="gs-spin-ask">
+              {spin.target && spin.pass2
+                ? spin.pass2.name + "에게 넘어갔어요."
+                : (spin.who || "이 사람") + "에게 붙었어요."}
+            </span>
             )}
           </>
         )}
@@ -4438,7 +4531,7 @@ function OvColsPreview({ items, net }) {
 
 /* 룰렛 설정 — 면마다 몇 골드인지와 비율을 보여 줍니다. 비율은 "몇 칸을 차지하는가"라
    합이 얼마든 상관없고, 그 비율대로 나옵니다. */
-function RouletteCfg({ col, unitLabel, onW, onLook, onSpeed, onAddFace, onDelFace, onReset, onClose }) {
+function RouletteCfg({ col, unitLabel, onW, onLook, onSpeed, onPass, onPassSelf, onAddFace, onDelFace, onReset, onClose }) {
   const [newFace, setNewFace] = useState("");
   const w = weightsOf(col);
   const keys = facesOf(col);
@@ -4454,6 +4547,29 @@ function RouletteCfg({ col, unitLabel, onW, onLook, onSpeed, onAddFace, onDelFac
         1회 단가는 <b>{man(priceG)}</b>이에요. 나온 숫자만큼 곱해서 벌금이 붙어요.
         비율은 룰렛에서 차지하는 칸 수예요 — 합이 얼마든 상관없어요.
       </p>
+      <div className="gs-rc-look">
+        <span>양도권이 나오면</span>
+        {[
+          ["pick", "서기가 지정"],
+          ["random", "랜덤"],
+        ].map(([v, label]) => (
+          <button
+            key={v}
+            className={"gs-rc-lookbtn" + (passMode(col) === v ? " on" : "")}
+            onClick={() => onPass(v)}
+          >
+            {label}
+          </button>
+        ))}
+        {passMode(col) === "random" && (
+          <button
+            className={"gs-rc-lookbtn" + (passSelf(col) ? " on" : "")}
+            onClick={() => onPassSelf(!passSelf(col))}
+          >
+            {passSelf(col) ? "본인도 후보" : "본인은 빼고"}
+          </button>
+        )}
+      </div>
       <div className="gs-rc-look">
         <span>도는 속도</span>
         {Object.keys(SPINS).map((k) => (
