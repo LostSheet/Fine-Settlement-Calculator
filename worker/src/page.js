@@ -18,14 +18,16 @@ export const PAGE_HTML = `<!doctype html>
   html,body{background:transparent; overflow:hidden}
   body{font-family:'Segoe UI','Malgun Gothic',sans-serif; color:var(--ink)}
 
-  .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw}
+  .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw;
+    position:relative}
   /* 총액을 금액 열과 같은 선에 세웁니다 — 증감액 열 10.5 + 열 간격 1.6 + 줄 안쪽 여백 .4 */
   /* 총액도 금액 열과 같은 선에 — 줄 안쪽 여백(.4vw)만 빼면 됩니다 */
-  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.8vw; padding-right:.4vw}
+  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.5vw; padding:0 .4vw}
+  .ov-name-t{flex:1; min-width:6vw; padding-right:1.6vw}
   .ov-name-t{font-size:4.2vw; font-weight:600; letter-spacing:.03em;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .ov-total{margin-left:auto; font-size:3.4vw; font-weight:600; color:var(--gold);
-    font-variant-numeric:tabular-nums; white-space:nowrap}
+  .ov-total{font-size:3.4vw; font-weight:600; color:var(--gold);
+    font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; min-width:9.5vw}
   .ov-row{display:flex; align-items:baseline; gap:1.6vw; padding:.85vw .4vw; position:relative;
     font-size:4.4vw; font-weight:500; line-height:1.2; border-radius:1vw;
     transition:transform .35s cubic-bezier(.22,1,.36,1)}
@@ -35,11 +37,29 @@ export const PAGE_HTML = `<!doctype html>
   /* 순위 변동 자리 — 비어 있어도 폭을 차지해서 이름 열이 밀리지 않습니다 */
   .ov-move{width:5.6vw; flex:none; font-size:2.9vw; font-weight:700; text-align:center;
     font-variant-numeric:tabular-nums; align-self:center}
-  .ov-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:2.4vw}
-  .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none; position:relative}
+  .ov-name{flex:1; min-width:6vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:1.6vw}
+  /* 항목은 표의 열로 세웁니다 — 이름 밑에 늘어놓으면 방송에서 안 읽힙니다.
+     열이 늘면 판이 가로로 넓어집니다 (width:fit-content) */
+  .ov-cnum{width:6.4vw; flex:none; text-align:center; font-size:3.4vw;
+    font-variant-numeric:tabular-nums; opacity:.9}
+  .ov-cnum.rl{color:var(--ink)}
+  .ov-cnum.z{opacity:.16}
+  .ov-chead{width:6.4vw; flex:none; text-align:center; font-size:1.6vw; opacity:.6;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .ov-chead.rl{opacity:.72}
+  /* 순액 — 받을 몫에서 낸 벌금을 뺀 값. 받는 쪽은 파랑, 보내는 쪽은 빨강 */
+  .ov-net{flex:none; width:11.5vw; text-align:right; font-size:2.9vw; font-weight:700;
+    font-variant-numeric:tabular-nums; opacity:.5; white-space:nowrap; overflow:hidden}
+  .ov-net.plus{color:#6fb4ff; opacity:1}
+  .ov-net.minus{color:#ff7d6b; opacity:1}
+  .ov-nethead{flex:none; width:11.5vw; text-align:right; font-size:1.6vw; opacity:.6}
+  .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none;
+    text-align:right; min-width:9.5vw}
   /* 증감액 — 금액 뒤의 고정폭 열. 판 안에 머물면서 금액 열의 오른쪽 끝은 안 밉니다 */
   /* 증감액은 이름과 금액 사이의 빈 자리에 붙습니다 — 어느 열도 밀지 않고 여백도 안 먹습니다 */
-  .ov-delta{position:absolute; left:100%; margin-left:1.2vw; white-space:nowrap;
+  /* 줄 전체를 기준으로 오른쪽 바깥에 답니다 — 순액 열을 덮지 않게 */
+  .ov-delta{position:absolute; left:100%; top:50%; transform:translateY(-50%);
+    margin-left:1.2vw; white-space:nowrap;
     font-size:3.4vw; font-weight:600; color:var(--gold);
     padding:.1vw .8vw; border-radius:99px; background:rgba(20,17,14,.72)}
   /* 밝은 판·진한 글자 테마에서는 칩도 밝게 */
@@ -55,6 +75,48 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 방금 벌금이 붙은 줄 — 잠깐 번쩍이고 오른쪽에 증감이 떠올랐다 사라집니다 */
   .ov-row.hit{animation:ov-flash 1.6s ease-out}
+  /* 룰렛 — 목록을 밀지 않고 그 위를 덮습니다. 목록이 움직이면 방송에서 눈이 튑니다 */
+  #ovspin:not(:empty){position:absolute; inset:0; z-index:3; display:flex;
+    align-items:center; justify-content:center; padding:.6vw;
+    background:rgba(12,10,8,.72); border-radius:max(12px, 1.4vw);
+    animation:ov-spin-in .18s ease-out}
+  html[data-t="light"] #ovspin:not(:empty){background:rgba(240,235,225,.8)}
+  @keyframes ov-spin-in{from{opacity:0} to{opacity:1}}
+  .ov-sp{position:relative; padding:1.2vw 1.4vw 1.4vw; border-radius:1vw; text-align:center;
+    width:100%; background:rgba(190,150,60,.26); border:.16vw solid rgba(220,180,90,.75)}
+  .ov-sp.pass{background:rgba(200,60,50,.28); border-color:rgba(240,110,95,.85)}
+  /* 이름·양도권·배수가 한 줄. 가운데 숫자를 안 밀도록 위에 눕힙니다 */
+  /* 누가 무엇으로 돌리는지는 왼쪽 위 구석에 — 가운데는 원판이 크게 차지합니다 */
+  .ov-sp-top{position:absolute; left:1.6vw; top:1.2vw; right:1.6vw;
+    display:flex; align-items:center; gap:1.1vw; height:4.2vw; overflow:hidden}
+  .ov-sp-pass{font-size:2.9vw; font-weight:800; color:#ff8f7a; letter-spacing:.02em; flex:none}
+  .ov-sp-mult{font-size:3.4vw; font-weight:800; color:#ffd07a; margin-left:auto; flex:none}
+  .ov-sp.pick{background:rgba(200,70,60,.22); border-color:rgba(230,110,95,.75)}
+  .ov-sp-who{font-size:3.1vw; font-weight:700; opacity:.95; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis}
+  .ov-sp-who em{font-style:normal; opacity:.65}
+  /* 물리 룰렛 — 바늘은 12시에 고정, 원판이 돌아 당첨 칸이 그 아래로 옵니다 */
+  .ov-wheel{position:relative; width:min(80%, 40vw); aspect-ratio:1; margin:5.4vw auto .8vw}
+  .ov-w-disc{position:absolute; inset:0; border-radius:50%;
+    will-change:transform; backface-visibility:hidden; transform:translateZ(0);
+    box-shadow:0 0 0 .5vw rgba(255,255,255,.14), 0 .4vw 1.2vw rgba(0,0,0,.45)}
+  .ov-w-pin{position:absolute; left:50%; top:-1.8vw; width:0; height:0;
+    transform:translateX(-50%);
+    border-left:1.8vw solid transparent; border-right:1.8vw solid transparent;
+    border-top:3.6vw solid #ff5a3c; filter:drop-shadow(0 .2vw .3vw rgba(0,0,0,.5))}
+  .ov-sp-face{font-size:6.4vw; font-weight:800; line-height:1.1; margin:.2vw 0}
+  .ov-sp-face.roll{opacity:.6}
+  /* 결과가 뒤늦게 생기며 판이 커지지 않게 자리를 미리 잡아 둡니다 */
+  .ov-sp-out{font-size:3vw; font-weight:700; letter-spacing:.01em; height:4.4vw;
+    display:flex; align-items:center; justify-content:center; overflow:hidden}
+  /* 멈춘 값 — 원판 한가운데 (앱과 같은 모습) */
+  .ov-w-hit{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    min-width:9vw; padding:.5vw 1.3vw; border-radius:99px; background:rgba(18,15,12,.82);
+    color:#fff; font-size:4.4vw; font-weight:800; line-height:1.15; text-align:center;
+    white-space:nowrap; pointer-events:none; opacity:0}
+  .ov-w-hit.on{animation:ov-hitpop .28s cubic-bezier(.2,1.5,.4,1) forwards}
+  @keyframes ov-hitpop{from{transform:translate(-50%,-50%) scale(.5); opacity:0}
+    to{transform:translate(-50%,-50%) scale(1); opacity:1}}
   @keyframes ov-flash{
     from{background:rgba(232,198,106,.28)}
     to{background:transparent}
@@ -62,10 +124,10 @@ export const PAGE_HTML = `<!doctype html>
   .ov-delta.plus,.ov-delta.minus{animation:ov-rise 4.2s ease-out forwards}
   .ov-delta.minus{color:#e0776b}
   @keyframes ov-rise{
-    0%{opacity:0; transform:translateY(.7vw)}
-    9%{opacity:1; transform:none}
-    80%{opacity:1; transform:none}
-    100%{opacity:0; transform:translateY(-.7vw)}
+    0%{opacity:0; transform:translateY(calc(-50% + .7vw))}
+    9%{opacity:1; transform:translateY(-50%)}
+    80%{opacity:1; transform:translateY(-50%)}
+    100%{opacity:0; transform:translateY(calc(-50% - .7vw))}
   }
 
   /* 순위 변동 — 몇 계단 올랐는지 잠깐 보여주고 지웁니다 */
@@ -152,7 +214,16 @@ export const PAGE_HTML = `<!doctype html>
   if (!isNaN(s)) document.body.style.fontSize = Math.min(300, Math.max(50, s)) + "%";
 
   var app = document.getElementById("app");
-  var board = null;   // [{n,g}] — 앱이 계산해서 보내줍니다
+  var board = null;   // [{n,g,c}] — 앱이 계산해서 보내줍니다
+  var cols = [];      // [{t,r}] — 항목 열 머리
+  var showNet = true; // 순액 열을 켤지
+  var pend = null;    // 룰렛이 도는 동안 도착한 표 (끝나고 반영)
+  var spin = null;      // 앱이 보낸 판 (한 번에 통째로)
+  var play = null;      // 방송이 제 시계로 재생하는 상태
+  var spinTimer = null; // 도는 글자
+  var stepTimer = null; // 다음 걸음
+  /* 방송은 앱보다 느긋하게 — 긴장감이 남게 */
+  var OV_ROLL = 1700, OV_HOLD = 1100, OV_END = 1600;
   var prev = {};      // 이름 → {g, rank} — 증감과 순위 변동을 재는 기준점
   /* 이름 → 최근 변화와 그 시각. 다른 사람이 벌금을 먹어도 내 표시가 사라지지 않게
      렌더 횟수가 아니라 시간으로 유지하고, 표시가 살아 있는 동안 생긴 변화는 누적합니다.
@@ -172,9 +243,26 @@ export const PAGE_HTML = `<!doctype html>
     return (neg ? "\\u2212" : "") + out;
   };
 
+  /* 순액은 방송에서 한눈에 읽혀야 해서 한 자리로 줄입니다 — 92,500 → 9.3만.
+     1만 미만은 그대로 적습니다 (0.3만 보다 2,500 이 읽기 쉽습니다) */
+  var manShort = function (g) {
+    g = Math.round(g || 0);
+    var neg = g < 0;
+    g = Math.abs(g);
+    var out;
+    if (g < 10000) out = g.toLocaleString("ko-KR");
+    else {
+      var v = Math.round(g / 1000) / 10;
+      out = (v % 1 === 0 ? String(v) : v.toFixed(1)) + "만";
+    }
+    return (neg ? "\u2212" : "") + out;
+  };
+
   /* 순위: 금액 내림차순, 동률은 표에 적힌 순서 유지 */
   var ranked = function (rows) {
-    return rows.map(function (r, i) { return { n: r.n, g: r.g || 0, i: i }; })
+    return rows.map(function (r, i) {
+      return { n: r.n, g: r.g || 0, c: r.c || [], d: r.d || 0, i: i };
+    })
       .sort(function (a, b) { return b.g - a.g || a.i - b.i; });
   };
 
@@ -226,16 +314,156 @@ export const PAGE_HTML = `<!doctype html>
           (showM ? delay(mAge) : "") + '>' +
           (showM ? (rc.mv > 0 ? "▲" : "▼") + Math.abs(rc.mv) : "") + '</span>' +
         '<span class="ov-name">' + esc(r.n) + '</span>' +
+        cols.map(function (c, ci) {
+          var v = (r.c || [])[ci] || 0;
+          return '<span class="ov-cnum' + (c.r ? ' rl' : '') + (v ? '' : ' z') + '">' +
+            (v ? esc(v) : '') + '</span>';
+        }).join('') +
         '<span class="ov-gold">' + man(r.g) +
           '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
             (showD ? delay(dAge) : "") + '>' +
             (showD ? (rc.d > 0 ? "+" : "−") + man(Math.abs(rc.d)) : "") + '</span>' +
-        '</span></div>';
+        '</span>' +
+        (showNet
+          ? '<span class="ov-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
+              (r.d > 0 ? "+" : "") + manShort(r.d) + '</span>'
+          : '') + '</div>';
     }).join("");
 
     prev = {};
     list.forEach(function (r, i) { prev[r.n] = { g: r.g, rank: i + 1 }; });
     return html;
+  };
+
+  var faceTimer = null; // 숫자 모드에서 글자가 바뀌는 타이머
+  /* 숫자만 보여주는 모드에서 면이 빠르게 바뀌게 합니다 */
+  var rollFace = function (pl) {
+    if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+    if (!pl || pl.sp.look !== "num" || !pl.rolling) return;
+    var t = 0;
+    var fs2 = pl.sp.faces && pl.sp.faces.length ? pl.sp.faces : ["1"];
+    faceTimer = setInterval(function () {
+      var el = document.getElementById("ovface");
+      if (!el) { clearInterval(faceTimer); faceTimer = null; return; }
+      el.textContent = faceLabel(fs2[t++ % fs2.length]);
+    }, 80);
+  };
+  var playKey = null;   // 지금 그려 둔 판
+  var wheelRot = 0;     // 원판이 지금까지 돈 각도 (앞으로만 돕니다)
+  var clearPlayTimers = function () {
+    if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
+    if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+  };
+
+  /* 판 전체를 새로 그리면 원판이 처음부터 다시 돕니다 — 새 판일 때만 다시 그리고,
+     같은 판에서는 글자만 갈아 끼웁니다. */
+  /* 멈춘 순간의 값을 원판 한가운데에 띄웁니다 (도는 동안엔 비웁니다) */
+  var hitKey = null;
+  /* 같은 걸음에서 다시 그릴 때 등장 동작을 또 태우면 숫자가 깜빡입니다.
+     걸음이 바뀔 때만 새로 태웁니다. */
+  var drawHit = function () {
+    var el = document.getElementById("ovhit");
+    if (!el || !play) return;
+    var key = play.sp.sid + ":" + play.i + ":" + (play.rolling ? "r" : "s");
+    if (key === hitKey) return;
+    hitKey = key;
+    if (play.rolling) { el.textContent = ""; el.classList.remove("on"); return; }
+    el.textContent = faceLabel(play.sp.steps[play.i].k);
+    el.classList.remove("on");
+    void el.offsetWidth;
+    el.classList.add("on");
+  };
+  var drawPlay = function () {
+    var sbox = document.getElementById("ovspin");
+    if (!sbox) return;
+    if (!play) { sbox.innerHTML = ""; playKey = null; return; }
+    if (playKey !== play.sp.sid) {
+      playKey = play.sp.sid;
+      wheelRot = 0;
+      hitKey = null;
+      sbox.innerHTML = spinHtml(play);
+      drawHit();
+    } else {
+      var box = sbox.querySelector(".ov-sp");
+      if (box) {
+        var seen = play.sp.steps.slice(0, play.i + (play.rolling ? 0 : 1));
+        var passSeen = seen.some(function (x) { return x.k === "pass"; });
+        box.className = "ov-sp" + (passSeen ? " pass" : "");
+        var top = box.querySelector(".ov-sp-top");
+        var mult = seen.length ? seen[seen.length - 1].m : 1;
+        if (top) {
+          top.innerHTML =
+            '<span class="ov-sp-who">' + esc(play.sp.who) + ' <em>' + esc(play.sp.item) + "</em></span>" +
+            (passSeen ? '<span class="ov-sp-pass">양도권</span>' : "") +
+            (mult > 1 ? '<span class="ov-sp-mult">\u00d7' + esc(mult) + "</span>" : "");
+        }
+        var out = box.querySelector(".ov-sp-out");
+        var txt = play.over
+          ? esc(play.sp.n) + (mult > 1 ? " \u00d7 " + esc(mult) : "") + " = " + man(play.sp.gold)
+          : "";
+        if (!out) {
+          out = document.createElement("div");
+          out.className = "ov-sp-out";
+          box.appendChild(out);
+        }
+        out.textContent = txt;
+      }
+      drawHit();
+    }
+  };
+
+  /* 한 걸음 굴립니다. 원판은 앞으로만, 걸음마다 두 바퀴 넘게 더 돌게 목표를 올립니다 */
+  var rollStep = function () {
+    if (!play) return;
+    if (play.sp.look === "num") rollFace(play);
+    else spinTo(play.sp.faces, play.sp.w, play.sp.steps[play.i].k);
+  };
+
+  var stepPlay = function () {
+    if (!play) return;
+    if (play.rolling) {
+      play.rolling = false;
+      if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+      drawPlay();
+      stepTimer = setTimeout(stepPlay, OV_HOLD);
+      return;
+    }
+    if (play.i + 1 < play.sp.steps.length) {
+      play.i += 1;
+      play.rolling = true;
+      drawPlay();
+      rollStep();
+      stepTimer = setTimeout(stepPlay, OV_ROLL);
+      return;
+    }
+    if (!play.over) {
+      play.over = true;
+      drawPlay();
+      stepTimer = setTimeout(stepPlay, OV_END);
+      return;
+    }
+    /* 양도 대기 중이면 서기가 고를 때까지 결과를 띄워 둡니다 */
+    if (play.sp && play.sp.phase === "pick" && spin) {
+      stepTimer = setTimeout(stepPlay, 400);
+      return;
+    }
+    play = null;
+    drawPlay();
+    if (pend) {
+      board = pend.board;
+      cols = pend.cols;
+      showNet = pend.net;
+      pend = null;
+      render();
+    }
+  };
+
+  var startPlay = function (sp) {
+    clearPlayTimers();
+    play = { sp: sp, i: 0, rolling: true, over: false };
+    drawPlay();
+    rollStep();
+    stepTimer = setTimeout(stepPlay, OV_ROLL);
   };
 
   /* FLIP — 순위가 바뀌면 줄이 제자리에서 미끄러져 이동합니다 */
@@ -259,6 +487,94 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   var ovBoard = null;
+  var isMult = function (k) { return /^x\d+$/.test(k || ""); };
+  var faceLabel = function (k) {
+    return k === "pass" ? "양도권" : isMult(k) ? "\u00d7" + String(k).slice(1) : k;
+  };
+  /* 칸 색 — 글자를 안 쓰니 색으로 구분합니다 */
+  var NUM_COLORS = ["#4ea8de", "#57cc99", "#ffd166", "#c77dff",
+                    "#4cc9f0", "#f4978e", "#80ed99", "#b8c0ff"];
+  var faceColor = function (k, i) {
+    if (k === "pass") return "#e8564a";
+    if (isMult(k)) return "#f79824";
+    return NUM_COLORS[i % NUM_COLORS.length];
+  };
+  /* 칸을 비율만큼 나눕니다 — 잘 나오는 면이 넓어야 원판이 정직합니다 */
+  var wheelArcs = function (faces, weights) {
+    weights = weights || {};
+    var ws = faces.map(function (k) { return Math.max(0, Number(weights[k]) || 0); });
+    var tot = ws.reduce(function (x, y) { return x + y; }, 0);
+    var at = 0;
+    return faces.map(function (k, i) {
+      var arc = tot > 0 ? (ws[i] / tot) * 360 : 360 / faces.length;
+      var seg = { k: k, from: at, to: at + arc, mid: at + arc / 2, color: faceColor(k, i) };
+      at += arc;
+      return seg;
+    });
+  };
+
+  /* 물리 룰렛 원판. 칸을 원뿔 그러데이션으로 그리고 글자는 칸 가운데에 세웁니다.
+     바늘은 위(12시)에 고정이고, 원판이 돌아 그 아래로 당첨 칸이 옵니다. */
+  var wheelHtml = function (faces, weights) {
+    var segs = wheelArcs(faces, weights);
+    var stops = segs.map(function (x) {
+      return x.color + " " + x.from.toFixed(3) + "deg " + x.to.toFixed(3) + "deg";
+    }).join(",");
+    return '<div class="ov-wheel"><div class="ov-w-disc" id="ovdisc" style="background:' +
+      "conic-gradient(" + stops + ')"></div>' +
+      '<span class="ov-w-hit" id="ovhit"></span>' +
+      '<div class="ov-w-pin"></div></div>';
+  };
+
+  /* 도는 모습은 여기서 스스로 돌립니다 — 앱은 "도는 중인지"와 "선 면"만 보냅니다.
+     그래야 70ms 마다 서버로 밀어 올리지 않아도 됩니다. */
+  /* 방송에서는 한눈에 읽혀야 합니다 — 가운데는 지금 나온 면 하나,
+     쌓인 배수는 모서리에 ×2 → ×4 → ×8 로, 양도권은 붉게. 지나온 면은 안 늘어놓습니다. */
+  /* 재생 중인 한 판. 걸음은 오버레이가 셉니다 — 서기가 앱에서 건너뛰어도
+     방송의 속도감은 그대로 남습니다. */
+  var spinHtml = function (pl) {
+    var sp = pl.sp;
+    var seen = sp.steps.slice(0, pl.i + (pl.rolling ? 0 : 1));
+    var passSeen = seen.some(function (x) { return x.k === "pass"; });
+    var mult = seen.length ? seen[seen.length - 1].m : 1;
+    var out = '<div class="ov-sp-out">' + (pl.over
+      ? esc(sp.n) + (mult > 1 ? " × " + esc(mult) : "") + " = " + man(sp.gold)
+      : "") + "</div>";
+    return '<div class="ov-sp' + (passSeen ? " pass" : "") + '">' +
+      '<div class="ov-sp-top">' +
+        '<span class="ov-sp-who">' + esc(sp.who) + ' <em>' + esc(sp.item) + "</em></span>" +
+        (passSeen ? '<span class="ov-sp-pass">양도권</span>' : "") +
+        (mult > 1 ? '<span class="ov-sp-mult">×' + esc(mult) + "</span>" : "") +
+      "</div>" +
+      (sp.look === "num"
+        ? '<div class="ov-sp-face' + (pl.rolling ? " roll" : " land") + '" id="ovface">' +
+            (pl.rolling ? "?" : esc(faceLabel(sp.steps[pl.i].k))) + "</div>"
+        : wheelHtml(sp.faces && sp.faces.length ? sp.faces : ["1"], sp.w)) +
+      out + "</div>";
+  };
+
+  /* 당첨 칸이 12시 바늘 아래로 오도록 원판을 돌립니다. 걸음마다 몇 바퀴 더 얹습니다 */
+  var spinTo = function (faces, weights, k) {
+    var el = document.getElementById("ovdisc");
+    if (!el) return;
+    var segs = wheelArcs(faces, weights);
+    var seg = null;
+    for (var i = 0; i < segs.length; i++) if (segs[i].k === k) seg = segs[i];
+    if (!seg) seg = segs[0];
+    /* 지금 각도보다 항상 앞에 있는 목표를 고릅니다 — 뒤로 감기면 어색합니다 */
+    var from = wheelRot;
+    var target = wheelRot + 720 - seg.mid;
+    while (target <= wheelRot + 360) target += 360;
+    wheelRot = target;
+    /* 시작 각도를 전환 없이 먼저 못 박고, 강제로 한 번 계산시킨 뒤 목표를 줍니다.
+       프레임 콜백을 기다리지 않아 OBS 브라우저 소스에서도 확실히 돕니다. */
+    el.style.transition = "none";
+    el.style.transform = "rotate(" + from.toFixed(2) + "deg)";
+    void el.offsetWidth;
+    el.style.transition = "transform " + OV_ROLL + "ms cubic-bezier(.16,.9,.28,1)";
+    el.style.transform = "rotate(" + target.toFixed(2) + "deg)";
+  };
+
   var render = function () {
     if (dead || !board || !board.length) {
       ovBoard = null;
@@ -270,18 +586,30 @@ export const PAGE_HTML = `<!doctype html>
     }
     root.dataset.notice = "0";
     if (!ovBoard) {
-      app.innerHTML = '<div class="ov"><div class="ov-head">' +
-        '<span class="ov-name-t" id="ovname"></span>' +
-        '<span class="ov-total" id="ovtotal"></span></div><div id="ovboard"></div></div>';
+      app.innerHTML = '<div class="ov"><div class="ov-head" id="ovhead"></div>' +
+        '<div id="ovspin"></div><div id="ovboard"></div></div>';
       ovBoard = document.getElementById("ovboard");
       ovBoard.innerHTML = rowsHtml(board);
     } else {
       flip(ovBoard, function () { ovBoard.innerHTML = rowsHtml(board); });
     }
+    /* 룰렛 판 — 새 판이 오면 재생을 시작하고, 그 뒤로는 제 시계로 굴립니다 */
+    if (spin && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
+    else if (play) play.sp = spin || play.sp; // 양도 대기 여부만 갱신
+    drawPlay();
     /* 오버레이 제목은 파티명이 아니라 '벌금표' — 방송 화면에 뜨는 건 표지판이지 명패가 아닙니다 */
-    document.getElementById("ovname").textContent = "벌금표";
-    document.getElementById("ovtotal").textContent =
-      man(board.reduce(function (a, r) { return a + (r.g || 0); }, 0));
+    /* 항목 이름은 머리줄에 한 번만 — 줄마다 되뇌면 방송에서 읽히지 않습니다.
+       칸 구성은 본문 줄과 하나하나 같아야 열이 맞습니다 */
+    document.getElementById("ovhead").innerHTML =
+      '<span class="ov-rank"></span><span class="ov-move"></span>' +
+      '<span class="ov-name-t">벌금표</span>' +
+      cols.map(function (c) {
+        return '<span class="ov-chead' + (c.r ? " rl" : "") + '">' +
+          (c.r ? "\u25ce" : "") + esc(c.t) + "</span>";
+      }).join("") +
+      '<span class="ov-total">' +
+      man(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>" +
+      (showNet ? '<span class="ov-nethead">순액</span>' : "");
     fitPreview();
   };
 
@@ -337,10 +665,17 @@ export const PAGE_HTML = `<!doctype html>
       if (ev.data === "pong") return;
       try {
         var m = JSON.parse(ev.data);
-        if (m.kind === "dead") { dead = true; board = null; }
+        if (m.kind === "dead") { dead = true; board = null; spin = null; play = null; pend = null; }
         else if (m.kind === "state") {
           dead = false;
-          board = m.state && m.state.board ? m.state.board : null;
+          var nb = m.state && m.state.board ? m.state.board : null;
+          var nc = (m.state && m.state.cols) || [];
+          var nn = !(m.state && m.state.ovNet === false);
+          /* 도는 동안 온 표는 담아 두었다가 재생이 끝나고 보여 줍니다 — 안 그러면
+             바늘이 멈추기 전에 뒤의 금액이 먼저 바뀌어 답이 새어 나갑니다 */
+          if (play) pend = { board: nb, cols: nc, net: nn };
+          else { board = nb; cols = nc; showNet = nn; pend = null; }
+          spin = m.state && m.state.spin ? m.state.spin : null;
           name = (m.state && m.state.name) || "";
           applyLook(m.state && m.state.look);
         } else return;
