@@ -1911,9 +1911,6 @@ export default function GoldSettlement() {
      정산이 통째로 틀리고, 이름을 아직 안 넣었다고 빼면 오버레이·우편과 어긋납니다.
      안 쓰는 줄은 사용자가 지웁니다(행의 ×). */
   const party = rows;
-  /* 정산에는 들어가지만 우편은 못 보내는 사람. 예전엔 이런 행을 인원에서 몰래 빼서
-     장부와 오버레이가 어긋났습니다. 지금은 빼지 않고 알려 줍니다. */
-  const noNameCount = rows.filter((x) => !(x.name || "").trim()).length;
 
   const r = useMemo(
     () => computeSettlement(party, activeCols, feePercent, !simple, splitMode),
@@ -2936,10 +2933,7 @@ export default function GoldSettlement() {
                       <th className="gs-stick gs-l">
                         <div className="gs-namecell">
                           <input
-                            className={
-                              "gs-in gs-in-name" +
-                              (!(row.name || "").trim() && itemGold(row) > 0 ? " gs-name-todo" : "")
-                            }
+                            className="gs-in gs-in-name"
                             value={row.name}
                             placeholder="이름"
                             onChange={(e) => patchRow(row.id, "name", e.target.value)}
@@ -3193,12 +3187,6 @@ export default function GoldSettlement() {
           </div>
           <div className="gs-card gs-ledgerbox">
           <span className="gs-unit gs-unit-in">단위: G(골드)</span>
-          {!readOnly && noNameCount > 0 && (
-            <p className="gs-noname">
-              이름이 비어 있는 사람이 <b>{noNameCount}명</b>이에요. 정산에는 들어가지만, 우편을
-              보내려면 이름이 필요해요. 벌금표에서 채우거나, 그 자리가 비었으면 줄을 지우세요.
-            </p>
-          )}
           <div className="gs-scroll">
             <table className="gs-ledger">
               <thead>
@@ -5644,9 +5632,6 @@ const CSS = `
 .gs-sumh{min-width:88px; text-align:right; padding-right:6px !important}
 
 .gs-grid tbody tr th,.gs-grid tbody tr td{border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
-/* 벌금이 찍힌 줄인데 이름이 비었을 때. 배너 대신 채울 자리를 직접 가리킵니다 */
-.gs-name-todo{box-shadow:inset 0 -2px 0 var(--gold-ink,#8a6415)}
-.gs-name-todo::placeholder{color:var(--gold-ink,#8a6415); opacity:.95}
 .gs-in-name{font-size:15px; font-family:'Gowun Batang',serif; font-weight:700; padding:9px 0}
 .gs-in-cnt{font-family:var(--mono); font-size:16px; text-align:center; padding:9px 0}
 .gs-sumcell{font-family:var(--mono); font-size:14px; text-align:right;
@@ -6158,10 +6143,6 @@ const CSS = `
   font-family:'IBM Plex Sans KR',sans-serif}
 .gs-dim{color:rgba(var(--ink-rgb),.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:14px}
 
-.gs-noname{margin:0 0 11px; padding:8px 11px; border:1px solid rgba(var(--red-rgb),.35);
-  border-radius:4px; background:rgba(var(--red-rgb),.07); font-size:12.5px;
-  line-height:1.7; color:var(--ink-body)}
-.gs-noname b{font-weight:700; color:var(--ink)}
 .gs-note{margin:14px 0 0; font-size:12px; line-height:1.85; color:var(--ink-body); max-width:74ch}
 .gs-note b{font-weight:600; color:var(--ink)}
 /* 접히는 문답 */
