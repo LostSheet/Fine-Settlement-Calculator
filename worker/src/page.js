@@ -26,12 +26,14 @@ export const PAGE_HTML = `<!doctype html>
   .ov-total{margin-left:auto; font-size:3.4vw; font-weight:600; color:var(--gold);
     font-variant-numeric:tabular-nums; white-space:nowrap}
   .ov-row{display:flex; align-items:baseline; gap:1.6vw; padding:.85vw .4vw;
-    font-size:4.4vw; font-weight:500; line-height:1.2;
+    font-size:4.4vw; font-weight:500; line-height:1.2; border-radius:1vw;
     transition:transform .35s cubic-bezier(.22,1,.36,1)}
-  .ov-rank{width:5.2vw; font-size:3vw; opacity:.68; font-variant-numeric:tabular-nums; flex:none}
+  /* 순위와 변동은 글자 크기가 달라서, 기준선 대신 줄 한가운데에 맞춥니다 */
+  .ov-rank{width:5.2vw; font-size:3.6vw; opacity:.68; font-variant-numeric:tabular-nums;
+    flex:none; align-self:center; text-align:center}
   /* 순위 변동 자리 — 비어 있어도 폭을 차지해서 이름 열이 밀리지 않습니다 */
   .ov-move{width:5.6vw; flex:none; font-size:2.9vw; font-weight:700; text-align:center;
-    font-variant-numeric:tabular-nums}
+    font-variant-numeric:tabular-nums; align-self:center}
   .ov-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:2.4vw}
   .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none}
   /* 증감액 — 금액 뒤의 고정폭 열. 판 안에 머물면서 금액 열의 오른쪽 끝은 안 밉니다 */
@@ -145,6 +147,11 @@ export const PAGE_HTML = `<!doctype html>
   var app = document.getElementById("app");
   var board = null;   // [{n,g}] — 앱이 계산해서 보내줍니다
   var prev = {};      // 이름 → {g, rank} — 증감과 순위 변동을 재는 기준점
+  /* 이름 → 최근 변화와 그 시각. 다른 사람이 벌금을 먹어도 내 표시가 사라지지 않게
+     렌더 횟수가 아니라 시간으로 유지하고, 표시가 살아 있는 동안 생긴 변화는 누적합니다.
+     (5위→3위→2위면 ▲2 다음 ▲1 이 아니라 ▲3. 제자리로 돌아오면 표시를 끕니다) */
+  var recent = {};
+  var DELTA_MS = 4200, MOVE_MS = 6000;
   var name = "";
   var dead = false;
 
@@ -172,22 +179,52 @@ export const PAGE_HTML = `<!doctype html>
 
   var rowsHtml = function (rows) {
     var list = ranked(rows);
+    var now = Date.now();
+
+    /* 이번 렌더에서 생긴 변화를 먼저 적어 둡니다 */
+    list.forEach(function (r, i) {
+      var was = prev[r.n];
+      if (!was) return;
+      var rank = i + 1;
+      var rc = recent[r.n] || (recent[r.n] = {});
+
+      if (r.g !== was.g) {
+        // 표시가 꺼져 있었으면 지금 값을 기준점으로 새로 시작합니다
+        if (rc.dAt == null || now - rc.dAt >= DELTA_MS) rc.dBase = was.g;
+        rc.d = r.g - rc.dBase;
+        rc.dAt = rc.d === 0 ? null : now;
+      }
+      /* 순위는 위로 갈수록 숫자가 작아지니, 기준 순위에서 뺀 값이 오른 계단 수입니다 */
+      if (rank !== was.rank) {
+        if (rc.mvAt == null || now - rc.mvAt >= MOVE_MS) rc.mvBase = was.rank;
+        rc.mv = rc.mvBase - rank;
+        rc.mvAt = rc.mv === 0 ? null : now;
+      }
+    });
+
     var html = list.map(function (r, i) {
       var was = prev[r.n];
-      var d = was ? r.g - was.g : 0;
-      /* 순위는 위로 갈수록 숫자가 작아지니, 이전 순위에서 뺀 값이 오른 계단 수입니다 */
-      var mv = was ? was.rank - (i + 1) : 0;
-      var cls = "ov-row" + (r.g ? "" : " zero") + (d !== 0 ? " hit" : "") +
+      var justHit = !!was && r.g - was.g !== 0;   // 번쩍임은 바뀐 그 순간만
+      var rc = recent[r.n] || {};
+      var dAge = rc.dAt == null ? Infinity : now - rc.dAt;
+      var mAge = rc.mvAt == null ? Infinity : now - rc.mvAt;
+      var showD = dAge < DELTA_MS, showM = mAge < MOVE_MS;
+      var cls = "ov-row" + (r.g ? "" : " zero") + (justHit ? " hit" : "") +
         (i === 0 && r.g ? " top" : "");
+      /* 이미 흐르던 표시는 지난 만큼 앞당겨 이어 붙입니다 — 다시 처음부터 뜨지 않게 */
+      var delay = function (age) { return ' style="animation-delay:-' + Math.round(age) + 'ms"'; };
       return '<div class="' + cls + '" data-k="' + esc(r.n) + '">' +
         '<span class="ov-rank">' + (i + 1) + '</span>' +
-        '<span class="ov-move ' + (mv > 0 ? "up" : mv < 0 ? "down" : "") + '">' +
-          (mv !== 0 ? (mv > 0 ? "▲" : "▼") + Math.abs(mv) : "") + '</span>' +
+        '<span class="ov-move ' + (showM ? (rc.mv > 0 ? "up" : "down") : "") + '"' +
+          (showM ? delay(mAge) : "") + '>' +
+          (showM ? (rc.mv > 0 ? "▲" : "▼") + Math.abs(rc.mv) : "") + '</span>' +
         '<span class="ov-name">' + esc(r.n) + '</span>' +
         '<span class="ov-gold">' + man(r.g) + '</span>' +
-        '<span class="ov-delta ' + (d > 0 ? "plus" : d < 0 ? "minus" : "") + '">' +
-          (d !== 0 ? (d > 0 ? "+" : "−") + man(Math.abs(d)) : "") + '</span></div>';
+        '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
+          (showD ? delay(dAge) : "") + '>' +
+          (showD ? (rc.d > 0 ? "+" : "−") + man(Math.abs(rc.d)) : "") + '</span></div>';
     }).join("");
+
     prev = {};
     list.forEach(function (r, i) { prev[r.n] = { g: r.g, rank: i + 1 }; });
     return html;
@@ -218,6 +255,7 @@ export const PAGE_HTML = `<!doctype html>
     if (dead || !board || !board.length) {
       ovBoard = null;
       prev = {};
+      recent = {};
       app.innerHTML = '<div class="ov-notice" id="notice"></div>';
       maybeNotice();
       return;
