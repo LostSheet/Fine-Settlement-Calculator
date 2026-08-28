@@ -332,7 +332,10 @@ const rowsToMemo = (rows) =>
    정산에서는 돈을 받는 쪽이라 인원에서 빼면 안 됩니다.
    이름은 빈 문자열로 두고 입력칸의 placeholder 로만 보여 줍니다 — 자리표시를
    실제 이름으로 저장하면 우편·오버레이·채팅으로 그대로 새어 나갑니다. */
-// 옛 저장분에는 빈 자리가 "(이름입력n)"이라는 실제 이름으로 들어 있습니다
+/* 빈 자리는 "(이름입력n)"이라는 실제 이름으로 채워 둡니다. 번호가 있어 장부·우편·
+   오버레이에서 누구 줄인지 구분되고, 닫는 괄호가 이름과 금액의 경계라 메모장에서
+   붙여 써도 안 섞입니다. 벌금이 0이어도 정산 인원입니다 (표에 있는 줄 = 사람). */
+const FILL_NAME = (k) => "(이름입력" + k + ")";
 const isFillName = (s) => /^\(이름(입력|없음)\d+\)$/.test(s || "");
 const noFine = (x) =>
   !(x.extras || []).length && Object.values(x.counts || {}).every((v) => !num(v));
@@ -344,9 +347,7 @@ const noFine = (x) =>
 const migrateRows = (rows) => {
   if (!Array.isArray(rows)) return rows;
   const named = rows.some((x) => (x.name || "").trim() && !isFillName(x.name));
-  return (named ? rows.filter((x) => !(isFillName(x.name) && noFine(x))) : rows).map((x) =>
-    isFillName(x.name) ? { ...x, name: "" } : x
-  );
+  return named ? rows.filter((x) => !(isFillName(x.name) && noFine(x))) : rows;
 };
 
 /* 칸의 금액 — 누를 때마다 그 시점 단가로 굳혀 sums 에 쌓입니다.
@@ -1110,7 +1111,7 @@ export default function GoldSettlement() {
         cols: DEFAULT_COLS,
         rows: Array.from({ length: 8 }, (_, i) => ({
           id: "r" + (i + 1),
-          name: "",
+          name: FILL_NAME(i + 1),
           counts: fallbackMode === "simple" ? { [SIMPLE_ID]: "" } : {},
           extras: [],
         })),
@@ -1380,8 +1381,17 @@ export default function GoldSettlement() {
       return;
     }
     // 카운터 → 메모장: 구성을 통째로 동결해 두므로 잃는 게 없습니다.
-    // 이름이 없으면 메모장엔 금액만 있는 줄이 되고, 돌아올 때는 줄 순서로 대조합니다.
-    const named = rows;
+    // 이름을 지운 줄은 "(이름입력n)"을 붙여 내보냅니다 — 메모장에선 이름이 정체성이라,
+    // 숫자만 남은 줄은 돌아올 때 대조가 위험해집니다.
+    const taken = new Set(rows.map((x) => x.name).filter(Boolean));
+    let k = 1;
+    const named = rows.map((x) => {
+      if (x.name || itemGold(x) === 0) return x;
+      while (taken.has(FILL_NAME(k))) k++;
+      const nm = FILL_NAME(k);
+      taken.add(nm);
+      return { ...x, name: nm };
+    });
     setMemoFreeze({
       people: named.map((x) => ({
         name: x.name,
@@ -1498,7 +1508,7 @@ export default function GoldSettlement() {
     cols: DEFAULT_COLS,
     rows: Array.from({ length: size === 4 ? 4 : 8 }, (_, i) => ({
       id: "r" + seq.current++,
-      name: "",
+      name: FILL_NAME(i + 1),
       counts: {},
       extras: [],
     })),
@@ -2125,11 +2135,14 @@ export default function GoldSettlement() {
   const addRow = () =>
     readOnly ? undefined :
     setRows((prev) => {
+      const taken = new Set(prev.map((x) => x.name));
+      let k = prev.length + 1;
+      while (taken.has(FILL_NAME(k))) k++;
       return [
         ...prev,
         {
           id: "r" + seq.current++,
-          name: "",
+          name: FILL_NAME(k),
           counts: simple ? { [SIMPLE_ID]: "" } : {},
           extras: [],
         },
@@ -2261,9 +2274,9 @@ export default function GoldSettlement() {
        예시를 치우는 경우만 남의 명단이니 이름까지 비우고 여덟 줄로 맞춥니다. */
     setRows(() =>
       demo
-        ? Array.from({ length: 8 }, () => ({
+        ? Array.from({ length: 8 }, (_, i) => ({
             id: "r" + seq.current++,
-            name: "",
+            name: FILL_NAME(i + 1),
             counts: simple ? { [SIMPLE_ID]: "" } : {},
             extras: [],
           }))
