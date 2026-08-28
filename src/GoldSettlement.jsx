@@ -1687,11 +1687,18 @@ export default function GoldSettlement() {
   /* 오버레이는 정산 인원을 그대로 비춥니다 — 여기서 한 명이라도 빠지면 방송의 총액이
      장부와 안 맞습니다. 이름이 빈 사람이 둘 이상이면 줄 번호를 붙여 구분합니다
      (오버레이가 이름으로 순위 변동을 추적해서, 같은 이름이 겹치면 안 됩니다). */
+  /* 오버레이 금액은 정산 장부와 같은 기준으로 더합니다. itemGold 는 카운터의 항목
+     열(cols)만 보는데, 메모장 모드의 금액은 counts.simple 에 있어 늘 0이 됐습니다.
+     activeCols 는 메모장이면 금액 열 하나, 카운터면 기존 항목 열입니다.
+     기타 벌금을 메모장에서 빼는 것도 장부와 같은 규칙(withExtras = !simple)입니다. */
+  const boardGold = (row) =>
+    activeCols.reduce((a, c) => a + cellGold(row, c.id, Math.round(goldOf(c.price))), 0) +
+    (simple ? 0 : extraSum(row));
   const boardOf = () => {
     const blanks = rows.filter((x) => !(x.name || "").trim()).length;
     return rows.map((x, i) => ({
       n: (x.name || "").trim() || (blanks > 1 ? "이름 없음" + (i + 1) : "이름 없음"),
-      g: Math.max(0, itemGold(x)),
+      g: Math.max(0, boardGold(x)),
     }));
   };
 
