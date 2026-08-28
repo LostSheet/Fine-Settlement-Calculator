@@ -315,7 +315,7 @@ const rowsToMemo = (rows) =>
        단, 이름이 숫자로 끝나면(인기3) 붙이면 금액과 섞이니 그때만 한 칸 띄웁니다. */
     .map((r) => {
       const raw = (r.name || "").trim();
-      /* (이름없음n) 자리표시는 메모장에선 빈 줄입니다 */
+      /* (이름입력n) 자리표시는 메모장에선 빈 줄입니다 */
       const name = isFillName(raw) ? "" : raw;
       const amt = r.counts?.[SIMPLE_ID] || "";
       /* 0골은 굳이 안 적습니다 — 명단만 채운 줄은 이름만 보이게 */
@@ -328,10 +328,10 @@ const rowsToMemo = (rows) =>
     // 뒤쪽 빈 슬롯 행의 빈 줄은 메모에 안 적습니다 (위 보존 규칙과 왕복이 맞습니다)
     .replace(/\s+$/, "");
 
-/* 빈 자리는 "(이름없음n)"이라는 실제 이름으로 채워 둡니다 — 메모장에도 줄로 보여서
+/* 빈 자리는 "(이름입력n)"이라는 실제 이름으로 채워 둡니다 — 메모장에도 줄로 보여서
    그대로 덮어 쓰면 되고, 끝의 닫는 괄호 덕에 숫자로 끝나도 금액으로 안 읽힙니다.
    이 이름에 벌금이 0이면 정산 인원에서 빠집니다. */
-const FILL_NAME = (k) => `(이름없음${k})`;
+const FILL_NAME = (k) => `(이름입력${k})`;
 // 옛 저장분의 (이름입력n)도 빈 자리로 인식해야 정산 인원에 끼지 않습니다
 const isFillName = (s) => /^\(이름(입력|없음)\d+\)$/.test(s || "");
 
@@ -1363,7 +1363,7 @@ export default function GoldSettlement() {
       return;
     }
     // 카운터 → 메모장: 구성을 통째로 동결해 두므로 잃는 게 없습니다.
-    // 이름 없는 사람은 "(이름없음n)"을 붙여 내보냅니다 — 메모장에선 이름이 정체성이라,
+    // 이름 없는 사람은 "(이름입력n)"을 붙여 내보냅니다 — 메모장에선 이름이 정체성이라,
     // 숫자만 남은 줄은 돌아올 때 대조가 위험해집니다.
     const taken = new Set(rows.map((x) => x.name).filter(Boolean));
     let k = 1;
@@ -1664,10 +1664,12 @@ export default function GoldSettlement() {
 
   /* 오버레이가 그릴 순위표 — 금액 계산은 앱이 합니다. 서버에 그 로직을 또 두면
      단가 결정화(sums)까지 두 곳에서 관리하게 돼서요. */
+  /* 정산에 잡히는 사람은 오버레이에도 나와야 합니다. 이름을 아직 안 넣었어도
+     벌금이 있으면 정산 인원이라, 이름으로 거르면 화면이 통째로 비어 버립니다. */
   const boardOf = () =>
     rows
-      .filter((x) => (x.name || "").trim() && !isFillName(x.name))
-      .map((x) => ({ n: (x.name || "").trim(), g: Math.max(0, itemGold(x)) }));
+      .filter((x) => !isBlankRow(x))
+      .map((x) => ({ n: (x.name || "").trim() || "이름 없음", g: Math.max(0, itemGold(x)) }));
 
   /* 오버레이 생김새 — 상태에 실어 보내면 파라미터 없는 기본 주소의 OBS가 즉시 갈아입습니다.
      주소에 테마를 직접 적은 쪽(공유 받은 방송인)은 그 파라미터가 우선이라 영향이 없습니다. */
@@ -1891,7 +1893,7 @@ export default function GoldSettlement() {
     return () => window.removeEventListener("hashchange", onHash);
   });
 
-  /* 정산은 '실제 인원'만 봅니다. 이름이 없거나 "(이름없음n)" 그대로면서 벌금도 없는
+  /* 정산은 '실제 인원'만 봅니다. 이름이 없거나 "(이름입력n)" 그대로면서 벌금도 없는
      빈 자리 행은 분배 인원수에 끼면 안 되니까요. 표와 메모장에는 그대로 보입니다. */
   const isBlankRow = (x) =>
     (!(x.name || "").trim() || isFillName(x.name)) &&
@@ -2109,7 +2111,7 @@ export default function GoldSettlement() {
     });
   };
 
-  /* 새 행도 "(이름없음n)"으로 — 메모장에도 줄이 생기고, 카운터에도 이름 자리가 보입니다 */
+  /* 새 행도 "(이름입력n)"으로 — 메모장에도 줄이 생기고, 카운터에도 이름 자리가 보입니다 */
   const addRow = () =>
     readOnly ? undefined :
     setRows((prev) => {
