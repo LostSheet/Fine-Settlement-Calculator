@@ -328,12 +328,26 @@ const rowsToMemo = (rows) =>
     // 뒤쪽 빈 슬롯 행의 빈 줄은 메모에 안 적습니다 (위 보존 규칙과 왕복이 맞습니다)
     .replace(/\s+$/, "");
 
-/* 빈 자리는 "(이름입력n)"이라는 실제 이름으로 채워 둡니다 — 메모장에도 줄로 보여서
-   그대로 덮어 쓰면 되고, 끝의 닫는 괄호 덕에 숫자로 끝나도 금액으로 안 읽힙니다.
-   이 이름에 벌금이 0이면 정산 인원에서 빠집니다. */
-const FILL_NAME = (k) => `(이름입력${k})`;
-// 옛 저장분의 (이름입력n)도 빈 자리로 인식해야 정산 인원에 끼지 않습니다
+/* 표에 있는 줄은 전부 파티원입니다. 안 쓰는 줄은 지우면 되고, 벌금이 0인 사람도
+   정산에서는 돈을 받는 쪽이라 인원에서 빼면 안 됩니다.
+   이름은 빈 문자열로 두고 입력칸의 placeholder 로만 보여 줍니다 — 자리표시를
+   실제 이름으로 저장하면 우편·오버레이·채팅으로 그대로 새어 나갑니다. */
+// 옛 저장분에는 빈 자리가 "(이름입력n)"이라는 실제 이름으로 들어 있습니다
 const isFillName = (s) => /^\(이름(입력|없음)\d+\)$/.test(s || "");
+const noFine = (x) =>
+  !(x.extras || []).length && Object.values(x.counts || {}).every((v) => !num(v));
+/* 옛 규칙에서는 "(이름입력n) + 벌금 0" 행이 정산 인원에서 빠졌습니다. 그 행을 남긴 채
+   이름만 비우면 인원수(n)가 늘어 예전 정산 금액이 바뀝니다. 그래서 이름을 실제로 넣어
+   쓰던 표에서만 남은 자리표시 행을 지웁니다 — 그 표에서 그 행은 안 쓴 자리였으니까요.
+   아무도 이름을 안 넣은 표는 아직 시작 안 한 표라, 줄을 그대로 두고 이름만 비웁니다.
+   (여기서 지워 버리면 "이름은 아직, 벌금부터" 쓰던 표가 통째로 사라집니다.) */
+const migrateRows = (rows) => {
+  if (!Array.isArray(rows)) return rows;
+  const named = rows.some((x) => (x.name || "").trim() && !isFillName(x.name));
+  return (named ? rows.filter((x) => !(isFillName(x.name) && noFine(x))) : rows).map((x) =>
+    isFillName(x.name) ? { ...x, name: "" } : x
+  );
+};
 
 /* 칸의 금액 — 누를 때마다 그 시점 단가로 굳혀 sums 에 쌓입니다.
    그래서 나중에 단가를 바꿔도 이미 센 것의 금액은 그대로입니다.
@@ -509,7 +523,8 @@ function loadPartySlot(name) {
   if (typeof window === "undefined") return null;
   try {
     const v = JSON.parse(window.localStorage.getItem(partySlotKey(name)) || "null");
-    return v && Array.isArray(v.rows) && Array.isArray(v.cols) ? v : null;
+    if (!v || !Array.isArray(v.rows) || !Array.isArray(v.cols)) return null;
+    return { ...v, rows: migrateRows(v.rows) };
   } catch (e) {
     return null;
   }
@@ -730,7 +745,9 @@ function loadSaved() {
     if (!s || !Array.isArray(s.cols) || !Array.isArray(s.rows)) return null;
     return {
       cols: s.cols,
-      rows: s.rows.map((x) => ({ ...x, counts: x.counts || {}, sums: x.sums || {}, extras: x.extras || [] })),
+      rows: migrateRows(
+        s.rows.map((x) => ({ ...x, counts: x.counts || {}, sums: x.sums || {}, extras: x.extras || [] }))
+      ),
       feePercent: typeof s.feePercent === "string" ? s.feePercent : "5",
       splitMode: s.splitMode === "solo" ? "solo" : "pot",
       mode: s.mode === "simple" ? "simple" : "items",
@@ -1093,7 +1110,7 @@ export default function GoldSettlement() {
         cols: DEFAULT_COLS,
         rows: Array.from({ length: 8 }, (_, i) => ({
           id: "r" + (i + 1),
-          name: FILL_NAME(i + 1),
+          name: "",
           counts: fallbackMode === "simple" ? { [SIMPLE_ID]: "" } : {},
           extras: [],
         })),
@@ -1363,17 +1380,8 @@ export default function GoldSettlement() {
       return;
     }
     // 카운터 → 메모장: 구성을 통째로 동결해 두므로 잃는 게 없습니다.
-    // 이름 없는 사람은 "(이름입력n)"을 붙여 내보냅니다 — 메모장에선 이름이 정체성이라,
-    // 숫자만 남은 줄은 돌아올 때 대조가 위험해집니다.
-    const taken = new Set(rows.map((x) => x.name).filter(Boolean));
-    let k = 1;
-    const named = rows.map((x) => {
-      if (x.name || itemGold(x) === 0) return x;
-      while (taken.has(FILL_NAME(k))) k++;
-      const nm = FILL_NAME(k);
-      taken.add(nm);
-      return { ...x, name: nm };
-    });
+    // 이름이 없으면 메모장엔 금액만 있는 줄이 되고, 돌아올 때는 줄 순서로 대조합니다.
+    const named = rows;
     setMemoFreeze({
       people: named.map((x) => ({
         name: x.name,
@@ -1490,7 +1498,7 @@ export default function GoldSettlement() {
     cols: DEFAULT_COLS,
     rows: Array.from({ length: size === 4 ? 4 : 8 }, (_, i) => ({
       id: "r" + seq.current++,
-      name: FILL_NAME(i + 1),
+      name: "",
       counts: {},
       extras: [],
     })),
@@ -1666,10 +1674,16 @@ export default function GoldSettlement() {
      단가 결정화(sums)까지 두 곳에서 관리하게 돼서요. */
   /* 정산에 잡히는 사람은 오버레이에도 나와야 합니다. 이름을 아직 안 넣었어도
      벌금이 있으면 정산 인원이라, 이름으로 거르면 화면이 통째로 비어 버립니다. */
-  const boardOf = () =>
-    rows
-      .filter((x) => !isBlankRow(x))
-      .map((x) => ({ n: (x.name || "").trim() || "이름 없음", g: Math.max(0, itemGold(x)) }));
+  /* 오버레이는 정산 인원을 그대로 비춥니다 — 여기서 한 명이라도 빠지면 방송의 총액이
+     장부와 안 맞습니다. 이름이 빈 사람이 둘 이상이면 줄 번호를 붙여 구분합니다
+     (오버레이가 이름으로 순위 변동을 추적해서, 같은 이름이 겹치면 안 됩니다). */
+  const boardOf = () => {
+    const blanks = rows.filter((x) => !(x.name || "").trim()).length;
+    return rows.map((x, i) => ({
+      n: (x.name || "").trim() || (blanks > 1 ? "이름 없음" + (i + 1) : "이름 없음"),
+      g: Math.max(0, itemGold(x)),
+    }));
+  };
 
   /* 오버레이 생김새 — 상태에 실어 보내면 파라미터 없는 기본 주소의 OBS가 즉시 갈아입습니다.
      주소에 테마를 직접 적은 쪽(공유 받은 방송인)은 그 파라미터가 우선이라 영향이 없습니다. */
@@ -1893,13 +1907,13 @@ export default function GoldSettlement() {
     return () => window.removeEventListener("hashchange", onHash);
   });
 
-  /* 정산은 '실제 인원'만 봅니다. 이름이 없거나 "(이름입력n)" 그대로면서 벌금도 없는
-     빈 자리 행은 분배 인원수에 끼면 안 되니까요. 표와 메모장에는 그대로 보입니다. */
-  const isBlankRow = (x) =>
-    (!(x.name || "").trim() || isFillName(x.name)) &&
-    !extrasOf(x).length &&
-    Object.values(x.counts || {}).every((v) => !num(v));
-  const party = useMemo(() => rows.filter((x) => !isBlankRow(x)), [rows]);
+  /* 표에 있는 줄이 곧 파티원입니다. 벌금이 0인 사람도 받을 몫이 있어 인원에서 빼면
+     정산이 통째로 틀리고, 이름을 아직 안 넣었다고 빼면 오버레이·우편과 어긋납니다.
+     안 쓰는 줄은 사용자가 지웁니다(행의 ×). */
+  const party = rows;
+  /* 정산에는 들어가지만 우편은 못 보내는 사람. 예전엔 이런 행을 인원에서 몰래 빼서
+     장부와 오버레이가 어긋났습니다. 지금은 빼지 않고 알려 줍니다. */
+  const noNameCount = rows.filter((x) => !(x.name || "").trim()).length;
 
   const r = useMemo(
     () => computeSettlement(party, activeCols, feePercent, !simple, splitMode),
@@ -2111,18 +2125,14 @@ export default function GoldSettlement() {
     });
   };
 
-  /* 새 행도 "(이름입력n)"으로 — 메모장에도 줄이 생기고, 카운터에도 이름 자리가 보입니다 */
   const addRow = () =>
     readOnly ? undefined :
     setRows((prev) => {
-      const taken = new Set(prev.map((x) => x.name));
-      let k = prev.length + 1;
-      while (taken.has(FILL_NAME(k))) k++;
       return [
         ...prev,
         {
           id: "r" + seq.current++,
-          name: FILL_NAME(k),
+          name: "",
           counts: simple ? { [SIMPLE_ID]: "" } : {},
           extras: [],
         },
@@ -2250,15 +2260,23 @@ export default function GoldSettlement() {
       demo ? "예시를 치우고 빈 표로 시작해요." : "이름과 항목은 그대로 두고 숫자만 비웠어요."
     );
     if (demo) setCols(DEFAULT_COLS);
-    setRows(() => {
-      const keep = demo ? [] : rows.filter((x) => (x.name || "").trim() && !isFillName(x.name));
-      return Array.from({ length: Math.max(8, keep.length) }, (_, i) => ({
-        id: "r" + seq.current++,
-        name: keep[i] ? keep[i].name : FILL_NAME(i + 1),
-        counts: simple ? { [SIMPLE_ID]: "" } : {},
-        extras: [],
-      }));
-    });
+    /* 줄 수는 그대로 둡니다 — 줄이 곧 인원이라, 여기서 늘리면 정산 인원이 바뀝니다.
+       예시를 치우는 경우만 남의 명단이니 이름까지 비우고 여덟 줄로 맞춥니다. */
+    setRows(() =>
+      demo
+        ? Array.from({ length: 8 }, () => ({
+            id: "r" + seq.current++,
+            name: "",
+            counts: simple ? { [SIMPLE_ID]: "" } : {},
+            extras: [],
+          }))
+        : rows.map((x) => ({
+            id: "r" + seq.current++,
+            name: x.name,
+            counts: simple ? { [SIMPLE_ID]: "" } : {},
+            extras: [],
+          }))
+    );
     setOpenRow(null);
     setLog([]);
     setMemoFreeze(null);
@@ -3172,6 +3190,12 @@ export default function GoldSettlement() {
           </div>
           <div className="gs-card gs-ledgerbox">
           <span className="gs-unit gs-unit-in">단위: G(골드)</span>
+          {!readOnly && noNameCount > 0 && (
+            <p className="gs-noname">
+              이름이 비어 있는 사람이 <b>{noNameCount}명</b>이에요. 정산에는 들어가지만, 우편을
+              보내려면 이름이 필요해요. 벌금표에서 채우거나, 그 자리가 비었으면 줄을 지우세요.
+            </p>
+          )}
           <div className="gs-scroll">
             <table className="gs-ledger">
               <thead>
@@ -4154,7 +4178,7 @@ function PartyLobby({ list, active, rooms, onPick, onCreate, onDelete, onRename,
     const slot = loadPartySlot(name);
     if (!slot) return { cnt: 0, total: 0 };
     return {
-      cnt: slot.rows.filter((x) => (x.name || "").trim() && !isFillName(x.name)).length,
+      cnt: migrateRows(slot.rows).length,
       total: slotGold(slot),
     };
   };
@@ -6128,6 +6152,10 @@ const CSS = `
   font-family:'IBM Plex Sans KR',sans-serif}
 .gs-dim{color:rgba(var(--ink-rgb),.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:14px}
 
+.gs-noname{margin:0 0 11px; padding:8px 11px; border:1px solid rgba(var(--red-rgb),.35);
+  border-radius:4px; background:rgba(var(--red-rgb),.07); font-size:12.5px;
+  line-height:1.7; color:var(--ink-body)}
+.gs-noname b{font-weight:700; color:var(--ink)}
 .gs-note{margin:14px 0 0; font-size:12px; line-height:1.85; color:var(--ink-body); max-width:74ch}
 .gs-note b{font-weight:600; color:var(--ink)}
 /* 접히는 문답 */
