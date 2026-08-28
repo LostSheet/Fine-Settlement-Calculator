@@ -461,6 +461,8 @@ function decodeState(token) {
 
 const MODE_KEY = "m";
 const LIVE_KEY = "live"; // #live=ROOMID 로 들어오면 읽기 전용 뷰어
+/* 예시 방 — 서버에 방이 없습니다. 앱이 예시 장부를 직접 비춰서, 실제 링크와 똑같이 동작합니다 */
+const DEMO_ROOM = "CAFE22";
 
 /* ================= OBS 중계 =================
    장부 관리자의 앱만 상태를 밀어 올리고, OBS와 뷰어는 읽기 전용으로 구독합니다.
@@ -1776,9 +1778,39 @@ export default function GoldSettlement() {
       onYes: obsReissue,
     });
 
+  /* --- 예시 방: 서버에 붙지 않고 예시 장부를 비춥니다. 몇 초마다 벌금이 붙어서
+         장부와 우편이 실제로 다시 계산되는 것까지 보여 줍니다 --- */
+  useEffect(() => {
+    if (!readOnly || liveRoom !== DEMO_ROOM) return;
+    setCols(DEFAULT_COLS);
+    setRows(DEFAULT_ROWS);
+    setFeePercent("5");
+    setUnit("10000");
+    setSplitMode("pot");
+    setLiveName("현자들 (예시)");
+    setLiveState("on");
+    const t = setInterval(() => {
+      setRows((rs) =>
+        rs.map((r, i) =>
+          i !== Math.floor(Math.random() * rs.length)
+            ? r
+            : {
+                ...r,
+                counts: {
+                  ...r.counts,
+                  c1: String(num(r.counts.c1) + 1 + Math.floor(Math.random() * 3)),
+                },
+              }
+        )
+      );
+      setLiveTick((x) => x + 1);
+    }, 4000);
+    return () => clearInterval(t);
+  }, []);
+
   /* --- 뷰어: 구독해서 장부 관리자 화면을 그대로 비춥니다 --- */
   useEffect(() => {
-    if (!readOnly) return;
+    if (!readOnly || liveRoom === DEMO_ROOM) return;
     let ws = null,
       beat = null,
       wait = 1000,
@@ -3835,8 +3867,27 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
   const [code, setCode] = useState(null);
   const [codeShown, setCodeShown] = useState(false);
   const [claim, setClaim] = useState("");
+  const previewRef = useRef(null);
   const [claimed, setClaimed] = useState(false);
   const url = room ? relayApi.shareUrl(room.roomId) : "";
+
+  /* 테마 확인용 창 — 늘 예시 방을 씁니다. 내 방은 벌금이 바뀌기 전엔 정지 화면이라
+     증감·순위 변동·1위 강조를 볼 수 없어서요. 칩을 누르면 열린 창을 그 자리에서 갈아끼웁니다. */
+  const previewUrl = (lk) =>
+    relayApi.shareUrl(DEMO_ROOM) +
+    "?mode=overlay&fit=1&t=" + lk.t +
+    (isPanelLook(lk) ? "&bg=" + (100 - (lk.alpha ?? 25)) : "");
+  const openPreview = () => {
+    const w = window.open(previewUrl(relay.look), "gsOverlayPreview", "width=560,height=640");
+    previewRef.current = w;
+    // 조용히 실패하는 게 제일 나쁩니다 — 막혔으면 그렇다고 알려 줍니다
+    if (!w) setErr("브라우저가 팝업을 막았어요. 팝업을 허용하고 다시 눌러 주세요.");
+  };
+  const pickLook = (lk) => {
+    putRelay({ ...relay, look: lk });
+    const w = previewRef.current;
+    if (w && !w.closed) w.location.replace(previewUrl(lk));
+  };
 
   useEffect(() => {
     // 가이드 창이 위에 떠 있으면 Esc 는 그쪽 몫입니다 — 한 번에 하나씩 닫힙니다
@@ -3978,14 +4029,20 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
         )}
 
         <div className="gs-obs-look">
-          <h4>오버레이 테마</h4>
+          <div className="gs-obs-lookhead">
+            <h4>오버레이 테마</h4>
+            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={openPreview}>
+              테마 미리보기
+            </button>
+          </div>
           <p className="gs-obs-looknote">
             {room
               ? "고르면 방송 화면에 바로 반영돼요 — OBS의 주소는 그대로 두면 돼요. "
               : "지금 골라 두면 주소를 만들 때 이 모습으로 시작해요. "}
             칩의 왼쪽 절반이 밝은 화면, 오른쪽 절반이 어두운 화면 위에서의 모습이에요.
+            테마 미리보기를 누르면 예시 표로 움직이는 모습까지 볼 수 있어요.
           </p>
-          <LookPicker look={relay.look} onPick={(lk) => putRelay({ ...relay, look: lk })} />
+          <LookPicker look={relay.look} onPick={pickLook} />
         </div>
 
         <div className="gs-obs-fold">
@@ -5745,7 +5802,9 @@ const CSS = `
 .gs-coach-skip:hover{color:var(--ink)}
 /* 오버레이 테마 — 사선 배경(밝은/어두운 화면 반반) 위에 실제 조합을 미리 보여줍니다 */
 .gs-obs-look{margin-top:16px}
-.gs-obs-look h4{margin:0 0 4px; font-size:13px}
+.gs-obs-lookhead{display:flex; align-items:center; gap:12px; margin-bottom:4px}
+.gs-obs-look h4{margin:0; font-size:13px}
+.gs-obs-lookhead .gs-btn{margin-left:auto}
 .gs-obs-looknote{font-size:12px; color:var(--ink-2); margin:0 0 10px; line-height:1.65}
 .gs-lookgrid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px}
 .gs-lookchip{display:flex; flex-direction:column; gap:6px; font:inherit; font-size:11.5px;

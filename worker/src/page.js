@@ -78,6 +78,19 @@ export const PAGE_HTML = `<!doctype html>
   html[data-t="light"] .ov{--ink:#221c14; --gold:#8a6415;
     background:rgba(248,244,236,var(--bg,.88)); border-radius:max(12px, 1.4vw)}
 
+  /* 미리보기 창에서만 — 투명한 자리를 체커보드로 표시합니다.
+     중간 회색이라 밝은 글자·진한 글자 테마를 둘 다 판단할 수 있습니다. */
+  /* overflow:hidden 의 잘라내는 기준이 html 박스라, 배율로 커진 판이 잘리지 않게 높이를 채웁니다 */
+  html[data-preview="1"], html[data-preview="1"] body{height:100%}
+  html[data-preview="1"] body{
+    background-color:#8a8a8a;
+    background-image:
+      linear-gradient(45deg,#7b7b7b 25%,transparent 25%,transparent 75%,#7b7b7b 75%),
+      linear-gradient(45deg,#7b7b7b 25%,transparent 25%,transparent 75%,#7b7b7b 75%);
+    background-size:22px 22px;
+    background-position:0 0,11px 11px;
+  }
+
   /* 방송 중이 아님이 확인될 때만 JS가 켭니다 */
   .ov-notice{display:none; font-size:2.6vw; line-height:1.6; color:#f0b8b0; padding:1.2vw 1.6vw;
     text-shadow:0 1px 3px rgba(0,0,0,.9)}
@@ -97,8 +110,9 @@ export const PAGE_HTML = `<!doctype html>
   var forced = q.get("mode");
   var inOBS = forced === "overlay" || (forced !== "page" && !!window.obsstudio);
 
-  /* 브라우저로 열었으면 앱의 읽기 전용 화면으로 넘깁니다 */
-  if (!inOBS && !isDemo) {
+  /* 브라우저로 열었으면 앱의 읽기 전용 화면으로 넘깁니다 (예시도 같습니다).
+     오버레이만 보고 싶으면 주소 뒤에 ?mode=overlay 를 붙이면 됩니다. */
+  if (!inOBS) {
     var dest = "__APP__";
     if (location.hostname === "localhost" || location.hostname === "127.0.0.1")
       dest = "http://localhost:5175/";
@@ -108,6 +122,9 @@ export const PAGE_HTML = `<!doctype html>
 
   var root = document.documentElement;
   root.dataset.mode = "overlay";
+  /* fit=1 이면 미리보기 창입니다. 진짜 OBS 안에서는 절대 켜지지 않게 한 번 더 막습니다 */
+  var isPreview = q.get("fit") === "1" && !window.obsstudio;
+  if (isPreview) root.dataset.preview = "1";
   /* 기본은 어디서든 읽히는 어두운 판. 주소에 직접 적은 테마가 있으면 그쪽이 우선 */
   var urlTheme = q.get("t");
   var urlBg = q.get("bg");
@@ -219,6 +236,32 @@ export const PAGE_HTML = `<!doctype html>
     document.getElementById("ovname").textContent = "벌금표";
     document.getElementById("ovtotal").textContent =
       man(board.reduce(function (a, r) { return a + (r.g || 0); }, 0));
+    fitPreview();
+  };
+
+  /* 미리보기 창 맞춤. 글자가 vw 기준이라 창을 좁히면 내용도 같이 줄어들어서,
+     폭은 건드리지 않고 배율로 키웁니다. 폭만 채우면 높이가 넘쳐 잘리므로
+     가로·세로 중 작은 배율을 써서 창 안에 통째로 넣고 가운데에 놓습니다.
+     팝업이면 처음 한 번만 창 높이를 판에 맞춰 남는 여백을 없앱니다. */
+  var fitted = false;
+  var fitPreview = function () {
+    if (!isPreview) return;
+    var el = document.querySelector(".ov");
+    if (!el) return;
+    el.style.transform = "none";
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    var scale = Math.min(window.innerWidth / r.width, window.innerHeight / r.height);
+    el.style.transformOrigin = "top left";
+    el.style.transform =
+      "translate(" + (window.innerWidth - r.width * scale) / 2 + "px," +
+      (window.innerHeight - r.height * scale) / 2 + "px) scale(" + scale + ")";
+    if (!fitted && window.opener) {
+      fitted = true;
+      var want = Math.round(r.height * (window.innerWidth / r.width));
+      if (want > 0 && Math.abs(want - window.innerHeight) > 8)
+        window.resizeBy(0, want - window.innerHeight);
+    }
   };
 
   /* 방송 중이 아님이 확인될 때만 알립니다. 판별 실패는 침묵(안전한 쪽) */
@@ -285,6 +328,9 @@ export const PAGE_HTML = `<!doctype html>
       render();
     }, 3200);
   };
+
+  /* 창 크기를 바꾸면 vw 가 달라져 판 크기도 달라집니다 — 그 즉시 다시 맞춥니다 */
+  if (isPreview) window.addEventListener("resize", fitPreview);
 
   if (isDemo) startDemo();
   else { render(); connect(); }
