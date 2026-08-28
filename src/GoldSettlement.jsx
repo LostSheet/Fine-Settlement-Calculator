@@ -1160,18 +1160,7 @@ export default function GoldSettlement() {
   // 정산 방식도 수수료처럼 파티 장부에 붙어 다닙니다
   const [splitMode, setSplitMode] = useState(boot.current.splitMode === "solo" ? "solo" : "pot");
   const [showSplitHelp, setShowSplitHelp] = useState(false);
-  /* 공유 받은 방송인의 오버레이 테마 — 장부 관리자와 무관하게 자기 주소(파라미터)에 담습니다 */
-  const [viewerLookOpen, setViewerLookOpen] = useState(false);
-  const [viewerLook, setViewerLook] = useState(() => {
-    try {
-      const v = JSON.parse(window.localStorage.getItem("goldSettlement.viewerLook") || "null");
-      return v && typeof v.t === "string" ? v : { t: "dark", alpha: 25 };
-    } catch (e) {
-      return { t: "dark", alpha: 25 };
-    }
-  });
-  const [viewerLookCopied, setViewerLookCopied] = useState(false);
-  /* 코치마크 진행 상태 — {kind:"tour",step} | {kind:"obs"} | {kind:"viewerLook"} */
+  /* 코치마크 진행 상태 — {kind:"course",step} | {kind:"obs"} | {kind:"hint"} */
   const [coach, setCoach] = useState(null);
   const obsCoachPending = useRef(false);
 
@@ -1187,31 +1176,6 @@ export default function GoldSettlement() {
     setCoach({ kind: "course", step: c.step + 1 }); // 5·6걸음은 버튼으로 넘깁니다
   };
 
-  /* 뷰어 첫 진입 — OBS용 테마 창을 한 번 열어 보여줍니다 */
-  useEffect(() => {
-    if (!readOnly || !liveRoom || coachSeen("obsViewer")) return;
-    const t = setTimeout(() => setViewerLookOpen(true), 900);
-    return () => clearTimeout(t);
-  }, []);
-  const viewerLookUrl = liveRoom
-    ? relayApi.shareUrl(liveRoom) +
-      "?t=" + viewerLook.t +
-      (isPanelLook(viewerLook) ? "&bg=" + (100 - (viewerLook.alpha ?? 25)) : "")
-    : "";
-  const pickViewerLook = (lk) => {
-    setViewerLook(lk);
-    try {
-      window.localStorage.setItem("goldSettlement.viewerLook", JSON.stringify(lk));
-    } catch (e) {}
-  };
-  const copyViewerLookUrl = () =>
-    navigator.clipboard
-      .writeText(viewerLookUrl)
-      .then(() => {
-        setViewerLookCopied(true);
-        setTimeout(() => setViewerLookCopied(false), 2000);
-      })
-      .catch(() => {});
   const [mode, setMode] = useState(boot.current.mode || "simple");
   const [unit, setUnit] = useState(boot.current.unit || "10000");
   const [memoFont, setMemoFont] = useState(clampMemoFont(boot.current.memoFont));
@@ -2446,12 +2410,6 @@ export default function GoldSettlement() {
                 </span>
               </span>
             )}
-            {/* 뷰어의 OBS 자리 — 장부 관리자의 'OBS 공유 설정'과 같은 위치에 앉습니다 */}
-            {readOnly && liveRoom && (
-              <button className="gs-btn gs-btn-ghost gs-obsbtn-vw" onClick={() => setViewerLookOpen(true)}>
-                OBS용 테마
-              </button>
-            )}
             <span className="gs-viewseg" role="group" aria-label="보기 방식">
               <span className="gs-tip">
                 <button
@@ -3385,8 +3343,9 @@ export default function GoldSettlement() {
                   </span>
                 </span>
                 <span className="gs-intro-desc">
-                  메모장 쓰듯 이름과 금액만 적으면 자동으로 표가 만들어져요. 쓰던 메모를
-                  그대로 붙여넣어도 돼요.
+                  이미 메모장에 적고 계셨다면 그대로 붙여넣기만 하면 돼요. 기록은 하던 대로
+                  하고 정산만 여기서 하는 방식이에요. 새로 적을 때도 이름과 금액만 한 줄씩
+                  치면 표가 만들어져요.
                 </span>
               </button>
               <button className="gs-intro-card" onClick={() => pickIntro("items")}>
@@ -3457,69 +3416,53 @@ export default function GoldSettlement() {
             )
           }
         >
-          <div className="gs-help-sec">
-            <h4>화면과 파티</h4>
-            <ul className="gs-help">
-              <li>
-                <b>파티</b> — 파티마다 표·기록·공유 주소가 따로 살아요. 제목의 파티 이름을
-                누르면 바로 바꾸고, 화면 맨 위 '‹ 파티 목록'에서 만들고 지워요. 파티 목록의
-                '튜토리얼'을 누르면 화면 안내가 처음부터 다시 돌아요.
-              </li>
-              <li>
-                <b>OBS로 공유</b> — 화면 맨 위 버튼으로 이 파티의 벌금 현황을 방송 화면에
-                실시간으로 띄워요.
-              </li>
-              <li>
-                <b>탭 · 세로 보기</b> — 화면 맨 위 오른쪽 아이콘으로 바꿔요.
-              </li>
-              <li>
-                <b>앱으로 설치</b> — 주소창 오른쪽 설치 아이콘을 누르면 브라우저 껍데기 없는
-                창으로 떠요. 화면에 표만 남고, 인터넷이 끊겨도 열려요.
-              </li>
-            </ul>
-          </div>
-          <div className="gs-help-sec">
-            <h4>벌금표</h4>
-            <ul className="gs-help">
-              <li>
-                <b>메모장 ↔ 카운터</b> — 표가 그대로 변환돼요. 카운터의 횟수 구성은 동결됐다가
-                돌아올 때 이름으로 대조해 복원되고, 메모장에서 고친 차액만 기타·기록에 남아요.
-              </li>
-              <li>
-                <b>카운터</b> — 칸을 누르면 1회, 우클릭하면 1회 빼기. 실수는 반대 클릭으로 바로
-                잡고, 기록에서도 취소할 수 있어요. 합계를 누르면 입력 단위 기준으로 직접
-                수정(차액은 기타 '조정'으로).
-              </li>
-              <li>
-                <b>단가 변경</b> — 단가를 누르면 '이제부터 세는 것만'과 '지금까지 센 횟수까지'
-                중에 고르는 창이 떠요. 아직 세지 않은 항목은 창 없이 바로 고쳐져요.
-              </li>
-              <li>
-                <b>기록</b> — ＋·수정이 한 줄씩 남고, 어떤 줄이든 취소하면 반대 기록이 붙어요.
-              </li>
-              <li>
-                <b>실수 복구</b> — 인원·항목 삭제, 처음부터 직후엔 ↩ 되돌리기가 떠 있어요.
-                표를 고치기 시작하면 사라져요.
-              </li>
-              <li>
-                <b>처음부터</b> — 이름과 항목은 두고 숫자·기록만 비워요.
-              </li>
-              <li>
-                <b>채팅 공유용 복사</b> — 이름과 벌금을 만 단위 한 줄로 만들어요.{" "}
-                {CHAT_LIMIT}자가 넘으면 이름을 줄여요.
-              </li>
-            </ul>
-          </div>
-          <div className="gs-help-sec">
-            <h4>정산</h4>
-            <ul className="gs-help">
-              <li>
-                <b>정산 방식</b> — 벌금통은 전부 모아 전원이 똑같이 나눠요. 본인 제외는 자기
-                벌금을 자기만 빼고 나눠서, 낸 만큼 전부 잃어요. 누가 보내고 받는지는 두 방식이
-                같고 금액만 달라져요.
-              </li>
-            </ul>
-          </div>
+          {/* 사용법을 여는 순간은 대개 뭔가 막혔을 때라, 기능 이름이 아니라 그 질문을 표제로 씁니다 */}
+          <ul className="gs-help gs-help-qa">
+            <li>
+              <b>잘못 눌렀어요</b>
+              칸을 우클릭하면 1회가 빠져요. 기록에서 어떤 줄이든 취소할 수 있고, 인원·항목을
+              지웠거나 '처음부터'를 눌렀다면 ↩ 되돌리기가 잠깐 떠 있어요.
+            </li>
+            <li>
+              <b>숫자를 직접 고치고 싶어요</b>
+              합계를 누르면 입력 단위 기준으로 바로 쳐 넣을 수 있어요. 차액은 기타 '조정'으로
+              남아서 기록이 끊기지 않아요.
+            </li>
+            <li>
+              <b>단가를 중간에 바꿔야 해요</b>
+              단가를 누르면 '이제부터 세는 것만'과 '지금까지 센 횟수까지' 중에 골라요. 아직
+              세지 않은 항목은 창 없이 바로 고쳐져요.
+            </li>
+            <li>
+              <b>이미 메모장에 적고 있었어요</b>
+              메모장 모드에 그대로 붙여넣으면 표가 만들어져요. 모드를 바꿔도 적어둔 내용은
+              그대로 넘어가고, 카운터의 횟수 구성은 동결됐다가 돌아올 때 복원돼요.
+            </li>
+            <li>
+              <b>같은 멤버로 한 판 더 해요</b>
+              '처음부터'를 누르면 이름과 항목은 두고 숫자·기록만 비워요.
+            </li>
+            <li>
+              <b>파티가 여럿이에요</b>
+              파티마다 표·기록·공유 주소가 따로 살아요. 제목의 파티 이름으로 바꾸고, 화면 맨 위
+              '‹ 파티 목록'에서 만들고 지워요. 거기 '튜토리얼'을 누르면 화면 안내를 다시 봐요.
+            </li>
+            <li>
+              <b>파티원한테 보여주고 싶어요</b>
+              화면 맨 위 'OBS 공유 설정'에서 주소를 만들면, 그 주소 하나로 방송 화면에 띄우고
+              디스코드로도 공유해요. 파티원 화면은 읽기 전용이에요.
+            </li>
+            <li>
+              <b>벌금을 어떻게 나눌지 고르고 싶어요</b>
+              정산 장부의 '정산 방식'에서 골라요. 벌금통은 전부 모아 전원이 똑같이 나누고, 본인
+              제외는 자기 벌금을 자기만 빼고 나눠요. 누가 보내고 받는지는 같고 금액만 달라져요.
+            </li>
+            <li>
+              <b>채팅에 붙여넣고 싶어요</b>
+              표 오른쪽 위 '채팅 공유용 복사'가 이름과 벌금을 한 줄로 만들어요. {CHAT_LIMIT}자가
+              넘으면 이름을 줄여요.
+            </li>
+          </ul>
         </InfoModal>
       )}
       {showLog && !simple && (
@@ -3672,45 +3615,6 @@ export default function GoldSettlement() {
             setCoach(null);
           }}
         />
-      )}
-      {coach && coach.kind === "viewerLook" && (
-        <CoachMark
-          sel=".gs-obsbtn-vw"
-          text="OBS용 주소와 테마는 여기서 언제든 다시 열 수 있어요."
-          action="알겠어요"
-          onNext={() => {
-            coachDone("obsViewer");
-            setCoach(null);
-          }}
-          onClose={() => {
-            coachDone("obsViewer");
-            setCoach(null);
-          }}
-        />
-      )}
-      {viewerLookOpen && readOnly && liveRoom && (
-        <InfoModal
-          title="OBS용 테마"
-          onClose={() => {
-            setViewerLookOpen(false);
-            if (!coachSeen("obsViewer")) setCoach({ kind: "viewerLook" });
-          }}
-          wide
-        >
-          <p className="gs-obs-looknote">
-            테마를 고른 뒤, 아래 주소를 OBS 브라우저 소스의 URL 자리에 붙여 넣으면 돼요.
-          </p>
-          <LookPicker look={viewerLook} onPick={pickViewerLook} />
-          <button
-            className={"gs-obs-copybox" + (viewerLookCopied ? " copied" : "")}
-            onClick={copyViewerLookUrl}
-          >
-            <span className="gs-obs-urltext">{viewerLookUrl}</span>
-            <span className="gs-obs-copyhint">
-              {viewerLookCopied ? "복사됐어요 — OBS 브라우저 소스에 넣으세요" : "누르면 주소가 복사돼요"}
-            </span>
-          </button>
-        </InfoModal>
       )}
       {showHub && r && (
         <InfoModal title="총무한테 전부 보내고 나누면 안 되나요?" onClose={() => setShowHub(false)}>
@@ -3902,7 +3806,7 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
     "[벌금 현황판] " + label + "\n" +
     url + "\n" +
     "· OBS 브라우저 소스에 이 주소를 넣으면 오버레이가 떠요\n" +
-    "· 브라우저로 열면 자세한 현황을 볼 수 있고, OBS용 테마도 고를 수 있어요";
+    "· 브라우저로 열면 자세한 현황을 볼 수 있어요";
 
   const copy2 = (kind, text) =>
     navigator.clipboard
@@ -4026,10 +3930,13 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
           </div>
         )}
 
-        {/* 링크를 보내기 직전이 이 질문이 떠오르는 자리입니다 */}
-        <button className="gs-ask-open gs-obs-why" onClick={() => setShowWhy(true)}>
-          왜 파티원은 수정할 수 없나요?
-        </button>
+        {/* 링크를 보내기 직전에 알아야 할 사실. 이유는 눌러서 봅니다 */}
+        <p className="gs-obs-ro">
+          파티원 화면은 <b>읽기 전용</b>이에요.{" "}
+          <button className="gs-obs-why" onClick={() => setShowWhy(true)}>
+            왜 그런가요?
+          </button>
+        </p>
 
         <div className="gs-obs-look">
           <div className="gs-obs-lookhead">
@@ -4040,10 +3947,8 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
           </div>
           <p className="gs-obs-looknote">
             {room
-              ? "고르면 방송 화면에 바로 반영돼요 — OBS의 주소는 그대로 두면 돼요. "
-              : "지금 골라 두면 주소를 만들 때 이 모습으로 시작해요. "}
-            칩의 왼쪽 절반이 밝은 화면, 오른쪽 절반이 어두운 화면 위에서의 모습이에요.
-            테마 미리보기를 누르면 예시 표로 움직이는 모습까지 볼 수 있어요.
+              ? "고르면 방송 화면에 바로 반영돼요 — OBS의 주소는 그대로 두면 돼요."
+              : "지금 골라 두면 주소를 만들 때 이 모습으로 시작해요."}
           </p>
           <LookPicker look={relay.look} onPick={pickLook} />
         </div>
@@ -4908,23 +4813,29 @@ function CoachMark({ sel, text, action, step, total, passive, onNext, onSkip, on
 /* 검증된 오버레이 조합 — 칩의 사선 배경(밝은/어두운 화면 반반) 위에 실제 모습을 미리 보여줍니다 */
 /* 2×3 격자 — 윗줄은 어두운 계열(밝은 화면에 강함), 아랫줄은 밝은 계열(어두운 화면에 강함).
    열은 [반투명 판 | 판 | 판 없이]로 통일. 왼쪽 위가 기본값입니다. */
+/* 앞의 둘만 펼쳐 두고 나머지는 접습니다. 판의 진하기는 아래 투명도가 맡으므로
+   '판'과 '판·반투명'을 따로 두지 않습니다. */
 const LOOK_PRESETS = [
-  { id: "goat", name: "어두운 판 · 반투명 (추천)", look: { t: "dark", alpha: 25 } },
-  { id: "dark0", name: "어두운 판", look: { t: "dark", alpha: 0 } },
+  { id: "goat", name: "어두운 판 (추천)", look: { t: "dark", alpha: 25 } },
+  { id: "light25", name: "밝은 판", look: { t: "light", alpha: 25 } },
   { id: "clear", name: "판 없이 · 밝은 글자", look: { t: "clear" } },
-  { id: "light25", name: "밝은 판 · 반투명", look: { t: "light", alpha: 25 } },
-  { id: "light0", name: "밝은 판", look: { t: "light", alpha: 0 } },
   { id: "cleardark", name: "판 없이 · 진한 글자", look: { t: "cleardark" } },
 ];
+const LOOK_OPEN = 2; // 처음부터 보이는 개수
 const isPanelLook = (lk) => !!lk && (lk.t === "dark" || lk.t === "light");
 const sameLook = (a, b) =>
   !!a && !!b && a.t === b.t && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
 
 function LookPicker({ look, onPick }) {
+  /* 고른 테마가 접힌 쪽에 있으면 펼쳐 둡니다 — 지금 값이 안 보이면 안 되니까요 */
+  const [more, setMore] = useState(() =>
+    LOOK_PRESETS.slice(LOOK_OPEN).some((pr) => sameLook(look, pr.look))
+  );
+  const shown = more ? LOOK_PRESETS : LOOK_PRESETS.slice(0, LOOK_OPEN);
   return (
     <>
       <div className="gs-lookgrid" role="group" aria-label="오버레이 테마">
-        {LOOK_PRESETS.map((pr) => (
+        {shown.map((pr) => (
           <button
             key={pr.id}
             className={"gs-lookchip" + (sameLook(look, pr.look) ? " on" : "")}
@@ -4937,6 +4848,12 @@ function LookPicker({ look, onPick }) {
           </button>
         ))}
       </div>
+      {!more && (
+        <button className="gs-lookmore" onClick={() => setMore(true)}>
+          다른 테마와 투명도
+        </button>
+      )}
+      {more && (
       <div className={"gs-lookalpha" + (isPanelLook(look) ? "" : " off")}>
         <span className="gs-caplab">배경 투명도</span>
         <div className="gs-seg gs-seg-sm" role="group" aria-label="배경 투명도">
@@ -4953,6 +4870,7 @@ function LookPicker({ look, onPick }) {
         </div>
         {!isPanelLook(look) && <span className="gs-lookalpha-note">판이 있는 테마에서 조절돼요</span>}
       </div>
+      )}
     </>
   );
 }
@@ -5821,7 +5739,14 @@ const CSS = `
   padding:2px 0}
 .gs-coach-skip:hover{color:var(--ink)}
 /* 오버레이 테마 — 사선 배경(밝은/어두운 화면 반반) 위에 실제 조합을 미리 보여줍니다 */
-.gs-obs-why{margin-top:12px}
+.gs-obs-ro{margin-top:12px; font-size:12.5px; color:var(--ink-2)}
+.gs-obs-ro b{color:var(--ink)}
+.gs-obs-why{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--red);
+  cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0}
+.gs-lookmore{display:block; margin-top:9px; border:0; background:transparent; font:inherit;
+  font-size:12px; color:var(--ink-2); cursor:pointer; text-decoration:underline;
+  text-underline-offset:3px; padding:2px 0}
+.gs-lookmore:hover{color:var(--ink)}
 .gs-obs-look{margin-top:16px}
 .gs-obs-lookhead{display:flex; align-items:center; gap:12px; margin-bottom:4px}
 .gs-obs-look h4{margin:0; font-size:13px}
@@ -5840,6 +5765,7 @@ const CSS = `
   border-radius:6px; white-space:nowrap}
 .sw-dark0 b{background:rgba(20,17,14,1); color:#f5f0e6}
 .sw-goat b{background:rgba(20,17,14,.75); color:#f5f0e6}
+.sw-light25 b{background:rgba(248,244,236,.75); color:#221c14}
 .sw-light25 b{background:rgba(248,244,236,.75); color:#221c14}
 .sw-light0 b{background:rgba(248,244,236,1); color:#221c14}
 .sw-clear b{color:#f5f0e6; text-shadow:0 0 5px rgba(0,0,0,.95), 0 1px 2px rgba(0,0,0,.95)}
@@ -5983,6 +5909,9 @@ const CSS = `
 .gs-dialog-head h3{margin:0}
 .gs-dialog-x{margin-left:auto; font-size:22px; width:30px; height:30px; flex:none}
 .gs-dialog-body{overflow-y:auto; min-height:0; margin:0 -4px; padding:0 4px}
+/* 질문형 사용법 — 표제(질문)를 줄로 띄워 훑기 쉽게 */
+.gs-help-qa li{margin-bottom:13px}
+.gs-help-qa b{display:block; margin-bottom:3px}
 /* 사용법 — 다시 보기는 머리 줄 오른쪽. 졸업 직후엔 금테로 숨쉬며 자리를 알립니다 */
 .gs-help-replay{margin-left:auto}
 .gs-help-sec{margin-top:14px}
