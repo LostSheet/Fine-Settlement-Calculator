@@ -4827,11 +4827,13 @@ const sameLook = (a, b) =>
   !!a && !!b && a.t === b.t && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
 
 function LookPicker({ look, onPick }) {
-  /* 고른 테마가 접힌 쪽에 있으면 펼쳐 둡니다 — 지금 값이 안 보이면 안 되니까요 */
-  const [more, setMore] = useState(() =>
-    LOOK_PRESETS.slice(LOOK_OPEN).some((pr) => sameLook(look, pr.look))
-  );
-  const shown = more ? LOOK_PRESETS : LOOK_PRESETS.slice(0, LOOK_OPEN);
+  const [more, setMore] = useState(false);
+  /* 접혀 있어도 지금 고른 테마는 늘 보입니다 — 현재 값이 안 보이면 안 되니까요 */
+  const shown = more
+    ? LOOK_PRESETS
+    : LOOK_PRESETS.filter(
+        (pr, i) => i < LOOK_OPEN || sameLook(look, pr.look)
+      );
   return (
     <>
       <div className="gs-lookgrid" role="group" aria-label="오버레이 테마">
@@ -4848,11 +4850,9 @@ function LookPicker({ look, onPick }) {
           </button>
         ))}
       </div>
-      {!more && (
-        <button className="gs-lookmore" onClick={() => setMore(true)}>
-          다른 테마와 투명도
-        </button>
-      )}
+      <button className="gs-lookmore" onClick={() => setMore((v) => !v)}>
+        {more ? "접기" : "다른 테마와 투명도"}
+      </button>
       {more && (
       <div className={"gs-lookalpha" + (isPanelLook(look) ? "" : " off")}>
         <span className="gs-caplab">배경 투명도</span>
