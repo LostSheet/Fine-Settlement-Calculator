@@ -1687,7 +1687,9 @@ export default function GoldSettlement() {
   const toggleOvCol = (key) =>
     setRelay((prev) => {
       const ov = { ...(prev.ov || {}) };
-      ov[key] = ov[key] === false;
+      /* 항목은 켬이 기본이라 !== false 로, 순액은 끔이 기본이라 === true 로 읽습니다 */
+      const on = key === "net" ? ov.net === true : ov[key] !== false;
+      ov[key] = !on;
       const next = { ...prev, ov };
       saveRelay(next);
       return next;
@@ -1839,7 +1841,8 @@ export default function GoldSettlement() {
      열이 달라져 시청자가 헷갈립니다). 순위·변동·이름·금액은 늘 나옵니다. */
   const ovShow = () => ({
     items: (relay.ov || {}).items !== false,
-    net: (relay.ov || {}).net !== false,
+    /* 순액은 켜고 싶은 사람만 켭니다 — 기본 화면은 벌금만 보여 주는 게 단순합니다 */
+    net: (relay.ov || {}).net === true,
   });
   const lookOut = () => {
     const lk = relay.look || { t: "dark", alpha: 25 };
@@ -4658,7 +4661,11 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
               ["items", "항목 횟수", "잡힘·죽음 같은 항목을 몇 번 했는지"],
               ["net", "순액", "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)"],
             ].map(([key, label, hint]) => {
-              const on = (relay.ov || {})[key] !== false;
+              /* 항목은 켬이 기본, 순액은 끔이 기본 */
+              const on =
+                key === "net"
+                  ? (relay.ov || {}).net === true
+                  : (relay.ov || {})[key] !== false;
               return (
                 <button
                   key={key}
@@ -4673,7 +4680,10 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
               );
             })}
           </div>
-          <OvColsPreview items={(relay.ov || {}).items !== false} net={(relay.ov || {}).net !== false} />
+          <OvColsPreview
+            items={(relay.ov || {}).items !== false}
+            net={(relay.ov || {}).net === true}
+          />
         </div>
 
         <div className="gs-obs-fold">
