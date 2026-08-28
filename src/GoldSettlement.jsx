@@ -3864,6 +3864,7 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null); // "url" | "msg"
   const [showGuide, setShowGuide] = useState(false);
+  const [showWhy, setShowWhy] = useState(false);
   const [code, setCode] = useState(null);
   const [codeShown, setCodeShown] = useState(false);
   const [claim, setClaim] = useState("");
@@ -3891,10 +3892,10 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
 
   useEffect(() => {
     // 가이드 창이 위에 떠 있으면 Esc 는 그쪽 몫입니다 — 한 번에 하나씩 닫힙니다
-    const onKey = (e) => e.key === "Escape" && !showGuide && onClose();
+    const onKey = (e) => e.key === "Escape" && !showGuide && !showWhy && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, showGuide]);
+  }, [onClose, showGuide, showWhy]);
 
   /* 복사물은 단 하나 — 파티원에게 보낼 메시지. 주소는 그 안에 한 줄로 들어 있습니다. */
   const msg = () =>
@@ -4001,10 +4002,7 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
           아래 주소를 <b>OBS 브라우저 소스에 붙여넣으면</b>, 벌금 현황이 방송 화면에
           실시간으로 떠요. 브라우저로 열면 정산 장부와 보낼 우편까지 볼 수 있어요.
         </p>
-        <p>
-          벌금 기록은 이 브라우저(장부 관리자)에서만 되고 <b>파티원 화면은 읽기 전용</b>이에요.
-          한 사람이 기록해야 중복 입력 사고가 없기 때문이에요.
-        </p>
+
 
         {!room ? (
           <div className="gs-obs-make">
@@ -4027,6 +4025,11 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
             </div>
           </div>
         )}
+
+        {/* 링크를 보내기 직전이 이 질문이 떠오르는 자리입니다 */}
+        <button className="gs-ask-open gs-obs-why" onClick={() => setShowWhy(true)}>
+          왜 파티원은 수정할 수 없나요?
+        </button>
 
         <div className="gs-obs-look">
           <div className="gs-obs-lookhead">
@@ -4112,6 +4115,23 @@ function ObsShare({ relay, putRelay, activeLabel, snapshot, onAskReissue, onAskS
 
         {err && <p className="gs-obs-err">{err}</p>}
       </div>
+      {showWhy && (
+        <InfoModal title="왜 파티원은 수정할 수 없나요?" onClose={() => setShowWhy(false)}>
+          <p>
+            벌금 기록은 이 브라우저(장부 관리자)에서만 되고, 파티원 화면은 읽기 전용이에요.
+            한 사람이 기록해야 중복 입력 사고가 없기 때문이에요.
+          </p>
+          <p>
+            여러 명이 동시에 고칠 수 있으면, 같은 벌금을 두 사람이 각각 넣거나 한쪽이 방금 고친
+            숫자를 다른 쪽이 덮어쓰는 일이 생겨요. 정산이 끝난 뒤에는 어느 쪽이 맞는지 확인할
+            방법도 없고요.
+          </p>
+          <p>
+            대신 파티원은 벌금표·정산 장부·보낼 우편을 전부 볼 수 있어요. 자기가 얼마 냈고
+            누구에게 얼마를 보내는지 직접 확인할 수 있으니, 못 보는 것은 없어요.
+          </p>
+        </InfoModal>
+      )}
       {showGuide && (
         <InfoModal title="OBS에 넣는 방법" onClose={() => setShowGuide(false)} wide>
           <ol className="gs-obs-guide">
@@ -5801,6 +5821,7 @@ const CSS = `
   padding:2px 0}
 .gs-coach-skip:hover{color:var(--ink)}
 /* 오버레이 테마 — 사선 배경(밝은/어두운 화면 반반) 위에 실제 조합을 미리 보여줍니다 */
+.gs-obs-why{margin-top:12px}
 .gs-obs-look{margin-top:16px}
 .gs-obs-lookhead{display:flex; align-items:center; gap:12px; margin-bottom:4px}
 .gs-obs-look h4{margin:0; font-size:13px}

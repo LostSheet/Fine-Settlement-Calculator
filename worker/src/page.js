@@ -20,12 +20,13 @@ export const PAGE_HTML = `<!doctype html>
 
   .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw}
   /* 총액을 금액 열과 같은 선에 세웁니다 — 증감액 열 10.5 + 열 간격 1.6 + 줄 안쪽 여백 .4 */
-  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.8vw; padding-right:12.5vw}
+  /* 총액도 금액 열과 같은 선에 — 줄 안쪽 여백(.4vw)만 빼면 됩니다 */
+  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.8vw; padding-right:.4vw}
   .ov-name-t{font-size:4.2vw; font-weight:600; letter-spacing:.03em;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .ov-total{margin-left:auto; font-size:3.4vw; font-weight:600; color:var(--gold);
     font-variant-numeric:tabular-nums; white-space:nowrap}
-  .ov-row{display:flex; align-items:baseline; gap:1.6vw; padding:.85vw .4vw;
+  .ov-row{display:flex; align-items:baseline; gap:1.6vw; padding:.85vw .4vw; position:relative;
     font-size:4.4vw; font-weight:500; line-height:1.2; border-radius:1vw;
     transition:transform .35s cubic-bezier(.22,1,.36,1)}
   /* 순위와 변동은 글자 크기가 달라서, 기준선 대신 줄 한가운데에 맞춥니다 */
@@ -35,11 +36,17 @@ export const PAGE_HTML = `<!doctype html>
   .ov-move{width:5.6vw; flex:none; font-size:2.9vw; font-weight:700; text-align:center;
     font-variant-numeric:tabular-nums; align-self:center}
   .ov-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:2.4vw}
-  .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none}
+  .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none; position:relative}
   /* 증감액 — 금액 뒤의 고정폭 열. 판 안에 머물면서 금액 열의 오른쪽 끝은 안 밉니다 */
-  .ov-delta{flex:none; width:10.5vw; padding-left:1.4vw; white-space:nowrap;
-    font-size:3.4vw; font-weight:600; color:var(--gold)}
+  /* 증감액은 이름과 금액 사이의 빈 자리에 붙습니다 — 어느 열도 밀지 않고 여백도 안 먹습니다 */
+  .ov-delta{position:absolute; left:100%; margin-left:1.2vw; white-space:nowrap;
+    font-size:3.4vw; font-weight:600; color:var(--gold);
+    padding:.1vw .8vw; border-radius:99px; background:rgba(20,17,14,.72)}
+  /* 밝은 판·진한 글자 테마에서는 칩도 밝게 */
+  html[data-t="light"] .ov-delta, html[data-t="cleardark"] .ov-delta{background:rgba(248,244,236,.85)}
   .ov-delta.plus{color:#8fd89b}
+  /* 비어 있을 때는 칩 배경만 남지 않도록 아예 감춥니다 */
+  .ov-delta:empty{display:none}
   .ov-row.zero{opacity:.5}
 
   /* 1위 — 금색 순위와 살짝 밝은 이름으로 초점을 만듭니다 */
@@ -219,10 +226,11 @@ export const PAGE_HTML = `<!doctype html>
           (showM ? delay(mAge) : "") + '>' +
           (showM ? (rc.mv > 0 ? "▲" : "▼") + Math.abs(rc.mv) : "") + '</span>' +
         '<span class="ov-name">' + esc(r.n) + '</span>' +
-        '<span class="ov-gold">' + man(r.g) + '</span>' +
-        '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
-          (showD ? delay(dAge) : "") + '>' +
-          (showD ? (rc.d > 0 ? "+" : "−") + man(Math.abs(rc.d)) : "") + '</span></div>';
+        '<span class="ov-gold">' + man(r.g) +
+          '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
+            (showD ? delay(dAge) : "") + '>' +
+            (showD ? (rc.d > 0 ? "+" : "−") + man(Math.abs(rc.d)) : "") + '</span>' +
+        '</span></div>';
     }).join("");
 
     prev = {};
