@@ -5956,6 +5956,10 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
               <img src={guideImg(4)} alt="OBS에 현황판이 뜬 모습" />
             </li>
           </ol>
+          <p className="gs-obs-guidefoot">
+            XSplit 등 다른 방송 프로그램도 같은 방법이에요. 혹시 현황판 대신 다른 화면이
+            뜨면 주소 뒤에 <b>?mode=overlay</b> 를 붙여 주세요.
+          </p>
         </InfoModal>
       )}
     </div>

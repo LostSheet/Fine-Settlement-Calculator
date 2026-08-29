@@ -275,7 +275,12 @@ export const PAGE_HTML = `<!doctype html>
   /* 소스 나누기 — board 는 현황판만, spin 은 룰렛만 그립니다. 없으면 둘 다.
      파일은 하나고 분기만 다릅니다 — 소스마다 딴 페이지를 만들 이유가 없어요. */
   var TYPE = q.get("type") === "board" ? "board" : q.get("type") === "spin" ? "spin" : "all";
-  var inOBS = forced === "overlay" || (forced !== "page" && !!window.obsstudio);
+  /* 방송 프로그램 판별 — OBS 계열은 obsstudio 객체, 그 외에는 UA 토큰으로 잡습니다.
+     (OBS·Streamlabs: " OBS/29.0.2" / XSplit: "XSplitBroadcaster/4.x").
+     못 잡는 프로그램은 주소 뒤 ?mode=overlay 로 수동 강제합니다. */
+  var ua = navigator.userAgent || "";
+  var inCast = !!window.obsstudio || ua.indexOf(" OBS/") >= 0 || ua.indexOf("XSplitBroadcaster/") >= 0;
+  var inOBS = forced === "overlay" || (forced !== "page" && inCast);
 
   /* 브라우저로 열었으면 앱의 읽기 전용 화면으로 넘깁니다 (예시도 같습니다).
      오버레이만 보고 싶으면 주소 뒤에 ?mode=overlay 를 붙이면 됩니다. */
