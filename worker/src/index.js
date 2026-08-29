@@ -64,7 +64,7 @@ export default {
     }
 
     // 방 API — /api/r/:id/(state|live|kill|peek)
-    const api = p.match(new RegExp(`^/api/r/(${ID6})/(state|live|kill|peek|read)$`));
+    const api = p.match(new RegExp(`^/api/r/(${ID6})/(state|live|kill|peek|read|archive)$`));
     if (api) {
       const stub = env.ROOM.get(env.ROOM.idFromName(api[1]));
       return stub.fetch(new Request("https://do/" + api[2], req));
@@ -154,8 +154,27 @@ export class Room {
       if (!real) return json({ error: "gone" }, 410);
       if (key !== real) return json({ error: "unauthorized" }, 403);
       if (await this.ctx.storage.get("dead")) return json({ error: "dead" }, 410);
-      const state = await this.ctx.storage.get("state");
-      return json({ state: state ?? null });
+      const [state, prev] = await Promise.all([
+        this.ctx.storage.get("state"),
+        this.ctx.storage.get("prev"),
+      ]);
+      return json({ state: state ?? null, prev: prev ?? null });
+    }
+
+    /* 직전 회차 한 장 — 처음부터를 누를 때 앱이 밀어 둡니다. 최신 하나만 남습니다 */
+    if (path === "/archive") {
+      const body = await req.text();
+      if (body.length > MAX_STATE_BYTES) return json({ error: "too big" }, 413);
+      let key, state;
+      try {
+        ({ key, state } = JSON.parse(body));
+      } catch (e) {
+        return json({ error: "bad json" }, 400);
+      }
+      const real = await this.ctx.storage.get("key");
+      if (!real || key !== real) return json({ error: "unauthorized" }, 403);
+      await this.ctx.storage.put("prev", state);
+      return json({ ok: true });
     }
 
     /* 주소 재발급의 뒷정리 — 옛 방을 닫습니다 (새 방 생성은 앱이 따로 합니다) */

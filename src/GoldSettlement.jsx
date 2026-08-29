@@ -746,7 +746,22 @@ function dropPartySlot(name) {
     window.localStorage.removeItem(partySlotKey(name));
   } catch (e) {}
 }
-const DEFAULT_ROOM_LABEL = "기본"; // 프리셋 없이 쓸 때의 명단 이름
+const DEFAULT_ROOM_LABEL = "기본"; // 옛 파티 시절의 기본 명단 이름 (저장 호환용)
+/* 프리셋 — 시작 구성 템플릿(명단·항목·단가·수수료·단위) */
+const PRESETS_KEY = "goldSettlement.presets";
+const loadPresets = () => {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(PRESETS_KEY) || "[]");
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+};
+const savePresets = (l) => {
+  try {
+    window.localStorage.setItem(PRESETS_KEY, JSON.stringify(l));
+  } catch (e) {}
+};
 
 function loadRelay() {
   if (typeof window === "undefined") return { on: false, rooms: {}, active: DEFAULT_ROOM_LABEL };
@@ -852,6 +867,13 @@ const relayApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code }),
     }).catch(() => {}),
+  /* 직전 회차 한 장을 방에 보관 — 복구 코드 복원 때 함께 돌아옵니다 */
+  archive: (roomId, key, state) =>
+    fetch(`${RELAY_BASE}/api/r/${roomId}/archive`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, state }),
+    }),
   shareUrl: (roomId) => `${RELAY_BASE}/r/${roomId}`,
 };
 
@@ -965,6 +987,22 @@ function syncHashMode(mode) {
 /* ---------- 새로고침해도 남도록 브라우저에 저장 ---------- */
 const STORE_KEY = "goldSettlement.v1";
 /* 파티 카드에 적는 합계 — 정산과 같은 식으로 슬롯에서 바로 뽑습니다 */
+/* 회차 라벨 — 기록 시간 범위로 부릅니다. 같은 날이면 날짜를 한 번만 적습니다 */
+const fmtSpan = (from, to) => {
+  const f = new Date(from);
+  const t = new Date(to);
+  const d = (x) => x.getMonth() + 1 + "/" + x.getDate();
+  const hm = (x) =>
+    String(x.getHours()).padStart(2, "0") + ":" + String(x.getMinutes()).padStart(2, "0");
+  return d(f) + " " + hm(f) + " ~ " + (d(f) === d(t) ? "" : d(t) + " ") + hm(t);
+};
+/* 이주 판정 — 기록·벌금·직접 적은 이름 중 하나라도 있으면 남깁니다 */
+const slotWorthKeeping = (slot) =>
+  !!slot &&
+  ((Array.isArray(slot.log) && slot.log.length > 0) ||
+    slotGold(slot) > 0 ||
+    (Array.isArray(slot.rows) && slot.rows.some((r) => r.name && !isFillName(r.name))));
+
 function slotGold(slot) {
   if (!slot) return 0;
   const simple = slot.mode === "simple";
@@ -1398,6 +1436,20 @@ export default function GoldSettlement() {
       const slot = loadPartySlot(partyReg.active);
       if (slot) Object.assign(data, slot);
       else savePartySlot(partyReg.active, partyLedgerOf(data));
+      /* 단일 장부 전환 이주 — 활성이 아닌 옛 파티는 전부 「잠긴 지난 회차」가 됩니다.
+         데이터는 자리 그대로 두고 표시만 바꾸므로 손실이 없고, 빈 껍데기(기록도
+         벌금도 없는 파티)는 목록에서만 뺍니다(저장소는 안 지웁니다 — 되돌릴 수 있게). */
+      partyReg.list = partyReg.list.filter(
+        (x) =>
+          x.name === partyReg.active ||
+          x.gen != null ||
+          slotWorthKeeping(loadPartySlot(x.name))
+      );
+      partyReg.list = partyReg.list.map((x) =>
+        x.name === partyReg.active || x.gen != null
+          ? x
+          : { ...x, gen: true, locked: true }
+      );
       savePartyReg(partyReg);
     }
 
@@ -1418,7 +1470,9 @@ export default function GoldSettlement() {
 
   /* 뷰어(읽기 전용)인지 — 이 값이 참이면 어떤 조작도 상태를 바꾸지 못합니다 */
   const liveRoom = boot.current.liveRoom || null;
-  const readOnly = !!liveRoom;
+  /* 지난 회차 보기 — 읽기 전용. 회차는 들춰보는 것이고, 장부는 쓰는 것입니다 */
+  const [genView, setGenView] = useState(null);
+  const readOnly = !!liveRoom || !!genView;
   const [liveState, setLiveState] = useState(readOnly ? "connecting" : null); // connecting|on|empty|dead
   const [liveName, setLiveName] = useState("");
   const [liveTick, setLiveTick] = useState(0);   // 갱신이 올 때마다 +1 — 점이 깜빡입니다
@@ -1527,7 +1581,8 @@ export default function GoldSettlement() {
   const seq = useRef(boot.current.seq);
 
   const simple = mode === "simple";
-  const tabbed = view === "tabs";
+  /* 보기 방식은 탭으로 고정했습니다 — 스크롤 보기를 쓰던 브라우저도 조용히 탭으로 */
+  const tabbed = true;
   const showSheet = !tabbed || tab === "sheet";
   const showLedger = !tabbed || tab === "ledger";
   const showMail = !tabbed || tab === "mail";
@@ -1766,7 +1821,25 @@ export default function GoldSettlement() {
     boot.current.partyReg || { list: [{ name: "기본", t: 0 }], active: "기본" }
   );
   const [partyDD, setPartyDD] = useState(false);
-  const [lobby, setLobby] = useState(false);
+  const [lobby, setLobby] = useState(false); // (로비 화면은 폐지 — 렌더 안 함)
+  const [lookOpen, setLookOpen] = useState(false); // 외형 창
+  const [resetOpen, setResetOpen] = useState(false); // 처음부터 창
+  const [presets, setPresets] = useState(loadPresets);
+  const savePresetNow = (name) => {
+    const nm = (name || "").trim();
+    if (!nm) return false;
+    const entry = {
+      name: nm,
+      cols,
+      unit,
+      feePercent,
+      names: rows.map((r) => r.name),
+    };
+    const next = [...presets.filter((x) => x.name !== nm), entry];
+    setPresets(next);
+    savePresets(next);
+    return true;
+  };
   const putPartyReg = (reg) => {
     setPartyReg(reg);
     savePartyReg(reg);
@@ -1866,6 +1939,7 @@ export default function GoldSettlement() {
     const entries = Object.entries(got.rooms || {});
     const nextRooms = { ...relay.rooms };
     const seatedNames = [];
+    const prevSeats = [];
     let refreshed = 0,
       gone = 0,
       failed = 0,
@@ -1899,15 +1973,60 @@ export default function GoldSettlement() {
       nextRooms[nm] = bind;
       seatedNames.push(nm);
       if (!firstName) firstName = nm;
+      /* 방에 남은 직전 회차 한 장도 같이 — 잠기지 않은 지난 회차로 */
+      const pled = ledgerFromSnapshot(snap && snap.prev);
+      if (pled) {
+        const pts = (pled.log || []).map((e) => e.t).filter(Boolean);
+        const pname = uniquePartyName(
+          pts.length ? fmtSpan(Math.min(...pts), Math.max(...pts)) : nm + " 직전 회차"
+        );
+        savePartySlot(pname, pled);
+        prevSeats.push({
+          name: pname,
+          t: Date.now() - 1,
+          gen: true,
+          locked: false,
+          gold: slotGold(pled),
+          from: pts.length ? Math.min(...pts) : undefined,
+          to: pts.length ? Math.max(...pts) : undefined,
+        });
+      }
     }
     if (seatedNames.length || refreshed) {
       if (seatedNames.length) {
-        savePartySlot(partyReg.active, currentLedger());
+        /* 교대 — 지금 장부는 지난 회차로 닫히고, 첫 복원분이 현재가 됩니다.
+           나머지 복원분과 직전 회차는 지난 회차로 나란히 놓입니다. */
+        const old = partyReg.active;
+        const oldLed = currentLedger();
+        let folded = foldIntoGens(oldLed, partyReg.list);
+        folded = folded.filter((x) => x.name !== old);
+        delete nextRooms[old];
+        /* 활성 장부의 이름은 항상 '기본' */
+        savePartySlot(DEFAULT_ROOM_LABEL, loadPartySlot(firstName));
+        if (firstName !== DEFAULT_ROOM_LABEL) {
+          dropPartySlot(firstName);
+          nextRooms[DEFAULT_ROOM_LABEL] = nextRooms[firstName];
+          delete nextRooms[firstName];
+        }
         putPartyReg({
-          list: [...partyReg.list, ...seatedNames.map((nm) => ({ name: nm, t: Date.now() }))],
-          active: firstName,
+          list: [
+            ...folded,
+            ...prevSeats,
+            ...seatedNames
+              .filter((nm) => nm !== firstName)
+              .map((nm) => ({
+                name: nm,
+                t: Date.now(),
+                gen: true,
+                locked: true,
+                gold: slotGold(loadPartySlot(nm)),
+              })),
+            { name: DEFAULT_ROOM_LABEL, t: Date.now() },
+          ],
+          active: DEFAULT_ROOM_LABEL,
         });
-        applyLedger(loadPartySlot(firstName) || blankPartyLedger());
+        if (old !== DEFAULT_ROOM_LABEL) dropPartySlot(old);
+        applyLedger(loadPartySlot(DEFAULT_ROOM_LABEL) || blankPartyLedger());
       }
       putRelay({
         ...relay,
@@ -1941,7 +2060,7 @@ export default function GoldSettlement() {
       String(d.getDate()).padStart(2, "0");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
-    a.download = "벌금표-" + partyReg.active + "-" + stamp + ".json";
+    a.download = ("벌금표-" + stamp + ".json").replace(/[\\/:*?"<>|]/g, "-");
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   };
@@ -1955,12 +2074,24 @@ export default function GoldSettlement() {
     const led = data && data.ledger;
     if (!led || !Array.isArray(led.cols) || !Array.isArray(led.rows))
       return "파일을 읽지 못했어요 — 벌금표에서 내보낸 파일이 맞는지 확인해 주세요.";
-    const nm = uniquePartyName(data.name);
-    savePartySlot(nm, { ...led, rows: migrateRows(led.rows), undoSnap: null });
-    savePartySlot(partyReg.active, currentLedger());
-    putPartyReg({ list: [...partyReg.list, { name: nm, t: Date.now() }], active: nm });
-    applyLedger(loadPartySlot(nm) || blankPartyLedger());
-    return "'" + nm + "' 파티로 불러왔어요.";
+    /* 교대 — 지금 장부는 지난 회차로 닫히고, 불러온 것이 현재(이름은 늘 '기본')가 됩니다 */
+    const old = partyReg.active;
+    const oldLed = currentLedger();
+    let list = foldIntoGens(oldLed, partyReg.list);
+    list = list.filter((x) => x.name !== old);
+    savePartySlot(DEFAULT_ROOM_LABEL, { ...led, rows: migrateRows(led.rows), undoSnap: null });
+    if (old !== DEFAULT_ROOM_LABEL) dropPartySlot(old);
+    putPartyReg({
+      list: [...list, { name: DEFAULT_ROOM_LABEL, t: Date.now() }],
+      active: DEFAULT_ROOM_LABEL,
+    });
+    const rooms = { ...relay.rooms };
+    const cur = rooms[old];
+    delete rooms[old];
+    if (cur) rooms[DEFAULT_ROOM_LABEL] = cur;
+    putRelay({ ...relay, rooms });
+    applyLedger(loadPartySlot(DEFAULT_ROOM_LABEL) || blankPartyLedger());
+    return "백업 파일을 현재 장부로 불러왔어요 — 이전 장부는 지난 회차로 남았어요.";
   };
   const askDeleteParty = (name) =>
     setAsk({
@@ -2329,7 +2460,7 @@ export default function GoldSettlement() {
 
   /* --- 뷰어: 구독해서 장부 관리자 화면을 그대로 비춥니다 --- */
   useEffect(() => {
-    if (!readOnly || liveRoom === DEMO_ROOM) return;
+    if (!readOnly || !liveRoom || liveRoom === DEMO_ROOM) return;
     let ws = null,
       beat = null,
       wait = 1000,
@@ -3091,24 +3222,129 @@ export default function GoldSettlement() {
   // 실제로 쓰기 시작할 때. 인원·숫자는 비우고 항목은 기본값으로 되돌립니다.
   /* 한 판 끝나고 같은 멤버로 또 한 판 — 이름과 항목은 두고 숫자만 비웁니다.
      손 안 댄 예시라면 남의 명단이니 이름까지 치웁니다. 행은 여덟 줄로 맞춥니다. */
-  const clearAll = () => {
+  /* ---------- 회차 — 처음부터 사이의 한 세션 ---------- */
+  const GEN_KEEP = 5; // 잠금 안 한 지난 회차는 최근 5개만
+  const genEntries = () => partyReg.list.filter((x) => x.gen);
+  /* 지금 장부를 「지난 회차」로 닫습니다. 기록이 없으면 남길 것도 없습니다.
+     넘치는 옛 회차(잠금 제외)는 목록·저장소에서 걷어냅니다. */
+  const closeRound = () => {
+    const before = partyReg.list;
+    const list = foldIntoGens(currentLedger(), before);
+    if (list === before) return null;
+    putPartyReg({ list, active: partyReg.active });
+    /* 서버에도 직전 회차 한 장 — 복구 코드로 새 기기에서 직전까지 살릴 수 있게 */
+    if (activeRoom)
+      relayApi.archive(activeRoom.roomId, activeRoom.key, liveSnapshot()).catch(() => {});
+    return true;
+  };
+  /* 장부 하나를 지난 회차로 밀어 넣습니다 — 목록을 받아 갱신된 목록을 돌려줍니다 */
+  const foldIntoGens = (led, list) => {
+    const ts = ((led && led.log) || []).map((e) => e.t).filter(Boolean);
+    if (!ts.length) return list;
+    const label = uniquePartyName(fmtSpan(Math.min(...ts), Math.max(...ts)));
+    savePartySlot(label, led);
+    let out = [
+      ...list,
+      {
+        name: label,
+        t: Date.now(),
+        gen: true,
+        locked: false,
+        from: Math.min(...ts),
+        to: Math.max(...ts),
+        gold: slotGold(led),
+      },
+    ];
+    const loose = out.filter((x) => x.gen && !x.locked);
+    if (loose.length > GEN_KEEP) {
+      const drop = loose
+        .slice()
+        .sort((a, b) => (a.t || 0) - (b.t || 0))
+        .slice(0, loose.length - GEN_KEEP)
+        .map((x) => x.name);
+      drop.forEach((nm) => dropPartySlot(nm));
+      out = out.filter((x) => !drop.includes(x.name));
+    }
+    return out;
+  };
+  const openGen = (name) => {
+    const slot = loadPartySlot(name);
+    if (!slot) return;
+    savePartySlot(partyReg.active, currentLedger());
+    applyLedger(slot);
+    setGenView(name);
+    setKeyOpen(false);
+  };
+  const closeGen = () => {
+    applyLedger(loadPartySlot(partyReg.active) || blankPartyLedger());
+    setGenView(null);
+  };
+  /* 복원 = 교대 — 지금 장부가 지난 회차로 닫히고, 보고 있던 회차가 현재가 됩니다.
+     물러나는 항목은 목록에서 빠지고(회차 사본이 대신함), 방송 주소는 새 활성을 따라갑니다
+     — 주소 영속: 링크가 바뀌는 유일한 순간은 여전히 '주소 새로 발급'뿐입니다. */
+  const restoreGen = () => {
+    const name = genView;
+    if (!name) return;
+    const old = partyReg.active;
+    const oldLed = loadPartySlot(old); // openGen 때 저장해 둔, 물러나는 장부
+    let list = foldIntoGens(oldLed, partyReg.list);
+    list = list.filter((x) => x.name !== old && x.name !== name);
+    /* 활성 장부의 이름은 항상 '기본' — 회차 라벨이 파일명·메시지로 새지 않게 */
+    const led2 = loadPartySlot(name);
+    savePartySlot(DEFAULT_ROOM_LABEL, led2);
+    if (name !== DEFAULT_ROOM_LABEL) dropPartySlot(name);
+    if (old !== DEFAULT_ROOM_LABEL) dropPartySlot(old);
+    putPartyReg({
+      list: [...list, { name: DEFAULT_ROOM_LABEL, t: Date.now() }],
+      active: DEFAULT_ROOM_LABEL,
+    });
+    const rooms = { ...relay.rooms };
+    const keep = rooms[old] || rooms[name]; /* 주소 영속 — 현 주소 우선, 없으면 유산 */
+    delete rooms[old];
+    delete rooms[name];
+    if (keep) rooms[DEFAULT_ROOM_LABEL] = keep;
+    putRelay({ ...relay, rooms });
+    setGenView(null);
+    say("'" + name + "' 회차를 현재 장부로 복원했어요 — 이전 장부는 지난 회차로 남았어요.");
+  };
+  const askRestoreGen = () =>
+    setAsk({
+      title: "이 회차를 현재 장부로 복원할까요?",
+      body: "지금 장부는 지난 회차로 닫혀요. 사라지는 것은 없어요.",
+      action: "복원",
+      onYes: restoreGen,
+    });
+
+  /* 초기화 — keep: 이름·항목 남기고 비우기 / full: 전부 비우기(프리셋 시작 가능) */
+  const clearAll = (kind, preset) => {
     if (readOnly) return;
-    const demo = isPristine(rows);
+    closeRound();
+    const full = kind === "full" || isPristine(rows);
     takeSnap(
       "처음부터",
-      demo ? "예시를 치우고 빈 표로 시작해요." : "이름과 항목은 그대로 두고 숫자만 비웠어요."
+      full ? "전부 비우고 새로 시작했어요." : "이름과 항목은 그대로 두고 숫자만 비웠어요."
     );
-    if (demo) setCols(DEFAULT_COLS);
-    /* 줄 수는 그대로 둡니다 — 줄이 곧 인원이라, 여기서 늘리면 정산 인원이 바뀝니다.
-       예시를 치우는 경우만 남의 명단이니 이름까지 비우고 여덟 줄로 맞춥니다. */
+    if (full) {
+      const pc = preset && Array.isArray(preset.cols) ? preset.cols : DEFAULT_COLS;
+      setCols(pc);
+      if (preset && preset.unit) setUnit(preset.unit);
+      if (preset && preset.feePercent) setFeePercent(preset.feePercent);
+    }
+    /* 줄 수는 그대로 둡니다 — 줄이 곧 인원이라, 여기서 늘리면 정산 인원이 바뀝니다. */
     setRows(() =>
-      demo
-        ? Array.from({ length: 8 }, (_, i) => ({
-            id: "r" + seq.current++,
-            name: FILL_NAME(i + 1),
-            counts: simple ? { [SIMPLE_ID]: "" } : {},
-            extras: [],
-          }))
+      full
+        ? Array.from(
+            { length: preset && Array.isArray(preset.names) && preset.names.length ? preset.names.length : 8 },
+            (_, i) => ({
+              id: "r" + seq.current++,
+              name:
+                preset && Array.isArray(preset.names) && preset.names[i]
+                  ? preset.names[i]
+                  : FILL_NAME(i + 1),
+              counts: simple ? { [SIMPLE_ID]: "" } : {},
+              extras: [],
+            })
+          )
         : rows.map((x) => ({
             id: "r" + seq.current++,
             name: x.name,
@@ -3272,37 +3508,35 @@ export default function GoldSettlement() {
       {/* ── 시스템 줄 — 뷰포트 맨 위에 딱 붙는 전폭 바. 안쪽 내용은 본문과 같은 열 ── */}
       <div className="gs-sysbar">
         <div className="gs-sysbar-in">
-          {!readOnly && (
-            <button className="gs-backrow" onClick={() => setLobby(true)}>
-              <i aria-hidden="true">‹</i> 파티 목록
-            </button>
-          )}
+          <span className="gs-sysbrand">벌금 정산</span>
           <div className="gs-sysbar-r">
-            {/* 방송 조작은 화면 최상단 — 어느 탭에 있든 항상 같은 자리 */}
+            {/* 외형 — 브라우저 전역 취향 (오버레이 테마·룰렛 외형·속도·열 토글) */}
             {!readOnly && (
               <span className="gs-tip">
-                <button
-                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (relay.on ? " on" : "")}
-                  onClick={() => {
-                    courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
-                    setObsOpen(true);
-                  }}
-                >
-                  {/* 상태는 방이 생긴 뒤에만 — 시작도 안 했는데 중단이라 하면 헷갈립니다 */}
-                  {activeRoom
-                    ? "OBS · 외형 설정 · " + (relay.on ? "공유 중" : "공유 중단")
-                    : "OBS · 외형 설정"}
-                  {activeRoom && (
-                    <em className={relay.on ? "" : "off"} aria-hidden="true">●</em>
-                  )}
+                <button className="gs-btn gs-btn-ghost gs-keybtn" onClick={() => setLookOpen(true)}>
+                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <g
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M8 1.8a6.2 6.2 0 1 0 0 12.4c1 0 1.4-.6 1.1-1.3-.3-.8 0-1.7 1-1.7h1.7c1.5 0 2.4-1 2.4-2.6C14.2 4.4 11.4 1.8 8 1.8Z" />
+                      <circle cx="5" cy="6.2" r=".4" />
+                      <circle cx="8.2" cy="4.6" r=".4" />
+                      <circle cx="11.2" cy="6.4" r=".4" />
+                      <circle cx="4.9" cy="9.6" r=".4" />
+                    </g>
+                  </svg>
+                  외형
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를 OBS 브라우저
-                  소스에 넣으면 돼요. <b>룰렛이 도는 모습</b>도 여기서 정해요.
+                  벌금표와 방송 화면의 <b>테마·룰렛 외형</b>을 정해요.
                 </span>
               </span>
             )}
-            {/* 편집 권한 — 내보내기와 받기가 한 자리라 화살표도 양방향입니다 */}
+            {/* 백업 — 지키고 살리는 전부: 복구 코드·받기·파일·지난 회차 */}
             {!readOnly && (
               <span className="gs-tip">
                 <button className="gs-btn gs-btn-ghost gs-keybtn" onClick={() => setKeyOpen(true)}>
@@ -3314,57 +3548,18 @@ export default function GoldSettlement() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     >
-                      <path d="M2.2 5.4h11.1M10.6 3 13.3 5.4 10.6 7.8" />
-                      <path d="M13.8 10.6H2.7M5.4 8.2 2.7 10.6l2.7 2.4" />
+                      <path d="M2.2 5h11.6M3 5v7.6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5M2.8 5l.9-2.2a1 1 0 0 1 .9-.6h6.8a1 1 0 0 1 .9.6L13.2 5" />
+                      <path d="M8 7.4v4M6.3 9.8 8 11.4l1.7-1.6" />
                     </g>
                   </svg>
-                  편집 권한
+                  백업
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  복구 코드와 파일 백업 — 다른 기기에서 <b>장부째 이어가거나</b>, 백업을
-                  만들어요.
+                  <b>복구 코드·파일 백업·지난 회차</b> — 지키고, 살리고, 들춰보는 곳이에요.
                 </span>
               </span>
             )}
-            <span className="gs-viewseg" role="group" aria-label="보기 방식">
-              <span className="gs-tip">
-                <button
-                  className={tabbed ? "on" : ""}
-                  onClick={() => setView("tabs")}
-                  aria-label="탭으로 보기"
-                >
-                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                    <path
-                      d="M1.5 13.5v-10h4.2l1.2 2h7.6v8z"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                    <b>탭 보기</b> — 한 번에 한 화면씩 표시해요.
-                </span>
-              </span>
-              <span className="gs-tip">
-                <button
-                  className={tabbed ? "" : "on"}
-                  onClick={() => setView("scroll")}
-                  aria-label="세로로 이어 보기"
-                >
-                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4">
-                      <rect x="2" y="2" width="12" height="5" rx="1" />
-                      <rect x="2" y="9" width="12" height="5" rx="1" />
-                    </g>
-                  </svg>
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  <b>세로 보기</b> — 세 화면을 한 페이지에 이어서 표시해요.
-                </span>
-              </span>
-            </span>
+
             {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
             <span className="gs-viewseg">
               <span className="gs-tip">
@@ -3433,39 +3628,47 @@ export default function GoldSettlement() {
         </div>
       </div>
 
+      {genView && (
+        <div className="gs-genbar" role="status">
+          <b>지난 회차 보기</b> — {genView} · 수정은 안 돼요.
+          <span className="gs-genbar-r">
+            <button className="gs-btn gs-btn-sm" onClick={askRestoreGen}>
+              현재 장부로 복원
+            </button>
+            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={closeGen}>
+              닫기
+            </button>
+          </span>
+        </div>
+      )}
       {/* ── 머리 ─────────────────────────────────────── */}
       <header className="gs-mast">
         <div className="gs-mastrow">
           {/* 제목 오른쪽에 모드 — '지금 무엇을 하는 중인가'가 제목과 한 줄에서 읽힙니다 */}
           <div className="gs-mastleft">
-            {/* 파티 하나 = 장부 하나 = 공유 주소 하나. 파티명이 제목처럼 이어 읽힙니다 */}
+            <h1 className="gs-title">벌금 정산</h1>
+            {/* 방송 조작은 장부 제목줄 — 이 장부의 방송이니까요 (문서 옆 공유 버튼 관행) */}
             {!readOnly && (
-              <span className="gs-crewwrap gs-partysel">
+              <span className="gs-tip">
                 <button
-                  className="gs-party-dd"
-                  onClick={() => setPartyDD((v) => !v)}
-                  aria-expanded={partyDD}
+                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (relay.on ? " on" : "")}
+                  onClick={() => {
+                    courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
+                    setObsOpen(true);
+                  }}
                 >
-                  <span className="gs-party-nm">{partyReg.active}</span>
-                  <i aria-hidden="true">▾</i>
+                  {/* 상태는 방이 생긴 뒤에만 — 시작도 안 했는데 중단이라 하면 헷갈립니다 */}
+                  {activeRoom ? "OBS 공유 · " + (relay.on ? "공유 중" : "중단") : "OBS 공유"}
+                  {activeRoom && (
+                    <em className={relay.on ? "" : "off"} aria-hidden="true">●</em>
+                  )}
                 </button>
-                {partyDD && (
-                  <PartyMenu
-                    list={partyReg.list}
-                    active={partyReg.active}
-                    onPick={(name) => {
-                      setPartyDD(false);
-                      switchParty(name);
-                    }}
-                    onCreate={(name, size) => {
-                      if (createParty(name, size)) setPartyDD(false);
-                    }}
-                    onClose={() => setPartyDD(false)}
-                  />
-                )}
+                <span className="gs-tip-body" role="tooltip">
+                  벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를 OBS 브라우저
+                  소스에 넣으면 돼요.
+                </span>
               </span>
             )}
-            <h1 className="gs-title">벌금 정산</h1>
           </div>
           <div className="gs-mastside">
             {tabbed && (
@@ -3588,7 +3791,7 @@ export default function GoldSettlement() {
             {!readOnly && (
             <span className="gs-grp gs-grp-risky">
               <span className="gs-tip">
-                <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={askClearAll}>
+                <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={() => setResetOpen(true)}>
                   처음부터
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
@@ -3600,7 +3803,7 @@ export default function GoldSettlement() {
           </div>
         </div>
 
-        {readOnly && (
+        {readOnly && !genView && (
           <div
             key={roPulse}
             className={
@@ -4405,7 +4608,7 @@ export default function GoldSettlement() {
             <li>
               <b>파티가 여럿이에요</b>
               파티마다 표·기록·공유 주소가 따로 살아요. 제목의 파티 이름으로 바꾸고, 화면 맨 위
-              '‹ 파티 목록'에서 만들고 지워요. 거기 '튜토리얼'을 누르면 화면 안내를 다시 봐요.
+              장부는 하나예요 — '처음부터'로 회차를 닫고 새로 시작해요. 지난 회차는 헤더의 '백업'에서 봐요.
             </li>
             <li>
               <b>파티원한테 보여주고 싶어요</b>
@@ -4489,7 +4692,7 @@ export default function GoldSettlement() {
           )}
         </InfoModal>
       )}
-      {lobby && !readOnly && (
+      {false && !readOnly && (
         <PartyLobby
           list={partyReg.list}
           active={partyReg.active}
@@ -4608,11 +4811,62 @@ export default function GoldSettlement() {
           </p>
         </InfoModal>
       )}
+      {resetOpen && (
+        <ResetModal
+          hasLog={log.length > 0}
+          hasRoom={!!activeRoom}
+          presets={presets}
+          onSavePreset={savePresetNow}
+          onExportFile={exportPartyFile}
+          onRun={(kind, presetName) => {
+            const pre = presets.find((x) => x.name === presetName) || null;
+            clearAll(kind, pre);
+            setResetOpen(false);
+          }}
+          onClose={() => setResetOpen(false)}
+        />
+      )}
+      {lookOpen && (
+        <LookModal
+          relay={relay}
+          putRelay={putRelay}
+          toggleOvCol={toggleOvCol}
+          onClose={() => setLookOpen(false)}
+        />
+      )}
       {keyOpen && (
         <KeyShare
           relay={relay}
           putRelay={putRelay}
-          activeLabel={partyReg.active}
+          gens={genEntries()
+            .slice()
+            .sort((a, b) => (b.t || 0) - (a.t || 0))
+            .map((g) =>
+              g.gold != null ? g : { ...g, gold: slotGold(loadPartySlot(g.name)) }
+            )}
+          onGenView={openGen}
+          onGenLock={(nm) =>
+            putPartyReg({
+              ...partyReg,
+              list: partyReg.list.map((x) =>
+                x.name === nm ? { ...x, locked: !x.locked } : x
+              ),
+            })
+          }
+          onGenDrop={(nm) =>
+            setAsk({
+              title: "이 지난 회차를 지울까요?",
+              body: nm + " — 로컬 보관에서 지워져요. 파일로 남긴 게 없으면 되돌릴 수 없어요.",
+              action: "지우기",
+              onYes: () => {
+                dropPartySlot(nm);
+                putPartyReg({
+                  ...partyReg,
+                  list: partyReg.list.filter((x) => x.name !== nm),
+                });
+              },
+            })
+          }
           onSeatBundle={async (got) => ({ msg: seatMsg(await seatFromBundle(got)) })}
           onExportFile={exportPartyFile}
           onImportFile={importPartyFile}
@@ -4631,6 +4885,10 @@ export default function GoldSettlement() {
           onOpenKeys={() => {
             setObsOpen(false);
             setKeyOpen(true);
+          }}
+          onOpenLook={() => {
+            setObsOpen(false);
+            setLookOpen(true);
           }}
           onClose={() => {
             setObsOpen(false);
@@ -5686,10 +5944,197 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
 /* OBS로 공유 — 방은 명단마다 하나이고, 주소는 재발급 전까지 영구입니다.
    쓰기 권한은 이 브라우저에만 있고 어떤 주소에도 실리지 않습니다.
    평소 쓰는 것(켜기·복사)만 겉에 두고, 가끔 쓰는 것은 접어 둡니다. */
+/* 처음부터 — 회차를 닫는 창. 두 갈래(이름·항목 유지 / 전부)와 프리셋 시작을 고릅니다 */
+function ResetModal({ hasLog, hasRoom, presets, onSavePreset, onExportFile, onRun, onClose }) {
+  const [kind, setKind] = useState("keep");
+  const [presetName, setPresetName] = useState("");
+  const [saveName, setSaveName] = useState("");
+  const [savedTick, setSavedTick] = useState(false);
+  return (
+    <InfoModal title="처음부터 할까요?" onClose={onClose}>
+      <div className="gs-key">
+        <p>
+          {hasLog
+            ? "지금 회차는 지난 회차로 남아요 — 헤더의 백업에서 다시 볼 수 있어요."
+            : "아직 기록이 없어서 남길 회차는 없어요."}
+          {hasRoom && (
+            <>
+              {" "}
+              <b>공유 주소는 그대로예요 — 파티원에게 보낸 링크도 계속 돼요.</b>
+            </>
+          )}
+        </p>
+        <div className="gs-obs-acts">
+          <button
+            className={"gs-rc-lookbtn" + (kind === "keep" ? " on" : "")}
+            onClick={() => setKind("keep")}
+          >
+            이름·항목 남기고 비우기
+          </button>
+          <button
+            className={"gs-rc-lookbtn" + (kind === "full" ? " on" : "")}
+            onClick={() => setKind("full")}
+          >
+            전부 비우기
+          </button>
+        </div>
+        {kind === "full" && (
+          <div className="gs-reset-preset">
+            <div className="gs-obs-acts">
+              <select
+                className="gs-rc-kind"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                aria-label="프리셋으로 시작"
+              >
+                <option value="">빈 표로 시작</option>
+                {presets.map((x) => (
+                  <option key={x.name} value={x.name}>
+                    프리셋: {x.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="gs-obs-acts">
+              <input
+                className="gs-in gs-obs-claim"
+                value={saveName}
+                placeholder="지금 구성을 프리셋으로 저장 — 이름"
+                onChange={(e) => setSaveName(e.target.value)}
+                aria-label="프리셋 이름"
+              />
+              <button
+                className="gs-btn gs-btn-sm"
+                disabled={!saveName.trim()}
+                onClick={() => {
+                  if (onSavePreset(saveName)) {
+                    setSaveName("");
+                    setSavedTick(true);
+                    setTimeout(() => setSavedTick(false), 2000);
+                  }
+                }}
+              >
+                {savedTick ? "저장했어요" : "프리셋 저장"}
+              </button>
+            </div>
+            <p className="gs-key-foot">프리셋에는 명단·항목·단가·수수료·입력 단위가 담겨요.</p>
+          </div>
+        )}
+        <div className="gs-obs-acts" style={{ marginTop: 12 }}>
+          {hasLog && (
+            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onExportFile}>
+              파일로도 남기기
+            </button>
+          )}
+          <button className="gs-btn gs-btn-sm gs-btn-warn2" onClick={() => onRun(kind, presetName)}>
+            비우기
+          </button>
+          <button className="gs-btn gs-btn-sm" onClick={onClose}>
+            취소
+          </button>
+        </div>
+      </div>
+    </InfoModal>
+  );
+}
+
+/* 외형 — 오버레이 테마·방송 열·룰렛 외형. 취향은 브라우저에 붙는 전역 설정이라
+   헤더(전역 자리)에 있습니다. OBS 창에서는 「외형 설정 열기」 문으로 건너옵니다. */
+function LookModal({ relay, putRelay, toggleOvCol, onClose }) {
+  const [err, setErr] = useState("");
+  const previewRef = useRef(null);
+  /* 테마 확인용 창 — 늘 예시 방을 씁니다. 내 방은 벌금이 바뀌기 전엔 정지 화면이라
+     증감·순위 변동·1위 강조를 볼 수 없어서요. */
+  const previewUrl = (lk) =>
+    relayApi.shareUrl(DEMO_ROOM) +
+    "?mode=overlay&fit=1&t=" + lk.t +
+    (isPanelLook(lk) ? "&bg=" + (100 - (lk.alpha ?? 25)) : "");
+  const openPreview = () => {
+    const w = window.open(previewUrl(relay.look), "gsOverlayPreview", "width=560,height=640");
+    previewRef.current = w;
+    if (!w) setErr("브라우저가 팝업을 막았어요. 팝업을 허용하고 다시 눌러 주세요.");
+  };
+  const pickLook = (lk) => {
+    putRelay({ ...relay, look: lk });
+    const w = previewRef.current;
+    if (w && !w.closed) w.location.replace(previewUrl(lk));
+  };
+  return (
+    <InfoModal title="외형" onClose={onClose} wide>
+      <div className="gs-obs-look" style={{ marginTop: 0 }}>
+        <div className="gs-obs-lookhead">
+          <h4>오버레이 테마</h4>
+          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={openPreview}>
+            테마 미리보기
+          </button>
+        </div>
+        <p className="gs-obs-looknote">고르면 방송 화면에 바로 반영돼요 — OBS의 주소는 그대로 두면 돼요.</p>
+        <LookPicker look={relay.look} onPick={pickLook} />
+      </div>
+      <div className="gs-obs-sec">
+        <h4 className="gs-obs-h">방송 화면에 넣을 열</h4>
+        <p className="gs-obs-note">둘 다 기본으로 켜져 있어요 — 여기서 끌 수 있어요.</p>
+        <div className="gs-ovcols">
+          {[
+            ["items", "항목 횟수", "잡힘·죽음 같은 항목을 몇 번 했는지"],
+            ["net", "순액", "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)"],
+          ].map(([key, label, hint]) => {
+            const on =
+              key === "net"
+                ? (relay.ov || {}).net !== false
+                : (relay.ov || {})[key] !== false;
+            return (
+              <button
+                key={key}
+                className={"gs-ovcol" + (on ? " on" : "")}
+                onClick={() => toggleOvCol(key)}
+                aria-pressed={on}
+              >
+                <b>{label}</b>
+                <span>{hint}</span>
+                <em>{on ? "켬" : "끔"}</em>
+              </button>
+            );
+          })}
+        </div>
+        <OvColsPreview
+          items={(relay.ov || {}).items !== false}
+          net={(relay.ov || {}).net !== false}
+        />
+      </div>
+      <div className="gs-obs-sec">
+        <h4 className="gs-obs-h">룰렛 외형</h4>
+        <p className="gs-obs-note">
+          벌금표와 방송 화면에 똑같이 적용돼요. 룰렛 항목이 여럿이어도 하나로 가요.
+        </p>
+        <div className="gs-rc-look gs-obs-spd">
+          <span>도는 속도</span>
+          {Object.keys(SPINS).map((k) => (
+            <button
+              key={k}
+              className={"gs-rc-lookbtn" + (spinSpd(relay) === k ? " on" : "")}
+              onClick={() => putRelay({ ...relay, spd: k })}
+            >
+              {SPINS[k].label}
+            </button>
+          ))}
+        </div>
+        <SpinLookPicker
+          value={spinShape(relay)}
+          theme={wheelTheme(relay)}
+          onPick={(v) => putRelay({ ...relay, spinLook: v })}
+          onTheme={(v) => putRelay({ ...relay, wheelTheme: v })}
+        />
+      </div>
+      {err && <p className="gs-obs-err">{err}</p>}
+    </InfoModal>
+  );
+}
+
 /* 편집 권한 넘기기 — 이 브라우저의 열쇠를 다른 기기로 보냅니다.
    방송 송출과는 상관없는 일이라 헤더에 따로 두었습니다. OBS 설정 맨 밑에 두면
    정작 브라우저를 못 쓰게 된 뒤에 찾을 사람이 그때 가서 못 찾습니다. */
-function KeyShare({ relay, putRelay, activeLabel, onSeatBundle, onExportFile, onImportFile, onClose }) {
+function KeyShare({ relay, putRelay, gens, onGenView, onGenLock, onGenDrop, onSeatBundle, onExportFile, onImportFile, onClose }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(""); // "code" | "link"
@@ -5759,13 +6204,13 @@ function KeyShare({ relay, putRelay, activeLabel, onSeatBundle, onExportFile, on
   };
 
   return (
-    <InfoModal title="편집 권한 · 백업" onClose={onClose}>
+    <InfoModal title="백업 · 복구" onClose={onClose}>
       <div className="gs-key">
         <h4 className="gs-key-h">복구 코드</h4>
         <p>
-          코드 하나로 이 브라우저의 <b>공유 파티(표·기록·기록 권한)</b>를 다른 기기에서
-          그대로 불러올 수 있어요. 브라우저가 지워지거나 PC가 바뀌어도 코드만 있으면 돼요.
-          발급해서 안전한 곳에 적어 두세요.
+          코드 하나로 <b>장부(표·기록·기록 권한)</b>를 다른 기기에서 그대로 불러올 수
+          있어요. 브라우저가 지워지거나 PC가 바뀌어도 코드만 있으면 돼요. 발급해서 안전한
+          곳에 적어 두세요.
         </p>
         <div className="gs-obs-acts">
           {rcode ? (
@@ -5792,9 +6237,8 @@ function KeyShare({ relay, putRelay, activeLabel, onSeatBundle, onExportFile, on
           )}
         </div>
         <p className="gs-obs-warn">
-          코드를 가진 사람은 기록 권한도 가져요. 새로 발급하면 옛 코드는 바로 못 쓰게 되고,
-          '주소 새로 발급'을 해도 같이 끊겨요. 여럿이 같은 순간에 적으면 늦게 저장된 쪽만
-          남으니, 기록은 한 번에 한 사람이 하는 게 안전해요.
+          이 코드는 <b>사실상 계정이에요 — 다른 사람에게 주지 마세요.</b> 새로 발급하면 옛
+          코드는 바로 못 쓰게 되고, '주소 새로 발급'을 해도 같이 끊겨요.
         </p>
         <p className="gs-key-foot">
           파티를 90일 넘게 한 번도 안 열면 서버 보관이 만료돼서 코드로 못 살려요 — 오래 쉴
@@ -5825,8 +6269,8 @@ function KeyShare({ relay, putRelay, activeLabel, onSeatBundle, onExportFile, on
 
         <h4 className="gs-key-h">파일 백업</h4>
         <p>
-          서버 없이도 남는 백업이에요. 지금 파티 '{activeLabel}' 전체(표·기록·설정)를
-          파일 하나로 저장했다가, 언제든 다시 불러와요.
+          서버 없이도 남는 백업이에요. 지금 장부 전체(표·기록·설정)를 파일 하나로
+          저장했다가, 언제든 다시 불러와요. 서버 보관(90일)과 무관한 영구 보관이에요.
         </p>
         <div className="gs-obs-acts">
           <button className="gs-btn gs-btn-sm" onClick={onExportFile}>
@@ -5847,6 +6291,41 @@ function KeyShare({ relay, putRelay, activeLabel, onSeatBundle, onExportFile, on
           />
         </div>
 
+        <h5 className="gs-key-h">지난 회차</h5>
+        <p>
+          '처음부터'를 누르면 그때까지의 회차가 여기 남아요. 잠금 안 한 지난 회차는 최근
+          5개만 남고, 보기는 읽기 전용이에요 — 이어서 쓰려면 보기에서 '현재 장부로 복원'.
+        </p>
+        {gens.length === 0 && (
+          <p className="gs-key-foot">아직 지난 회차가 없어요.</p>
+        )}
+        {gens.map((g) => (
+          <div className="gs-genrow" key={g.name}>
+            <b>{g.name}</b>
+            <span className="gs-genrow-meta">{man(g.gold || 0)}</span>
+            <span className="gs-genrow-r">
+              <button
+                className={"gs-genlock" + (g.locked ? " on" : "")}
+                onClick={() => onGenLock(g.name)}
+                aria-pressed={!!g.locked}
+                title={g.locked ? "잠금을 풀면 자동 정리 대상이 돼요" : "잠그면 자동 정리에서 빠져요"}
+              >
+                {g.locked ? "잠김" : "잠금"}
+              </button>
+              <button className="gs-btn gs-btn-sm" onClick={() => onGenView(g.name)}>
+                보기
+              </button>
+              <button
+                className="gs-x"
+                onClick={() => onGenDrop(g.name)}
+                aria-label={g.name + " 지우기"}
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        ))}
+
         {note && <p className="gs-key-note">{note}</p>}
         {err && <p className="gs-obs-err">{err}</p>}
       </div>
@@ -5854,7 +6333,7 @@ function KeyShare({ relay, putRelay, activeLabel, onSeatBundle, onExportFile, on
   );
 }
 
-function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskReissue, onAskShareOff, onOpenKeys, onClose }) {
+function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskReissue, onAskShareOff, onOpenKeys, onOpenLook, onClose }) {
   const room = relay.rooms[activeLabel] || null;
   const label = activeLabel === DEFAULT_ROOM_LABEL ? "기본" : activeLabel;
   const [busy, setBusy] = useState("");
@@ -5866,23 +6345,6 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
   const url = room ? relayApi.shareUrl(room.roomId) : "";
   const srcMode = relay.ovsrc === "split" ? "split" : "one";
 
-  /* 테마 확인용 창 — 늘 예시 방을 씁니다. 내 방은 벌금이 바뀌기 전엔 정지 화면이라
-     증감·순위 변동·1위 강조를 볼 수 없어서요. 칩을 누르면 열린 창을 그 자리에서 갈아끼웁니다. */
-  const previewUrl = (lk) =>
-    relayApi.shareUrl(DEMO_ROOM) +
-    "?mode=overlay&fit=1&t=" + lk.t +
-    (isPanelLook(lk) ? "&bg=" + (100 - (lk.alpha ?? 25)) : "");
-  const openPreview = () => {
-    const w = window.open(previewUrl(relay.look), "gsOverlayPreview", "width=560,height=640");
-    previewRef.current = w;
-    // 조용히 실패하는 게 제일 나쁩니다 — 막혔으면 그렇다고 알려 줍니다
-    if (!w) setErr("브라우저가 팝업을 막았어요. 팝업을 허용하고 다시 눌러 주세요.");
-  };
-  const pickLook = (lk) => {
-    putRelay({ ...relay, look: lk });
-    const w = previewRef.current;
-    if (w && !w.closed) w.location.replace(previewUrl(lk));
-  };
 
   useEffect(() => {
     // 가이드 창이 위에 떠 있으면 Esc 는 그쪽 몫입니다 — 한 번에 하나씩 닫힙니다
@@ -5908,16 +6370,29 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
       })
       .catch(() => setErr("복사하지 못했어요"));
 
+  const [freshCode, setFreshCode] = useState(null); // 방금 자동 발급된 복구 코드
   const makeRoom = async () => {
     setBusy("room");
     setErr("");
     try {
       const r = await relayApi.createRoom();
-      putRelay({
+      const next = {
         ...relay,
         on: true,
         rooms: { ...relay.rooms, [activeLabel]: { roomId: r.roomId, key: r.key } },
-      });
+      };
+      /* 공유를 처음 켠 순간 = 지킬 것이 생긴 순간 — 복구 코드를 같이 만들어 둡니다 */
+      if (!relay.rcode) {
+        try {
+          const { rcode: drop, ...bundle } = next;
+          const rc = await relayApi.recoveryIssue(bundle);
+          next.rcode = rc.code;
+          setFreshCode(rc.code);
+        } catch (e2) {
+          /* 코드 발급 실패는 공유를 막지 않습니다 — 백업 창에서 다시 만들 수 있어요 */
+        }
+      }
+      putRelay(next);
       await relayApi.push(r.roomId, r.key, snapshot()).catch(() => {});
     } catch (e) {
       setErr(e.message || "실패했어요");
@@ -6078,6 +6553,24 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
             복구 코드·백업 관리
           </button>
         </p>
+        {freshCode && (
+          <div className="gs-obs-fresh">
+            <p>
+              <b>복구 코드도 같이 만들어 뒀어요.</b> 브라우저가 지워져도 이 코드만 있으면
+              표·기록·권한을 그대로 되찾아요. 지금 적어 두세요 — 나중에 보려면 헤더의
+              「백업」에서.
+            </p>
+            <div className="gs-obs-acts">
+              <span className="gs-key-code">{freshCode.replace(/(.{4})(?=.)/g, "$1-")}</span>
+              <button
+                className="gs-btn gs-btn-sm"
+                onClick={() => copy2("rcode", freshCode.replace(/(.{4})(?=.)/g, "$1-"))}
+              >
+                {copied === "rcode" ? "복사했어요" : "코드 복사"}
+              </button>
+            </div>
+          </div>
+        )}
         {/* 링크를 보내기 직전에 알아야 할 사실. 이유는 눌러서 봅니다 */}
         <p className="gs-obs-ro">
           파티원 화면은 <b>읽기 전용</b>이에요.{" "}
@@ -6086,78 +6579,13 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
           </button>
         </p>
 
-        <div className="gs-obs-look">
-          <div className="gs-obs-lookhead">
-            <h4>오버레이 테마</h4>
-            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={openPreview}>
-              테마 미리보기
-            </button>
-          </div>
-          <p className="gs-obs-looknote">
-            {room
-              ? "고르면 방송 화면에 바로 반영돼요 — OBS의 주소는 그대로 두면 돼요."
-              : "지금 골라 두면 주소를 만들 때 이 모습으로 시작해요."}
-          </p>
-          <LookPicker look={relay.look} onPick={pickLook} />
-        </div>
-
-        <div className="gs-obs-sec">
-          <h4 className="gs-obs-h">방송 화면에 넣을 열</h4>
-          <p className="gs-obs-note">둘 다 기본으로 켜져 있어요 — 여기서 끌 수 있어요.</p>
-          <div className="gs-ovcols">
-            {[
-              ["items", "항목 횟수", "잡힘·죽음 같은 항목을 몇 번 했는지"],
-              ["net", "순액", "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)"],
-            ].map(([key, label, hint]) => {
-              /* 항목·순액 모두 켬이 기본 */
-              const on =
-                key === "net"
-                  ? (relay.ov || {}).net !== false
-                  : (relay.ov || {})[key] !== false;
-              return (
-                <button
-                  key={key}
-                  className={"gs-ovcol" + (on ? " on" : "")}
-                  onClick={() => toggleOvCol(key)}
-                  aria-pressed={on}
-                >
-                  <b>{label}</b>
-                  <span>{hint}</span>
-                  <em>{on ? "켬" : "끔"}</em>
-                </button>
-              );
-            })}
-          </div>
-          <OvColsPreview
-            items={(relay.ov || {}).items !== false}
-            net={(relay.ov || {}).net !== false}
-          />
-        </div>
-
-        <div className="gs-obs-sec">
-          <h4 className="gs-obs-h">룰렛 외형</h4>
-          <p className="gs-obs-note">
-            벌금표와 방송 화면에 똑같이 적용돼요. 룰렛 항목이 여럿이어도 하나로 가요.
-          </p>
-          <div className="gs-rc-look gs-obs-spd">
-            <span>도는 속도</span>
-            {Object.keys(SPINS).map((k) => (
-              <button
-                key={k}
-                className={"gs-rc-lookbtn" + (spinSpd(relay) === k ? " on" : "")}
-                onClick={() => putRelay({ ...relay, spd: k })}
-              >
-                {SPINS[k].label}
-              </button>
-            ))}
-          </div>
-          <SpinLookPicker
-            value={spinShape(relay)}
-            theme={wheelTheme(relay)}
-            onPick={(v) => putRelay({ ...relay, spinLook: v })}
-            onTheme={(v) => putRelay({ ...relay, wheelTheme: v })}
-          />
-        </div>
+        {/* 꾸미기는 헤더의 외형 창으로 — 여정을 위해 건너가는 문만 둡니다 */}
+        <p className="gs-obs-keysline">
+          방송 화면의 테마·룰렛 외형은{" "}
+          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onOpenLook}>
+            외형 설정 열기
+          </button>
+        </p>
 
         {err && <p className="gs-obs-err">{err}</p>}
       </div>
@@ -7964,6 +8392,33 @@ const CSS = `
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:5px; padding:5px 10px}
 .gs-key-note{margin:10px 0 0; font-size:12.5px; color:var(--ink-body)}
 .gs-obs-keysline{margin:12px 0 0; font-size:12.5px; color:var(--ink-2); line-height:1.9}
+/* 백업 창의 지난 회차 줄 */
+.gs-genrow{display:flex; align-items:center; gap:9px; background:rgba(var(--ink-rgb),.05);
+  border:1px solid rgba(var(--ink-rgb),.2); border-radius:7px; padding:8px 11px;
+  margin-top:7px; font-size:12.5px}
+.gs-genrow b{font-weight:600; color:var(--ink)}
+.gs-genrow-meta{font-size:11px; color:var(--ink-2)}
+.gs-genrow-r{margin-left:auto; display:flex; gap:7px; align-items:center}
+.gs-genlock{font:inherit; font-size:11px; border:1px solid rgba(var(--ink-rgb),.35);
+  background:transparent; color:var(--ink-2); border-radius:99px; padding:2px 9px;
+  cursor:pointer}
+.gs-genlock.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
+.gs-reset-preset{margin-top:10px; padding-top:8px;
+  border-top:1px dashed rgba(var(--ink-rgb),.18)}
+/* 지난 회차 보기 배너 — 화면 맨 위에 상시 */
+.gs-genbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin:10px auto 0; max-width:var(--gs-w, 1080px); padding:9px 14px;
+  border:1px solid rgba(var(--gold-rgb),.55); border-radius:8px;
+  background:rgba(var(--gold-rgb),.08); font-size:13px; color:var(--ink-body)}
+.gs-genbar b{color:var(--ink)}
+.gs-genbar-r{margin-left:auto; display:flex; gap:6px}
+/* 방 생성 직후 복구 코드 안내 */
+.gs-obs-fresh{margin-top:12px; padding:10px 12px; border:1px dashed rgba(var(--gold-rgb),.5);
+  border-radius:6px; background:rgba(var(--gold-rgb),.06)}
+.gs-obs-fresh p{margin:0 0 8px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+/* 시스템 줄 왼쪽 — 앱 이름 (워드프로세서의 앱 바 관행) */
+.gs-sysbrand{font-size:14px; font-weight:800; letter-spacing:.04em; color:var(--ink);
+  opacity:.92}
 /* 소스 구성 — 카드 두 장으로 고르고, 주소는 고른 모드 것만 보입니다 */
 .gs-obs-srcpick{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap}
 .gs-slook-c.src{flex:1 1 190px}
