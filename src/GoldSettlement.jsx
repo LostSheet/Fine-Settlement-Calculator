@@ -412,24 +412,60 @@ const spinSpd = (r) => ((r && r.spd) in SPINS ? r.spd : "slow");
 const passMode = (col) => ((col && col.passMode) === "pick" ? "pick" : "random");
 const passSelf = (col) => (col && col.passSelf) !== false;
 
-/* 돌아가는 모습 — 원판이 기본이고, 숫자만 크게 보고 싶으면 바꿉니다 */
-const spinShape = (r) => ((r && r.spinLook) === "num" ? "num" : "wheel");
+/* 돌아가는 모습 — 숫자만이 기본입니다. 원판은 고르면 씁니다 */
+const spinShape = (r) => ((r && r.spinLook) === "wheel" ? "wheel" : "num");
 /* 원판 칸 색 — 글자를 안 쓰니 색으로 구분합니다. 양도권·곱하기는 고정색,
    숫자 면은 서로 다른 색을 돌려 씁니다. */
+/* 원판 테마 — 새틴(기본)은 색으로 면을 구분하고, 카지노는 빨강·검정을 번갈아 칠합니다.
+   새틴 팔레트는 예전 원색을 한 톤 가라앉힌 것 — 장난감이 아니라 도구로 보이게. */
 const NUM_COLORS = [
-  "#4ea8de", "#57cc99", "#ffd166", "#c77dff",
-  "#4cc9f0", "#f4978e", "#80ed99", "#b8c0ff",
+  "#3c86ba", "#3f9c72", "#d9a83e", "#9a5fd0",
+  "#3596bd", "#d97f75", "#5fae70", "#8e97d8",
 ];
-const faceColor = (k, i) =>
-  k === PASS ? "#e8564a" : isMultKey(k) ? "#f79824" : NUM_COLORS[i % NUM_COLORS.length];
+const wheelTheme = (r) => ((r && r.wheelTheme) === "vegas" ? "vegas" : "satin");
+const faceColor = (k, i, theme) => {
+  if (theme === "vegas") {
+    /* 카지노 — 숫자·곱하기는 빨강·검정 교대, 20은 초록(카지노의 0 자리), 양도권은 보라 */
+    if (k === PASS) return "#5c1e66";
+    if (k === "20") return "#146b3a";
+    return i % 2 ? "#17171c" : "#a3202b";
+  }
+  return k === PASS ? "#c8493e" : isMultKey(k) ? "#cf7b16" : NUM_COLORS[i % NUM_COLORS.length];
+};
+/* 칸 사이 분리선까지 넣은 원뿔 그러데이션 문자열 — 앱·미리보기가 같은 걸 씁니다.
+   아주 좁은 칸(3° 미만)엔 선을 안 넣습니다 — 칸보다 선이 굵어집니다. */
+const wheelStops = (segs, theme) => {
+  const sep = theme === "vegas" ? "#d4b25e" : "#2a1f16";
+  const w = 0.8;
+  return segs
+    .map((x) => {
+      const arc = x.to - x.from;
+      if (arc < 3)
+        return x.color + " " + x.from.toFixed(2) + "deg " + x.to.toFixed(2) + "deg";
+      return (
+        sep + " " + x.from.toFixed(2) + "deg " + (x.from + w).toFixed(2) + "deg," +
+        x.color + " " + (x.from + w).toFixed(2) + "deg " + (x.to - w).toFixed(2) + "deg," +
+        sep + " " + (x.to - w).toFixed(2) + "deg " + x.to.toFixed(2) + "deg"
+      );
+    })
+    .join(",");
+};
+/* 무대 마감 겹 — 새틴은 숫자 밴드까지, 카지노는 광만 */
+const wheelLayers = (stops, theme) =>
+  (theme === "satin"
+    ? "radial-gradient(circle, transparent 0 63%, rgba(18,12,8,.42) 66% 96%, transparent 97%)," 
+    : "") +
+  "radial-gradient(120% 90% at 32% 22%, rgba(255,255,255,.13), transparent 46%)," +
+  "radial-gradient(circle, rgba(0,0,0,.36) 0 15%, rgba(0,0,0,.10) 34%, transparent 50% 72%, rgba(0,0,0,.20) 96%)," +
+  "conic-gradient(" + stops + ")";
 /* 칸을 비율만큼 나눕니다 — 잘 나오는 면이 넓어야 원판이 정직합니다 */
-const wheelArcs = (faces, weights) => {
+const wheelArcs = (faces, weights, theme) => {
   const ws = faces.map((k) => Math.max(0, num((weights || {})[k])) || 0);
   const tot = ws.reduce((x, y) => x + y, 0);
   let at = 0;
   return faces.map((k, i) => {
     const arc = tot > 0 ? (ws[i] / tot) * 360 : 360 / faces.length;
-    const seg = { k, from: at, to: at + arc, mid: at + arc / 2, color: faceColor(k, i) };
+    const seg = { k, from: at, to: at + arc, mid: at + arc / 2, color: faceColor(k, i, theme) };
     at += arc;
     return seg;
   });
@@ -441,7 +477,7 @@ const poolAt = (faces, steps, i) =>
     ? faces.filter((f) => f !== PASS)
     : faces;
 const passGone = (steps, i) => steps.slice(0, i).some((x) => x.k === PASS);
-const PASS_GONE_MSG = "양도권은 한 판에 한 번 — 빠졌어요";
+const PASS_GONE_MSG = "양도권은 한 판에 한 번이라 룰렛에서 빠졌어요";
 
 const facesOf = (col) =>
   Array.isArray(col && col.faces) && col.faces.length ? col.faces : ROULETTE_KEYS;
@@ -723,7 +759,8 @@ function loadRelay() {
       /* 화면 취향들 — 여기서 안 받아 주면 새로고침마다 기본값으로 돌아갑니다 */
       ov: v.ov && typeof v.ov === "object" ? v.ov : undefined,
       spd: v.spd === "fast" || v.spd === "normal" || v.spd === "slow" ? v.spd : undefined,
-      spinLook: v.spinLook === "num" ? "num" : undefined,
+      spinLook: v.spinLook === "num" || v.spinLook === "wheel" ? v.spinLook : undefined,
+      wheelTheme: v.wheelTheme === "vegas" ? "vegas" : undefined,
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
           ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25 }
@@ -1784,7 +1821,7 @@ export default function GoldSettlement() {
     setRelay((prev) => {
       const ov = { ...(prev.ov || {}) };
       /* 항목은 켬이 기본이라 !== false 로, 순액은 끔이 기본이라 === true 로 읽습니다 */
-      const on = key === "net" ? ov.net === true : ov[key] !== false;
+      const on = ov[key] !== false;
       ov[key] = !on;
       const next = { ...prev, ov };
       saveRelay(next);
@@ -1922,6 +1959,7 @@ export default function GoldSettlement() {
       faces: spin.faces || [],
       w: spin.w || {},
       look: spin.look || "wheel",
+      theme: spin.theme || "satin",
       spd: spin.spd || "slow",
       /* 랜덤 양도면 사람 원판도 같이 — 방송과 파티원 화면이 같은 장면을 봅니다 */
       pass2: spin.pass2 ? { faces: spin.pass2.faces, name: spin.pass2.name } : null,
@@ -1945,7 +1983,7 @@ export default function GoldSettlement() {
   const ovShow = () => ({
     items: (relay.ov || {}).items !== false,
     /* 순액은 켜고 싶은 사람만 켭니다 — 기본 화면은 벌금만 보여 주는 게 단순합니다 */
-    net: (relay.ov || {}).net === true,
+    net: (relay.ov || {}).net !== false,
   });
   const lookOut = () => {
     const lk = relay.look || { t: "dark", alpha: 25 };
@@ -2350,6 +2388,7 @@ export default function GoldSettlement() {
       faces: liveFaces(col),
       w: weightsOf(col),
       look: spinShape(relay),
+      theme: wheelTheme(relay),
       spd: spinSpd(relay),
       rowId: row.id,
       colId: col.id,
@@ -2367,13 +2406,21 @@ export default function GoldSettlement() {
 
   /* 도는 동안 면이 빠르게 바뀝니다 */
   useEffect(() => {
-    if (!spin || spin.phase !== "roll" || !spin.rolling) return;
+    /* 숫자 판이 돌 때와 사람 릴이 돌 때 둘 다 시계가 필요합니다 */
+    const ticking =
+      spin &&
+      ((spin.phase === "roll" && spin.rolling) ||
+        (spin.phase === "who" && spin.whoRolling));
+    if (!ticking) return;
     const t = setInterval(
-      () => setSpin((x) => (x && x.rolling ? { ...x, tick: x.tick + 1 } : x)),
+      () =>
+        setSpin((x) =>
+          x && (x.rolling || x.whoRolling) ? { ...x, tick: x.tick + 1 } : x
+        ),
       70
     );
     return () => clearInterval(t);
-  }, [spin && spin.phase, spin && spin.rolling, spin && spin.i]);
+  }, [spin && spin.phase, spin && spin.rolling, spin && spin.whoRolling, spin && spin.i]);
 
   /* 한 면에 멈췄다가 다음 면으로. 마지막 면에서 갈립니다 */
   useEffect(() => {
@@ -2927,6 +2974,7 @@ export default function GoldSettlement() {
           look: got.look || cur.look,
           spd: got.spd || cur.spd,
           spinLook: got.spinLook || cur.spinLook,
+          wheelTheme: got.wheelTheme || cur.wheelTheme,
           ov: cur.ov,
         });
         say("편집 권한을 받았어요 — 이 기기에서도 기록할 수 있어요.");
@@ -3561,7 +3609,7 @@ export default function GoldSettlement() {
                           onClick={() => !readOnly && setRouletteCfg(c.id)}
                           title="룰렛 항목 — 눌러서 비율을 고쳐요"
                         >
-                          ◎ 룰렛 · {man(Math.round(goldOf(c.price)))} × 숫자
+                          ◎ 룰렛 · 나온 숫자 × {man(Math.round(goldOf(c.price)))}
                         </button>
                       ) : (<>
                       <span>1회</span>
@@ -4432,6 +4480,12 @@ export default function GoldSettlement() {
         <RouletteCfg
           col={cols.find((c) => c.id === rouletteCfg)}
           unitLabel={unitLabel}
+          theme={wheelTheme(relay)}
+          onOrder={(faces) =>
+            setCols((prev) =>
+              prev.map((c) => (c.id === rouletteCfg ? { ...c, faces } : c))
+            )
+          }
           onW={(k, v) =>
             setCols((prev) =>
               prev.map((c) =>
@@ -4455,10 +4509,9 @@ export default function GoldSettlement() {
                 if (c.id !== rouletteCfg) return c;
                 const cur = facesOf(c);
                 if (cur.includes(k)) return { ...c, faces: cur.filter((x) => x !== k) };
-                /* 되살릴 때는 원래 자리로 — 끝에 붙으면 원판 색이 통째로 밀립니다 */
-                const base = ROULETTE_KEYS.filter((x) => cur.includes(x) || x === k);
-                const extra = cur.filter((x) => !ROULETTE_KEYS.includes(x));
-                return { ...c, faces: [...base, ...extra] };
+                /* 되살릴 때는 맨 앞으로 — 꺼진 줄이 표 맨 위에 떠 있으니 켜도 그 자리
+                   그대로고, 끌어 둔 나머지 순서도 안 흐트러집니다. */
+                return { ...c, faces: [k, ...cur] };
               })
             )
           }
@@ -4537,6 +4590,7 @@ function ViewSpinPanel({ pl }) {
   const asWheel = {
     sid: sp.sid,
     faces: sp.faces,
+    theme: sp.theme,
     w: sp.w,
     steps: steps.map((x) => ({ k: x.k, mult: x.m })),
     i: pl.i,
@@ -4551,11 +4605,31 @@ function ViewSpinPanel({ pl }) {
           <span>{pl.who ? "누가 물까요?" : sp.item}</span>
         </div>
         <div className="gs-spin-stage">
-          {pl.who ? (
+          {pl.who && sp.look === "num" ? (
+            <div className="gs-reel">
+              <span className="gs-reel-line" />
+              <b className="gs-reel-n side" />
+              <b
+                className={
+                  "gs-reel-n big" +
+                  (pl.who === "land" && String(sp.pass2.name).length > 3
+                    ? " longer"
+                    : pl.who === "land" && String(sp.pass2.name).length > 2
+                    ? " long"
+                    : "") +
+                  (pl.who === "roll" ? " gs-spin-rolling" : " gs-spin-land")
+                }
+              >
+                {pl.who === "land" ? sp.pass2.name : "?"}
+              </b>
+              <b className="gs-reel-n side" />
+            </div>
+          ) : pl.who ? (
             <SpinWheel
               spin={{
                 sid: sp.sid + ":who",
                 faces: sp.pass2.faces,
+                theme: sp.theme,
                 w: {},
                 steps: [{ k: sp.pass2.name }],
                 i: 0,
@@ -4621,7 +4695,7 @@ function ViewSpinPanel({ pl }) {
                   ? sp.pass2.name + "에게 넘어갔어요."
                   : sp.phase === "pick"
                   ? "양도권이 나왔어요. 서기가 넘길 사람을 고르는 중이에요."
-                  : (sp.who || "이 사람") + "에게 붙었어요."}
+                  : (sp.who || "이 사람") + josa(sp.who || "이 사람", "이", "가") + " 물어요."}
               </span>
             </>
           )}
@@ -4637,7 +4711,8 @@ function ViewSpinPanel({ pl }) {
 function SpinWheel({ spin, landed }) {
   const all = spin.faces && spin.faces.length ? spin.faces : ["1"];
   const faces = poolAt(all, spin.steps || [], spin.i || 0);
-  const segs = wheelArcs(faces, spin.w);
+  const theme = spin.theme === "vegas" ? "vegas" : "satin";
+  const segs = wheelArcs(faces, spin.w, theme);
   const k = (spin.steps[spin.i] || {}).k;
   const seg = segs.find((x) => x.k === k) || segs[0];
   const discRef = useRef(null);
@@ -4680,15 +4755,13 @@ function SpinWheel({ spin, landed }) {
     el.style.transform = 'rotate(' + target.toFixed(2) + 'deg)';
     rotRef.current = target;
   }, [spin.sid, spin.i, spin.skipped]);
-  const stops = segs
-    .map((x) => x.color + " " + x.from.toFixed(3) + "deg " + x.to.toFixed(3) + "deg")
-    .join(",");
+  const layers = wheelLayers(wheelStops(segs, theme), theme);
   return (
     <div className="gs-wheel">
       <div
         ref={discRef}
         className="gs-wheel-disc"
-        style={{ background: "conic-gradient(" + stops + ")" }}
+        style={{ background: layers }}
       >
         {/* 어느 칸이 무엇인지 — 진짜 룰렛처럼 칸을 따라 바깥으로 뻗게 적습니다 */}
         {segs.map((x) => (
@@ -4697,7 +4770,7 @@ function SpinWheel({ spin, landed }) {
             className={"gs-wheel-lab" + (x.k === PASS || isMultKey(x.k) ? " sp" : "")}
             style={{ transform: "rotate(" + x.mid.toFixed(2) + "deg)" }}
           >
-            {faceLabel(x.k)}
+            <i>{faceLabel(x.k)}</i>
           </span>
         ))}
       </div>
@@ -4759,11 +4832,38 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
         </span>
       </div>
       <div className="gs-spin-stage">
-        {spin.pass2 && (spin.phase === "who" || spin.target) ? (
+        {whoOn && spin.look === "num" ? (
+          /* 숫자만 모드는 사람도 릴로 — 이름이 이웃과 함께 스칩니다 */
+          (() => {
+            const nm = spin.pass2.faces;
+            const wi = spin.whoRolling
+              ? spin.tick % nm.length
+              : Math.max(0, nm.indexOf(spin.pass2.name));
+            const cur2 = spin.whoRolling ? nm[wi] : spin.pass2.name;
+            return (
+              <div className="gs-reel">
+                <span className="gs-reel-line" />
+                <b className="gs-reel-n side">{nm[(wi - 1 + nm.length) % nm.length]}</b>
+                <b
+                  className={
+                    "gs-reel-n big" +
+                    (String(cur2).length > 3 ? " longer" : String(cur2).length > 2 ? " long" : "") +
+                    (spin.whoRolling ? " gs-spin-rolling" : " gs-spin-land")
+                  }
+                  key={spin.whoRolling ? "w" + spin.tick : "wl"}
+                >
+                  {cur2}
+                </b>
+                <b className="gs-reel-n side">{nm[(wi + 1) % nm.length]}</b>
+              </div>
+            );
+          })()
+        ) : whoOn ? (
           <SpinWheel
             spin={{
               sid: spin.sid + ":who",
               faces: spin.pass2.faces,
+              theme: spin.theme,
               w: {},
               steps: [{ k: spin.pass2.name }],
               i: 0,
@@ -4837,6 +4937,13 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
 
       {/* 결과 자리는 처음부터 잡아 둡니다 — 나중에 생기면 판이 늘어나 눈이 튑니다 */}
       <div className={"gs-spin-out" + (picking || done ? "" : " gs-spin-out-wait")}>
+        {!(picking || done) && (
+          <span className="gs-spin-status">
+            {spin.phase === "who"
+              ? "넘겨받을 사람을 뽑는 중이에요"
+              : "숫자를 뽑는 중이에요"}
+          </span>
+        )}
         {(picking || done) && (
           <>
           <b>
@@ -4856,7 +4963,7 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
               <span className="gs-spin-ask">
               {spin.target && spin.pass2
                 ? spin.pass2.name + "에게 넘어갔어요."
-                : (spin.who || "이 사람") + "에게 붙었어요."}
+                : (spin.who || "이 사람") + josa(spin.who || "이 사람", "이", "가") + " 물어요."}
             </span>
             )}
             <span className="gs-spin-delta">
@@ -4872,8 +4979,24 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
           </>
         )}
       </div>
-      <span className={"gs-spin-skip" + (picking || done ? " off" : "")}>
-        누르면 이 판을 건너뛰어요
+      <span className="gs-spin-skip">
+        {done
+          ? "누르면 닫혀요"
+          : picking
+          ? "줄을 누르면 그 사람에게 붙어요"
+          : spin.phase === "who"
+          ? spin.whoRolling
+            ? "누르면 그 자리에 멈춰요"
+            : "누르면 결과를 바로 붙여요"
+          : spin.rolling
+          ? "누르면 그 자리에 멈춰요"
+          : spin.i + 1 < spin.steps.length
+          ? "누르면 다음 판이 바로 돌아요"
+          : !spin.res.pass
+          ? "누르면 결과를 바로 붙여요"
+          : spin.pass2
+          ? "누르면 다음 판이 바로 돌아요"
+          : "누르면 바로 넘어가요"}
       </span>
     </div>
     </div>
@@ -4914,21 +5037,49 @@ function OvColsPreview({ items, net }) {
 
 /* 룰렛 설정 — 면마다 몇 골드인지와 비율을 보여 줍니다. 비율은 "몇 칸을 차지하는가"라
    합이 얼마든 상관없고, 그 비율대로 나옵니다. */
-function RouletteCfg({ col, unitLabel, onW, onPass, onPassSelf, onToggleFace, onAddFace, onDelFace, onReset, onClose }) {
+/* 면과 비율의 실시간 미리보기 — 본 원판과 같은 규칙(테마·분리선·방사 라벨)으로 그립니다 */
+function WheelPreview({ faces, weights, theme }) {
+  const segs = wheelArcs(faces, weights, theme);
+  return (
+    <div className="gs-rc-pv">
+      <div
+        className="gs-rc-pvdisc"
+        style={{ background: wheelLayers(wheelStops(segs, theme), theme) }}
+      >
+        {segs.map((x) => (
+          <span
+            key={x.k}
+            className="gs-rc-pvlab"
+            style={{ transform: "rotate(" + x.mid.toFixed(2) + "deg)" }}
+          >
+            <i>{faceLabel(x.k)}</i>
+          </span>
+        ))}
+      </div>
+      <span className="gs-rc-pvhub" />
+    </div>
+  );
+}
+
+function RouletteCfg({ col, unitLabel, theme, onW, onPass, onPassSelf, onToggleFace, onAddFace, onDelFace, onOrder, onReset, onClose }) {
   const [newFace, setNewFace] = useState("");
+  const [addKind, setAddKind] = useState("n"); // n 더하기 · x 곱하기 · m 빼기
+  const [dragK, setDragK] = useState(null);
   const [showEx, setShowEx] = useState(false);
   const w = weightsOf(col);
   const keys = facesOf(col);
   /* 친 수 하나로 두 가지 면을 만듭니다 — 버튼에 생길 면을 그대로 적어 둡니다 */
   /* 음수 면을 받습니다 — 0 은 아무 일도 안 하는 면이라 그대로 막습니다 */
-  const v = Math.trunc(num(newFace));
-  const dupNum = keys.includes(String(v));
-  const dupMult = keys.includes("x" + v);
+  const v = Math.abs(Math.trunc(num(newFace)));
+  /* 드롭다운이 종류를 정합니다 — 만들어질 면 글쇠를 여기서 확정 */
+  const addKey = addKind === "x" ? "x" + v : addKind === "m" ? "-" + v : String(v);
+  const addOk = (addKind === "x" ? v > 1 : v > 0) && !keys.includes(addKey);
+  const addDup = v > 0 && keys.includes(addKey);
   const tot = keys.reduce((a, k) => a + Math.max(0, num(w[k])), 0);
   const priceG = Math.round(goldOf(col.price));
-  /* 양도권은 껐다고 줄이 사라지면 다시 켤 단추를 다른 데서 찾아야 합니다.
-     맨 위에 자리를 두고 스위치 글자만 바뀝니다. */
-  const rowKeys = [PASS, ...keys.filter((k) => k !== PASS)];
+  /* 켜져 있으면 실제 원판 순서 그대로(드래그로 옮길 수 있게), 꺼져 있으면
+     다시 켤 단추가 보이게 맨 위에 자리만 지킵니다. */
+  const rowKeys = keys.includes(PASS) ? keys : [PASS, ...keys];
   /* 한 판이 어떻게 흘러가는지 — 설명 대신 지금 설정 그대로 한 판을 그려 보입니다.
      제일 안 읽히는 건 "몇 번 도느냐" 라서 원판이 도는 횟수를 끝에 적습니다. */
   /* 1 은 예시로 약합니다 — 곱한 값이 단가와 같아서 "숫자만큼 곱한다"가 안 보입니다.
@@ -5040,59 +5191,26 @@ function RouletteCfg({ col, unitLabel, onW, onPass, onPassSelf, onToggleFace, on
           )}
         </div>
       )}
-      <div className="gs-rc-sechead">
-        <h5 className="gs-rc-sec">면과 비율</h5>
-        <div className="gs-rc-add">
-        <span>면 추가</span>
-        <NumInput
-          className="gs-in gs-rc-new"
-          value={newFace}
-          signed
-          onChange={setNewFace}
-          aria-label="더할 수 (앞에 - 를 붙이면 빼기 면)"
-        />
-        <button
-          className="gs-rc-addbtn"
-          disabled={v === 0 || dupNum}
-          onClick={() => {
-            onAddFace(String(v), 1);
-            setNewFace("");
-          }}
-        >
-          + {v !== 0 ? faceLabel(String(v)) : "n"}
-        </button>
-        <button
-          className="gs-rc-addbtn"
-          disabled={!(v > 1) || dupMult}
-          onClick={() => {
-            onAddFace("x" + v, 1);
-            setNewFace("");
-          }}
-        >
-          + ×{v > 1 ? v : "n"}
-        </button>
-        <span className="gs-rc-addhint">
-          {v !== 0
-            ? dupNum && dupMult
-              ? "둘 다 이미 있어요"
-              : dupNum
-              ? "숫자 " + faceLabel(String(v)) + " 은 이미 있어요"
-              : dupMult
-              ? "×" + v + " 은 이미 있어요"
-              : v < 0
-              ? "빼기 면이에요 — 나오면 지금 벌금에서 깎여요. 0 밑으로는 안 내려가요"
-              : "누르면 그 면이 생겨요"
-            : "수를 하나 치면 그 숫자 면과 곱하기 면을 만들 수 있어요. 앞에 - 를 붙이면 빼기 면이에요"}
-        </span>
+      <h5 className="gs-rc-sec">면과 비율</h5>
+      <div className="gs-rc-body">
+        <div className="gs-rc-left">
+          {/* 실물과 같은 규칙으로 그린 미리보기 — 비율·순서·테마가 그대로 반영됩니다 */}
+          <WheelPreview faces={keys} weights={w} theme={theme} />
+          <p className="gs-rc-pvnote">비율을 고치거나 순서를 끌면 여기에 바로 반영돼요.</p>
+          {theme === "vegas" && (
+            <p className="gs-rc-vegas">
+              카지노 테마를 쓰는 중이에요 — 빨강·검정이 번갈아 칠해져서{" "}
+              <b>색이 같은 면이 생겨요</b>. 면 구분은 글자로 해요.
+            </p>
+          )}
         </div>
-      </div>
-      <table className="gs-rc">
+        <table className="gs-rc">
         <thead>
           <tr>
+            <th />
             <th className="gs-l">면</th>
-            <th>금액</th>
             <th>비율</th>
-            <th>나올 확률</th>
+            <th>확률</th>
             <th />
           </tr>
         </thead>
@@ -5101,21 +5219,56 @@ function RouletteCfg({ col, unitLabel, onW, onPass, onPassSelf, onToggleFace, on
             const passOff = k === PASS && !keys.includes(PASS);
             const wv = Math.max(0, num(w[k]));
             const pct = passOff || tot <= 0 ? 0 : (wv / tot) * 100;
+            const ci = keys.indexOf(k);
             return (
-              <tr key={k} className={k === PASS || isMultKey(k) ? "gs-rc-sp" : ""}>
-                <td className="gs-l gs-rc-face">{faceLabel(k)}</td>
-                <td className="gs-rc-gold">
-                  {k === PASS
-                    ? "다른 사람에게"
-                    : isMultKey(k)
-                    ? "지금 숫자 × " + faceMult(k)
-                    : man(priceG * faceNum(k))}
+              <tr
+                key={k}
+                className={
+                  (k === PASS || isMultKey(k) ? "gs-rc-sp" : "") +
+                  (dragK === k ? " gs-rc-drag" : "")
+                }
+                draggable={!passOff}
+                onDragStart={(e) => {
+                  if (passOff) return;
+                  setDragK(k);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!dragK || dragK === k || passOff) return;
+                  /* 순서는 그 자리에서 바로 바꿉니다 — 끌면서 결과를 봅니다 */
+                  const cur = keys.slice();
+                  const from = cur.indexOf(dragK);
+                  const to = cur.indexOf(k);
+                  if (from < 0 || to < 0) return;
+                  cur.splice(to, 0, cur.splice(from, 1)[0]);
+                  onOrder(cur);
+                }}
+                onDragEnd={() => setDragK(null)}
+              >
+                <td className="gs-rc-grip" aria-hidden="true">
+                  {passOff ? "" : "⠿"}
+                </td>
+                <td className="gs-l gs-rc-face">
+                  <i
+                    className="gs-rc-dot"
+                    style={{
+                      background: passOff
+                        ? faceColor(PASS, 0, theme)
+                        : faceColor(k, ci, theme),
+                    }}
+                  />
+                  {faceLabel(k)}
+                  {/* 특수면은 병기 없이 — 문장이라 칸에서 접힙니다. 설명은 표 밑에 있어요 */}
+                  {k !== PASS && !isMultKey(k) && (
+                    <em className="gs-rc-goldem">{man(priceG * faceNum(k))}</em>
+                  )}
                 </td>
                 <td>
                   <NumInput
                     className="gs-in gs-rc-w"
                     value={String(wv)}
-                    onChange={(v) => onW(k, Math.max(0, num(v)))}
+                    onChange={(v2) => onW(k, Math.max(0, num(v2)))}
                     aria-label={faceLabel(k) + " 비율"}
                   />
                 </td>
@@ -5140,8 +5293,48 @@ function RouletteCfg({ col, unitLabel, onW, onPass, onPassSelf, onToggleFace, on
               </tr>
             );
           })}
+          {/* 유령 행 — 새 면은 생길 자리에서 만듭니다 */}
+          <tr className="gs-rc-ghost">
+            <td className="gs-rc-grip gs-rc-plus" aria-hidden="true">＋</td>
+            <td className="gs-l" colSpan={3}>
+              <select
+                className="gs-rc-kind"
+                value={addKind}
+                onChange={(e) => setAddKind(e.target.value)}
+                aria-label="면 종류"
+              >
+                <option value="n">더하기</option>
+                <option value="x">곱하기</option>
+                <option value="m">빼기</option>
+              </select>{" "}
+              <NumInput
+                className="gs-in gs-rc-new"
+                value={newFace}
+                onChange={setNewFace}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && addOk) {
+                    onAddFace(addKey, 1);
+                    setNewFace("");
+                  }
+                }}
+                aria-label="더할 수"
+              />{" "}
+              <button
+                className="gs-rc-addbtn"
+                disabled={!addOk}
+                onClick={() => {
+                  onAddFace(addKey, 1);
+                  setNewFace("");
+                }}
+              >
+                {addDup ? faceLabel(addKey) + " 은 이미 있어요" : "+ " + (v > 0 ? faceLabel(addKey) : "면") + " 추가"}
+              </button>
+            </td>
+            <td />
+          </tr>
         </tbody>
-      </table>
+        </table>
+      </div>
       <p className="gs-rc-note">
         <b>양도권</b>은 한 번 나오면 그 판에서 빠지고 다시 돌아요 — 그때 나온 숫자를
         다른 사람에게 넘겨요. <b>×2</b>는 빠지지 않아서 연달아 나올 수 있어요.
@@ -5233,16 +5426,16 @@ function TotalEdit({ display, base, per, suffix, onCommit }) {
 
 /* 돌아가는 모습 고르개 — "원판 / 숫자만" 이라고 글자로만 두면 뭐가 다른지 안 보입니다.
    캡처 그림 대신 그 자리에서 그립니다 — 면과 비율이 바뀌어도 그림이 같이 따라옵니다. */
-function SpinLookPicker({ value, onPick }) {
-  const segs = wheelArcs(ROULETTE_KEYS, ROULETTE_W);
-  const stops = segs
-    .map((x) => x.color + " " + x.from.toFixed(2) + "deg " + x.to.toFixed(2) + "deg")
-    .join(",");
+function SpinLookPicker({ value, theme, onPick, onTheme }) {
+  /* 카드마다 그 테마의 실제 색·마감으로 미니 원판을 그립니다 */
+  const disc = (th) =>
+    wheelLayers(wheelStops(wheelArcs(ROULETTE_KEYS, ROULETTE_W, th), th), th);
+  const wheelOn = value === "wheel";
   return (
-    <div className="gs-slook" role="group" aria-label="돌아가는 모습">
+    <div className="gs-slook" role="group" aria-label="룰렛 외형">
       {[
-        ["wheel", "원판", "칸이 도는 게 보여요"],
-        ["num", "숫자만", "숫자만 크게 바뀌어요"],
+        ["num", "슬롯", "슬롯처럼 위아래로 스쳐요"],
+        ["wheel", "원판", "칸이 도는 원판이에요"],
       ].map(([v, label, hint]) => (
         <button
           key={v}
@@ -5254,16 +5447,46 @@ function SpinLookPicker({ value, onPick }) {
             {v === "wheel" ? (
               <span
                 className="gs-slook-disc"
-                style={{ background: "conic-gradient(" + stops + ")" }}
+                style={{ background: disc(theme) }}
               />
             ) : (
-              <span className="gs-slook-num">4</span>
+              <span className="gs-slook-reel">
+                <i className="gs-slook-reel-line" />
+                <b className="gs-slook-reel-side">3</b>
+                <b className="gs-slook-reel-mid">4</b>
+                <b className="gs-slook-reel-side">5</b>
+              </span>
             )}
           </span>
           <b>{label}</b>
           <em>{hint}</em>
         </button>
       ))}
+      {/* 원판 테마 — 늘 떠 있고, 슬롯을 쓰는 동안엔 잠깁니다.
+          숨겨 두면 "원판을 고르면 테마가 열린다"는 걸 알 길이 없습니다. */}
+      <div className={"gs-slook-themes" + (wheelOn ? "" : " off")}>
+        {[
+          ["satin", "새틴 · 금박", "면마다 고유색 — 색으로 면을 구분해요"],
+          ["vegas", "카지노", "빨강·검정이 번갈아 칠해져요 — 색이 같은 면이 생겨요"],
+        ].map(([v, label, hint]) => (
+          <button
+            key={v}
+            className={"gs-slook-c sm" + (theme === v && wheelOn ? " on" : "")}
+            disabled={!wheelOn}
+            onClick={() => onTheme(v)}
+            aria-pressed={theme === v}
+          >
+            <span className="gs-slook-art">
+              <span className="gs-slook-disc" style={{ background: disc(v) }} />
+            </span>
+            <b>{label}</b>
+            <em>{hint}</em>
+          </button>
+        ))}
+        <em className="gs-slook-hint">
+          {wheelOn ? "" : "원판을 고르면 원판 테마를 고를 수 있어요"}
+        </em>
+      </div>
     </div>
   );
 }
@@ -5326,6 +5549,7 @@ function KeyShare({ relay, putRelay, onClose }) {
         look: got.look || relay.look,
         spd: got.spd || relay.spd,
         spinLook: got.spinLook || relay.spinLook,
+        wheelTheme: got.wheelTheme || relay.wheelTheme,
       });
       setClaim("");
       setClaimed(true);
@@ -5566,19 +5790,16 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
 
         <div className="gs-obs-sec">
           <h4 className="gs-obs-h">방송 화면에 넣을 열</h4>
-          <p className="gs-obs-note">
-            항목 횟수는 <b>한 덩어리로</b> 켜고 꺼요 — 방송마다 열이 달라지면 보는 사람이
-            헷갈려요. 순위·순위 변동·이름·금액은 늘 나와요.
-          </p>
+          <p className="gs-obs-note">둘 다 기본으로 켜져 있어요 — 여기서 끌 수 있어요.</p>
           <div className="gs-ovcols">
             {[
               ["items", "항목 횟수", "잡힘·죽음 같은 항목을 몇 번 했는지"],
               ["net", "순액", "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)"],
             ].map(([key, label, hint]) => {
-              /* 항목은 켬이 기본, 순액은 끔이 기본 */
+              /* 항목·순액 모두 켬이 기본 */
               const on =
                 key === "net"
-                  ? (relay.ov || {}).net === true
+                  ? (relay.ov || {}).net !== false
                   : (relay.ov || {})[key] !== false;
               return (
                 <button
@@ -5596,12 +5817,12 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
           </div>
           <OvColsPreview
             items={(relay.ov || {}).items !== false}
-            net={(relay.ov || {}).net === true}
+            net={(relay.ov || {}).net !== false}
           />
         </div>
 
         <div className="gs-obs-sec">
-          <h4 className="gs-obs-h">룰렛이 도는 모습</h4>
+          <h4 className="gs-obs-h">룰렛 외형</h4>
           <p className="gs-obs-note">
             벌금표와 방송 화면에 똑같이 적용돼요. 룰렛 항목이 여럿이어도 하나로 가요.
           </p>
@@ -5619,7 +5840,9 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
           </div>
           <SpinLookPicker
             value={spinShape(relay)}
+            theme={wheelTheme(relay)}
             onPick={(v) => putRelay({ ...relay, spinLook: v })}
+            onTheme={(v) => putRelay({ ...relay, wheelTheme: v })}
           />
         </div>
 
@@ -7786,6 +8009,8 @@ const CSS = `
 .gs-spin-pick{border-color:var(--red); background:var(--paper,#2a2320)}
 /* 안내 자리는 늘 잡아 둡니다 — 글자가 생기며 판이 커지면 눈이 튑니다 */
 .gs-spin-gone{font-size:12.5px; color:#dcae5e; opacity:.9; min-height:18px}
+.gs-spin-status{font-size:20px; color:var(--ink-body); letter-spacing:.02em}
+.gs-spin .gs-spin-status{color:#c9bda9}
 .gs-spin-skip{font-size:12px; color:var(--ink-2); opacity:.7; min-height:17px}
 .gs-spin-skip.off{visibility:hidden}
 /* 이름 줄도 높이를 못 박습니다 — 글자 크기가 다른 것이 섞이면 줄 높이가 달라집니다 */
@@ -7807,10 +8032,18 @@ const CSS = `
   background:repeating-conic-gradient(rgba(220,174,94,.9) 0 1.1deg, transparent 1.1deg 12.857deg);
   -webkit-mask:radial-gradient(circle, transparent 0 199px, #000 199px 204px, transparent 204px);
           mask:radial-gradient(circle, transparent 0 199px, #000 199px 204px, transparent 204px)}
-.gs-wheel-lab{position:absolute; inset:0; display:flex; justify-content:center;
-  align-items:flex-start; padding-top:15px; font-size:19px; font-weight:800;
-  color:#20262b; white-space:nowrap; pointer-events:none}
-.gs-wheel-lab.sp{color:#fff; font-size:16px}
+.gs-wheel-lab{position:absolute; inset:0; pointer-events:none}
+/* 글자는 바큇살 방향 — 접선이 아니라 중심에서 바깥으로 읽힙니다 */
+/* 글자 끝을 테두리 안쪽 12px에 못 박습니다 — 중심 거리로 놓으면 좁은 칸들이
+   안쪽에서 겹칩니다. 바깥일수록 호가 길어서 같은 각도라도 여유가 생깁니다. */
+.gs-wheel-lab i{position:absolute; right:50%; top:12px; font-style:normal;
+  transform:rotate(-90deg); transform-origin:right center;
+  font-family:'Gowun Batang',serif; font-size:18px; font-weight:800; color:#f4d98c;
+  white-space:nowrap; max-width:130px; overflow:hidden; text-overflow:ellipsis;
+  text-shadow:-1.5px 0 0 #241206, 1.5px 0 0 #241206, 0 -1.5px 0 #241206, 0 1.5px 0 #241206,
+    -1px -1px 0 #241206, 1px -1px 0 #241206, -1px 1px 0 #241206, 1px 1px 0 #241206,
+    0 2px 5px rgba(0,0,0,.45)}
+.gs-wheel-lab.sp i{font-size:14px}
 .gs-wheel-pin{position:absolute; left:50%; top:-15px; width:0; height:0;
   transform:translateX(-50%);
   border-left:15px solid transparent; border-right:15px solid transparent;
@@ -7823,6 +8056,15 @@ const CSS = `
 /* 돌아가는 모습 고르개 — 오버레이 테마 고르개와 같은 얼굴로 */
 .gs-obs-spd{margin-top:12px}
 .gs-slook{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap}
+.gs-slook-themes{flex-basis:100%; display:flex; gap:10px; flex-wrap:wrap;
+  padding-left:22px; margin-top:2px}
+.gs-slook-themes.off{opacity:.42}
+.gs-slook-themes.off .gs-slook-c{cursor:default}
+.gs-slook-c.sm{flex:1 1 130px; padding:9px 8px 8px}
+.gs-slook-c.sm .gs-slook-art{height:46px}
+.gs-slook-c.sm .gs-slook-disc{width:42px; height:42px}
+.gs-slook-hint{flex-basis:100%; font-style:normal; font-size:11px; color:var(--ink-2);
+  min-height:15px}
 .gs-slook-c{flex:1 1 150px; display:flex; flex-direction:column; align-items:center;
   gap:5px; padding:12px 10px 10px; border:1px solid rgba(var(--ink-rgb),.25);
   border-radius:5px; background:rgba(var(--lift-rgb),.3); font:inherit;
@@ -7834,7 +8076,17 @@ const CSS = `
 .gs-slook-art{display:grid; place-items:center; width:100%; height:58px}
 .gs-slook-disc{width:52px; height:52px; border-radius:50%;
   border:2px solid rgba(var(--ink-rgb),.35)}
-.gs-slook-num{font-size:38px; font-weight:800; line-height:1; color:var(--gold)}
+/* 숫자만 미리보기 — 실제 릴 창의 축소판. 이웃 값이 흐릿하게 스치는 모양 그대로 */
+.gs-slook-reel{position:relative; width:58px; height:58px; border-radius:8px; overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+  background:linear-gradient(#151009, #241c14 30% 70%, #151009);
+  border:1.5px solid #3a2e25; box-shadow:0 0 0 1px rgba(220,174,94,.7)}
+.gs-slook-reel b{font-weight:800; line-height:1; font-family:'Gowun Batang',serif}
+.gs-slook-reel-side{font-size:12px; color:#ece4d6; opacity:.25; filter:blur(.6px)}
+.gs-slook-reel-mid{font-size:24px; color:#fff; text-shadow:0 0 8px rgba(220,174,94,.45)}
+.gs-slook-reel-line{position:absolute; left:5px; right:5px; top:50%; height:24px;
+  transform:translateY(-50%); pointer-events:none;
+  border-top:1px solid rgba(220,174,94,.4); border-bottom:1px solid rgba(220,174,94,.4)}
 /* 한 판 예시 — 눌러야 펼쳐집니다. 늘 떠 있으면 설정 줄이 멀어집니다 */
 .gs-rc-ex{margin-top:10px}
 .gs-rc-exbtn{border:1px dashed rgba(var(--ink-rgb),.35); border-radius:4px;
@@ -7847,18 +8099,44 @@ const CSS = `
 .gs-rc-exlist li{margin:0; padding-left:2px}
 .gs-rc-exlist li::marker{color:var(--gold); font-weight:700}
 .gs-rc-exfoot{margin:7px 2px 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+/* 면과 비율 — 왼쪽 미리보기 + 오른쪽 표 */
+.gs-rc-body{display:flex; gap:16px; align-items:flex-start; margin-top:10px}
+.gs-rc-left{flex:0 0 168px; display:flex; flex-direction:column; align-items:center; gap:9px}
+.gs-rc-pv{position:relative; width:158px; height:158px}
+.gs-rc-pvdisc{position:absolute; inset:0; border-radius:50%;
+  box-shadow:0 0 0 3px #3a2e25, 0 0 0 4.5px rgba(220,174,94,.75),
+    inset 0 0 12px rgba(0,0,0,.3)}
+.gs-rc-pvlab{position:absolute; inset:0; pointer-events:none}
+.gs-rc-pvlab i{position:absolute; right:50%; top:7px; font-style:normal;
+  transform:rotate(-90deg); transform-origin:right center;
+  font-family:'Gowun Batang',serif; font-size:10px; font-weight:800; color:#f4d98c;
+  white-space:nowrap; max-width:56px; overflow:hidden; text-overflow:ellipsis;
+  text-shadow:-1px 0 0 #241206, 1px 0 0 #241206, 0 -1px 0 #241206, 0 1px 0 #241206}
+.gs-rc-pvhub{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:44px; height:44px; border-radius:50%; pointer-events:none;
+  background:radial-gradient(circle at 34% 30%, #4a3c30, #241d17 70%);
+  border:1.5px solid #dcae5e}
+.gs-rc-pvnote{margin:0; font-size:10.5px; color:var(--ink-2); text-align:center;
+  line-height:1.55}
+.gs-rc-vegas{margin:0; font-size:11px; color:var(--gold); line-height:1.55;
+  background:rgba(var(--gold-rgb),.08); border:1px dashed rgba(var(--gold-rgb),.4);
+  border-radius:4px; padding:6px 9px}
+.gs-rc-body .gs-rc{flex:1; min-width:0; margin-top:0}
+.gs-rc-grip{width:18px; color:rgba(var(--ink-rgb),.35); cursor:grab; font-size:13px}
+.gs-rc-plus{color:var(--gold); cursor:default}
+.gs-rc-drag{outline:1.5px dashed var(--gold); outline-offset:-2px;
+  background:rgba(var(--gold-rgb),.07)}
+.gs-rc-dot{display:inline-block; width:11px; height:11px; border-radius:3px;
+  margin-right:8px; vertical-align:-1px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.3)}
+.gs-rc-goldem{font-style:normal; font-size:11px; color:var(--ink-2); margin-left:7px}
+.gs-rc-kind{font:inherit; font-size:12px; color:var(--ink);
+  background:rgba(var(--ink-rgb),.06); border:1px solid rgba(var(--ink-rgb),.3);
+  border-radius:4px; padding:3px 4px}
+.gs-rc-ghost td{opacity:.9}
 /* 묶음 이름 — 규칙과 꾸밈을 갈라 놓습니다 */
 .gs-rc-sec{margin:18px 0 2px; font-size:12px; font-weight:700; color:var(--ink);
   letter-spacing:.02em; padding-bottom:5px;
   border-bottom:1px solid rgba(var(--ink-rgb),.16)}
-/* 「면 추가」는 묶음 이름 오른쪽 빈 자리에 붙입니다 — 표 위에 한 줄을 더 쓰면
-   면 목록이 그만큼 아래로 밀립니다 */
-.gs-rc-sechead{display:flex; align-items:flex-end; justify-content:space-between;
-  gap:14px; flex-wrap:wrap; margin:18px 0 2px; padding-bottom:5px;
-  border-bottom:1px solid rgba(var(--ink-rgb),.16)}
-.gs-rc-sechead .gs-rc-sec{margin:0; padding:0; border:0; flex:0 0 auto}
-.gs-rc-sechead .gs-rc-add{margin:0; flex:1 1 auto; justify-content:flex-end}
-.gs-rc-sechead .gs-rc-addhint{text-align:right}
 .gs-rc-look{display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;
   color:var(--ink-2); margin-top:8px}
 .gs-rc-look > span{min-width:74px}
@@ -7879,7 +8157,11 @@ const CSS = `
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px}
 .gs-reel-n{font-family:'Gowun Batang',serif; font-weight:800; line-height:1}
 .gs-reel-n.side{font-size:30px; color:#ece4d6; opacity:.2; filter:blur(1.2px)}
-.gs-reel-n.big{font-size:64px; color:#fff; text-shadow:0 0 24px rgba(220,174,94,.4)}
+.gs-reel-n.big{font-size:64px; color:#fff; max-width:94%; overflow:hidden;
+  text-overflow:ellipsis; text-shadow:0 0 24px rgba(220,174,94,.4)}
+.gs-reel-n.big.long{font-size:40px}
+.gs-reel-n.big.longer{font-size:26px}
+.gs-reel-n.side{max-width:90%; overflow:hidden; text-overflow:ellipsis}
 .gs-reel-line{position:absolute; left:12px; right:12px; top:50%; height:60px;
   transform:translateY(-50%); pointer-events:none;
   border-top:1px solid rgba(220,174,94,.4); border-bottom:1px solid rgba(220,174,94,.4)}
@@ -8007,9 +8289,8 @@ const CSS = `
 .gs-rc th.gs-l{text-align:left}
 .gs-rc td{padding:6px 8px; text-align:right; border-top:1px dotted rgba(var(--ink-rgb),.18)}
 .gs-rc td.gs-l{text-align:left}
-.gs-rc-face{font-size:17px; font-weight:700; color:var(--ink)}
+.gs-rc-face{font-size:17px; font-weight:700; color:var(--ink); white-space:nowrap}
 .gs-rc-sp .gs-rc-face{color:var(--gold-ink); font-size:15px}
-.gs-rc-gold{font-size:13px; color:var(--ink-body)}
 /* 그냥 숫자처럼 보여서 고칠 수 있는 줄 몰랐습니다 — 칸처럼 보이게 합니다 */
 .gs-rc-w{width:58px; text-align:center; font-size:15px; font-weight:700;
   border:1px solid rgba(var(--ink-rgb),.35) !important; border-radius:4px;
@@ -8023,17 +8304,14 @@ const CSS = `
 .gs-rc-del{border:0; background:transparent; font:inherit; font-size:15px; color:var(--ink-2);
   cursor:pointer; padding:0 2px; line-height:1}
 .gs-rc-del:hover{color:var(--red)}
-.gs-rc-add{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px;
-  font-size:12px; color:var(--ink-2)}
 .gs-rc-new{width:52px; text-align:center; font-size:14px;
   border:1px solid rgba(var(--ink-rgb),.35) !important; border-radius:4px;
   background:rgba(var(--ink-rgb),.06); padding:4px}
-.gs-rc-add button{border:1px solid rgba(var(--ink-rgb),.3); border-radius:4px; background:transparent;
-  font:inherit; font-size:12px; color:var(--ink-body); cursor:pointer; padding:4px 9px}
-.gs-rc-add button:hover:not(:disabled){border-color:var(--gold-ink); color:var(--ink)}
-.gs-rc-addbtn{font-variant-numeric:tabular-nums; min-width:62px}
+.gs-rc-addbtn{border:1px solid rgba(var(--ink-rgb),.3); border-radius:4px; background:transparent;
+  font:inherit; font-size:12px; color:var(--ink-body); cursor:pointer; padding:4px 9px;
+  font-variant-numeric:tabular-nums; min-width:62px}
+.gs-rc-addbtn:hover:not(:disabled){border-color:var(--gold-ink); color:var(--ink)}
 .gs-rc-addbtn:disabled{opacity:.4; cursor:default}
-.gs-rc-addhint{flex-basis:100%; font-size:11.5px; color:var(--ink-2); opacity:.85}
 .gs-rc-note{margin:10px 0 0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
 .gs-rc-reset{margin-top:12px; border:0; background:transparent; font:inherit; font-size:12px;
   color:var(--ink-2); cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:2px 0}

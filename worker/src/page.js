@@ -79,31 +79,40 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 방금 벌금이 붙은 줄 — 잠깐 번쩍이고 오른쪽에 증감이 떠올랐다 사라집니다 */
   .ov-row.hit{animation:ov-flash 1.6s ease-out}
-  /* 룰렛 — 목록을 밀지 않고 그 위를 덮습니다. 목록이 움직이면 방송에서 눈이 튑니다 */
-  #ovspin:not(:empty){position:absolute; inset:0; z-index:3; display:flex;
+  /* 룰렛 — 보드가 아니라 소스(뷰포트) 전체를 덮습니다. 보드가 좁고 길어도
+     원판은 소스 크기로 큽니다 */
+  #ovspin:not(:empty){position:fixed; inset:0; z-index:3; display:flex;
     align-items:center; justify-content:center; padding:2%;
-    background:rgba(12,10,8,.78); border-radius:max(12px, 1.4vw);
+    background:rgba(12,10,8,.78);
     animation:ov-spin-in .18s ease-out}
   @keyframes ov-spin-in{from{opacity:0} to{opacity:1}}
-  .ov-sp{position:relative; display:flex; width:96%; max-height:96%; text-align:center;
+  .ov-sp{position:relative; display:flex; width:96%; max-height:100%; text-align:center;
     border-radius:calc(var(--u)*2); color:#ece4d6;
     background:radial-gradient(120% 90% at 50% 12%, #322721 0%, #1d1712 58%, #17110d 100%);
     border:calc(var(--u)*.4) solid rgba(220,174,94,.8);
     box-shadow:inset 0 0 calc(var(--u)*8) rgba(0,0,0,.45),
       0 calc(var(--u)*2) calc(var(--u)*6) rgba(0,0,0,.5)}
-  /* 판이 넓적하면 눕고(h), 길면 섭니다(v) — 내용이 정하고 소스는 무관합니다 */
-  .ov-sp.v{flex-direction:column; align-items:center; gap:calc(var(--u)*1.4);
-    padding:calc(var(--u)*3) calc(var(--u)*2.4)}
-  .ov-sp.h{flex-direction:row; align-items:center; gap:calc(var(--u)*3);
-    padding:calc(var(--u)*2.4) calc(var(--u)*3.4)}
-  .ov-sp-info{display:flex; flex-direction:column; align-items:center; min-width:0}
-  .ov-sp.h .ov-sp-info{align-items:flex-start; flex:0 0 auto; max-width:30%}
-  .ov-sp-who{font-size:calc(var(--u)*4.6); font-weight:700; white-space:nowrap;
+  /* 늘 세로 한 줄 — 이름 줄, 원판 무대, 트랙 순서 */
+  .ov-sp{flex-direction:column; align-items:center; justify-content:center;
+    gap:calc(var(--u)*1.6); padding:calc(var(--u)*5) calc(var(--u)*2.4) calc(var(--u)*2.2)}
+  .ov-sp-info{display:flex; flex-direction:row; align-items:baseline;
+    justify-content:center; gap:calc(var(--u)*1.6); min-width:0; max-width:96%}
+  /* 원판 무대 — 크기는 spinHtml 이 계산해 줍니다. 결과가 이 위에 겹칩니다 */
+  .ov-stage{position:relative; flex:none; margin:calc(var(--u)*2.6) 0}
+  .ov-stage-out{position:absolute; inset:0; z-index:4; display:none;
+    flex-direction:column; align-items:center; justify-content:center;
+    gap:calc(var(--u)*1.8); text-align:center}
+  .ov-sp.over .ov-stage-out{display:flex}
+  .ov-sp.over .ov-wheel,.ov-sp.over .ov-reel{opacity:.25; filter:blur(1px)}
+  .ov-stage-out .ov-sp-out{height:auto; font-size:calc(var(--u)*9); color:#fff;
+    text-shadow:0 calc(var(--u)*.5) calc(var(--u)*2) rgba(0,0,0,.65)}
+  .ov-stage-out .ov-sp-out em{font-size:calc(var(--u)*3.4)}
+  .ov-stage-out .ov-sp-delta{height:auto; font-size:calc(var(--u)*4.2)}
+  .ov-sp-who{font-size:calc(var(--u)*6.2); font-weight:700; white-space:nowrap;
     overflow:hidden; text-overflow:ellipsis; max-width:100%}
-  .ov-sp-item{font-size:calc(var(--u)*2.6); color:#a89a88; white-space:nowrap}
+  .ov-sp-item{font-size:calc(var(--u)*3.4); color:#a89a88; white-space:nowrap}
   .ov-sp-res{display:flex; flex-direction:column; align-items:center;
     gap:calc(var(--u)*1.2); min-width:0}
-  .ov-sp.h .ov-sp-res{flex:1}
   /* 이번 판 트랙 — 앱과 같은 5칸. 칩과 슬롯 폭이 같아 채워져도 안 밀립니다 */
   .ov-sp-track{display:flex; gap:calc(var(--u)*1.4); justify-content:center}
   .ov-tchip,.ov-tslot{width:calc(var(--u)*11); height:calc(var(--u)*5.4);
@@ -118,49 +127,54 @@ export const PAGE_HTML = `<!doctype html>
   @keyframes ov-slotpulse{0%,100%{background:transparent}
     50%{background:rgba(220,174,94,.14)}}
   /* 물리 룰렛 — 바늘은 12시에 고정, 원판이 돌아 당첨 칸이 그 아래로 옵니다 */
-  .ov-wheel{position:relative; width:calc(var(--u)*46); height:calc(var(--u)*46);
-    flex:none; margin:calc(var(--u)*2.4) auto calc(var(--u)*1)}
-  .ov-sp.h .ov-wheel{margin:calc(var(--u)*1.5) 0}
+  .ov-wheel{position:relative; width:100%; height:100%}
   /* 림 눈금 — 비율 1짜리 칸(12.857°)에 하나씩 맞는 금색 점 띠 */
-  .ov-wheel::before{content:""; position:absolute; inset:calc(var(--u)*-1.8);
+  .ov-wheel::before{content:""; position:absolute; inset:calc(var(--u)*-1.8*var(--wu,1));
     border-radius:50%; pointer-events:none;
     background:repeating-conic-gradient(rgba(220,174,94,.9) 0 1.1deg,
       transparent 1.1deg 12.857deg);
-    -webkit-mask:radial-gradient(circle, transparent 0 calc(var(--u)*24),
-      #000 calc(var(--u)*24) calc(var(--u)*24.8), transparent calc(var(--u)*24.8));
-    mask:radial-gradient(circle, transparent 0 calc(var(--u)*24),
-      #000 calc(var(--u)*24) calc(var(--u)*24.8), transparent calc(var(--u)*24.8))}
+    -webkit-mask:radial-gradient(circle, transparent 0 calc(var(--u)*24*var(--wu,1)),
+      #000 calc(var(--u)*24*var(--wu,1)) calc(var(--u)*24.8*var(--wu,1)), transparent calc(var(--u)*24.8*var(--wu,1)));
+    mask:radial-gradient(circle, transparent 0 calc(var(--u)*24*var(--wu,1)),
+      #000 calc(var(--u)*24*var(--wu,1)) calc(var(--u)*24.8*var(--wu,1)), transparent calc(var(--u)*24.8*var(--wu,1)))}
   .ov-w-disc{position:absolute; inset:0; border-radius:50%;
     will-change:transform; backface-visibility:hidden; transform:translateZ(0);
-    box-shadow:0 0 0 calc(var(--u)*.9) #3a2e25, 0 0 0 calc(var(--u)*1.1) rgba(220,174,94,.75),
+    box-shadow:0 0 0 calc(var(--u)*.9*var(--wu,1)) #3a2e25, 0 0 0 calc(var(--u)*1.1*var(--wu,1)) rgba(220,174,94,.75),
       0 calc(var(--u)*1.2) calc(var(--u)*3.6) rgba(0,0,0,.55),
       inset 0 0 calc(var(--u)*3) rgba(0,0,0,.28)}
-  .ov-w-pin{position:absolute; left:50%; top:calc(var(--u)*-1.7); width:0; height:0;
+  .ov-w-pin{position:absolute; left:50%; top:calc(var(--u)*-1.7*var(--wu,1)); width:0; height:0;
     transform:translateX(-50%); z-index:2;
-    border-left:calc(var(--u)*1.6) solid transparent;
-    border-right:calc(var(--u)*1.6) solid transparent;
-    border-top:calc(var(--u)*3.2) solid #ff5a3c;
+    border-left:calc(var(--u)*1.6*var(--wu,1)) solid transparent;
+    border-right:calc(var(--u)*1.6*var(--wu,1)) solid transparent;
+    border-top:calc(var(--u)*3.2*var(--wu,1)) solid #ff5a3c;
     filter:drop-shadow(0 .2vw .3vw rgba(0,0,0,.5))}
   /* 릴 창 — 숫자만 모드. 이웃 면이 위아래로 흐릿하게 스칩니다 */
-  .ov-reel{position:relative; width:calc(var(--u)*40); height:calc(var(--u)*42); flex:none;
-    margin:calc(var(--u)*2) auto calc(var(--u)*1); border-radius:calc(var(--u)*2);
+  .ov-reel{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:calc(var(--u)*40*var(--wu,1)); height:calc(var(--u)*42*var(--wu,1));
+    border-radius:calc(var(--u)*2);
     overflow:hidden; background:linear-gradient(#151009, #241c14 30% 70%, #151009);
     border:calc(var(--u)*.4) solid #3a2e25;
     box-shadow:0 0 0 calc(var(--u)*.3) rgba(220,174,94,.7),
       inset 0 0 calc(var(--u)*3) rgba(0,0,0,.6);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:calc(var(--u)*.8)}
-  .ov-sp.h .ov-reel{margin:calc(var(--u)*1.5) 0}
   .ov-reel-n{font-weight:800; line-height:1; white-space:nowrap}
-  .ov-reel-n.side{font-size:calc(var(--u)*5); color:#ece4d6; opacity:.2; filter:blur(1px)}
-  .ov-reel-n.big{font-size:calc(var(--u)*11); color:#fff;
+  .ov-reel-n.side{font-size:calc(var(--u)*5*var(--wu,1)); color:#ece4d6; opacity:.2; filter:blur(1px)}
+  .ov-reel-n.big.long{font-size:calc(var(--u)*6.5*var(--wu,1))}
+  .ov-reel-n.big.longer{font-size:calc(var(--u)*4.2*var(--wu,1))}
+  .ov-reel-n.big{max-width:94%; overflow:hidden; text-overflow:ellipsis;
+    font-size:calc(var(--u)*11*var(--wu,1)); color:#fff;
     text-shadow:0 0 calc(var(--u)*3) rgba(220,174,94,.4)}
-  .ov-reel-line{position:absolute; left:6%; right:6%; top:50%; height:calc(var(--u)*10);
+  .ov-reel-line{position:absolute; left:6%; right:6%; top:50%; height:calc(var(--u)*10*var(--wu,1));
     transform:translateY(-50%); pointer-events:none;
     border-top:1px solid rgba(220,174,94,.4); border-bottom:1px solid rgba(220,174,94,.4)}
   /* 안내·수식·변화 — 자리를 미리 잡아 둬 판이 안 출렁입니다 */
-  .ov-sp-gone{height:calc(var(--u)*3.4); font-size:calc(var(--u)*2.4); font-weight:700;
-    color:#dcae5e; display:flex; align-items:center; justify-content:center; overflow:hidden}
+  .ov-sp-gone{position:absolute; left:50%; bottom:calc(var(--u)*2); z-index:5;
+    transform:translateX(-50%); white-space:nowrap;
+    font-size:calc(var(--u)*2.6); font-weight:700; color:#dcae5e;
+    background:rgba(12,10,8,.85); border:1px solid rgba(220,174,94,.5);
+    border-radius:99px; padding:calc(var(--u)*.7) calc(var(--u)*2.2)}
+  .ov-sp-gone:empty{display:none}
   .ov-sp-out{font-size:calc(var(--u)*5); font-weight:800; color:#dcae5e;
     height:calc(var(--u)*6.4); display:flex; align-items:center; justify-content:center;
     overflow:hidden; white-space:nowrap}
@@ -172,18 +186,27 @@ export const PAGE_HTML = `<!doctype html>
   .ov-sp-delta b{color:#ece4d6}
   .ov-sp-delta .up{color:#ff9d92; font-weight:700}
   .ov-sp-delta .dn{color:#7fb8ff; font-weight:700}
+  /* 원판 라벨 — 원판과 함께 돕니다. 글자 끝은 림 안쪽에 고정, 방향은 중심→바깥 */
+  .ov-w-lab{position:absolute; inset:0; pointer-events:none}
+  .ov-w-lab i{position:absolute; right:50%; top:calc(var(--u)*1.4*var(--wu,1)); font-style:normal;
+    transform:rotate(-90deg); transform-origin:right center;
+    font-family:'Gowun Batang','Batang',serif; font-size:calc(var(--u)*3.4*var(--wu,1)); font-weight:800;
+    color:#f4d98c; white-space:nowrap; max-width:calc(var(--u)*17*var(--wu,1));
+    overflow:hidden; text-overflow:ellipsis;
+    text-shadow:-1px 0 0 #241206, 1px 0 0 #241206, 0 -1px 0 #241206, 0 1px 0 #241206,
+      0 1px 3px rgba(0,0,0,.4)}
   /* 중앙 허브 — 축은 늘 있고, 멈추면 값이 그 안에 뜹니다 */
   .ov-w-hub{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    width:calc(var(--u)*13); height:calc(var(--u)*13); border-radius:50%; z-index:2;
+    width:calc(var(--u)*13*var(--wu,1)); height:calc(var(--u)*13*var(--wu,1)); border-radius:50%; z-index:2;
     pointer-events:none;
     background:radial-gradient(circle at 34% 30%, #4a3c30, #241d17 70%);
     border:calc(var(--u)*.35) solid #dcae5e;
     box-shadow:0 calc(var(--u)*.4) calc(var(--u)*1.2) rgba(0,0,0,.5);
     display:flex; align-items:center; justify-content:center; overflow:hidden}
-  .ov-w-hit{color:#fff; font-size:calc(var(--u)*5.2); font-weight:800; line-height:1;
+  .ov-w-hit{color:#fff; font-size:calc(var(--u)*5.2*var(--wu,1)); font-weight:800; line-height:1;
     white-space:nowrap; max-width:92%; overflow:hidden; text-overflow:ellipsis; opacity:0}
-  .ov-w-hit.q{opacity:.4; color:#8a7a66; font-size:calc(var(--u)*4)}
-  .ov-w-hit.long{font-size:calc(var(--u)*2.4)}
+  .ov-w-hit.q{opacity:.4; color:#8a7a66; font-size:calc(var(--u)*4*var(--wu,1))}
+  .ov-w-hit.long{font-size:calc(var(--u)*2.4*var(--wu,1))}
   .ov-w-hit.on{animation:ov-hitpop .28s cubic-bezier(.2,1.5,.4,1) forwards}
   @keyframes ov-hitpop{from{transform:scale(.4); opacity:0}
     to{transform:scale(1); opacity:1}}
@@ -286,7 +309,7 @@ export const PAGE_HTML = `<!doctype html>
   var app = document.getElementById("app");
   var board = null;   // [{n,g,c}] — 앱이 계산해서 보내줍니다
   var cols = [];      // [{t,r}] — 항목 열 머리
-  var showNet = true; // 순액 열을 켤지
+  var showNet = true; // 순액 열을 켤지 (기본 켬)
   var pend = null;    // 룰렛이 도는 동안 도착한 표 (끝나고 반영)
   var spin = null;      // 앱이 보낸 판 (한 번에 통째로)
   var play = null;      // 방송이 제 시계로 재생하는 상태
@@ -479,6 +502,8 @@ export const PAGE_HTML = `<!doctype html>
       var box = sbox.querySelector(".ov-sp");
       if (box) {
         var sp = play.sp;
+        /* 결과 순간 — 원판이 뒤로 물러나고 결과가 무대 가운데에 뜹니다 */
+        box.classList.toggle("over", !!play.over);
         /* 트랙 — 채워진 만큼 다시 그립니다 (슬롯 위치는 고정이라 안 밀립니다) */
         var tr = box.querySelector(".ov-sp-track");
         if (tr)
@@ -488,7 +513,7 @@ export const PAGE_HTML = `<!doctype html>
         var gone = document.getElementById("ovgone");
         if (gone)
           gone.textContent =
-            !play.who && passGone(sp, play.i) ? "양도권은 한 판에 한 번 — 빠졌어요" : "";
+            !play.who && passGone(sp, play.i) ? "양도권은 한 판에 한 번이라 룰렛에서 빠졌어요" : "";
         /* 릴 — 멈추면 가운데에 나온 면, 위아래에 원판상의 이웃 면 */
         if (sp.look === "num" && !play.who && !play.rolling) {
           var f = document.getElementById("ovface");
@@ -558,13 +583,38 @@ export const PAGE_HTML = `<!doctype html>
     if (!box) return;
     var it = document.getElementById("ovitem");
     if (it) it.textContent = "누가 물까요?";
-    /* 무대를 사람 원판으로 갈아 끼웁니다 — 숫자만 모드였다면 릴을 원판으로 */
+    if (sp.look === "num") {
+      /* 숫자만 모드는 사람도 릴 — 이름이 이웃과 함께 스칩니다 */
+      rollNames(sp.pass2.faces);
+      return;
+    }
     var wrap = box.querySelector(".ov-wheel") || box.querySelector(".ov-reel");
     if (wrap) {
-      wrap.outerHTML = wheelHtml(sp.pass2.faces, {});
+      wrap.outerHTML = wheelHtml(sp.pass2.faces, {}, sp.theme);
       wheelRot = 0;
       hitKey = null;
     }
+  };
+
+  /* 릴에 아무 목록이나 돌립니다 — 사람 차례에는 이름 목록을 넣습니다 */
+  var rollNames = function (list) {
+    if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+    var t = 0;
+    var fit = function (el, txt) {
+      if (!el) return;
+      el.textContent = txt;
+      el.classList.remove("long", "longer");
+      if (String(txt).length > 3) el.classList.add("longer");
+      else if (String(txt).length > 2) el.classList.add("long");
+    };
+    faceTimer = setInterval(function () {
+      var el = document.getElementById("ovface");
+      if (!el) { clearInterval(faceTimer); faceTimer = null; return; }
+      var i = t++ % list.length;
+      fit(el, list[i]);
+      fit(document.getElementById("ovprev"), list[(i - 1 + list.length) % list.length]);
+      fit(document.getElementById("ovnext"), list[(i + 1) % list.length]);
+    }, 80);
   };
 
   var stepPlay = function () {
@@ -584,7 +634,7 @@ export const PAGE_HTML = `<!doctype html>
       if (poolAt(play.sp, play.i).length !== was) {
         var box = document.querySelector("#ovspin .ov-wheel");
         if (box) {
-          box.outerHTML = wheelHtml(poolAt(play.sp, play.i), play.sp.w);
+          box.outerHTML = wheelHtml(poolAt(play.sp, play.i), play.sp.w, play.sp.theme);
           wheelRot = 0;
           hitKey = null;
         }
@@ -598,22 +648,42 @@ export const PAGE_HTML = `<!doctype html>
     if (play.sp.pass2 && !play.who) {
       play.who = "roll";
       whoWheel(play);
-      spinTo(play.sp.pass2.faces, {}, play.sp.pass2.name);
+      if (play.sp.look !== "num")
+        spinTo(play.sp.pass2.faces, {}, play.sp.pass2.name);
       stepTimer = setTimeout(stepPlay, OV_ROLL);
       return;
     }
     if (play.who === "roll") {
       play.who = "land";
-      (function (nm) {
-        setTimeout(function () {
-          var hit = document.getElementById("ovhit");
-          if (!hit) return;
-          hit.textContent = nm;
-          hit.className = "ov-w-hit" + (String(nm).length > 2 ? " long" : "");
-          void hit.offsetWidth;
-          hit.classList.add("on");
-        }, 200);
-      })(play.sp.pass2.name);
+      if (play.sp.look === "num") {
+        /* 이름 릴 정지 — 가운데에 뽑힌 이름, 위아래엔 이웃 */
+        if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+        (function (sp) {
+          var nm2 = sp.pass2.faces;
+          var at = Math.max(0, nm2.indexOf(sp.pass2.name));
+          var fit = function (el, txt) {
+            if (!el) return;
+            el.textContent = txt;
+            el.classList.remove("long", "longer");
+            if (String(txt).length > 3) el.classList.add("longer");
+            else if (String(txt).length > 2) el.classList.add("long");
+          };
+          fit(document.getElementById("ovface"), sp.pass2.name);
+          fit(document.getElementById("ovprev"), nm2[(at - 1 + nm2.length) % nm2.length]);
+          fit(document.getElementById("ovnext"), nm2[(at + 1) % nm2.length]);
+        })(play.sp);
+      } else {
+        (function (nm) {
+          setTimeout(function () {
+            var hit = document.getElementById("ovhit");
+            if (!hit) return;
+            hit.textContent = nm;
+            hit.className = "ov-w-hit" + (String(nm).length > 2 ? " long" : "");
+            void hit.offsetWidth;
+            hit.classList.add("on");
+          }, 200);
+        })(play.sp.pass2.name);
+      }
       stepTimer = setTimeout(stepPlay, OV_HOLD);
       return;
     }
@@ -695,23 +765,47 @@ export const PAGE_HTML = `<!doctype html>
       ? "\u00d7" + String(k).slice(1)
       : String(k).replace(/^-/, "\u2212");
   };
-  /* 칸 색 — 글자를 안 쓰니 색으로 구분합니다 */
-  var NUM_COLORS = ["#4ea8de", "#57cc99", "#ffd166", "#c77dff",
-                    "#4cc9f0", "#f4978e", "#80ed99", "#b8c0ff"];
-  var faceColor = function (k, i) {
-    if (k === "pass") return "#e8564a";
-    if (isMult(k)) return "#f79824";
+  /* 칸 색 — 새틴(기본)은 면마다 고유색, 카지노는 빨강·검정 교대 (앱과 같은 규칙) */
+  var NUM_COLORS = ["#3c86ba", "#3f9c72", "#d9a83e", "#9a5fd0",
+                    "#3596bd", "#d97f75", "#5fae70", "#8e97d8"];
+  var faceColor = function (k, i, theme) {
+    if (theme === "vegas") {
+      if (k === "pass") return "#5c1e66";
+      if (k === "20") return "#146b3a";
+      return i % 2 ? "#17171c" : "#a3202b";
+    }
+    if (k === "pass") return "#c8493e";
+    if (isMult(k)) return "#cf7b16";
     return NUM_COLORS[i % NUM_COLORS.length];
   };
+  /* 분리선 든 원뿔 그러데이션 + 새틴/광 겹 — 아주 좁은 칸(3° 미만)엔 선 생략 */
+  var wheelStops2 = function (segs, theme) {
+    var sep = theme === "vegas" ? "#d4b25e" : "#2a1f16";
+    return segs.map(function (x) {
+      var arc = x.to - x.from;
+      if (arc < 3) return x.color + " " + x.from.toFixed(2) + "deg " + x.to.toFixed(2) + "deg";
+      return sep + " " + x.from.toFixed(2) + "deg " + (x.from + 0.8).toFixed(2) + "deg," +
+        x.color + " " + (x.from + 0.8).toFixed(2) + "deg " + (x.to - 0.8).toFixed(2) + "deg," +
+        sep + " " + (x.to - 0.8).toFixed(2) + "deg " + x.to.toFixed(2) + "deg";
+    }).join(",");
+  };
+  var wheelLayers2 = function (stops, theme) {
+    return (theme === "satin"
+      ? "radial-gradient(circle, transparent 0 63%, rgba(18,12,8,.42) 66% 96%, transparent 97%),"
+      : "") +
+      "radial-gradient(120% 90% at 32% 22%, rgba(255,255,255,.13), transparent 46%)," +
+      "radial-gradient(circle, rgba(0,0,0,.36) 0 15%, rgba(0,0,0,.10) 34%, transparent 50% 72%, rgba(0,0,0,.20) 96%)," +
+      "conic-gradient(" + stops + ")";
+  };
   /* 칸을 비율만큼 나눕니다 — 잘 나오는 면이 넓어야 원판이 정직합니다 */
-  var wheelArcs = function (faces, weights) {
+  var wheelArcs = function (faces, weights, theme) {
     weights = weights || {};
     var ws = faces.map(function (k) { return Math.max(0, Number(weights[k]) || 0); });
     var tot = ws.reduce(function (x, y) { return x + y; }, 0);
     var at = 0;
     return faces.map(function (k, i) {
       var arc = tot > 0 ? (ws[i] / tot) * 360 : 360 / faces.length;
-      var seg = { k: k, from: at, to: at + arc, mid: at + arc / 2, color: faceColor(k, i) };
+      var seg = { k: k, from: at, to: at + arc, mid: at + arc / 2, color: faceColor(k, i, theme) };
       at += arc;
       return seg;
     });
@@ -719,13 +813,14 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 물리 룰렛 원판. 칸을 원뿔 그러데이션으로 그리고 글자는 칸 가운데에 세웁니다.
      바늘은 위(12시)에 고정이고, 원판이 돌아 그 아래로 당첨 칸이 옵니다. */
-  var wheelHtml = function (faces, weights) {
-    var segs = wheelArcs(faces, weights);
-    var stops = segs.map(function (x) {
-      return x.color + " " + x.from.toFixed(3) + "deg " + x.to.toFixed(3) + "deg";
-    }).join(",");
+  var wheelHtml = function (faces, weights, theme) {
+    var segs = wheelArcs(faces, weights, theme);
+    var labs = segs.map(function (x) {
+      return '<span class="ov-w-lab" style="transform:rotate(' + x.mid.toFixed(2) + 'deg)">' +
+        "<i>" + esc(faceLabel(x.k)) + "</i></span>";
+    }).join("");
     return '<div class="ov-wheel"><div class="ov-w-disc" id="ovdisc" style="background:' +
-      "conic-gradient(" + stops + ')"></div>' +
+      wheelLayers2(wheelStops2(segs, theme), theme) + '">' + labs + "</div>" +
       '<span class="ov-w-hub"><span class="ov-w-hit q" id="ovhit">?</span></span>' +
       '<div class="ov-w-pin"></div></div>';
   };
@@ -756,30 +851,38 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   /* 카드는 판 사각형 안에 앉습니다. 크기 단위 --u 는 판 짧은 변의 1% — 판이 contain 으로
-     커지고 작아질 때 카드도 그대로 따라갑니다. 판이 넓적하면 눕고, 길면 섭니다. */
+     커지고 작아질 때 카드도 그대로 따라갑니다. 배치는 늘 세로 한 줄(이름·원판·트랙) —
+     원판이 주인공이라, 이름 줄·트랙·여백을 뺀 나머지를 전부 원판에 줍니다(최대 72u). */
   var spinHtml = function (pl) {
     var sp = pl.sp;
-    var box = document.querySelector(".ov");
-    var bw = box ? box.offsetWidth : 400;
-    var bh = box ? box.offsetHeight : 400;
+    var bw = window.innerWidth || 400;
+    var bh = window.innerHeight || 400;
     var u = Math.min(bw, bh) / 100;
-    var horiz = bw / bh >= 1.25;
+    var W = bw / u, H = bh / u;
+    var wu = Math.max(30, Math.min(72, H - 34, W - 10));
+    var sz = (wu * u).toFixed(1);
     var stage = sp.look === "num"
       ? '<div class="ov-reel"><span class="ov-reel-line"></span>' +
         '<b class="ov-reel-n side" id="ovprev"></b>' +
         '<b class="ov-reel-n big" id="ovface">?</b>' +
         '<b class="ov-reel-n side" id="ovnext"></b></div>'
-      : wheelHtml(poolAt(sp, pl.i), sp.w);
-    return '<div class="ov-sp ' + (horiz ? "h" : "v") + '" style="--u:' + u.toFixed(2) + 'px">' +
+      : wheelHtml(poolAt(sp, pl.i), sp.w, sp.theme);
+    return '<div class="ov-sp v' + (pl.over ? " over" : "") + '" style="--u:' + u.toFixed(2) + 'px">' +
       '<div class="ov-sp-info">' +
         '<span class="ov-sp-who" id="ovwho">' + esc(sp.who) + "</span>" +
         '<span class="ov-sp-item" id="ovitem">' + esc(sp.item) + "</span>" +
-      "</div>" + stage +
+      "</div>" +
+      '<div class="ov-stage" style="width:' + sz + "px; height:" + sz + 'px; --wu:' + (wu / 46).toFixed(3) + '">' +
+        stage +
+        /* 결과는 무대 위에 겹쳐 뜹니다 — 트랙을 밀거나 덮지 않습니다 */
+        '<div class="ov-stage-out">' +
+          '<div class="ov-sp-out" id="ovout"></div>' +
+          '<div class="ov-sp-delta" id="ovdelta"></div>' +
+        "</div>" +
+        '<div class="ov-sp-gone" id="ovgone"></div>' +
+      "</div>" +
       '<div class="ov-sp-res" id="ovres">' +
         trackHtml(sp, pl.i, pl.rolling, false) +
-        '<div class="ov-sp-gone" id="ovgone"></div>' +
-        '<div class="ov-sp-out" id="ovout"></div>' +
-        '<div class="ov-sp-delta" id="ovdelta"></div>' +
       "</div></div>";
   };
 
@@ -850,7 +953,7 @@ export const PAGE_HTML = `<!doctype html>
     root.dataset.notice = "0";
     if (!ovBoard) {
       app.innerHTML = '<div class="ov"><div class="ov-head" id="ovhead"></div>' +
-        '<div id="ovspin"></div><div id="ovboard"></div></div>';
+        '<div id="ovboard"></div></div><div id="ovspin"></div>';
       ovBoard = document.getElementById("ovboard");
       ovBoard.innerHTML = rowsHtml(board);
     } else {
