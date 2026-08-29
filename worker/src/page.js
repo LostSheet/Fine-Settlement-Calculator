@@ -15,14 +15,15 @@ export const PAGE_HTML = `<!doctype html>
 <style>
   :root{--ink:#f5f0e6; --gold:#e8c66a}
   *{margin:0; padding:0; box-sizing:border-box}
-  html,body{background:transparent; overflow:hidden}
+  /* 뷰포트에 고정해서 자릅니다 — 높이를 안 주면 overflow:hidden 이 확대 전 높이에서
+     잘라, contain 으로 커진 판의 아래가 사라집니다 (OBS에서 그렇게 잘렸습니다) */
+  html,body{background:transparent; overflow:hidden; width:100%; height:100%}
   body{font-family:'Segoe UI','Malgun Gothic',sans-serif; color:var(--ink)}
 
   /* 글자색은 판 안에서 다시 풉니다 — body 에서 굳히면 테마가 .ov 의 --ink 를
      바꿔도 이미 늦어서, 밝은 판이 밝은 글자(안 보임)로 나옵니다 */
   .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw;
     position:relative; will-change:transform; color:var(--ink)}
-  .ov.fitted{transition:transform .35s ease}
   /* 총액을 금액 열과 같은 선에 세웁니다 — 증감액 열 10.5 + 열 간격 1.6 + 줄 안쪽 여백 .4 */
   /* 총액도 금액 열과 같은 선에 — 줄 안쪽 여백(.4vw)만 빼면 됩니다 */
   .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.5vw; padding:0 .4vw}
@@ -890,8 +891,6 @@ export const PAGE_HTML = `<!doctype html>
       "translate(" + (window.innerWidth - w * scale) / 2 + "px," +
       (window.innerHeight - h * scale) / 2 + "px) scale(" + scale + ")";
     /* 첫 배치는 튀지 않게 전환 없이, 그 뒤(인원·열 변경)부터 부드럽게 */
-    if (!el.classList.contains("fitted"))
-      setTimeout(function () { el.classList.add("fitted"); }, 60);
     /* 미리보기 팝업만: 처음 한 번 창 높이를 판에 맞춰 남는 여백을 없앱니다 */
     if (isPreview && !fitted && window.opener) {
       fitted = true;
