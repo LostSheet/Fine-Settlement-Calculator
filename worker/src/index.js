@@ -10,6 +10,7 @@ const rid = (n) =>
   Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => ALPHABET[b % ALPHABET.length]).join("");
 
 const ID6 = "[ABCDEFGHJKMNPQRSTVWXYZ23456789]{6}";
+const ID12 = "[ABCDEFGHJKMNPQRSTVWXYZ23456789]{12}";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -22,8 +23,8 @@ const json = (data, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8", ...CORS },
   });
 
-/* 상태 크기 상한 — 이름 여덟 줄짜리 현황판에 32KB면 차고 넘칩니다. 남용 방지용 */
-const MAX_STATE_BYTES = 32 * 1024;
+/* 상태 크기 상한 — 표에 더해 기록(최근 200건)까지 실립니다. 남용 방지용 */
+const MAX_STATE_BYTES = 128 * 1024;
 /* 90일 동안 갱신이 없으면 방을 통째로 지웁니다 (죽은 공대 청소).
    내용을 미리 지우지는 않습니다 — 링크가 살아 있는 한 이름이 보여야
    "이름이 보이면 정상"이라는 진단이 성립하니까요. */
@@ -52,13 +53,18 @@ export default {
     }
 
     // 기기 이사·예비 열쇠 — 열쇠 꾸러미를 한 번 쓰는 6자리 코드로 옮깁니다
-    if (p === "/api/handoff" || new RegExp(`^/api/handoff/${ID6}$`).test(p)) {
+    // 복구 코드 — 같은 꾸러미를 오래 보관하는 12자리 코드. 재발급하면 옛 코드는 무효
+    if (
+      p === "/api/handoff" || new RegExp(`^/api/handoff/${ID6}$`).test(p) ||
+      p === "/api/recovery" || p === "/api/recovery/revoke" ||
+      new RegExp(`^/api/recovery/${ID12}$`).test(p)
+    ) {
       const stub = env.HANDOFF.get(env.HANDOFF.idFromName("global"));
       return stub.fetch(req);
     }
 
     // 방 API — /api/r/:id/(state|live|kill|peek)
-    const api = p.match(new RegExp(`^/api/r/(${ID6})/(state|live|kill|peek)$`));
+    const api = p.match(new RegExp(`^/api/r/(${ID6})/(state|live|kill|peek|read)$`));
     if (api) {
       const stub = env.ROOM.get(env.ROOM.idFromName(api[1]));
       return stub.fetch(new Request("https://do/" + api[2], req));
@@ -133,6 +139,23 @@ export class Room {
         }
       }
       return json({ ok: true, watchers: socks.length });
+    }
+
+    /* 열쇠를 가진 기기가 스냅샷을 통째로 읽습니다 — 복구·이어가기의 공통 기반.
+       방이 만료돼 지워졌으면 열쇠 기록도 없으므로 410으로 구분해 줍니다. */
+    if (path === "/read") {
+      let key;
+      try {
+        ({ key } = await req.json());
+      } catch (e) {
+        return json({ error: "bad json" }, 400);
+      }
+      const real = await this.ctx.storage.get("key");
+      if (!real) return json({ error: "gone" }, 410);
+      if (key !== real) return json({ error: "unauthorized" }, 403);
+      if (await this.ctx.storage.get("dead")) return json({ error: "dead" }, 410);
+      const state = await this.ctx.storage.get("state");
+      return json({ state: state ?? null });
     }
 
     /* 주소 재발급의 뒷정리 — 옛 방을 닫습니다 (새 방 생성은 앱이 따로 합니다) */
@@ -228,6 +251,53 @@ export class Handoff {
       await this.ctx.storage.put("c:" + code, { body, exp: Date.now() + HANDOFF_TTL_MS });
       await this.ctx.storage.setAlarm(Date.now() + HANDOFF_TTL_MS + 60 * 1000);
       return json({ code, expiresIn: HANDOFF_TTL_MS / 1000 });
+    }
+
+    /* 복구 코드 발급 — 꾸러미를 기한 없이 맡아둡니다. 방 자체가 유휴 90일에
+       만료되므로 코드만 영원해도 열 수 있는 건 살아 있는 방뿐입니다. */
+    if (url.pathname === "/api/recovery" && req.method === "POST") {
+      const now = Date.now();
+      let ig = (await this.ctx.storage.get("riguard")) || { n: 0, until: 0 };
+      if (ig.until > now && ig.n >= 30) return json({ error: "slow down" }, 429);
+      if (ig.until < now) ig = { n: 0, until: now + 10 * 60 * 1000 };
+      ig.n++;
+      await this.ctx.storage.put("riguard", ig);
+      const body = await req.text();
+      if (body.length > MAX_STATE_BYTES) return json({ error: "too big" }, 413);
+      const code = rid(12);
+      await this.ctx.storage.put("r:" + code, { body });
+      return json({ code });
+    }
+
+    // 복구 코드 무효화 — 재발급하거나 새어 나갔을 때 앱이 부릅니다
+    if (url.pathname === "/api/recovery/revoke" && req.method === "POST") {
+      let code;
+      try {
+        ({ code } = await req.json());
+      } catch (e) {
+        return json({ error: "bad json" }, 400);
+      }
+      if (typeof code === "string" && new RegExp(`^${ID12}$`).test(code))
+        await this.ctx.storage.delete("r:" + code);
+      return json({ ok: true });
+    }
+
+    // 복구 코드 수령 — 태우지 않습니다 (몇 번이고 같은 코드로 복구할 수 있게)
+    const rtake = url.pathname.match(new RegExp(`^/api/recovery/(${ID12})$`));
+    if (rtake && req.method === "GET") {
+      const now = Date.now();
+      let g = (await this.ctx.storage.get("rguard")) || { n: 0, until: 0 };
+      if (g.until > now && g.n >= 30) return json({ error: "slow down" }, 429);
+      const item = await this.ctx.storage.get("r:" + rtake[1]);
+      if (!item) {
+        if (g.until < now) g = { n: 0, until: now + 10 * 60 * 1000 };
+        g.n++;
+        await this.ctx.storage.put("rguard", g);
+        return json({ error: "no such code" }, 404);
+      }
+      return new Response(item.body, {
+        headers: { "content-type": "application/json; charset=utf-8", ...CORS },
+      });
     }
 
     // 코드 수령 — 맞으면 꾸러미를 주고 즉시 태웁니다 (1회용)

@@ -668,16 +668,17 @@ function decodeState(token) {
 
 const MODE_KEY = "m";
 const LIVE_KEY = "live"; // #live=ROOMID 로 들어오면 읽기 전용 뷰어
-/* #k=CODE — 편집 권한을 넘기는 링크. 코드를 손으로 옮겨 적는 대신 링크를 보냅니다.
-   5분이 지나면 못 쓰고, 한 번 쓰면 사라집니다(서버가 지웁니다). */
+/* #k=CODE — 열쇠를 나르는 링크. 6자면 5분짜리 일회용 이사 코드, 12자면 오래 보관하는
+   복구 코드입니다. 코드를 손으로 옮겨 적는 대신 링크를 보냅니다. */
 const HANDOFF_KEY = "k";
 const handoffUrl = (c) =>
   window.location.origin + window.location.pathname + "#" + HANDOFF_KEY + "=" + c;
 /* 붙여넣은 게 링크든 코드든 코드만 뽑아냅니다 — 링크가 깨져서 오는 일이 있습니다 */
 const codeFromText = (t) => {
-  const v = (t || "").trim().toUpperCase();
-  const m = v.match(/(?:^|[#&])K=([A-Z0-9]{6})/);
-  return m ? m[1] : /^[A-Z0-9]{6}$/.test(v) ? v : "";
+  /* 복구 코드는 4자씩 끊어 보여 줍니다 — 붙여넣을 때 붙임표·공백은 걷어냅니다 */
+  const v = (t || "").trim().toUpperCase().replace(/[\s-]/g, "");
+  const m = v.match(/(?:^|[#&])K=([A-Z0-9]{12}|[A-Z0-9]{6})/);
+  return m ? m[1] : /^(?:[A-Z0-9]{12}|[A-Z0-9]{6})$/.test(v) ? v : "";
 };
 /* 예시 방 — 서버에 방이 없습니다. 앱이 예시 장부를 직접 비춰서, 실제 링크와 똑같이 동작합니다 */
 const DEMO_ROOM = "CAFE22";
@@ -762,6 +763,7 @@ function loadRelay() {
       spinLook: v.spinLook === "num" || v.spinLook === "wheel" ? v.spinLook : undefined,
       wheelTheme: v.wheelTheme === "vegas" ? "vegas" : undefined,
       ovsrc: v.ovsrc === "split" ? "split" : undefined,
+      rcode: typeof v.rcode === "string" ? v.rcode : undefined,
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
           ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25 }
@@ -813,6 +815,43 @@ const relayApi = {
       if (!r.ok) throw new Error("코드를 받지 못했어요");
       return r.json();
     }),
+  /* 열쇠를 가진 기기가 방의 스냅샷을 통째로 읽습니다 — 복구·이어가기의 공통 기반 */
+  readState: (roomId, key) =>
+    fetch(`${RELAY_BASE}/api/r/${roomId}/read`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key }),
+    }).then((r) => {
+      if (r.status === 410) {
+        const e = new Error("방이 만료됐거나 닫혀 있어요");
+        e.gone = true;
+        throw e;
+      }
+      if (!r.ok) throw new Error("장부를 읽지 못했어요");
+      return r.json();
+    }),
+  recoveryIssue: (bundle) =>
+    fetch(RELAY_BASE + "/api/recovery", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(bundle),
+    }).then((r) => {
+      if (!r.ok) throw new Error("코드를 만들지 못했어요");
+      return r.json();
+    }),
+  recoveryClaim: (code) =>
+    fetch(`${RELAY_BASE}/api/recovery/${code}`).then((r) => {
+      if (r.status === 404)
+        throw new Error("그런 코드가 없어요. 새로 발급됐거나 잘못 적혔을 수 있어요.");
+      if (!r.ok) throw new Error("코드를 받지 못했어요");
+      return r.json();
+    }),
+  recoveryRevoke: (code) =>
+    fetch(RELAY_BASE + "/api/recovery/revoke", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code }),
+    }).catch(() => {}),
   shareUrl: (roomId) => `${RELAY_BASE}/r/${roomId}`,
 };
 
@@ -1241,12 +1280,16 @@ function computeSettlement(rows, cols, feePercent, withExtras = true, method = "
 const won = (v) => Math.round(v).toLocaleString("ko-KR");
 const G = (v) => won(v) + "G";
 /* 172만, 21만5,000 처럼 읽습니다. 1만 미만이면 0.63만 같은 소수 대신 정수만. */
+/* 입력 단위가 1G면 앱 표기도 생숫자로 — "표시 단위 = 입력 단위" 원칙.
+   렌더 때 본체 컴포넌트가 갱신합니다. 오버레이(방송)는 별도 표기라 무관합니다. */
+let RAW_G = false;
 const man = (v) => {
   const neg = v < 0;
   const a = Math.abs(Math.round(v));
+  const c = (x) => x.toLocaleString("ko-KR");
+  if (RAW_G) return (neg ? "−" : "") + c(a);
   const m = Math.floor(a / UNIT);
   const rest = a % UNIT;
-  const c = (x) => x.toLocaleString("ko-KR");
   const s = m === 0 ? c(rest) : rest === 0 ? `${c(m)}만` : `${c(m)}만${c(rest)}`;
   return (neg ? "−" : "") + s;
 };
@@ -1409,6 +1452,8 @@ export default function GoldSettlement() {
 
   const [mode, setMode] = useState(boot.current.mode || "simple");
   const [unit, setUnit] = useState(boot.current.unit || "10000");
+  /* 표기 방침을 렌더마다 못 박습니다 — 1G 입력자는 생숫자를 보고 그대로 칩니다 */
+  RAW_G = unit === "1";
   const [memoFont, setMemoFont] = useState(clampMemoFont(boot.current.memoFont));
   const [flash, setFlash] = useState("");
   const [openRow, setOpenRow] = useState(null);
@@ -1790,6 +1835,133 @@ export default function GoldSettlement() {
     }
     return true;
   };
+  /* ---------- 복구·이어가기 — 서버 스냅샷을 파티로 앉힙니다 ---------- */
+  const uniquePartyName = (base) => {
+    const root = (base || "").trim() || "불러온 파티";
+    if (!partyReg.list.some((x) => x.name === root)) return root;
+    for (let i = 2; i < 99; i++) {
+      const c = root + " (" + i + ")";
+      if (!partyReg.list.some((x) => x.name === c)) return c;
+    }
+    return root + " " + Date.now();
+  };
+  const ledgerFromSnapshot = (st) => {
+    const f = (st && st.full) || {};
+    if (!Array.isArray(f.cols) || !Array.isArray(f.rows)) return null;
+    return {
+      mode: f.mode || "items",
+      unit: f.unit || unit,
+      cols: f.cols,
+      rows: migrateRows(f.rows),
+      log: Array.isArray(f.log) ? f.log : [],
+      feePercent: f.feePercent || "5",
+      splitMode: f.splitMode === "solo" ? "solo" : "pot",
+      memoFreeze: f.memoFreeze || null,
+      undoSnap: null,
+    };
+  };
+  /* 링크(6자)든 복구 코드(12자)든 같은 길: 방을 읽어 장부부터 앉히고, 그다음에야
+     열쇠를 묶습니다 — 권한만 있고 장부는 빈 상태(빈 푸시로 방을 덮는 사고)를 봉쇄 */
+  const seatFromBundle = async (got) => {
+    const entries = Object.entries(got.rooms || {});
+    const nextRooms = { ...relay.rooms };
+    const seatedNames = [];
+    let refreshed = 0,
+      gone = 0,
+      failed = 0,
+      firstName = null;
+    for (const [label, bind] of entries) {
+      if (!bind || !bind.roomId || !bind.key) continue;
+      const bound = Object.keys(nextRooms).find(
+        (nm) => nextRooms[nm] && nextRooms[nm].roomId === bind.roomId
+      );
+      if (bound) {
+        /* 이미 이 방에 묶인 파티가 있음 — 데이터는 두고 열쇠만 새로 맞춥니다 */
+        nextRooms[bound] = bind;
+        refreshed++;
+        continue;
+      }
+      let snap = null;
+      try {
+        snap = await relayApi.readState(bind.roomId, bind.key);
+      } catch (e) {
+        if (e && e.gone) gone++;
+        else failed++;
+        continue;
+      }
+      const led = ledgerFromSnapshot(snap && snap.state);
+      if (!led) {
+        failed++;
+        continue;
+      }
+      const nm = uniquePartyName((snap.state && snap.state.name) || label);
+      savePartySlot(nm, led);
+      nextRooms[nm] = bind;
+      seatedNames.push(nm);
+      if (!firstName) firstName = nm;
+    }
+    if (seatedNames.length || refreshed) {
+      if (seatedNames.length) {
+        savePartySlot(partyReg.active, currentLedger());
+        putPartyReg({
+          list: [...partyReg.list, ...seatedNames.map((nm) => ({ name: nm, t: Date.now() }))],
+          active: firstName,
+        });
+        applyLedger(loadPartySlot(firstName) || blankPartyLedger());
+      }
+      putRelay({
+        ...relay,
+        on: got.on != null ? !!got.on : relay.on,
+        rooms: nextRooms,
+        active: got.active || relay.active,
+        look: got.look || relay.look,
+        spd: got.spd || relay.spd,
+        spinLook: got.spinLook || relay.spinLook,
+        wheelTheme: got.wheelTheme || relay.wheelTheme,
+      });
+    }
+    return { seated: seatedNames.length, refreshed, gone, failed, firstName };
+  };
+  const seatMsg = (r) => {
+    if (r.seated)
+      return "'" + r.firstName + "' 장부를 그대로 이어받았어요 — 기록 권한도 함께요.";
+    if (r.refreshed) return "이미 연결돼 있던 파티예요 — 열쇠만 새로 맞췄어요.";
+    if (r.gone) return "방이 만료됐거나 닫혀 있어요. 새 코드가 필요해요.";
+    return "장부를 가져오지 못했어요. 인터넷을 확인하고 다시 시도해 주세요.";
+  };
+  /* ---------- 파일 백업 — 서버 수명과 무관하게 남는 층 ---------- */
+  const exportPartyFile = () => {
+    const data = { app: "gold-settlement", v: 1, name: partyReg.active, ledger: currentLedger() };
+    const d = new Date();
+    const stamp =
+      d.getFullYear() +
+      "-" +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(d.getDate()).padStart(2, "0");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+    a.download = "벌금표-" + partyReg.active + "-" + stamp + ".json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+  const importPartyFile = (text) => {
+    let data = null;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return "파일을 읽지 못했어요 — 벌금표에서 내보낸 파일이 맞는지 확인해 주세요.";
+    }
+    const led = data && data.ledger;
+    if (!led || !Array.isArray(led.cols) || !Array.isArray(led.rows))
+      return "파일을 읽지 못했어요 — 벌금표에서 내보낸 파일이 맞는지 확인해 주세요.";
+    const nm = uniquePartyName(data.name);
+    savePartySlot(nm, { ...led, rows: migrateRows(led.rows), undoSnap: null });
+    savePartySlot(partyReg.active, currentLedger());
+    putPartyReg({ list: [...partyReg.list, { name: nm, t: Date.now() }], active: nm });
+    applyLedger(loadPartySlot(nm) || blankPartyLedger());
+    return "'" + nm + "' 파티로 불러왔어요.";
+  };
   const askDeleteParty = (name) =>
     setAsk({
       title: `'${name}' 파티를 지울까요?`,
@@ -2005,7 +2177,17 @@ export default function GoldSettlement() {
         })),
     ovNet: ovShow().net,
     spin: spinOut(),
-    full: { cols, rows, feePercent, unit, splitMode },
+    /* 복구·이어가기가 이 스냅샷을 통째로 앉힙니다 — 기록·모드·메모까지 있어야 완전한 복원입니다 */
+    full: {
+      mode,
+      cols,
+      rows,
+      feePercent,
+      unit,
+      splitMode,
+      log: (log || []).slice(-200),
+      memoFreeze,
+    },
     look: lookOut(),
     t: Date.now(),
   });
@@ -2964,24 +3146,12 @@ export default function GoldSettlement() {
         window.location.pathname + window.location.search + (rest ? "#" + rest : "")
       );
     }
-    relayApi
-      .handoffClaim(c)
-      .then((got) => {
-        const cur = loadRelay();
-        putRelay({
-          on: !!got.on,
-          rooms: { ...cur.rooms, ...(got.rooms || {}) },
-          active: got.active || cur.active,
-          look: got.look || cur.look,
-          spd: got.spd || cur.spd,
-          spinLook: got.spinLook || cur.spinLook,
-          wheelTheme: got.wheelTheme || cur.wheelTheme,
-          ov: cur.ov,
-        });
-        say("편집 권한을 받았어요 — 이 기기에서도 기록할 수 있어요.");
-      })
+    /* 6자면 일회용 이사 링크, 12자면 복구 코드 — 어느 쪽이든 장부부터 앉힙니다 */
+    (c.length >= 10 ? relayApi.recoveryClaim(c) : relayApi.handoffClaim(c))
+      .then((got) => seatFromBundle(got))
+      .then((r) => say(seatMsg(r)))
       .catch(() =>
-        say("만료됐거나 이미 쓴 링크예요. 원래 기기에서 링크를 새로 만들어 주세요.")
+        say("만료됐거나 이미 쓴 링크예요. 원래 기기에서 새로 만들어 주세요.")
       );
   }, []);
 
@@ -3151,8 +3321,8 @@ export default function GoldSettlement() {
                   편집 권한
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  이 브라우저의 <b>편집 권한을 다른 기기로</b> 넘겨요. 브라우저가 초기화되거나
-                  PC를 바꿔도 거기서 이어서 할 수 있어요.
+                  복구 코드와 파일 백업 — 다른 기기에서 <b>장부째 이어가거나</b>, 백업을
+                  만들어요.
                 </span>
               </span>
             )}
@@ -3497,7 +3667,12 @@ export default function GoldSettlement() {
             </label>
           ))}
           <span className="gs-unitnote">
-            {simple ? "칸에 적은 숫자 하나가 이 금액이에요." : "합계를 고칠 때 숫자 하나가 이 금액이에요."}
+            {(simple ? "칸에 적은 숫자가 " : "합계를 고칠 때 치는 숫자가 ") +
+              (unit === "100000"
+                ? "이 금액이에요 — 5 → 50만 · 1.5 → 15만"
+                : unit === "1"
+                ? "골드 그대로예요 — 50000 → 50,000"
+                : "이 금액이에요 — 5 → 5만 · 2.32 → 2만3,200")}
           </span>
         </div>
         {/* 조작법은 왼쪽, 채팅 복사는 표 오른쪽 위 — 표에 딸린 것끼리 한 줄 */}
@@ -4329,6 +4504,10 @@ export default function GoldSettlement() {
             return ok;
           }}
           onDelete={(name) => askDeleteParty(name)}
+          onRestore={() => {
+            setLobby(false);
+            setKeyOpen(true);
+          }}
           onRename={renameParty}
           onExample={() => {
             setLobby(false);
@@ -4430,7 +4609,15 @@ export default function GoldSettlement() {
         </InfoModal>
       )}
       {keyOpen && (
-        <KeyShare relay={relay} putRelay={putRelay} onClose={() => setKeyOpen(false)} />
+        <KeyShare
+          relay={relay}
+          putRelay={putRelay}
+          activeLabel={partyReg.active}
+          onSeatBundle={async (got) => ({ msg: seatMsg(await seatFromBundle(got)) })}
+          onExportFile={exportPartyFile}
+          onImportFile={importPartyFile}
+          onClose={() => setKeyOpen(false)}
+        />
       )}
       {obsOpen && (
         <ObsShare
@@ -4441,6 +4628,10 @@ export default function GoldSettlement() {
           snapshot={liveSnapshot}
           onAskReissue={askObsReissue}
           onAskShareOff={askShareOff}
+          onOpenKeys={() => {
+            setObsOpen(false);
+            setKeyOpen(true);
+          }}
           onClose={() => {
             setObsOpen(false);
             if (obsCoachPending.current) {
@@ -5498,42 +5689,56 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
 /* 편집 권한 넘기기 — 이 브라우저의 열쇠를 다른 기기로 보냅니다.
    방송 송출과는 상관없는 일이라 헤더에 따로 두었습니다. OBS 설정 맨 밑에 두면
    정작 브라우저를 못 쓰게 된 뒤에 찾을 사람이 그때 가서 못 찾습니다. */
-function KeyShare({ relay, putRelay, onClose }) {
+function KeyShare({ relay, putRelay, activeLabel, onSeatBundle, onExportFile, onImportFile, onClose }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
-  const [code, setCode] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(""); // "code" | "link"
   const [claim, setClaim] = useState("");
-  const [claimed, setClaimed] = useState(false);
+  const [note, setNote] = useState("");
+  const fileRef = useRef(null);
+  const rcode = relay.rcode || null;
+  /* 12자를 4자씩 끊어 보여 줍니다 — 옮겨 적기 좋게. 붙여넣을 땐 붙임표를 걷어냅니다 */
+  const fmt = (c) => (c ? c.replace(/(.{4})(?=.)/g, "$1-") : "");
 
-  /* 링크만 덜렁 보내면 받은 사람이 이게 얼마나 센 링크인지 모르고 다시 퍼뜨립니다 —
-     경고를 붙여서 내보냅니다. */
-  const handoffMsg = (c) =>
-    "[벌금표 편집 권한] 이 링크를 열면 그 기기에서도 벌금표를 고칠 수 있어요.\n" +
-    "5분이 지나면 못 쓰고, 한 번 쓰면 사라져요. 다른 사람에게 넘기지 마세요.\n" +
-    handoffUrl(c);
-
-  const issueCode = async () => {
-    setBusy("code");
+  /* 발급·재발급 — 옛 코드는 서버에서 지웁니다 */
+  const issueRecovery = async () => {
+    setBusy("issue");
     setErr("");
-    setCopied(false);
     try {
-      const r = await relayApi.handoffIssue(relay);
-      setCode(r.code);
+      const { rcode: drop, ...bundle } = relay;
+      const r = await relayApi.recoveryIssue(bundle);
+      if (rcode) relayApi.recoveryRevoke(rcode);
+      putRelay({ ...relay, rcode: r.code });
+      setCopied("");
     } catch (e) {
       setErr(e.message || "실패했어요");
     }
     setBusy("");
   };
 
-  const copyLink = (c) =>
+  /* 링크만 덜렁 보내면 받은 사람이 이게 얼마나 센 코드인지 모르고 다시 퍼뜨립니다 —
+     경고를 붙여서 내보냅니다. */
+  const codeMsg = () =>
+    "[벌금표 복구 코드] 이 링크를 열면 그 기기에서 장부를 그대로 이어받고 기록도 할 수 있어요.\n" +
+    "오래 보관하는 열쇠예요 — 다른 사람에게 함부로 넘기지 마세요.\n" +
+    handoffUrl(rcode);
+  const copyIt = (kind) =>
     navigator.clipboard
-      .writeText(handoffMsg(c))
+      .writeText(kind === "link" ? codeMsg() : fmt(rcode))
       .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2500);
+        setCopied(kind);
+        setTimeout(() => setCopied(""), 2500);
       })
       .catch(() => setErr("복사하지 못했어요"));
+
+  const onFile = (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => setNote(onImportFile(String(rd.result || "")));
+    rd.readAsText(f);
+  };
 
   const takeCode = async () => {
     /* 링크째 붙여넣는 게 보통입니다 — 코드만 뽑아 씁니다 */
@@ -5541,20 +5746,12 @@ function KeyShare({ relay, putRelay, onClose }) {
     if (!c) return;
     setBusy("claim");
     setErr("");
+    setNote("");
     try {
-      const got = await relayApi.handoffClaim(c);
-      putRelay({
-        on: !!got.on,
-        rooms: { ...relay.rooms, ...(got.rooms || {}) },
-        active: got.active || relay.active,
-        look: got.look || relay.look,
-        spd: got.spd || relay.spd,
-        spinLook: got.spinLook || relay.spinLook,
-        wheelTheme: got.wheelTheme || relay.wheelTheme,
-      });
+      const got = await (c.length >= 10 ? relayApi.recoveryClaim(c) : relayApi.handoffClaim(c));
+      const r = await onSeatBundle(got);
       setClaim("");
-      setClaimed(true);
-      setTimeout(() => setClaimed(false), 2000);
+      setNote(r.msg);
     } catch (e) {
       setErr(e.message || "실패했어요");
     }
@@ -5562,64 +5759,102 @@ function KeyShare({ relay, putRelay, onClose }) {
   };
 
   return (
-    <InfoModal title="다른 기기에도 편집 권한을 부여하는 링크 생성" onClose={onClose}>
+    <InfoModal title="편집 권한 · 백업" onClose={onClose}>
       <div className="gs-key">
+        <h4 className="gs-key-h">복구 코드</h4>
         <p>
-          기록과 공유 관리는 지금 이 브라우저에서만 돼요. 링크를 만들어 다른 PC나 폰에서 열면
-          거기서도 고칠 수 있게 돼요. 브라우저 초기화나 PC 교체로 이 브라우저를 못 쓰게 돼도
-          거기서 이어서 할 수 있어요.
-        </p>
-        <p className="gs-obs-warn">
-          링크를 가진 사람은 누구든 이 브라우저의 기록 권한을 그대로 가져가요. 5분이 지나면 못
-          쓰고, 한 번 쓰면 사라져요. 방송 화면이나 공개 채팅에 올라가지 않게 조심하세요.
+          코드 하나로 이 브라우저의 <b>공유 파티(표·기록·기록 권한)</b>를 다른 기기에서
+          그대로 불러올 수 있어요. 브라우저가 지워지거나 PC가 바뀌어도 코드만 있으면 돼요.
+          발급해서 안전한 곳에 적어 두세요.
         </p>
         <div className="gs-obs-acts">
-          <button className="gs-btn gs-btn-sm" onClick={issueCode} disabled={busy === "code"}>
-            {busy === "code" ? "만드는 중…" : code ? "링크 새로 만들기" : "링크 만들기"}
-          </button>
-          {code && (
+          {rcode ? (
             <>
-              <button
-                className="gs-btn gs-btn-sm gs-obs-keycopy"
-                onClick={() => copyLink(code)}
-              >
-                {copied ? "복사했어요" : "링크 복사"}
+              <span className="gs-key-code">{fmt(rcode)}</span>
+              <button className="gs-btn gs-btn-sm" onClick={() => copyIt("code")}>
+                {copied === "code" ? "복사했어요" : "코드 복사"}
               </button>
-              <span className="gs-obs-note">
-                {copied
-                  ? "5분 안에 다른 기기에서 열어주세요"
-                  : "링크는 화면에 안 띄워요 — 복사해서 보내세요"}
-              </span>
+              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => copyIt("link")}>
+                {copied === "link" ? "복사했어요" : "링크로 복사"}
+              </button>
+              <button
+                className="gs-btn gs-btn-sm gs-btn-ghost"
+                onClick={issueRecovery}
+                disabled={busy === "issue"}
+              >
+                {busy === "issue" ? "만드는 중…" : "새로 발급"}
+              </button>
             </>
+          ) : (
+            <button className="gs-btn gs-btn-sm" onClick={issueRecovery} disabled={busy === "issue"}>
+              {busy === "issue" ? "만드는 중…" : "복구 코드 발급"}
+            </button>
           )}
         </div>
+        <p className="gs-obs-warn">
+          코드를 가진 사람은 기록 권한도 가져요. 새로 발급하면 옛 코드는 바로 못 쓰게 되고,
+          '주소 새로 발급'을 해도 같이 끊겨요. 여럿이 같은 순간에 적으면 늦게 저장된 쪽만
+          남으니, 기록은 한 번에 한 사람이 하는 게 안전해요.
+        </p>
+        <p className="gs-key-foot">
+          파티를 90일 넘게 한 번도 안 열면 서버 보관이 만료돼서 코드로 못 살려요 — 오래 쉴
+          땐 아래 파일 백업을 함께 써 주세요.
+        </p>
+
+        <h4 className="gs-key-h">받기 — 링크나 코드로 이어받기</h4>
         <div className="gs-obs-acts">
           <input
             className="gs-in gs-obs-claim"
             value={claim}
-            placeholder="받은 링크 붙여넣기"
+            placeholder="받은 링크나 복구 코드 붙여넣기"
             onChange={(e) => setClaim(e.target.value)}
-            aria-label="받은 링크"
+            aria-label="받은 링크나 복구 코드"
           />
           <button
             className="gs-btn gs-btn-sm"
             onClick={takeCode}
             disabled={busy === "claim" || !codeFromText(claim)}
           >
-            {claimed ? "받았어요" : "링크로 권한 받기"}
+            {busy === "claim" ? "가져오는 중…" : "불러오기"}
           </button>
         </div>
         <p className="gs-key-foot">
-          링크를 열면 그 기기가 바로 이어받아요. 링크가 깨져서 왔으면 받은 글을 통째로 위 칸에
-          붙여넣어도 돼요.
+          장부(표·기록)까지 통째로 이어받고, 이 기기에서도 기록할 수 있게 돼요. 링크가
+          깨져서 왔으면 받은 글을 통째로 붙여넣어도 돼요.
         </p>
+
+        <h4 className="gs-key-h">파일 백업</h4>
+        <p>
+          서버 없이도 남는 백업이에요. 지금 파티 '{activeLabel}' 전체(표·기록·설정)를
+          파일 하나로 저장했다가, 언제든 다시 불러와요.
+        </p>
+        <div className="gs-obs-acts">
+          <button className="gs-btn gs-btn-sm" onClick={onExportFile}>
+            파일로 내보내기
+          </button>
+          <button
+            className="gs-btn gs-btn-sm gs-btn-ghost"
+            onClick={() => fileRef.current && fileRef.current.click()}
+          >
+            파일 가져오기
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: "none" }}
+            onChange={onFile}
+          />
+        </div>
+
+        {note && <p className="gs-key-note">{note}</p>}
         {err && <p className="gs-obs-err">{err}</p>}
       </div>
     </InfoModal>
   );
 }
 
-function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskReissue, onAskShareOff, onClose }) {
+function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskReissue, onAskShareOff, onOpenKeys, onClose }) {
   const room = relay.rooms[activeLabel] || null;
   const label = activeLabel === DEFAULT_ROOM_LABEL ? "기본" : activeLabel;
   const [busy, setBusy] = useState("");
@@ -5835,6 +6070,14 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
           </div>
         )}
 
+        {/* 이어가기·백업 안내 — 기능은 편집 권한 · 백업 창에 모여 있습니다 */}
+        <p className="gs-obs-keysline">
+          다른 환경에서 이어가거나 다른 사람에게 기록을 맡기고 싶으면 <b>복구 코드</b>를
+          발급해서 적어 두세요.{" "}
+          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onOpenKeys}>
+            복구 코드·백업 관리
+          </button>
+        </p>
         {/* 링크를 보내기 직전에 알아야 할 사실. 이유는 눌러서 봅니다 */}
         <p className="gs-obs-ro">
           파티원 화면은 <b>읽기 전용</b>이에요.{" "}
@@ -6030,7 +6273,7 @@ function PartyMenu({ list, active, onPick, onCreate, onClose }) {
 
 /* 파티 로비 — 루트 화면. 파티 하나 = 장부 하나 = 공유 주소 하나가 한눈에 보입니다.
    삭제는 여기서만 됩니다. 마지막 하나는 못 지웁니다. */
-function PartyLobby({ list, active, rooms, onPick, onCreate, onDelete, onRename, onExample, onClose }) {
+function PartyLobby({ list, active, rooms, onPick, onCreate, onDelete, onRename, onExample, onRestore, onClose }) {
   const [label, setLabel] = useState("");
   const [size, setSize] = useState(8);
   const [editing, setEditing] = useState(null); // 이름 바꾸는 중인 파티
@@ -6151,6 +6394,15 @@ function PartyLobby({ list, active, rooms, onPick, onCreate, onDelete, onRename,
             추가
           </button>
         </div>
+        {/* 새 기기에서 들어오는 입구 — 복원은 가진 쪽이 아니라 받는 쪽 일입니다 */}
+        <button className="gs-lobby-demo" onClick={onRestore}>
+          <span className="gs-lobby-name">
+            <b>↧ 불러오기</b>
+          </span>
+          <span className="gs-lobby-meta">
+            복구 코드·편집 권한 링크·백업 파일로 파티를 이어받아요.
+          </span>
+        </button>
         <button className="gs-lobby-demo" onClick={onExample}>
           <span className="gs-lobby-name">
             <b>튜토리얼</b>
@@ -7704,6 +7956,14 @@ const CSS = `
 .gs-keybtn svg{flex:0 0 auto; opacity:.8}
 .gs-keybtn:hover svg{opacity:1}
 .gs-obs-warn{color:var(--red) !important; opacity:.9}
+/* 권한 · 백업 창 — 세 단(코드·받기·파일) 제목과 코드 상자 */
+.gs-key-h{margin:18px 0 6px; font-size:13.5px; color:var(--ink)}
+.gs-key h4.gs-key-h:first-child{margin-top:0}
+.gs-key-code{font-family:Consolas,monospace; font-size:15px; letter-spacing:.08em;
+  color:var(--gold); background:rgba(var(--ink-rgb),.07);
+  border:1px solid rgba(var(--gold-rgb),.55); border-radius:5px; padding:5px 10px}
+.gs-key-note{margin:10px 0 0; font-size:12.5px; color:var(--ink-body)}
+.gs-obs-keysline{margin:12px 0 0; font-size:12.5px; color:var(--ink-2); line-height:1.9}
 /* 소스 구성 — 카드 두 장으로 고르고, 주소는 고른 모드 것만 보입니다 */
 .gs-obs-srcpick{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap}
 .gs-slook-c.src{flex:1 1 190px}

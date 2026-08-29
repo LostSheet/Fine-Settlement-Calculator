@@ -31,7 +31,8 @@ export const PAGE_HTML = `<!doctype html>
   .ov-name-t{font-size:4.2vw; font-weight:600; letter-spacing:.03em;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .ov-total{font-size:3.4vw; font-weight:600; color:var(--gold);
-    font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; min-width:9.5vw}
+    font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right;
+    min-width:9.5vw; width:var(--goldw, auto); flex:none}
   .ov-row{display:flex; align-items:baseline; gap:1.6vw; padding:.85vw .4vw; position:relative;
     font-size:4.4vw; font-weight:500; line-height:1.2; border-radius:1vw;
     transition:transform .35s cubic-bezier(.22,1,.36,1)}
@@ -52,13 +53,15 @@ export const PAGE_HTML = `<!doctype html>
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .ov-chead.rl{opacity:.72}
   /* 순액 — 받을 몫에서 낸 벌금을 뺀 값. 받는 쪽은 파랑, 보내는 쪽은 빨강 */
-  .ov-net{flex:none; width:11.5vw; text-align:right; font-size:2.9vw; font-weight:700;
+  /* 폭은 금액 열과 같은 예산·래칫 변수 — 커진 순액이 잘리는 일이 없습니다 */
+  .ov-net{flex:none; width:var(--netw, 11.5vw); text-align:right; font-size:2.9vw; font-weight:700;
     font-variant-numeric:tabular-nums; opacity:.5; white-space:nowrap; overflow:hidden}
   .ov-net.plus{color:#6fb4ff; opacity:1}
   .ov-net.minus{color:#ff7d6b; opacity:1}
-  .ov-nethead{flex:none; width:11.5vw; text-align:right; font-size:1.6vw; opacity:.6}
+  .ov-nethead{flex:none; width:var(--netw, 11.5vw); text-align:right; font-size:1.6vw; opacity:.6}
+  /* 폭은 렌더마다 실측한 --goldw 를 전 줄이 공유 — 줄마다 제 금액대로 늘면 열이 어긋납니다 */
   .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none;
-    text-align:right; min-width:9.5vw}
+    text-align:right; min-width:9.5vw; width:var(--goldw, auto); white-space:nowrap}
   /* 증감액 — 금액 뒤의 고정폭 열. 판 안에 머물면서 금액 열의 오른쪽 끝은 안 밉니다 */
   /* 증감액은 이름과 금액 사이의 빈 자리에 붙습니다 — 어느 열도 밀지 않고 여백도 안 먹습니다 */
   /* 줄 전체를 기준으로 오른쪽 바깥에 답니다 — 순액 열을 덮지 않게 */
@@ -353,17 +356,25 @@ export const PAGE_HTML = `<!doctype html>
     return (neg ? "\\u2212" : "") + out;
   };
 
-  /* 순액은 방송에서 한눈에 읽혀야 해서 한 자리로 줄입니다 — 92,500 → 9.3만.
-     1만 미만은 그대로 적습니다 (0.3만 보다 2,500 이 읽기 쉽습니다) */
+  /* 방송 표기 사다리 — 클수록 정밀도를 내려놓아 글자 수에 상한(5자)을 둡니다.
+     5,000 / 2.5만 / 53.5만 / 532만 / 9999만 / 4.6억 / 12억.
+     숫자가 자라도 열 폭이 못 자라게 하는 장치입니다 — 판 축소·잘림 방지 */
   var manShort = function (g) {
     g = Math.round(g || 0);
     var neg = g < 0;
     g = Math.abs(g);
     var out;
     if (g < 10000) out = g.toLocaleString("ko-KR");
-    else {
+    else if (g < 1000000) {
       var v = Math.round(g / 1000) / 10;
       out = (v % 1 === 0 ? String(v) : v.toFixed(1)) + "만";
+    } else if (g < 100000000) {
+      out = Math.floor(g / 10000) + "만"; // 소수점은 버림(532.5만 → 532만), 콤마 없이 — 9999만이 상한
+    } else if (g < 1000000000) {
+      var b = Math.round(g / 10000000) / 10;
+      out = (b % 1 === 0 ? String(b) : b.toFixed(1)) + "억";
+    } else {
+      out = Math.floor(g / 100000000) + "억"; // 정수 단은 버림으로 통일
     }
     return (neg ? "\u2212" : "") + out;
   };
@@ -380,6 +391,46 @@ export const PAGE_HTML = `<!doctype html>
     return String(t == null ? "" : t).replace(/[&<>"]/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
+  };
+
+  /* 금액·순액 열 폭 — 예산("999만"/"−999만")으로 시작해, 실제 표기가 예산을 넘는
+     순간 한 번만 넓어지고 다시는 안 좁아집니다(래칫). 모든 줄이 같은 폭을 쓰므로
+     줄 사이가 어긋나지 않고, 숫자가 자라도 판이 축소되지 않습니다. */
+  var goldHW = 0,
+    netHW = 0;
+  var setGoldW = function (rows) {
+    var box = document.querySelector(".ov");
+    if (!box) return;
+    var wrap = document.createElement("div");
+    wrap.className = "ov-row";
+    wrap.style.cssText = "position:absolute; visibility:hidden; pointer-events:none";
+    var probe = document.createElement("span");
+    probe.className = "ov-gold";
+    probe.style.cssText = "width:auto; min-width:0";
+    var nprobe = document.createElement("span");
+    nprobe.className = "ov-net";
+    nprobe.style.cssText = "width:auto; min-width:0";
+    wrap.appendChild(probe);
+    wrap.appendChild(nprobe);
+    box.appendChild(wrap);
+    var mw = function (el, t) {
+      el.textContent = t;
+      return el.offsetWidth;
+    };
+    var w = mw(probe, "999만");
+    var nw = mw(nprobe, "\u2212999만");
+    var total = 0;
+    rows.forEach(function (r) {
+      total += r.g || 0;
+      w = Math.max(w, mw(probe, manShort(r.g)));
+      nw = Math.max(nw, mw(nprobe, (r.d > 0 ? "+" : "") + manShort(r.d || 0)));
+    });
+    w = Math.max(w, mw(probe, manShort(total)));
+    box.removeChild(wrap);
+    goldHW = Math.max(goldHW, w);
+    netHW = Math.max(netHW, nw);
+    box.style.setProperty("--goldw", goldHW + "px");
+    box.style.setProperty("--netw", netHW + "px");
   };
 
   var rowsHtml = function (rows) {
@@ -429,10 +480,10 @@ export const PAGE_HTML = `<!doctype html>
           return '<span class="ov-cnum' + (c.r ? ' rl' : '') + (v ? '' : ' z') + '">' +
             (v ? esc(v) : '') + '</span>';
         }).join('') +
-        '<span class="ov-gold">' + man(r.g) +
+        '<span class="ov-gold">' + manShort(r.g) +
           '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
             (showD ? delay(dAge) : "") + '>' +
-            (showD ? (rc.d > 0 ? "+" : "−") + man(Math.abs(rc.d)) : "") + '</span>' +
+            (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>' +
         '</span>' +
         (showNet
           ? '<span class="ov-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
@@ -971,8 +1022,10 @@ export const PAGE_HTML = `<!doctype html>
       app.innerHTML = '<div class="ov"><div class="ov-head" id="ovhead"></div>' +
         '<div id="ovboard"></div></div><div id="ovspin"></div>';
       ovBoard = document.getElementById("ovboard");
+      setGoldW(board);
       ovBoard.innerHTML = rowsHtml(board);
     } else {
+      setGoldW(board);
       flip(ovBoard, function () { ovBoard.innerHTML = rowsHtml(board); });
     }
     /* 룰렛 판 — 새 판이 오면 재생을 시작하고, 그 뒤로는 제 시계로 굴립니다.
@@ -993,7 +1046,7 @@ export const PAGE_HTML = `<!doctype html>
           (c.r ? "\u25ce" : "") + esc(c.t) + "</span>";
       }).join("") +
       '<span class="ov-total">' +
-      man(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>" +
+      manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>" +
       (showNet ? '<span class="ov-nethead">순액</span>' : "");
     fitBoard();
   };
