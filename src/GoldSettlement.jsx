@@ -3510,6 +3510,28 @@ export default function GoldSettlement() {
         <div className="gs-sysbar-in">
           <span className="gs-sysbrand">벌금 정산</span>
           <div className="gs-sysbar-r">
+            {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
+            {!readOnly && (
+              <span className="gs-tip">
+                <button
+                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (relay.on ? " on" : "")}
+                  onClick={() => {
+                    courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
+                    setObsOpen(true);
+                  }}
+                >
+                  {/* 상태는 방이 생긴 뒤에만 — 시작도 안 했는데 중단이라 하면 헷갈립니다 */}
+                  {activeRoom ? "OBS 공유 · " + (relay.on ? "공유 중" : "중단") : "OBS 공유"}
+                  {activeRoom && (
+                    <em className={relay.on ? "" : "off"} aria-hidden="true">●</em>
+                  )}
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를 OBS 브라우저
+                  소스에 넣으면 돼요.
+                </span>
+              </span>
+            )}
             {/* 외형 — 브라우저 전역 취향 (오버레이 테마·룰렛 외형·속도·열 토글) */}
             {!readOnly && (
               <span className="gs-tip">
@@ -3645,31 +3667,8 @@ export default function GoldSettlement() {
       <header className="gs-mast">
         <div className="gs-mastrow">
           {/* 제목 오른쪽에 모드 — '지금 무엇을 하는 중인가'가 제목과 한 줄에서 읽힙니다 */}
-          <div className="gs-mastleft">
-            <h1 className="gs-title">벌금 정산</h1>
-            {/* 방송 조작은 장부 제목줄 — 이 장부의 방송이니까요 (문서 옆 공유 버튼 관행) */}
-            {!readOnly && (
-              <span className="gs-tip">
-                <button
-                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (relay.on ? " on" : "")}
-                  onClick={() => {
-                    courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
-                    setObsOpen(true);
-                  }}
-                >
-                  {/* 상태는 방이 생긴 뒤에만 — 시작도 안 했는데 중단이라 하면 헷갈립니다 */}
-                  {activeRoom ? "OBS 공유 · " + (relay.on ? "공유 중" : "중단") : "OBS 공유"}
-                  {activeRoom && (
-                    <em className={relay.on ? "" : "off"} aria-hidden="true">●</em>
-                  )}
-                </button>
-                <span className="gs-tip-body" role="tooltip">
-                  벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를 OBS 브라우저
-                  소스에 넣으면 돼요.
-                </span>
-              </span>
-            )}
-          </div>
+          {/* 앱 이름은 시스템 줄에 한 번만 — 여기는 탭이 자리를 잡는 줄입니다 */}
+          <div className="gs-mastleft" />
           <div className="gs-mastside">
             {tabbed && (
               <nav className="gs-tabs" aria-label="화면 선택">
@@ -4817,6 +4816,11 @@ export default function GoldSettlement() {
           hasRoom={!!activeRoom}
           presets={presets}
           onSavePreset={savePresetNow}
+          onDeletePreset={(nm) => {
+            const next = presets.filter((x) => x.name !== nm);
+            setPresets(next);
+            savePresets(next);
+          }}
           onExportFile={exportPartyFile}
           onRun={(kind, presetName) => {
             const pre = presets.find((x) => x.name === presetName) || null;
@@ -5944,64 +5948,65 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
 /* OBS로 공유 — 방은 명단마다 하나이고, 주소는 재발급 전까지 영구입니다.
    쓰기 권한은 이 브라우저에만 있고 어떤 주소에도 실리지 않습니다.
    평소 쓰는 것(켜기·복사)만 겉에 두고, 가끔 쓰는 것은 접어 둡니다. */
-/* 처음부터 — 회차를 닫는 창. 두 갈래(이름·항목 유지 / 전부)와 프리셋 시작을 고릅니다 */
-function ResetModal({ hasLog, hasRoom, presets, onSavePreset, onExportFile, onRun, onClose }) {
-  const [kind, setKind] = useState("keep");
+/* 처음부터 — 첫 문장은 목적만. 장치(전부 비우기·틀·파일)는 접힘 아래에서만 나옵니다 */
+function ResetModal({ hasLog, hasRoom, presets, onSavePreset, onDeletePreset, onExportFile, onRun, onClose }) {
+  const [more, setMore] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [saveName, setSaveName] = useState("");
   const [savedTick, setSavedTick] = useState(false);
   return (
-    <InfoModal title="처음부터 할까요?" onClose={onClose}>
+    <InfoModal title="처음부터" onClose={onClose}>
       <div className="gs-key">
         <p>
-          {hasLog
-            ? "지금 회차는 지난 회차로 남아요 — 헤더의 백업에서 다시 볼 수 있어요."
-            : "아직 기록이 없어서 남길 회차는 없어요."}
-          {hasRoom && (
-            <>
-              {" "}
-              <b>공유 주소는 그대로예요 — 파티원에게 보낸 링크도 계속 돼요.</b>
-            </>
-          )}
+          {hasLog ? "지금 판은 남겨두고 새로 시작해요." : "새로 시작해요."}
+          {hasRoom && <> 공유 주소·링크는 그대로예요.</>}
         </p>
-        <div className="gs-obs-acts">
-          <button
-            className={"gs-rc-lookbtn" + (kind === "keep" ? " on" : "")}
-            onClick={() => setKind("keep")}
-          >
-            이름·항목 남기고 비우기
-          </button>
-          <button
-            className={"gs-rc-lookbtn" + (kind === "full" ? " on" : "")}
-            onClick={() => setKind("full")}
-          >
-            전부 비우기
-          </button>
-        </div>
-        {kind === "full" && (
+        <button className="gs-btn gs-btn-big" onClick={() => onRun("keep", "")}>
+          새로 시작
+          <em>이름·항목은 그대로, 숫자·기록만 비워요</em>
+        </button>
+        <button className="gs-fold" onClick={() => setMore((v) => !v)} aria-expanded={more}>
+          {more ? "▾" : "▸"} 다른 구성으로 시작…
+        </button>
+        {more && (
           <div className="gs-reset-preset">
             <div className="gs-obs-acts">
               <select
                 className="gs-rc-kind"
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
-                aria-label="프리셋으로 시작"
+                aria-label="틀로 시작"
               >
-                <option value="">빈 표로 시작</option>
+                <option value="">빈 표</option>
                 {presets.map((x) => (
                   <option key={x.name} value={x.name}>
-                    프리셋: {x.name}
+                    틀: {x.name}
                   </option>
                 ))}
               </select>
+              {presetName && (
+                <button
+                  className="gs-x"
+                  onClick={() => {
+                    onDeletePreset(presetName);
+                    setPresetName("");
+                  }}
+                  aria-label="이 틀 지우기"
+                >
+                  ×
+                </button>
+              )}
+              <button className="gs-btn gs-btn-sm" onClick={() => onRun("full", presetName)}>
+                전부 비우고 시작
+              </button>
             </div>
             <div className="gs-obs-acts">
               <input
                 className="gs-in gs-obs-claim"
                 value={saveName}
-                placeholder="지금 구성을 프리셋으로 저장 — 이름"
+                placeholder="지금 구성을 틀로 저장 — 이름"
                 onChange={(e) => setSaveName(e.target.value)}
-                aria-label="프리셋 이름"
+                aria-label="틀 이름"
               />
               <button
                 className="gs-btn gs-btn-sm"
@@ -6014,21 +6019,20 @@ function ResetModal({ hasLog, hasRoom, presets, onSavePreset, onExportFile, onRu
                   }
                 }}
               >
-                {savedTick ? "저장했어요" : "프리셋 저장"}
+                {savedTick ? "저장했어요" : "틀로 저장"}
               </button>
             </div>
-            <p className="gs-key-foot">프리셋에는 명단·항목·단가·수수료·입력 단위가 담겨요.</p>
+            <p className="gs-key-foot">틀에는 명단·항목·단가·수수료·입력 단위가 담겨요.</p>
+            {hasLog && (
+              <div className="gs-obs-acts">
+                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onExportFile}>
+                  파일로도 남기기
+                </button>
+              </div>
+            )}
           </div>
         )}
         <div className="gs-obs-acts" style={{ marginTop: 12 }}>
-          {hasLog && (
-            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onExportFile}>
-              파일로도 남기기
-            </button>
-          )}
-          <button className="gs-btn gs-btn-sm gs-btn-warn2" onClick={() => onRun(kind, presetName)}>
-            비우기
-          </button>
           <button className="gs-btn gs-btn-sm" onClick={onClose}>
             취소
           </button>
@@ -6138,6 +6142,8 @@ function KeyShare({ relay, putRelay, gens, onGenView, onGenLock, onGenDrop, onSe
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(""); // "code" | "link"
+  /* 방송 화면에 코드가 새지 않게 — 기본은 가리고, 가린 채로도 복사는 됩니다 */
+  const [revealed, setRevealed] = useState(false);
   const [claim, setClaim] = useState("");
   const [note, setNote] = useState("");
   const fileRef = useRef(null);
@@ -6208,14 +6214,20 @@ function KeyShare({ relay, putRelay, gens, onGenView, onGenLock, onGenDrop, onSe
       <div className="gs-key">
         <h4 className="gs-key-h">복구 코드</h4>
         <p>
-          코드 하나로 <b>장부(표·기록·기록 권한)</b>를 다른 기기에서 그대로 불러올 수
-          있어요. 브라우저가 지워지거나 PC가 바뀌어도 코드만 있으면 돼요. 발급해서 안전한
-          곳에 적어 두세요.
+          <b>브라우저가 지워져도 장부를 되찾게 해 두는 곳이에요.</b> 코드 하나로
+          표·기록·기록 권한을 다른 기기에서 그대로 불러와요 — 발급해서 안전한 곳에 적어
+          두세요.
         </p>
         <div className="gs-obs-acts">
           {rcode ? (
             <>
-              <span className="gs-key-code">{fmt(rcode)}</span>
+              <span className="gs-key-code">{revealed ? fmt(rcode) : "••••-••••-••••"}</span>
+              <button
+                className="gs-btn gs-btn-sm gs-btn-ghost"
+                onClick={() => setRevealed((v) => !v)}
+              >
+                {revealed ? "가리기" : "보기"}
+              </button>
               <button className="gs-btn gs-btn-sm" onClick={() => copyIt("code")}>
                 {copied === "code" ? "복사했어요" : "코드 복사"}
               </button>
@@ -6292,9 +6304,10 @@ function KeyShare({ relay, putRelay, gens, onGenView, onGenLock, onGenDrop, onSe
         </div>
 
         <h5 className="gs-key-h">지난 회차</h5>
-        <p>
-          '처음부터'를 누르면 그때까지의 회차가 여기 남아요. 잠금 안 한 지난 회차는 최근
-          5개만 남고, 보기는 읽기 전용이에요 — 이어서 쓰려면 보기에서 '현재 장부로 복원'.
+        <p>'처음부터'를 누르면 그때까지의 회차가 여기 남아요.</p>
+        <p className="gs-key-foot">
+          잠금 안 한 것은 최근 5개만 남아요. 보기는 읽기 전용이고, 이어서 쓰려면 보기
+          화면의 '현재 장부로 복원'을 눌러요.
         </p>
         {gens.length === 0 && (
           <p className="gs-key-foot">아직 지난 회차가 없어요.</p>
@@ -6371,6 +6384,7 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
       .catch(() => setErr("복사하지 못했어요"));
 
   const [freshCode, setFreshCode] = useState(null); // 방금 자동 발급된 복구 코드
+  const [showFresh, setShowFresh] = useState(false); // 방송 중 유출 방지 — 기본 가림
   const makeRoom = async () => {
     setBusy("room");
     setErr("");
@@ -6561,7 +6575,15 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
               「백업」에서.
             </p>
             <div className="gs-obs-acts">
-              <span className="gs-key-code">{freshCode.replace(/(.{4})(?=.)/g, "$1-")}</span>
+              <span className="gs-key-code">
+                {showFresh ? freshCode.replace(/(.{4})(?=.)/g, "$1-") : "••••-••••-••••"}
+              </span>
+              <button
+                className="gs-btn gs-btn-sm gs-btn-ghost"
+                onClick={() => setShowFresh((v) => !v)}
+              >
+                {showFresh ? "가리기" : "보기"}
+              </button>
               <button
                 className="gs-btn gs-btn-sm"
                 onClick={() => copy2("rcode", freshCode.replace(/(.{4})(?=.)/g, "$1-"))}
@@ -8392,6 +8414,17 @@ const CSS = `
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:5px; padding:5px 10px}
 .gs-key-note{margin:10px 0 0; font-size:12.5px; color:var(--ink-body)}
 .gs-obs-keysline{margin:12px 0 0; font-size:12.5px; color:var(--ink-2); line-height:1.9}
+/* 처음부터 — 주 버튼과 접힘 줄 */
+.gs-btn-big{display:flex; flex-direction:column; align-items:center; gap:3px; width:100%;
+  box-sizing:border-box; font:inherit; font-size:15px; font-weight:700; cursor:pointer;
+  color:var(--gold-strong, var(--gold)); background:rgba(var(--gold-rgb),.09);
+  border:1px solid rgba(var(--gold-rgb),.65); border-radius:8px; padding:12px 10px;
+  margin:4px 0 2px}
+.gs-btn-big em{font-style:normal; font-size:11.5px; font-weight:400; color:var(--ink-2)}
+.gs-btn-big:hover{background:rgba(var(--gold-rgb),.15)}
+.gs-fold{display:block; font:inherit; font-size:12px; color:var(--ink-2);
+  background:transparent; border:0; cursor:pointer; padding:8px 2px 2px; text-align:left}
+.gs-fold:hover{color:var(--ink)}
 /* 백업 창의 지난 회차 줄 */
 .gs-genrow{display:flex; align-items:center; gap:9px; background:rgba(var(--ink-rgb),.05);
   border:1px solid rgba(var(--ink-rgb),.2); border-radius:7px; padding:8px 11px;
