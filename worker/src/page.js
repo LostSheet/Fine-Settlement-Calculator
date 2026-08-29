@@ -18,8 +18,11 @@ export const PAGE_HTML = `<!doctype html>
   html,body{background:transparent; overflow:hidden}
   body{font-family:'Segoe UI','Malgun Gothic',sans-serif; color:var(--ink)}
 
+  /* 글자색은 판 안에서 다시 풉니다 — body 에서 굳히면 테마가 .ov 의 --ink 를
+     바꿔도 이미 늦어서, 밝은 판이 밝은 글자(안 보임)로 나옵니다 */
   .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw;
-    position:relative}
+    position:relative; will-change:transform; color:var(--ink)}
+  .ov.fitted{transition:transform .35s ease}
   /* 총액을 금액 열과 같은 선에 세웁니다 — 증감액 열 10.5 + 열 간격 1.6 + 줄 안쪽 여백 .4 */
   /* 총액도 금액 열과 같은 선에 — 줄 안쪽 여백(.4vw)만 빼면 됩니다 */
   .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.5vw; padding:0 .4vw}
@@ -58,8 +61,8 @@ export const PAGE_HTML = `<!doctype html>
   /* 증감액 — 금액 뒤의 고정폭 열. 판 안에 머물면서 금액 열의 오른쪽 끝은 안 밉니다 */
   /* 증감액은 이름과 금액 사이의 빈 자리에 붙습니다 — 어느 열도 밀지 않고 여백도 안 먹습니다 */
   /* 줄 전체를 기준으로 오른쪽 바깥에 답니다 — 순액 열을 덮지 않게 */
-  .ov-delta{position:absolute; left:100%; top:50%; transform:translateY(-50%);
-    margin-left:1.2vw; white-space:nowrap;
+  .ov-delta{position:absolute; right:.4vw; top:50%; transform:translateY(-50%);
+    white-space:nowrap;
     font-size:3.4vw; font-weight:600; color:var(--gold);
     padding:.1vw .8vw; border-radius:99px; background:rgba(20,17,14,.72)}
   /* 밝은 판·진한 글자 테마에서는 칩도 밝게 */
@@ -77,46 +80,112 @@ export const PAGE_HTML = `<!doctype html>
   .ov-row.hit{animation:ov-flash 1.6s ease-out}
   /* 룰렛 — 목록을 밀지 않고 그 위를 덮습니다. 목록이 움직이면 방송에서 눈이 튑니다 */
   #ovspin:not(:empty){position:absolute; inset:0; z-index:3; display:flex;
-    align-items:center; justify-content:center; padding:.6vw;
-    background:rgba(12,10,8,.72); border-radius:max(12px, 1.4vw);
+    align-items:center; justify-content:center; padding:2%;
+    background:rgba(12,10,8,.78); border-radius:max(12px, 1.4vw);
     animation:ov-spin-in .18s ease-out}
-  html[data-t="light"] #ovspin:not(:empty){background:rgba(240,235,225,.8)}
   @keyframes ov-spin-in{from{opacity:0} to{opacity:1}}
-  .ov-sp{position:relative; padding:1.2vw 1.4vw 1.4vw; border-radius:1vw; text-align:center;
-    width:100%; background:rgba(190,150,60,.26); border:.16vw solid rgba(220,180,90,.75)}
-  .ov-sp.pass{background:rgba(200,60,50,.28); border-color:rgba(240,110,95,.85)}
-  /* 이름·양도권·배수가 한 줄. 가운데 숫자를 안 밀도록 위에 눕힙니다 */
-  /* 누가 무엇으로 돌리는지는 왼쪽 위 구석에 — 가운데는 원판이 크게 차지합니다 */
-  .ov-sp-top{position:absolute; left:1.6vw; top:1.2vw; right:1.6vw;
-    display:flex; align-items:center; gap:1.1vw; height:4.2vw; overflow:hidden}
-  .ov-sp-pass{font-size:2.9vw; font-weight:800; color:#ff8f7a; letter-spacing:.02em; flex:none}
-  .ov-sp-mult{font-size:3.4vw; font-weight:800; color:#ffd07a; margin-left:auto; flex:none}
-  .ov-sp.pick{background:rgba(200,70,60,.22); border-color:rgba(230,110,95,.75)}
-  .ov-sp-who{font-size:3.1vw; font-weight:700; opacity:.95; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis}
-  .ov-sp-who em{font-style:normal; opacity:.65}
+  .ov-sp{position:relative; display:flex; width:96%; max-height:96%; text-align:center;
+    border-radius:calc(var(--u)*2); color:#ece4d6;
+    background:radial-gradient(120% 90% at 50% 12%, #322721 0%, #1d1712 58%, #17110d 100%);
+    border:calc(var(--u)*.4) solid rgba(220,174,94,.8);
+    box-shadow:inset 0 0 calc(var(--u)*8) rgba(0,0,0,.45),
+      0 calc(var(--u)*2) calc(var(--u)*6) rgba(0,0,0,.5)}
+  /* 판이 넓적하면 눕고(h), 길면 섭니다(v) — 내용이 정하고 소스는 무관합니다 */
+  .ov-sp.v{flex-direction:column; align-items:center; gap:calc(var(--u)*1.4);
+    padding:calc(var(--u)*3) calc(var(--u)*2.4)}
+  .ov-sp.h{flex-direction:row; align-items:center; gap:calc(var(--u)*3);
+    padding:calc(var(--u)*2.4) calc(var(--u)*3.4)}
+  .ov-sp-info{display:flex; flex-direction:column; align-items:center; min-width:0}
+  .ov-sp.h .ov-sp-info{align-items:flex-start; flex:0 0 auto; max-width:30%}
+  .ov-sp-who{font-size:calc(var(--u)*4.6); font-weight:700; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:100%}
+  .ov-sp-item{font-size:calc(var(--u)*2.6); color:#a89a88; white-space:nowrap}
+  .ov-sp-res{display:flex; flex-direction:column; align-items:center;
+    gap:calc(var(--u)*1.2); min-width:0}
+  .ov-sp.h .ov-sp-res{flex:1}
+  /* 이번 판 트랙 — 앱과 같은 5칸. 칩과 슬롯 폭이 같아 채워져도 안 밀립니다 */
+  .ov-sp-track{display:flex; gap:calc(var(--u)*1.4); justify-content:center}
+  .ov-tchip,.ov-tslot{width:calc(var(--u)*11); height:calc(var(--u)*5.4);
+    border-radius:99px; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--u)*2.8); font-weight:700; overflow:hidden; white-space:nowrap}
+  .ov-tchip{background:#241d18; border:1px solid rgba(220,174,94,.55)}
+  .ov-tchip.pass{color:#ff9d92; border-color:#a44f46}
+  .ov-tchip.mult{color:#f7b458; border-color:#b97f37}
+  .ov-tslot{border:1px dashed rgba(220,174,94,.3)}
+  .ov-tslot.next{border-color:rgba(220,174,94,.8);
+    animation:ov-slotpulse 1s ease-in-out infinite}
+  @keyframes ov-slotpulse{0%,100%{background:transparent}
+    50%{background:rgba(220,174,94,.14)}}
   /* 물리 룰렛 — 바늘은 12시에 고정, 원판이 돌아 당첨 칸이 그 아래로 옵니다 */
-  .ov-wheel{position:relative; width:min(80%, 40vw); aspect-ratio:1; margin:5.4vw auto .8vw}
+  .ov-wheel{position:relative; width:calc(var(--u)*46); height:calc(var(--u)*46);
+    flex:none; margin:calc(var(--u)*2.4) auto calc(var(--u)*1)}
+  .ov-sp.h .ov-wheel{margin:calc(var(--u)*1.5) 0}
+  /* 림 눈금 — 비율 1짜리 칸(12.857°)에 하나씩 맞는 금색 점 띠 */
+  .ov-wheel::before{content:""; position:absolute; inset:calc(var(--u)*-1.8);
+    border-radius:50%; pointer-events:none;
+    background:repeating-conic-gradient(rgba(220,174,94,.9) 0 1.1deg,
+      transparent 1.1deg 12.857deg);
+    -webkit-mask:radial-gradient(circle, transparent 0 calc(var(--u)*24),
+      #000 calc(var(--u)*24) calc(var(--u)*24.8), transparent calc(var(--u)*24.8));
+    mask:radial-gradient(circle, transparent 0 calc(var(--u)*24),
+      #000 calc(var(--u)*24) calc(var(--u)*24.8), transparent calc(var(--u)*24.8))}
   .ov-w-disc{position:absolute; inset:0; border-radius:50%;
     will-change:transform; backface-visibility:hidden; transform:translateZ(0);
-    box-shadow:0 0 0 .5vw rgba(255,255,255,.14), 0 .4vw 1.2vw rgba(0,0,0,.45)}
-  .ov-w-pin{position:absolute; left:50%; top:-1.8vw; width:0; height:0;
-    transform:translateX(-50%);
-    border-left:1.8vw solid transparent; border-right:1.8vw solid transparent;
-    border-top:3.6vw solid #ff5a3c; filter:drop-shadow(0 .2vw .3vw rgba(0,0,0,.5))}
-  .ov-sp-face{font-size:6.4vw; font-weight:800; line-height:1.1; margin:.2vw 0}
-  .ov-sp-face.roll{opacity:.6}
-  /* 결과가 뒤늦게 생기며 판이 커지지 않게 자리를 미리 잡아 둡니다 */
-  .ov-sp-out{font-size:3vw; font-weight:700; letter-spacing:.01em; height:4.4vw;
+    box-shadow:0 0 0 calc(var(--u)*.9) #3a2e25, 0 0 0 calc(var(--u)*1.1) rgba(220,174,94,.75),
+      0 calc(var(--u)*1.2) calc(var(--u)*3.6) rgba(0,0,0,.55),
+      inset 0 0 calc(var(--u)*3) rgba(0,0,0,.28)}
+  .ov-w-pin{position:absolute; left:50%; top:calc(var(--u)*-1.7); width:0; height:0;
+    transform:translateX(-50%); z-index:2;
+    border-left:calc(var(--u)*1.6) solid transparent;
+    border-right:calc(var(--u)*1.6) solid transparent;
+    border-top:calc(var(--u)*3.2) solid #ff5a3c;
+    filter:drop-shadow(0 .2vw .3vw rgba(0,0,0,.5))}
+  /* 릴 창 — 숫자만 모드. 이웃 면이 위아래로 흐릿하게 스칩니다 */
+  .ov-reel{position:relative; width:calc(var(--u)*40); height:calc(var(--u)*42); flex:none;
+    margin:calc(var(--u)*2) auto calc(var(--u)*1); border-radius:calc(var(--u)*2);
+    overflow:hidden; background:linear-gradient(#151009, #241c14 30% 70%, #151009);
+    border:calc(var(--u)*.4) solid #3a2e25;
+    box-shadow:0 0 0 calc(var(--u)*.3) rgba(220,174,94,.7),
+      inset 0 0 calc(var(--u)*3) rgba(0,0,0,.6);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:calc(var(--u)*.8)}
+  .ov-sp.h .ov-reel{margin:calc(var(--u)*1.5) 0}
+  .ov-reel-n{font-weight:800; line-height:1; white-space:nowrap}
+  .ov-reel-n.side{font-size:calc(var(--u)*5); color:#ece4d6; opacity:.2; filter:blur(1px)}
+  .ov-reel-n.big{font-size:calc(var(--u)*11); color:#fff;
+    text-shadow:0 0 calc(var(--u)*3) rgba(220,174,94,.4)}
+  .ov-reel-line{position:absolute; left:6%; right:6%; top:50%; height:calc(var(--u)*10);
+    transform:translateY(-50%); pointer-events:none;
+    border-top:1px solid rgba(220,174,94,.4); border-bottom:1px solid rgba(220,174,94,.4)}
+  /* 안내·수식·변화 — 자리를 미리 잡아 둬 판이 안 출렁입니다 */
+  .ov-sp-gone{height:calc(var(--u)*3.4); font-size:calc(var(--u)*2.4); font-weight:700;
+    color:#dcae5e; display:flex; align-items:center; justify-content:center; overflow:hidden}
+  .ov-sp-out{font-size:calc(var(--u)*5); font-weight:800; color:#dcae5e;
+    height:calc(var(--u)*6.4); display:flex; align-items:center; justify-content:center;
+    overflow:hidden; white-space:nowrap}
+  .ov-sp-out em{font-style:normal; font-size:calc(var(--u)*2.6); font-weight:400;
+    color:#a89a88; margin-left:calc(var(--u)*1.2)}
+  .ov-sp-delta{height:calc(var(--u)*3.6); font-size:calc(var(--u)*2.8); color:#a89a88;
+    display:flex; align-items:center; justify-content:center; gap:calc(var(--u)*1);
+    overflow:hidden; white-space:nowrap}
+  .ov-sp-delta b{color:#ece4d6}
+  .ov-sp-delta .up{color:#ff9d92; font-weight:700}
+  .ov-sp-delta .dn{color:#7fb8ff; font-weight:700}
+  /* 중앙 허브 — 축은 늘 있고, 멈추면 값이 그 안에 뜹니다 */
+  .ov-w-hub{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:calc(var(--u)*13); height:calc(var(--u)*13); border-radius:50%; z-index:2;
+    pointer-events:none;
+    background:radial-gradient(circle at 34% 30%, #4a3c30, #241d17 70%);
+    border:calc(var(--u)*.35) solid #dcae5e;
+    box-shadow:0 calc(var(--u)*.4) calc(var(--u)*1.2) rgba(0,0,0,.5);
     display:flex; align-items:center; justify-content:center; overflow:hidden}
-  /* 멈춘 값 — 원판 한가운데 (앱과 같은 모습) */
-  .ov-w-hit{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    min-width:9vw; padding:.5vw 1.3vw; border-radius:99px; background:rgba(18,15,12,.82);
-    color:#fff; font-size:4.4vw; font-weight:800; line-height:1.15; text-align:center;
-    white-space:nowrap; pointer-events:none; opacity:0}
+  .ov-w-hit{color:#fff; font-size:calc(var(--u)*5.2); font-weight:800; line-height:1;
+    white-space:nowrap; max-width:92%; overflow:hidden; text-overflow:ellipsis; opacity:0}
+  .ov-w-hit.q{opacity:.4; color:#8a7a66; font-size:calc(var(--u)*4)}
+  .ov-w-hit.long{font-size:calc(var(--u)*2.4)}
   .ov-w-hit.on{animation:ov-hitpop .28s cubic-bezier(.2,1.5,.4,1) forwards}
-  @keyframes ov-hitpop{from{transform:translate(-50%,-50%) scale(.5); opacity:0}
-    to{transform:translate(-50%,-50%) scale(1); opacity:1}}
+  @keyframes ov-hitpop{from{transform:scale(.4); opacity:0}
+    to{transform:scale(1); opacity:1}}
   @keyframes ov-flash{
     from{background:rgba(232,198,106,.28)}
     to{background:transparent}
@@ -354,10 +423,16 @@ export const PAGE_HTML = `<!doctype html>
     faceTimer = setInterval(function () {
       var el = document.getElementById("ovface");
       if (!el) { clearInterval(faceTimer); faceTimer = null; return; }
-      el.textContent = faceLabel(fs2[t++ % fs2.length]);
+      var i = t++ % fs2.length;
+      el.textContent = faceLabel(fs2[i]);
+      var pv = document.getElementById("ovprev");
+      var nx = document.getElementById("ovnext");
+      if (pv) pv.textContent = faceLabel(fs2[(i - 1 + fs2.length) % fs2.length]);
+      if (nx) nx.textContent = faceLabel(fs2[(i + 1) % fs2.length]);
     }, 80);
   };
   var playKey = null;   // 지금 그려 둔 판
+  var doneSid = null;   // 이미 끝까지 재생한 판 — 늦게 온 푸시가 같은 판을 또 돌리지 않게
   var wheelRot = 0;     // 원판이 지금까지 돈 각도 (앞으로만 돕니다)
   var clearPlayTimers = function () {
     if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
@@ -377,11 +452,17 @@ export const PAGE_HTML = `<!doctype html>
     var key = play.sp.sid + ":" + play.i + ":" + (play.rolling ? "r" : "s");
     if (key === hitKey) return;
     hitKey = key;
-    if (play.rolling) { el.textContent = ""; el.classList.remove("on"); return; }
-    el.textContent = faceLabel(play.sp.steps[play.i].k);
-    el.classList.remove("on");
-    void el.offsetWidth;
-    el.classList.add("on");
+    if (play.rolling) { el.textContent = "?"; el.className = "ov-w-hit q"; return; }
+    /* 원판이 완전히 멈춘 뒤에 띄웁니다 — 같이 띄우면 바늘과 숫자가 어긋나 보입니다 */
+    var txt = faceLabel(play.sp.steps[play.i].k);
+    setTimeout(function () {
+      var e2 = document.getElementById("ovhit");
+      if (!e2 || !play || play.rolling) return;
+      e2.textContent = txt;
+      e2.className = "ov-w-hit" + (String(txt).length > 2 ? " long" : "");
+      void e2.offsetWidth;
+      e2.classList.add("on");
+    }, 200);
   };
   var drawPlay = function () {
     var sbox = document.getElementById("ovspin");
@@ -396,28 +477,56 @@ export const PAGE_HTML = `<!doctype html>
     } else {
       var box = sbox.querySelector(".ov-sp");
       if (box) {
-        var seen = play.sp.steps.slice(0, play.i + (play.rolling ? 0 : 1));
-        var passSeen = seen.some(function (x) { return x.k === "pass"; });
-        box.className = "ov-sp" + (passSeen ? " pass" : "");
-        var top = box.querySelector(".ov-sp-top");
-        var mult = seen.length ? seen[seen.length - 1].m : 1;
-        if (top && !play.who) {
-          top.innerHTML =
-            '<span class="ov-sp-who">' + esc(play.sp.who) + ' <em>' + esc(play.sp.item) + "</em></span>" +
-            (passSeen ? '<span class="ov-sp-pass">양도권</span>' : "") +
-            (mult > 1 ? '<span class="ov-sp-mult">\u00d7' + esc(mult) + "</span>" : "");
+        var sp = play.sp;
+        /* 트랙 — 채워진 만큼 다시 그립니다 (슬롯 위치는 고정이라 안 밀립니다) */
+        var tr = box.querySelector(".ov-sp-track");
+        if (tr)
+          tr.outerHTML = trackHtml(sp, play.i, !!play.rolling && !play.who, play.who === "roll");
+        var it = document.getElementById("ovitem");
+        if (it) it.textContent = play.who ? "누가 물까요?" : sp.item;
+        var gone = document.getElementById("ovgone");
+        if (gone)
+          gone.textContent =
+            !play.who && passGone(sp, play.i) ? "양도권은 한 판에 한 번 — 빠졌어요" : "";
+        /* 릴 — 멈추면 가운데에 나온 면, 위아래에 원판상의 이웃 면 */
+        if (sp.look === "num" && !play.who && !play.rolling) {
+          var f = document.getElementById("ovface");
+          var pool = poolAt(sp, play.i);
+          var k = sp.steps[play.i].k;
+          var at = Math.max(0, pool.indexOf(k));
+          if (f) f.textContent = faceLabel(k);
+          var pv = document.getElementById("ovprev");
+          var nx = document.getElementById("ovnext");
+          if (pv) pv.textContent = faceLabel(pool[(at - 1 + pool.length) % pool.length]);
+          if (nx) nx.textContent = faceLabel(pool[(at + 1) % pool.length]);
         }
-        var out = box.querySelector(".ov-sp-out");
-        var txt = play.over
-          ? esc(play.sp.n) + (mult > 1 ? " \u00d7 " + esc(mult) : "") + " = " + man(play.sp.gold) +
-            (play.sp.pass2 ? " \u2192 " + esc(play.sp.pass2.name) : "")
-          : "";
-        if (!out) {
-          out = document.createElement("div");
-          out.className = "ov-sp-out";
-          box.appendChild(out);
+        /* 결과 — 수식과 벌금 변화. 표가 아직 안 왔으면 원값으로 적고, 오면 채웁니다 */
+        var out = document.getElementById("ovout");
+        var dl = document.getElementById("ovdelta");
+        if (play.over) {
+          var info = outInfo(sp);
+          var multF = 1;
+          sp.steps.forEach(function (x) { if (x.m > 1) multF = x.m; });
+          if (out)
+            out.innerHTML =
+              esc(faceLabel(String(sp.n))) +
+              (multF > 1 ? " \u00d7" + esc(multF) : "") +
+              " = " + man(info.applied) +
+              (info.cut ? "<em>벌금까지만</em>" : "") +
+              (info.target && info.target !== sp.who
+                ? "<em>" + esc(info.target) + "에게</em>"
+                : "");
+          if (dl)
+            dl.innerHTML =
+              info.target != null && info.oldG != null
+                ? "<b>" + esc(info.target) + "</b> " + man(info.oldG) +
+                  ' <span class="' + (info.applied >= 0 ? "up" : "dn") + '">' +
+                  "\u2192 " + man(info.newG) + "</span>"
+                : "";
+        } else {
+          if (out) out.textContent = "";
+          if (dl) dl.textContent = "";
         }
-        out.textContent = txt;
       }
       drawHit();
     }
@@ -427,7 +536,16 @@ export const PAGE_HTML = `<!doctype html>
   var rollStep = function () {
     if (!play) return;
     if (play.sp.look === "num") rollFace(play);
-    else spinTo(play.sp.faces, play.sp.w, play.sp.steps[play.i].k);
+    else spinTo(poolAt(play.sp, play.i), play.sp.w, play.sp.steps[play.i].k);
+  };
+
+  /* 양도권은 한 판에 한 번뿐 — 이미 나왔으면 그 뒤 회차의 원판에서 뺍니다 */
+  var poolAt = function (sp, i) {
+    var gone = sp.steps.slice(0, i).some(function (x) { return x.k === "pass"; });
+    return gone ? sp.faces.filter(function (f) { return f !== "pass"; }) : sp.faces;
+  };
+  var passGone = function (sp, i) {
+    return sp.steps.slice(0, i).some(function (x) { return x.k === "pass"; });
   };
 
   /* 랜덤 양도면 사람 원판을 한 번 더 돌립니다 */
@@ -437,12 +555,10 @@ export const PAGE_HTML = `<!doctype html>
     if (!el) return;
     var box = el.querySelector(".ov-sp");
     if (!box) return;
-    var top = box.querySelector(".ov-sp-top");
-    if (top) {
-      top.innerHTML =
-        '<span class="ov-sp-who">' + esc(sp.who) + ' <em>누가 물까요?</em></span>';
-    }
-    var wrap = box.querySelector(".ov-wheel");
+    var it = document.getElementById("ovitem");
+    if (it) it.textContent = "누가 물까요?";
+    /* 무대를 사람 원판으로 갈아 끼웁니다 — 숫자만 모드였다면 릴을 원판으로 */
+    var wrap = box.querySelector(".ov-wheel") || box.querySelector(".ov-reel");
     if (wrap) {
       wrap.outerHTML = wheelHtml(sp.pass2.faces, {});
       wheelRot = 0;
@@ -460,9 +576,19 @@ export const PAGE_HTML = `<!doctype html>
       return;
     }
     if (play.i + 1 < play.sp.steps.length) {
+      var was = poolAt(play.sp, play.i).length;
       play.i += 1;
-      play.rolling = true;
       drawPlay();
+      /* 후보가 줄었으면 원판을 새로 그립니다 (칸 수가 달라집니다) */
+      if (poolAt(play.sp, play.i).length !== was) {
+        var box = document.querySelector("#ovspin .ov-wheel");
+        if (box) {
+          box.outerHTML = wheelHtml(poolAt(play.sp, play.i), play.sp.w);
+          wheelRot = 0;
+          hitKey = null;
+        }
+      }
+      play.rolling = true;
       rollStep();
       stepTimer = setTimeout(stepPlay, OV_ROLL);
       return;
@@ -477,13 +603,16 @@ export const PAGE_HTML = `<!doctype html>
     }
     if (play.who === "roll") {
       play.who = "land";
-      var hit = document.getElementById("ovhit");
-      if (hit) {
-        hit.textContent = play.sp.pass2.name;
-        hit.classList.remove("on");
-        void hit.offsetWidth;
-        hit.classList.add("on");
-      }
+      (function (nm) {
+        setTimeout(function () {
+          var hit = document.getElementById("ovhit");
+          if (!hit) return;
+          hit.textContent = nm;
+          hit.className = "ov-w-hit" + (String(nm).length > 2 ? " long" : "");
+          void hit.offsetWidth;
+          hit.classList.add("on");
+        }, 200);
+      })(play.sp.pass2.name);
       stepTimer = setTimeout(stepPlay, OV_HOLD);
       return;
     }
@@ -498,6 +627,21 @@ export const PAGE_HTML = `<!doctype html>
       stepTimer = setTimeout(stepPlay, 400);
       return;
     }
+    /* 적용 결과(out)나 새 표(pend)가 아직이면 결과 화면을 붙잡습니다 — 앱 탭이
+       느려져(백그라운드 스로틀 등) 오버레이가 먼저 끝나면 벌금 변화가 못 뜹니다 */
+    if (spin && spin.sid === play.sp.sid && !play.sp.out && !pend) {
+      play.waited = true;
+      stepTimer = setTimeout(stepPlay, 300);
+      return;
+    }
+    /* 기다렸다 받았으면 채워진 결과를 한 박자 보여 주고 닫습니다 */
+    if (play.waited && !play.lastHold) {
+      play.lastHold = true;
+      drawPlay();
+      stepTimer = setTimeout(stepPlay, OV_HOLD);
+      return;
+    }
+    doneSid = play.sp.sid;
     play = null;
     drawPlay();
     if (pend) {
@@ -539,9 +683,16 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   var ovBoard = null;
-  var isMult = function (k) { return /^x\d+$/.test(k || ""); };
+  /* 이 파일은 통째로 템플릿 문자열이라 홑백슬래시는 해석 단계에서 먹힙니다 —
+     정규식의 \\d 처럼 두 겹으로 적어야 페이지에 \d 로 도착합니다. */
+  var isMult = function (k) { return /^x\\d+$/.test(k || ""); };
   var faceLabel = function (k) {
-    return k === "pass" ? "양도권" : isMult(k) ? "\u00d7" + String(k).slice(1) : k;
+    /* 음수 면은 앱과 같은 빼기표로 그립니다 */
+    return k === "pass"
+      ? "양도권"
+      : isMult(k)
+      ? "\u00d7" + String(k).slice(1)
+      : String(k).replace(/^-/, "\u2212");
   };
   /* 칸 색 — 글자를 안 쓰니 색으로 구분합니다 */
   var NUM_COLORS = ["#4ea8de", "#57cc99", "#ffd166", "#c77dff",
@@ -574,7 +725,7 @@ export const PAGE_HTML = `<!doctype html>
     }).join(",");
     return '<div class="ov-wheel"><div class="ov-w-disc" id="ovdisc" style="background:' +
       "conic-gradient(" + stops + ')"></div>' +
-      '<span class="ov-w-hit" id="ovhit"></span>' +
+      '<span class="ov-w-hub"><span class="ov-w-hit q" id="ovhit">?</span></span>' +
       '<div class="ov-w-pin"></div></div>';
   };
 
@@ -584,25 +735,84 @@ export const PAGE_HTML = `<!doctype html>
      쌓인 배수는 모서리에 ×2 → ×4 → ×8 로, 양도권은 붉게. 지나온 면은 안 늘어놓습니다. */
   /* 재생 중인 한 판. 걸음은 오버레이가 셉니다 — 서기가 앱에서 건너뛰어도
      방송의 속도감은 그대로 남습니다. */
+  /* 이번 판 트랙 — 앱과 같은 5칸. 나온 면이 왼쪽부터 채우고, 다음 칸이 깜빡입니다 */
+  var trackHtml = function (sp, i, rolling, whoRolling) {
+    var seen = sp.steps.slice(0, i + (rolling ? 0 : 1));
+    var slots = Math.max(5, seen.length);
+    var h = "";
+    for (var j = 0; j < slots; j++) {
+      if (seen[j]) {
+        var k = seen[j].k;
+        h += '<span class="ov-tchip' +
+          (k === "pass" ? " pass" : isMult(k) ? " mult" : "") + '">' +
+          esc(faceLabel(k)) + "</span>";
+      } else {
+        h += '<span class="ov-tslot' +
+          (j === seen.length && (rolling || whoRolling) ? " next" : "") + '"></span>';
+      }
+    }
+    return '<div class="ov-sp-track">' + h + "</div>";
+  };
+
+  /* 카드는 판 사각형 안에 앉습니다. 크기 단위 --u 는 판 짧은 변의 1% — 판이 contain 으로
+     커지고 작아질 때 카드도 그대로 따라갑니다. 판이 넓적하면 눕고, 길면 섭니다. */
   var spinHtml = function (pl) {
     var sp = pl.sp;
-    var seen = sp.steps.slice(0, pl.i + (pl.rolling ? 0 : 1));
-    var passSeen = seen.some(function (x) { return x.k === "pass"; });
-    var mult = seen.length ? seen[seen.length - 1].m : 1;
-    var out = '<div class="ov-sp-out">' + (pl.over
-      ? esc(sp.n) + (mult > 1 ? " × " + esc(mult) : "") + " = " + man(sp.gold)
-      : "") + "</div>";
-    return '<div class="ov-sp' + (passSeen ? " pass" : "") + '">' +
-      '<div class="ov-sp-top">' +
-        '<span class="ov-sp-who">' + esc(sp.who) + ' <em>' + esc(sp.item) + "</em></span>" +
-        (passSeen ? '<span class="ov-sp-pass">양도권</span>' : "") +
-        (mult > 1 ? '<span class="ov-sp-mult">×' + esc(mult) + "</span>" : "") +
-      "</div>" +
-      (sp.look === "num"
-        ? '<div class="ov-sp-face' + (pl.rolling ? " roll" : " land") + '" id="ovface">' +
-            (pl.rolling ? "?" : esc(faceLabel(sp.steps[pl.i].k))) + "</div>"
-        : wheelHtml(sp.faces && sp.faces.length ? sp.faces : ["1"], sp.w)) +
-      out + "</div>";
+    var box = document.querySelector(".ov");
+    var bw = box ? box.offsetWidth : 400;
+    var bh = box ? box.offsetHeight : 400;
+    var u = Math.min(bw, bh) / 100;
+    var horiz = bw / bh >= 1.25;
+    var stage = sp.look === "num"
+      ? '<div class="ov-reel"><span class="ov-reel-line"></span>' +
+        '<b class="ov-reel-n side" id="ovprev"></b>' +
+        '<b class="ov-reel-n big" id="ovface">?</b>' +
+        '<b class="ov-reel-n side" id="ovnext"></b></div>'
+      : wheelHtml(poolAt(sp, pl.i), sp.w);
+    return '<div class="ov-sp ' + (horiz ? "h" : "v") + '" style="--u:' + u.toFixed(2) + 'px">' +
+      '<div class="ov-sp-info">' +
+        '<span class="ov-sp-who" id="ovwho">' + esc(sp.who) + "</span>" +
+        '<span class="ov-sp-item" id="ovitem">' + esc(sp.item) + "</span>" +
+      "</div>" + stage +
+      '<div class="ov-sp-res" id="ovres">' +
+        trackHtml(sp, pl.i, pl.rolling, false) +
+        '<div class="ov-sp-gone" id="ovgone"></div>' +
+        '<div class="ov-sp-out" id="ovout"></div>' +
+        '<div class="ov-sp-delta" id="ovdelta"></div>' +
+      "</div></div>";
+  };
+
+  /* 결과 줄 — 실제 깎이거나 붙은 값은 표(pend)와의 차로 잽니다. 잘린 감면이면
+     "벌금까지만"을 덧붙입니다. 대상은 금액이 변한 줄에서 찾습니다(지정 양도 포함). */
+  var outInfo = function (sp) {
+    /* 앱이 적용 결과를 실어 보냈으면 그걸 씁니다 — 표 diff 는 그물일 뿐입니다 */
+    if (sp.out) {
+      return {
+        target: sp.out.name,
+        oldG: sp.out.after - sp.out.g,
+        newG: sp.out.after,
+        applied: sp.out.g,
+        cut: sp.out.raw < 0 && sp.out.g !== sp.out.raw,
+      };
+    }
+    var oldB = board || [];
+    var newB = pend && pend.board ? pend.board : null;
+    var target = null, oldG = null, newG = null;
+    if (newB) {
+      for (var i = 0; i < newB.length; i++) {
+        var o = null;
+        for (var j = 0; j < oldB.length; j++)
+          if (oldB[j].n === newB[i].n) { o = oldB[j]; break; }
+        if (o && o.g !== newB[i].g) { target = newB[i].n; oldG = o.g; newG = newB[i].g; break; }
+      }
+    }
+    if (target == null && sp.pass2) target = sp.pass2.name;
+    var applied = oldG != null && newG != null ? newG - oldG : sp.gold;
+    return {
+      target: target,
+      oldG: oldG, newG: newG, applied: applied,
+      cut: sp.gold < 0 && applied !== sp.gold,
+    };
   };
 
   /* 당첨 칸이 12시 바늘 아래로 오도록 원판을 돌립니다. 걸음마다 몇 바퀴 더 얹습니다 */
@@ -646,7 +856,7 @@ export const PAGE_HTML = `<!doctype html>
       flip(ovBoard, function () { ovBoard.innerHTML = rowsHtml(board); });
     }
     /* 룰렛 판 — 새 판이 오면 재생을 시작하고, 그 뒤로는 제 시계로 굴립니다 */
-    if (spin && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
+    if (spin && spin.sid !== doneSid && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
     else if (play) play.sp = spin || play.sp; // 양도 대기 여부만 갱신
     drawPlay();
     /* 오버레이 제목은 파티명이 아니라 '벌금표' — 방송 화면에 뜨는 건 표지판이지 명패가 아닙니다 */
@@ -662,33 +872,35 @@ export const PAGE_HTML = `<!doctype html>
       '<span class="ov-total">' +
       man(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>" +
       (showNet ? '<span class="ov-nethead">순액</span>' : "");
-    fitPreview();
+    fitBoard();
   };
 
-  /* 미리보기 창 맞춤. 글자가 vw 기준이라 창을 좁히면 내용도 같이 줄어들어서,
-     폭은 건드리지 않고 배율로 키웁니다. 폭만 채우면 높이가 넘쳐 잘리므로
-     가로·세로 중 작은 배율을 써서 창 안에 통째로 넣고 가운데에 놓습니다.
-     팝업이면 처음 한 번만 창 높이를 판에 맞춰 남는 여백을 없앱니다. */
+  /* 판을 소스에 contain 으로 앉힙니다 — 비율을 지키며 먼저 닿는 쪽까지 확대하고
+     가운데 정렬. 소스 사각형 = 판이라는 위젯의 관행을 따릅니다. 판의 원래 크기는
+     transform 이 안 건드는 offset 치수로 잽니다. */
   var fitted = false;
-  var fitPreview = function () {
-    if (!isPreview) return;
+  var fitBoard = function () {
     var el = document.querySelector(".ov");
     if (!el) return;
-    el.style.transform = "none";
-    var r = el.getBoundingClientRect();
-    if (!r.width || !r.height) return;
-    var scale = Math.min(window.innerWidth / r.width, window.innerHeight / r.height);
+    var w = el.offsetWidth, h = el.offsetHeight;
+    if (!w || !h) return;
+    var scale = Math.min(window.innerWidth / w, window.innerHeight / h);
     el.style.transformOrigin = "top left";
     el.style.transform =
-      "translate(" + (window.innerWidth - r.width * scale) / 2 + "px," +
-      (window.innerHeight - r.height * scale) / 2 + "px) scale(" + scale + ")";
-    if (!fitted && window.opener) {
+      "translate(" + (window.innerWidth - w * scale) / 2 + "px," +
+      (window.innerHeight - h * scale) / 2 + "px) scale(" + scale + ")";
+    /* 첫 배치는 튀지 않게 전환 없이, 그 뒤(인원·열 변경)부터 부드럽게 */
+    if (!el.classList.contains("fitted"))
+      setTimeout(function () { el.classList.add("fitted"); }, 60);
+    /* 미리보기 팝업만: 처음 한 번 창 높이를 판에 맞춰 남는 여백을 없앱니다 */
+    if (isPreview && !fitted && window.opener) {
       fitted = true;
-      var want = Math.round(r.height * (window.innerWidth / r.width));
+      var want = Math.round(h * (window.innerWidth / w));
       if (want > 0 && Math.abs(want - window.innerHeight) > 8)
         window.resizeBy(0, want - window.innerHeight);
     }
   };
+  var fitPreview = fitBoard;
 
   /* 방송 중이 아님이 확인될 때만 알립니다. 판별 실패는 침묵(안전한 쪽) */
   var maybeNotice = function () {
@@ -763,7 +975,7 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   /* 창 크기를 바꾸면 vw 가 달라져 판 크기도 달라집니다 — 그 즉시 다시 맞춥니다 */
-  if (isPreview) window.addEventListener("resize", fitPreview);
+  window.addEventListener("resize", fitBoard);
 
   if (isDemo) startDemo();
   else { render(); connect(); }
