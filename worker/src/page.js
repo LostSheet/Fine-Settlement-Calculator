@@ -272,6 +272,9 @@ export const PAGE_HTML = `<!doctype html>
   var isDemo = ROOM === DEMO_ROOM;
   var q = new URLSearchParams(location.search);
   var forced = q.get("mode");
+  /* 소스 나누기 — board 는 현황판만, spin 은 룰렛만 그립니다. 없으면 둘 다.
+     파일은 하나고 분기만 다릅니다 — 소스마다 딴 페이지를 만들 이유가 없어요. */
+  var TYPE = q.get("type") === "board" ? "board" : q.get("type") === "spin" ? "spin" : "all";
   var inOBS = forced === "overlay" || (forced !== "page" && !!window.obsstudio);
 
   /* 브라우저로 열었으면 앱의 읽기 전용 화면으로 넘깁니다 (예시도 같습니다).
@@ -942,6 +945,14 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   var render = function () {
+    /* 룰렛 전용 소스 — 보드도 알림도 안 그립니다. 판이 없으면 그냥 투명입니다 */
+    if (TYPE === "spin") {
+      if (!document.getElementById("ovspin")) app.innerHTML = '<div id="ovspin"></div>';
+      if (spin && spin.sid !== doneSid && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
+      else if (play) play.sp = spin || play.sp;
+      drawPlay();
+      return;
+    }
     if (dead || !board || !board.length) {
       ovBoard = null;
       prev = {};
@@ -959,10 +970,13 @@ export const PAGE_HTML = `<!doctype html>
     } else {
       flip(ovBoard, function () { ovBoard.innerHTML = rowsHtml(board); });
     }
-    /* 룰렛 판 — 새 판이 오면 재생을 시작하고, 그 뒤로는 제 시계로 굴립니다 */
-    if (spin && spin.sid !== doneSid && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
-    else if (play) play.sp = spin || play.sp; // 양도 대기 여부만 갱신
-    drawPlay();
+    /* 룰렛 판 — 새 판이 오면 재생을 시작하고, 그 뒤로는 제 시계로 굴립니다.
+       현황판 전용 소스는 판을 안 돌립니다 — 증감 칩이 표에서 결과를 대신 말해요 */
+    if (TYPE !== "board") {
+      if (spin && spin.sid !== doneSid && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
+      else if (play) play.sp = spin || play.sp; // 양도 대기 여부만 갱신
+      drawPlay();
+    }
     /* 오버레이 제목은 파티명이 아니라 '벌금표' — 방송 화면에 뜨는 건 표지판이지 명패가 아닙니다 */
     /* 항목 이름은 머리줄에 한 번만 — 줄마다 되뇌면 방송에서 읽히지 않습니다.
        칸 구성은 본문 줄과 하나하나 같아야 열이 맞습니다 */

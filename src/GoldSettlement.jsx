@@ -761,6 +761,7 @@ function loadRelay() {
       spd: v.spd === "fast" || v.spd === "normal" || v.spd === "slow" ? v.spd : undefined,
       spinLook: v.spinLook === "num" || v.spinLook === "wheel" ? v.spinLook : undefined,
       wheelTheme: v.wheelTheme === "vegas" ? "vegas" : undefined,
+      ovsrc: v.ovsrc === "split" ? "split" : undefined,
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
           ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25 }
@@ -5628,6 +5629,7 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
   const [showWhy, setShowWhy] = useState(false);
   const previewRef = useRef(null);
   const url = room ? relayApi.shareUrl(room.roomId) : "";
+  const srcMode = relay.ovsrc === "split" ? "split" : "one";
 
   /* 테마 확인용 창 — 늘 예시 방을 씁니다. 내 방은 벌금이 바뀌기 전엔 정지 화면이라
      증감·순위 변동·1위 강조를 볼 수 없어서요. 칩을 누르면 열린 창을 그 자리에서 갈아끼웁니다. */
@@ -5737,8 +5739,42 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
           </div>
         ) : (
           <div className="gs-obs-copybox">
+            {/* 소스 구성 — 모드를 먼저 고르고, 주소는 고른 모드 것만 보여 줍니다 */}
+            <div className="gs-obs-srcpick" role="group" aria-label="소스 구성">
+              {[
+                ["one", "한 소스", "현황판과 룰렛이 한 주소에 같이 나와요"],
+                ["split", "나눈 소스", "룰렛이 따로 나와요 — 화면 전체에 크게 띄울 수 있어요"],
+              ].map(([v, label, hint]) => (
+                <button
+                  key={v}
+                  className={"gs-slook-c src" + (srcMode === v ? " on" : "")}
+                  onClick={() => putRelay({ ...relay, ovsrc: v === "split" ? "split" : undefined })}
+                  aria-pressed={srcMode === v}
+                >
+                  <span className="gs-src-art" aria-hidden="true">
+                    {v === "one" ? (
+                      <span className="gs-src-scr">
+                        <i className="gs-src-tbl" />
+                        <i className="gs-src-disc mid" />
+                      </span>
+                    ) : (
+                      <span className="gs-src-scr">
+                        <i className="gs-src-tbl sm" />
+                        <i className="gs-src-disc big" />
+                      </span>
+                    )}
+                  </span>
+                  <b>{label}</b>
+                  <em>{hint}</em>
+                </button>
+              ))}
+            </div>
             <div className="gs-obs-boxtop">
-              <span className="gs-obs-urltext">{url}</span>
+              {srcMode === "one" ? (
+                <span className="gs-obs-urltext">{url}</span>
+              ) : (
+                <span className="gs-obs-urltext gs-obs-urldim">주소 두 개를 각각 소스로 넣어요</span>
+              )}
               <span className="gs-obs-reissue">
                 <button className="gs-btn gs-btn-sm gs-btn-warn2" onClick={onAskReissue}>
                   주소 새로 발급
@@ -5753,15 +5789,49 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
                 </span>
               </span>
             </div>
-            {/* 복사는 둘 — 관리자 자신의 OBS용 맨주소가 주, 파티원 메시지가 보조입니다 */}
-            <div className="gs-obs-copyrow">
-              <button className="gs-btn" onClick={() => copy2("url", url)}>
-                {copied === "url" ? "복사됐어요 — OBS 소스 URL에 붙여넣으세요" : "OBS용 주소 복사"}
-              </button>
-              <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", msg())}>
-                {copied === "msg" ? "복사됐어요 — 디스코드에 붙여넣으세요" : "파티원 메시지 복사"}
-              </button>
-            </div>
+            {srcMode === "one" ? (
+              <div className="gs-obs-copyrow">
+                <button className="gs-btn" onClick={() => copy2("url", url)}>
+                  {copied === "url" ? "복사됐어요 — OBS 소스 URL에 붙여넣으세요" : "OBS용 주소 복사"}
+                </button>
+                <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", msg())}>
+                  {copied === "msg" ? "복사됐어요 — 디스코드에 붙여넣으세요" : "파티원 메시지 복사"}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="gs-obs-srcrow">
+                  <b>현황판</b>
+                  <span className="gs-obs-urltext">{url + "?type=board"}</span>
+                  <button
+                    className="gs-btn gs-btn-sm"
+                    onClick={() => copy2("burl", url + "?type=board")}
+                  >
+                    {copied === "burl" ? "복사됐어요" : "복사"}
+                  </button>
+                </div>
+                <div className="gs-obs-srcrow">
+                  <b>룰렛</b>
+                  <span className="gs-obs-urltext">{url + "?type=spin"}</span>
+                  <button
+                    className="gs-btn gs-btn-sm"
+                    onClick={() => copy2("surl", url + "?type=spin")}
+                  >
+                    {copied === "surl" ? "복사됐어요" : "복사"}
+                  </button>
+                </div>
+                <p className="gs-obs-srcnote">
+                  현황판 소스는 구석에 작게, 룰렛 소스는 화면 전체로 크게 잡아요. 룰렛
+                  소스는 판이 돌 때만 나타나고 평소에는 아무것도 안 보여요. 룰렛 주소를
+                  안 넣으면 룰렛 없이 현황판만 나와요.
+                </p>
+                <div className="gs-obs-copyrow">
+                  <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", msg())}>
+                    {copied === "msg" ? "복사됐어요 — 디스코드에 붙여넣으세요" : "파티원 메시지 복사"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -7630,6 +7700,40 @@ const CSS = `
 .gs-keybtn svg{flex:0 0 auto; opacity:.8}
 .gs-keybtn:hover svg{opacity:1}
 .gs-obs-warn{color:var(--red) !important; opacity:.9}
+/* 소스 구성 — 카드 두 장으로 고르고, 주소는 고른 모드 것만 보입니다 */
+.gs-obs-srcpick{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap}
+.gs-slook-c.src{flex:1 1 190px}
+.gs-src-art{display:flex; align-items:center; justify-content:center; height:56px}
+.gs-src-scr{position:relative; width:88px; height:52px; border-radius:5px;
+  background:rgba(var(--ink-rgb),.08); border:1px solid rgba(var(--ink-rgb),.3);
+  overflow:hidden; display:block}
+/* 미니 현황판 — 가로줄 세 개짜리 판 */
+.gs-src-tbl{position:absolute; left:7px; top:7px; width:36px; height:38px; border-radius:3px;
+  background:
+    linear-gradient(rgba(var(--gold-rgb),.55) 0 0) 4px 6px/28px 3px no-repeat,
+    linear-gradient(rgba(var(--ink-rgb),.4) 0 0) 4px 15px/28px 3px no-repeat,
+    linear-gradient(rgba(var(--ink-rgb),.4) 0 0) 4px 24px/28px 3px no-repeat,
+    rgba(var(--ink-rgb),.1);
+  border:1px solid rgba(var(--ink-rgb),.35)}
+.gs-src-tbl.sm{width:26px; height:26px; left:5px; top:5px;
+  background:
+    linear-gradient(rgba(var(--gold-rgb),.55) 0 0) 3px 5px/20px 2px no-repeat,
+    linear-gradient(rgba(var(--ink-rgb),.4) 0 0) 3px 11px/20px 2px no-repeat,
+    linear-gradient(rgba(var(--ink-rgb),.4) 0 0) 3px 17px/20px 2px no-repeat,
+    rgba(var(--ink-rgb),.1)}
+/* 미니 원판 */
+.gs-src-disc{position:absolute; border-radius:50%;
+  background:conic-gradient(#3c86ba 0 90deg, #3f9c72 90deg 180deg,
+    #d9a83e 180deg 270deg, #c8493e 270deg 360deg);
+  box-shadow:0 0 0 1.5px rgba(var(--gold-rgb),.7)}
+.gs-src-disc.mid{width:20px; height:20px; right:14px; top:16px}
+.gs-src-disc.big{width:34px; height:34px; left:50%; top:50%; transform:translate(-50%,-50%)}
+/* 나눈 소스의 주소 두 줄 */
+.gs-obs-srcrow{display:flex; align-items:center; gap:8px; margin-top:8px}
+.gs-obs-srcrow > b{flex:0 0 44px; font-size:12.5px; color:var(--ink-body)}
+.gs-obs-srcrow .gs-obs-urltext{flex:1; min-width:0}
+.gs-obs-srcnote{margin:8px 0 0; font-size:12px; color:var(--ink-2); line-height:1.7}
+.gs-obs-urldim{opacity:.6}
 /* 주소 줄 — 주소가 남는 자리를 다 쓰고 새로 발급은 오른쪽 끝에 붙습니다.
    되돌릴 수 없는 단추라 복사 단추들과는 줄을 나눕니다. */
 .gs-obs-boxtop{display:flex; align-items:center; gap:10px}
@@ -8057,7 +8161,7 @@ const CSS = `
 .gs-obs-spd{margin-top:12px}
 .gs-slook{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap}
 .gs-slook-themes{flex-basis:100%; display:flex; gap:10px; flex-wrap:wrap;
-  padding-left:22px; margin-top:2px}
+  margin-top:2px}
 .gs-slook-themes.off{opacity:.42}
 .gs-slook-themes.off .gs-slook-c{cursor:default}
 .gs-slook-c.sm{flex:1 1 130px; padding:9px 8px 8px}
