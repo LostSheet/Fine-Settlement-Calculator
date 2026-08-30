@@ -3035,8 +3035,24 @@ export default function GoldSettlement() {
         }
       }
     }
-    const rest = -en.delta - fromCounts;
-    if (rest) mergeExtra(en.rowId, ADJUST_REASON, rest);
+    /* 기타 등록의 취소 — 그 줄이 아직 그대로면 줄 자체를 거둡니다 */
+    let fromExtra = 0;
+    if (en.kind === "extra" && en.exId) {
+      const ex = extrasOf(row).find((e) => e.id === en.exId);
+      if (ex && Math.round(goldOf(ex.amount)) === en.delta) {
+        setRows((prev) =>
+          prev.map((x) =>
+            x.id === en.rowId
+              ? { ...x, extras: extrasOf(x).filter((e) => e.id !== en.exId) }
+              : x
+          )
+        );
+        fromExtra = -en.delta;
+      }
+    }
+    const rest = -en.delta - fromCounts - fromExtra;
+    if (rest)
+      mergeExtra(en.rowId, en.kind === "extra-del" ? en.reason || "" : ADJUST_REASON, rest);
     const after = liveTotal(row) - en.delta;
     live.current.total[row.id] = after;
     setLog((prev) => {
@@ -3098,13 +3114,26 @@ export default function GoldSettlement() {
       say("깎을 벌금이 없어요 — 감면은 지금 벌금까지만 깎여요.");
       return;
     }
+    const exId = "e" + seq.current++;
     setRows((prev) =>
       prev.map((x) =>
         x.id === rowId
-          ? { ...x, extras: [...extrasOf(x), { id: "e" + seq.current++, amount: commafy(g), reason }] }
+          ? { ...x, extras: [...extrasOf(x), { id: exId, amount: commafy(g), reason }] }
           : x
       )
     );
+    const after = liveTotal(row) + g;
+    live.current.total[row.id] = after;
+    appendLog({
+      kind: "extra",
+      exId,
+      rowId,
+      delta: g,
+      name: seatName(row, rows.indexOf(row)),
+      item: reason ? "기타(" + reason + ")" : "기타",
+      reason,
+      after,
+    });
     if (want < 0)
       say(
         g === want
@@ -3135,12 +3164,29 @@ export default function GoldSettlement() {
     patchExtra(rowId, exId, "amount", commafy(g));
     say(man(-want) + " 중 벌금이 있는 " + man(-g) + "만 깎였어요 — 남은 몫은 사라져요.");
   };
-  const delExtra = (rowId, exId) =>
+  const delExtra = (rowId, exId) => {
+    const row = rows.find((x) => x.id === rowId);
+    const ex = row && extrasOf(row).find((e) => e.id === exId);
+    if (!ex) return;
     setRows((prev) =>
       prev.map((x) =>
         x.id === rowId ? { ...x, extras: extrasOf(x).filter((e) => e.id !== exId) } : x
       )
     );
+    const g = Math.round(goldOf(ex.amount));
+    const after = liveTotal(row) - g;
+    live.current.total[row.id] = after;
+    appendLog({
+      kind: "extra-del",
+      exId,
+      rowId,
+      delta: -g,
+      name: seatName(row, rows.indexOf(row)),
+      item: ex.reason ? "기타(" + ex.reason + ")" : "기타",
+      reason: ex.reason,
+      after,
+    });
+  };
 
   /* 단가 변경 — 묻지 않습니다. 고치는 즉시 과거까지 새 단가로 계산되고(오타 정정이
      다수라서), 대신 쪽지가 떠서 "지금부터 1데스 10만!" 같은 규칙 변경이면 한 번의
@@ -4664,6 +4710,9 @@ export default function GoldSettlement() {
                         en.mode === "forward" ? " (지금부터)" : ""
                       }`}
                     {en.kind === "press" && `${en.item || "항목"} ${signedMan(en.delta)}`}
+                    {en.kind === "extra" && `${en.item || "기타"} ${signedMan(en.delta)}`}
+                    {en.kind === "extra-del" &&
+                      `${en.item || "기타"} 삭제 ${signedMan(en.delta)}`}
                     {en.kind === "roulette" &&
                       `${en.item ? en.item + " " : ""}${/룰렛/.test(en.item || "") ? "" : "룰렛 "}` +
                         `${faceLabel(String(en.num))}${en.mult > 1 ? ` ×${en.mult}` : ""}` +
