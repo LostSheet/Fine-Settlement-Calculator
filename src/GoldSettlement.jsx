@@ -6476,16 +6476,30 @@ function KeyShare({ relay, putRelay, onSeatBundle, onExportFile, onImportFile, o
             <>
               <span className="gs-key-code">{revealed ? fmt(rcode) : "••••-••••-••••"}</span>
               <button
-                className="gs-btn gs-btn-sm gs-btn-ghost"
+                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
                 onClick={() => setRevealed((v) => !v)}
+                aria-label={revealed ? "가리기" : "보기"}
+                title={revealed ? "가리기" : "보기"}
               >
-                {revealed ? "가리기" : "보기"}
+                {revealed ? (
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
+                    <circle cx="8" cy="8" r="1.9" />
+                    <path d="M3 13 13 3" />
+                  </g>
+                </svg>
+                ) : (
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
+                    <circle cx="8" cy="8" r="1.9" />
+                  </g>
+                </svg>
+                )}
               </button>
               <button className="gs-btn gs-btn-sm" onClick={() => copyIt("code")}>
-                {copied === "code" ? "복사했어요" : "코드 복사"}
-              </button>
-              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => copyIt("link")}>
-                {copied === "link" ? "복사했어요" : "링크로 복사"}
+                {copied === "code" ? "복사했어요" : "복사"}
               </button>
               <button
                 className="gs-btn gs-btn-sm gs-btn-ghost"
@@ -6502,8 +6516,9 @@ function KeyShare({ relay, putRelay, onSeatBundle, onExportFile, onImportFile, o
           )}
         </div>
         <p className="gs-obs-warn">
-          이 코드는 <b>사실상 계정이에요 — 다른 사람에게 주지 마세요.</b> 새로 발급하면 옛
-          코드는 바로 못 쓰게 되고, '주소 새로 발급'을 해도 같이 끊겨요.
+          이 코드는 <b>사실상 계정이에요 — 새어 나가지 않게 주의하세요.</b> 새어 나갔다면
+          바로 '새로 발급'하세요. 옛 코드는 그 즉시 못 쓰게 되고, '주소 새로 발급'을 해도
+          같이 끊겨요.
         </p>
         <p className="gs-key-foot">
           파티를 90일 넘게 한 번도 안 열면 서버 보관이 만료돼서 코드로 못 살려요 — 오래 쉴
@@ -6725,7 +6740,8 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
                     ?
                   </button>
                   <span className="gs-tip-body gs-tip-r" role="tooltip">
-                    주소가 새어 나갔거나 명단이 바뀌었을 때 써요. 지금 주소는 바로 못 쓰게 돼요.
+                    주소가 새어 나갔을 때 써요. 옛 주소는 바로 못 쓰게 되고, OBS와
+                    파티원에게는 새 주소를 다시 보내야 해요.
                   </span>
                 </span>
               </span>
@@ -6796,16 +6812,33 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
                 {showFresh ? freshCode.replace(/(.{4})(?=.)/g, "$1-") : "••••-••••-••••"}
               </span>
               <button
-                className="gs-btn gs-btn-sm gs-btn-ghost"
+                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
                 onClick={() => setShowFresh((v) => !v)}
+                aria-label={showFresh ? "가리기" : "보기"}
+                title={showFresh ? "가리기" : "보기"}
               >
-                {showFresh ? "가리기" : "보기"}
+                {showFresh ? (
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
+                    <circle cx="8" cy="8" r="1.9" />
+                    <path d="M3 13 13 3" />
+                  </g>
+                </svg>
+                ) : (
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
+                    <circle cx="8" cy="8" r="1.9" />
+                  </g>
+                </svg>
+                )}
               </button>
               <button
                 className="gs-btn gs-btn-sm"
                 onClick={() => copy2("rcode", freshCode.replace(/(.{4})(?=.)/g, "$1-"))}
               >
-                {copied === "rcode" ? "복사했어요" : "코드 복사"}
+                {copied === "rcode" ? "복사했어요" : "복사"}
               </button>
             </div>
           </div>
@@ -8528,6 +8561,9 @@ const CSS = `
 .gs-obs-keycopy{border-color:var(--gold-ink); color:var(--ink)}
 /* 프리셋 이름 칸 — 저장 버튼과 한 줄에 서게 기본 폭을 줄입니다 */
 .gs-preset-name{flex-basis:120px}
+/* 마스킹 보기/가리기 — 눈 아이콘 버튼 */
+.gs-eyebtn{display:inline-flex; align-items:center; justify-content:center; padding:6px 9px}
+.gs-eyebtn svg{display:block}
 .gs-obs-keycopy:hover{background:rgba(var(--gold-rgb),.14)}
 .gs-obs-err{margin-top:10px; font-size:12px; color:var(--red)}
 /* 복사 상자 — 드래그 대신 버튼 복사 둘: OBS용 맨주소(주), 파티원 메시지(보조) */
