@@ -6162,10 +6162,12 @@ function ResetModal({ hasLog, hasRoom, presets, onRun, onClose }) {
           {hasLog ? "지금 판은 지난 회차로 남고, 새로 시작해요." : "새로 시작해요."}
           {hasRoom && <> 공유 주소·링크는 그대로예요.</>}
         </p>
-        <button className="gs-btn gs-btn-big" onClick={() => onRun("keep", "", 8)}>
-          새로 시작
-          <em>이름·항목은 그대로, 숫자·기록만 비워요</em>
-        </button>
+        <div className="gs-obs-acts gs-reset-row">
+          <button className="gs-btn gs-btn-sm" onClick={() => onRun("keep", "", 8)}>
+            새로 시작
+          </button>
+          <span className="gs-reset-hint">이름·항목은 그대로, 숫자·기록만 비워요</span>
+        </div>
         <div className="gs-obs-acts gs-reset-row">
           <button className="gs-btn gs-btn-sm" onClick={() => onRun("full", "", size)}>
             전부 비우고 시작
@@ -8564,16 +8566,10 @@ const CSS = `
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:5px; padding:5px 10px}
 .gs-key-note{margin:10px 0 0; font-size:12.5px; color:var(--ink-body)}
 .gs-obs-keysline{margin:12px 0 0; font-size:12.5px; color:var(--ink-2); line-height:1.9}
-/* 처음부터 — 주 버튼과 시작 줄들 */
+/* 처음부터 — 세 시작 줄은 같은 룩: 같은 버튼, 같은 폭, 옆에 부속·설명 */
 .gs-reset-row{align-items:center}
+.gs-reset-row > .gs-btn{min-width:152px; text-align:center}
 .gs-reset-hint{font-size:11px; color:var(--ink-2)}
-.gs-btn-big{display:flex; flex-direction:column; align-items:center; gap:3px; width:100%;
-  box-sizing:border-box; font:inherit; font-size:15px; font-weight:700; cursor:pointer;
-  color:var(--gold-strong, var(--gold)); background:rgba(var(--gold-rgb),.09);
-  border:1px solid rgba(var(--gold-rgb),.65); border-radius:8px; padding:12px 10px;
-  margin:4px 0 2px}
-.gs-btn-big em{font-style:normal; font-size:11.5px; font-weight:400; color:var(--ink-2)}
-.gs-btn-big:hover{background:rgba(var(--gold-rgb),.15)}
 .gs-fold{display:block; font:inherit; font-size:12px; color:var(--ink-2);
   background:transparent; border:0; cursor:pointer; padding:8px 2px 2px; text-align:left}
 .gs-fold:hover{color:var(--ink)}
