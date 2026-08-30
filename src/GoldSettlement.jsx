@@ -1824,6 +1824,18 @@ export default function GoldSettlement() {
   const [lobby, setLobby] = useState(false); // (로비 화면은 폐지 — 렌더 안 함)
   const [lookOpen, setLookOpen] = useState(false); // 외형 창
   const [resetOpen, setResetOpen] = useState(false); // 처음부터 창
+  const [presetOpen, setPresetOpen] = useState(false); // 틀 창
+  const [gensOpen, setGensOpen] = useState(false); // 지난 회차 드롭다운
+  /* 지난 회차 드롭다운 — 바깥을 클릭하면 닫습니다 */
+  useEffect(() => {
+    if (!gensOpen) return;
+    const onDown = (e) => {
+      if (e.target.closest && e.target.closest(".gs-gensdd")) return;
+      setGensOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [gensOpen]);
   const [presets, setPresets] = useState(loadPresets);
   const savePresetNow = (name) => {
     const nm = (name || "").trim();
@@ -3271,6 +3283,31 @@ export default function GoldSettlement() {
   /* ---------- 회차 — 처음부터 사이의 한 세션 ---------- */
   const GEN_KEEP = 5; // 잠금 안 한 지난 회차는 최근 5개만
   const genEntries = () => partyReg.list.filter((x) => x.gen);
+  const gensList = () =>
+    genEntries()
+      .slice()
+      .sort((a, b) => (b.t || 0) - (a.t || 0))
+      .map((g) => (g.gold != null ? g : { ...g, gold: slotGold(loadPartySlot(g.name)) }));
+  const askDropGen = (nm) =>
+    setAsk({
+      title: "이 지난 회차를 지울까요?",
+      body: nm + " — 로컬 보관에서 지워져요. 파일로 남긴 게 없으면 되돌릴 수 없어요.",
+      action: "지우기",
+      onYes: () => {
+        dropPartySlot(nm);
+        putPartyReg({
+          ...partyReg,
+          list: partyReg.list.filter((x) => x.name !== nm),
+        });
+      },
+    });
+  const toggleGenLock = (nm) =>
+    putPartyReg({
+      ...partyReg,
+      list: partyReg.list.map((x) =>
+        x.name === nm ? { ...x, locked: !x.locked } : x
+      ),
+    });
   /* 지금 장부를 「지난 회차」로 닫습니다. 기록이 없으면 남길 것도 없습니다.
      넘치는 옛 회차(잠금 제외)는 목록·저장소에서 걷어냅니다. */
   const closeRound = () => {
@@ -3712,9 +3749,71 @@ export default function GoldSettlement() {
       {/* ── 머리 ─────────────────────────────────────── */}
       <header className="gs-mast">
         <div className="gs-mastrow">
-          {/* 제목 오른쪽에 모드 — '지금 무엇을 하는 중인가'가 제목과 한 줄에서 읽힙니다 */}
-          {/* 앱 이름은 시스템 줄에 한 번만 — 여기는 탭이 자리를 잡는 줄입니다 */}
-          <div className="gs-mastleft" />
+          {/* 앱 이름은 시스템 줄에 한 번만 — 이 줄은 왼쪽 지난 회차, 오른쪽 탭입니다 */}
+          <div className="gs-mastleft">
+            {!liveRoom && (
+              <div className="gs-gensdd">
+                <button
+                  className={"gs-gensbtn" + (gensOpen ? " on" : "")}
+                  onClick={() => setGensOpen((v) => !v)}
+                  aria-expanded={gensOpen}
+                  aria-haspopup="menu"
+                >
+                  지난 회차{genEntries().length > 0 && <b>{genEntries().length}</b>} ▾
+                </button>
+                {gensOpen && (
+                  <div className="gs-genspanel" role="menu">
+                    {gensList().length === 0 ? (
+                      <p className="gs-gens-empty">
+                        아직 지난 회차가 없어요.
+                        <br />
+                        {"'처음부터 → 새로 시작'하면 지금 판이 여기 남아요."}
+                      </p>
+                    ) : (
+                      <>
+                        {gensList().map((g) => (
+                          <div className="gs-genrow" key={g.name}>
+                            <b>{g.name}</b>
+                            <span className="gs-genrow-meta">{man(g.gold || 0)}</span>
+                            <span className="gs-genrow-r">
+                              <button
+                                className={"gs-genlock" + (g.locked ? " on" : "")}
+                                onClick={() => toggleGenLock(g.name)}
+                                aria-pressed={!!g.locked}
+                                title={g.locked ? "잠금을 풀면 자동 정리 대상이 돼요" : "잠그면 자동 정리에서 빠져요"}
+                              >
+                                {g.locked ? "잠김" : "잠금"}
+                              </button>
+                              <button
+                                className="gs-btn gs-btn-sm"
+                                onClick={() => {
+                                  setGensOpen(false);
+                                  openGen(g.name);
+                                }}
+                              >
+                                보기
+                              </button>
+                              <button
+                                className="gs-x"
+                                onClick={() => askDropGen(g.name)}
+                                aria-label={g.name + " 지우기"}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          </div>
+                        ))}
+                        <p className="gs-key-foot">
+                          잠금 안 한 회차는 최근 5개만 남아요. 보기는 읽기 전용 —
+                          이어서 쓰려면 보기 화면의 {"'현재 장부로 복원'"}을 눌러요.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <div className="gs-mastside">
             {tabbed && (
               <nav className="gs-tabs" aria-label="화면 선택">
@@ -3831,6 +3930,17 @@ export default function GoldSettlement() {
                 </span>
               </span>
             </div>
+            )}
+            {/* 틀 — 표의 구성을 다루는 기능이라 벌금표에 삽니다 */}
+            {!readOnly && !simple && (
+            <span className="gs-tip">
+              <button className="gs-btn gs-btn-ghost" onClick={() => setPresetOpen(true)}>
+                틀
+              </button>
+              <span className="gs-tip-body gs-tip-r" role="tooltip">
+                명단·항목·단가를 <b>틀</b>로 남겨 두고, 다음 판을 그 구성으로 시작해요.
+              </span>
+            </span>
             )}
             {/* 파괴적인 둘은 자주 쓰는 버튼과 사이를 벌려 둡니다 (오클릭 방지) */}
             {!readOnly && (
@@ -4651,9 +4761,9 @@ export default function GoldSettlement() {
               '처음부터'를 누르면 이름과 항목은 두고 숫자·기록만 비워요.
             </li>
             <li>
-              <b>파티가 여럿이에요</b>
-              파티마다 표·기록·공유 주소가 따로 살아요. 제목의 파티 이름으로 바꾸고, 화면 맨 위
-              장부는 하나예요 — '처음부터'로 회차를 닫고 새로 시작해요. 지난 회차는 헤더의 '백업'에서 봐요.
+              <b>어제 판을 다시 보고 싶어요</b>
+              장부는 하나예요 — '처음부터'로 회차를 닫고 새로 시작해요. 지난 회차는 왼쪽 위
+              '지난 회차'에서 보고, 복원할 수도 있어요.
             </li>
             <li>
               <b>파티원한테 보여주고 싶어요</b>
@@ -4859,18 +4969,23 @@ export default function GoldSettlement() {
           </p>
         </InfoModal>
       )}
+      {presetOpen && (
+        <PresetModal
+          presets={presets}
+          onSave={savePresetNow}
+          onDelete={(nm) => {
+            const next = presets.filter((x) => x.name !== nm);
+            setPresets(next);
+            savePresets(next);
+          }}
+          onClose={() => setPresetOpen(false)}
+        />
+      )}
       {resetOpen && (
         <ResetModal
           hasLog={log.length > 0}
           hasRoom={!!activeRoom}
           presets={presets}
-          onSavePreset={savePresetNow}
-          onDeletePreset={(nm) => {
-            const next = presets.filter((x) => x.name !== nm);
-            setPresets(next);
-            savePresets(next);
-          }}
-          onExportFile={exportPartyFile}
           onRun={(kind, presetName) => {
             const pre = presets.find((x) => x.name === presetName) || null;
             clearAll(kind, pre);
@@ -4891,35 +5006,6 @@ export default function GoldSettlement() {
         <KeyShare
           relay={relay}
           putRelay={putRelay}
-          gens={genEntries()
-            .slice()
-            .sort((a, b) => (b.t || 0) - (a.t || 0))
-            .map((g) =>
-              g.gold != null ? g : { ...g, gold: slotGold(loadPartySlot(g.name)) }
-            )}
-          onGenView={openGen}
-          onGenLock={(nm) =>
-            putPartyReg({
-              ...partyReg,
-              list: partyReg.list.map((x) =>
-                x.name === nm ? { ...x, locked: !x.locked } : x
-              ),
-            })
-          }
-          onGenDrop={(nm) =>
-            setAsk({
-              title: "이 지난 회차를 지울까요?",
-              body: nm + " — 로컬 보관에서 지워져요. 파일로 남긴 게 없으면 되돌릴 수 없어요.",
-              action: "지우기",
-              onYes: () => {
-                dropPartySlot(nm);
-                putPartyReg({
-                  ...partyReg,
-                  list: partyReg.list.filter((x) => x.name !== nm),
-                });
-              },
-            })
-          }
           onSeatBundle={async (got) => ({ msg: seatMsg(await seatFromBundle(got)) })}
           onExportFile={exportPartyFile}
           onImportFile={importPartyFile}
@@ -5997,12 +6083,76 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
 /* OBS로 공유 — 방은 명단마다 하나이고, 주소는 재발급 전까지 영구입니다.
    쓰기 권한은 이 브라우저에만 있고 어떤 주소에도 실리지 않습니다.
    평소 쓰는 것(켜기·복사)만 겉에 두고, 가끔 쓰는 것은 접어 둡니다. */
-/* 처음부터 — 첫 문장은 목적만. 장치(전부 비우기·틀·파일)는 접힘 아래에서만 나옵니다 */
-function ResetModal({ hasLog, hasRoom, presets, onSavePreset, onDeletePreset, onExportFile, onRun, onClose }) {
+/* 틀 — 명단·항목·단가·수수료·입력 단위 묶음. 만들기·지우기(관리)는 여기,
+   골라 시작하기(사용)는 '처음부터'의 접힘입니다. 같은 이름으로 저장하면 덮어써요. */
+function PresetModal({ presets, onSave, onDelete, onClose }) {
+  const [name, setName] = useState("");
+  const [savedTick, setSavedTick] = useState(false);
+  return (
+    <InfoModal title="틀" onClose={onClose}>
+      <div className="gs-key">
+        <p>
+          지금 표의 명단·항목·단가·수수료·입력 단위를 틀로 남겨요.
+          {" 다음 판은 '처음부터 → 다른 구성으로 시작'에서 골라 시작해요."}
+        </p>
+        <div className="gs-obs-acts">
+          <input
+            className="gs-in gs-obs-claim"
+            value={name}
+            placeholder="틀 이름 (예: 우리 공대)"
+            onChange={(e) => setName(e.target.value)}
+            aria-label="틀 이름"
+          />
+          <button
+            className="gs-btn gs-btn-sm"
+            disabled={!name.trim()}
+            onClick={() => {
+              if (onSave(name)) {
+                setName("");
+                setSavedTick(true);
+                setTimeout(() => setSavedTick(false), 2000);
+              }
+            }}
+          >
+            {savedTick ? "저장했어요" : "지금 구성을 저장"}
+          </button>
+        </div>
+        {presets.length === 0 ? (
+          <p className="gs-key-foot">아직 틀이 없어요.</p>
+        ) : (
+          presets.map((x) => (
+            <div className="gs-genrow" key={x.name}>
+              <b>{x.name}</b>
+              <span className="gs-genrow-meta">
+                {(x.names || []).length}명 · 항목 {(x.cols || []).length}
+              </span>
+              <span className="gs-genrow-r">
+                <button
+                  className="gs-x"
+                  onClick={() => onDelete(x.name)}
+                  aria-label={x.name + " 틀 지우기"}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+          ))
+        )}
+        <div className="gs-obs-acts" style={{ marginTop: 12 }}>
+          <button className="gs-btn gs-btn-sm" onClick={onClose}>
+            닫기
+          </button>
+        </div>
+      </div>
+    </InfoModal>
+  );
+}
+
+/* 처음부터 — 첫 문장은 목적만. 접힘에는 고르고 시작하는 것만 있습니다.
+   틀 만들기·지우기는 벌금표의 '틀' 창, 파일 내보내기는 헤더의 '백업' 창 몫입니다. */
+function ResetModal({ hasLog, hasRoom, presets, onRun, onClose }) {
   const [more, setMore] = useState(false);
   const [presetName, setPresetName] = useState("");
-  const [saveName, setSaveName] = useState("");
-  const [savedTick, setSavedTick] = useState(false);
   return (
     <InfoModal title="처음부터" onClose={onClose}>
       <div className="gs-key">
@@ -6033,52 +6183,10 @@ function ResetModal({ hasLog, hasRoom, presets, onSavePreset, onDeletePreset, on
                   </option>
                 ))}
               </select>
-              {presetName && (
-                <button
-                  className="gs-x"
-                  onClick={() => {
-                    onDeletePreset(presetName);
-                    setPresetName("");
-                  }}
-                  aria-label="이 틀 지우기"
-                >
-                  ×
-                </button>
-              )}
               <button className="gs-btn gs-btn-sm" onClick={() => onRun("full", presetName)}>
                 전부 비우고 시작
               </button>
             </div>
-            <div className="gs-obs-acts">
-              <input
-                className="gs-in gs-obs-claim"
-                value={saveName}
-                placeholder="지금 구성을 틀로 저장 — 이름"
-                onChange={(e) => setSaveName(e.target.value)}
-                aria-label="틀 이름"
-              />
-              <button
-                className="gs-btn gs-btn-sm"
-                disabled={!saveName.trim()}
-                onClick={() => {
-                  if (onSavePreset(saveName)) {
-                    setSaveName("");
-                    setSavedTick(true);
-                    setTimeout(() => setSavedTick(false), 2000);
-                  }
-                }}
-              >
-                {savedTick ? "저장했어요" : "틀로 저장"}
-              </button>
-            </div>
-            <p className="gs-key-foot">틀에는 명단·항목·단가·수수료·입력 단위가 담겨요.</p>
-            {hasLog && (
-              <div className="gs-obs-acts">
-                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onExportFile}>
-                  파일로도 남기기
-                </button>
-              </div>
-            )}
           </div>
         )}
         <div className="gs-obs-acts" style={{ marginTop: 12 }}>
@@ -6187,7 +6295,7 @@ function LookModal({ relay, putRelay, toggleOvCol, onClose }) {
 /* 편집 권한 넘기기 — 이 브라우저의 열쇠를 다른 기기로 보냅니다.
    방송 송출과는 상관없는 일이라 헤더에 따로 두었습니다. OBS 설정 맨 밑에 두면
    정작 브라우저를 못 쓰게 된 뒤에 찾을 사람이 그때 가서 못 찾습니다. */
-function KeyShare({ relay, putRelay, gens, onGenView, onGenLock, onGenDrop, onSeatBundle, onExportFile, onImportFile, onClose }) {
+function KeyShare({ relay, putRelay, onSeatBundle, onExportFile, onImportFile, onClose }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(""); // "code" | "link"
@@ -6351,42 +6459,6 @@ function KeyShare({ relay, putRelay, gens, onGenView, onGenLock, onGenDrop, onSe
             onChange={onFile}
           />
         </div>
-
-        <h5 className="gs-key-h">지난 회차</h5>
-        <p>'처음부터'를 누르면 그때까지의 회차가 여기 남아요.</p>
-        <p className="gs-key-foot">
-          잠금 안 한 것은 최근 5개만 남아요. 보기는 읽기 전용이고, 이어서 쓰려면 보기
-          화면의 '현재 장부로 복원'을 눌러요.
-        </p>
-        {gens.length === 0 && (
-          <p className="gs-key-foot">아직 지난 회차가 없어요.</p>
-        )}
-        {gens.map((g) => (
-          <div className="gs-genrow" key={g.name}>
-            <b>{g.name}</b>
-            <span className="gs-genrow-meta">{man(g.gold || 0)}</span>
-            <span className="gs-genrow-r">
-              <button
-                className={"gs-genlock" + (g.locked ? " on" : "")}
-                onClick={() => onGenLock(g.name)}
-                aria-pressed={!!g.locked}
-                title={g.locked ? "잠금을 풀면 자동 정리 대상이 돼요" : "잠그면 자동 정리에서 빠져요"}
-              >
-                {g.locked ? "잠김" : "잠금"}
-              </button>
-              <button className="gs-btn gs-btn-sm" onClick={() => onGenView(g.name)}>
-                보기
-              </button>
-              <button
-                className="gs-x"
-                onClick={() => onGenDrop(g.name)}
-                aria-label={g.name + " 지우기"}
-              >
-                ×
-              </button>
-            </span>
-          </div>
-        ))}
 
         {note && <p className="gs-key-note">{note}</p>}
         {err && <p className="gs-obs-err">{err}</p>}
@@ -7842,6 +7914,17 @@ const CSS = `
 .gs-mastside{display:flex; align-items:flex-end; gap:12px; margin-left:auto}
 /* 제목 아래 모드 — 화면에서 가장 먼저 읽혀야 하는 상태라 크게, 아이콘까지 붙입니다 */
 .gs-mastleft{display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding-bottom:9px}
+/* 지난 회차 드롭다운 — 마스트 왼쪽의 조용한 자리 */
+.gs-gensdd{position:relative}
+.gs-gensbtn{font:inherit; font-size:12.5px; color:var(--ink-2); background:none; cursor:pointer;
+  border:1px solid rgba(var(--ink-rgb),.25); border-radius:7px; padding:6px 11px;
+  display:inline-flex; align-items:center; gap:6px}
+.gs-gensbtn:hover,.gs-gensbtn.on{color:var(--ink); border-color:var(--kraft-dk)}
+.gs-gensbtn b{font-weight:700; color:var(--ink)}
+.gs-genspanel{position:absolute; left:0; top:calc(100% + 6px); z-index:30; width:min(400px,92vw);
+  background:var(--paper); border:1px solid var(--kraft-dk); border-radius:10px;
+  padding:10px 12px; box-shadow:0 10px 26px rgba(0,0,0,.28)}
+.gs-gens-empty{margin:2px; font-size:12px; color:var(--ink-2); line-height:1.65}
 .gs-modebar{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
 .gs-seg-lg button{font-size:15px; padding:8px 15px; display:inline-flex; align-items:center; gap:7px}
 .gs-seg-lg svg{opacity:.85}
