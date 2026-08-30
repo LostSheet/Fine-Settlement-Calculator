@@ -3658,17 +3658,6 @@ export default function GoldSettlement() {
               )}
             </div>
           )}
-          {/* 처음부터 — 판을 닫는 문이라 지난 회차 옆입니다 */}
-          {!readOnly && (
-            <span className="gs-tip">
-              <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={() => setResetOpen(true)}>
-                처음부터
-              </button>
-              <span className="gs-tip-body gs-tip-r" role="tooltip">
-                판을 닫고 새로 시작해요. 지금 판은 <b>지난 회차</b>로 남아요.
-              </span>
-            </span>
-          )}
           <div className="gs-sysbar-r">
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
             {!readOnly && (
@@ -3826,8 +3815,44 @@ export default function GoldSettlement() {
       {/* ── 머리 ─────────────────────────────────────── */}
       <header className="gs-mast">
         <div className="gs-mastrow">
-          {/* 앱 이름은 시스템 줄에 한 번만 — 여기는 탭이 자리를 잡는 줄입니다 */}
-          <div className="gs-mastleft" />
+          {/* 판을 만드는 문들 — 탭 줄 왼쪽: 프리셋(구성 보관)과 처음부터(판 닫고 새로) */}
+          <div className="gs-mastleft">
+            {!readOnly && !simple && (
+              <span className="gs-tip">
+                <button
+                  className="gs-btn gs-btn-ghost gs-presetbtn"
+                  onClick={() => setPresetOpen(true)}
+                >
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <g
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="5.2" y="5.2" width="8.6" height="8.6" rx="1.4" />
+                      <path d="M10.8 2.4H3.8A1.6 1.6 0 0 0 2.2 4v7" />
+                    </g>
+                  </svg>
+                  프리셋
+                </button>
+                <span className="gs-tip-body gs-tip-l" role="tooltip">
+                  명단·항목·단가를 <b>프리셋</b>으로 남겨 두고, 다음 판을 그 구성으로 시작해요.
+                </span>
+              </span>
+            )}
+            {!readOnly && (
+              <span className="gs-tip">
+                <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={() => setResetOpen(true)}>
+                  처음부터
+                </button>
+                <span className="gs-tip-body gs-tip-l" role="tooltip">
+                  판을 닫고 새로 시작해요. 지금 판은 <b>지난 회차</b>로 남아요.
+                </span>
+              </span>
+            )}
+          </div>
           <div className="gs-mastside">
             {tabbed && (
               <nav className="gs-tabs" aria-label="화면 선택">
@@ -3944,17 +3969,6 @@ export default function GoldSettlement() {
                 </span>
               </span>
             </div>
-            )}
-            {/* 프리셋 — 표의 구성을 다루는 기능이라 벌금표에 삽니다 */}
-            {!readOnly && !simple && (
-            <span className="gs-tip">
-              <button className="gs-btn gs-btn-ghost" onClick={() => setPresetOpen(true)}>
-                프리셋
-              </button>
-              <span className="gs-tip-body gs-tip-r" role="tooltip">
-                명단·항목·단가를 <b>프리셋</b>으로 남겨 두고, 다음 판을 그 구성으로 시작해요.
-              </span>
-            </span>
             )}
 
           </div>
@@ -7995,7 +8009,11 @@ const CSS = `
   height:1px; background:var(--kraft-dk)}
 .gs-mastside{display:flex; align-items:flex-end; gap:12px; margin-left:auto}
 /* 제목 아래 모드 — 화면에서 가장 먼저 읽혀야 하는 상태라 크게, 아이콘까지 붙입니다 */
-.gs-mastleft{display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding-bottom:9px}
+.gs-mastleft{display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding-bottom:9px}
+.gs-presetbtn{display:inline-flex; align-items:center; gap:6px}
+.gs-presetbtn svg{opacity:.85; flex:none}
+/* 왼쪽 끝 버튼의 툴팁은 화면 밖으로 안 나가게 왼끝 정렬 */
+.gs-tip-body.gs-tip-l{left:0; transform:none}
 /* 지난 회차 드롭다운 — 마스트 왼쪽의 조용한 자리 */
 .gs-gensdd{position:relative}
 .gs-gensbtn{font:inherit; font-size:12.5px; color:var(--ink-2); background:none; cursor:pointer;
@@ -8223,7 +8241,7 @@ const CSS = `
   padding:6px 12px; color:var(--ink-2); white-space:nowrap}
 .gs-seg > .gs-tip + .gs-tip button,.gs-seg button + button{border-left:1px solid rgba(var(--ink-rgb),.3)}
 .gs-seg .gs-tip-body{width:250px}
-.gs-seg button:hover{background:rgba(var(--ink-rgb),.07); color:var(--ink)}
+.gs-seg button:hover:not(:disabled){background:rgba(var(--ink-rgb),.07); color:var(--ink)}
 .gs-seg button.on{background:var(--chip-bg); color:var(--chip-fg)}
 
 /* 금액만 모드: 왼쪽 메모장 + 오른쪽 표 */
