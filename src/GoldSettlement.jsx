@@ -6130,7 +6130,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
         </p>
         <div className="gs-obs-acts">
           <input
-            className="gs-in gs-obs-claim"
+            className="gs-in gs-obs-claim gs-preset-name"
             value={name}
             placeholder="프리셋 이름 (예: 우리 공대)"
             onChange={(e) => setName(e.target.value)}
@@ -8526,6 +8526,8 @@ const CSS = `
 .gs-obs-claim{flex:1 1 220px; min-width:0; font-family:var(--mono); font-size:12px;
   padding:6px 8px; border-bottom:1px solid rgba(var(--ink-rgb),.35)}
 .gs-obs-keycopy{border-color:var(--gold-ink); color:var(--ink)}
+/* 프리셋 이름 칸 — 저장 버튼과 한 줄에 서게 기본 폭을 줄입니다 */
+.gs-preset-name{flex-basis:120px}
 .gs-obs-keycopy:hover{background:rgba(var(--gold-rgb),.14)}
 .gs-obs-err{margin-top:10px; font-size:12px; color:var(--red)}
 /* 복사 상자 — 드래그 대신 버튼 복사 둘: OBS용 맨주소(주), 파티원 메시지(보조) */
