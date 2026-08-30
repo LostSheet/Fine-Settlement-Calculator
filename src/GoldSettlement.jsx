@@ -6197,10 +6197,18 @@ function ResetModal({ hasLog, hasRoom, presets, onRun, onOpenPresets, onClose })
             />
             <b>전부 비우고</b>
             <span className="gs-seg gs-seg-sm" role="group" aria-label="인원">
-              <button className={size === 4 ? "on" : ""} onClick={() => setSize(4)}>
+              <button
+                className={size === 4 ? "on" : ""}
+                disabled={mode !== "full"}
+                onClick={() => setSize(4)}
+              >
                 4인
               </button>
-              <button className={size === 8 ? "on" : ""} onClick={() => setSize(8)}>
+              <button
+                className={size === 8 ? "on" : ""}
+                disabled={mode !== "full"}
+                onClick={() => setSize(8)}
+              >
                 8인
               </button>
             </span>
@@ -8613,6 +8621,7 @@ const CSS = `
 .gs-reset-opt.on{color:var(--ink)}
 .gs-reset-opt.on b{color:var(--ink)}
 .gs-reset-opt.off{cursor:default; opacity:.62}
+.gs-reset-opt .gs-seg button:disabled{opacity:.45; cursor:default}
 .gs-reset-manage{border:0; background:transparent; font:inherit; font-size:12px;
   color:var(--ink-2); cursor:pointer; text-decoration:underline; text-underline-offset:3px;
   padding:1px 0}
