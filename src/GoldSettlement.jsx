@@ -4975,6 +4975,19 @@ export default function GoldSettlement() {
         <PresetModal
           presets={presets}
           onSave={savePresetNow}
+          onLoad={(nm) => {
+            const pre = presets.find((x) => x.name === nm);
+            if (!pre) return;
+            setAsk({
+              title: "이 프리셋을 불러올까요?",
+              body: nm + " — 지금 판은 지난 회차로 남고, 프리셋 구성으로 새로 시작해요.",
+              action: "불러오기",
+              onYes: () => {
+                clearAll("full", pre, 8);
+                setPresetOpen(false);
+              },
+            });
+          }}
           onDelete={(nm) => {
             const next = presets.filter((x) => x.name !== nm);
             setPresets(next);
@@ -6089,9 +6102,9 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
 /* OBS로 공유 — 방은 명단마다 하나이고, 주소는 재발급 전까지 영구입니다.
    쓰기 권한은 이 브라우저에만 있고 어떤 주소에도 실리지 않습니다.
    평소 쓰는 것(켜기·복사)만 겉에 두고, 가끔 쓰는 것은 접어 둡니다. */
-/* 프리셋 — 명단·항목·단가·수수료·입력 단위 묶음. 만들기·지우기(관리)는 여기,
-   골라 시작하기(사용)는 '처음부터'의 접힘입니다. 같은 이름으로 저장하면 덮어써요. */
-function PresetModal({ presets, onSave, onDelete, onClose }) {
+/* 프리셋 — 명단·항목·단가·수수료·입력 단위 묶음. 저장·지우기와 함께 줄에서 바로
+   불러올 수 있습니다(확인 한 번 — 지금 판은 지난 회차로 남습니다). 같은 이름은 덮어써요. */
+function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
   const [name, setName] = useState("");
   const [savedTick, setSavedTick] = useState(false);
   return (
@@ -6099,7 +6112,7 @@ function PresetModal({ presets, onSave, onDelete, onClose }) {
       <div className="gs-key">
         <p>
           지금 표의 명단·항목·단가·수수료·입력 단위를 프리셋으로 남겨요.
-          {" 다음 판은 '처음부터 → 다른 구성으로 시작'에서 골라 시작해요."}
+          {" '불러오기'는 지금 판을 지난 회차로 남기고, 그 구성으로 새로 시작해요."}
         </p>
         <div className="gs-obs-acts">
           <input
@@ -6133,6 +6146,9 @@ function PresetModal({ presets, onSave, onDelete, onClose }) {
                 {(x.names || []).length}명 · 항목 {(x.cols || []).length}
               </span>
               <span className="gs-genrow-r">
+                <button className="gs-btn gs-btn-sm" onClick={() => onLoad(x.name)}>
+                  불러오기
+                </button>
                 <button
                   className="gs-x"
                   onClick={() => onDelete(x.name)}
