@@ -3402,7 +3402,7 @@ export default function GoldSettlement() {
     });
 
   /* 초기화 — keep: 이름·항목 남기고 비우기 / full: 전부 비우기(프리셋 시작 가능) */
-  const clearAll = (kind, preset) => {
+  const clearAll = (kind, preset, size) => {
     if (readOnly) return;
     closeRound();
     const full = kind === "full" || isPristine(rows);
@@ -3420,7 +3420,7 @@ export default function GoldSettlement() {
     setRows(() =>
       full
         ? Array.from(
-            { length: preset && Array.isArray(preset.names) && preset.names.length ? preset.names.length : 8 },
+            { length: preset && Array.isArray(preset.names) && preset.names.length ? preset.names.length : size === 4 ? 4 : 8 },
             (_, i) => ({
               id: "r" + seq.current++,
               name:
@@ -3612,7 +3612,7 @@ export default function GoldSettlement() {
                     <p className="gs-gens-empty">
                       아직 지난 회차가 없어요.
                       <br />
-                      {"'처음부터 → 새로 시작'하면 지금 판이 여기 남아요."}
+                      {"'처음부터'로 판을 닫으면 여기 남아요."}
                     </p>
                   ) : (
                     <>
@@ -3657,6 +3657,17 @@ export default function GoldSettlement() {
                 </div>
               )}
             </div>
+          )}
+          {/* 처음부터 — 판을 닫는 문이라 지난 회차 옆입니다 */}
+          {!readOnly && (
+            <span className="gs-tip">
+              <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={() => setResetOpen(true)}>
+                처음부터
+              </button>
+              <span className="gs-tip-body gs-tip-r" role="tooltip">
+                판을 닫고 새로 시작해요. 지금 판은 <b>지난 회차</b>로 남아요.
+              </span>
+            </span>
           )}
           <div className="gs-sysbar-r">
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
@@ -3945,19 +3956,7 @@ export default function GoldSettlement() {
               </span>
             </span>
             )}
-            {/* 파괴적인 둘은 자주 쓰는 버튼과 사이를 벌려 둡니다 (오클릭 방지) */}
-            {!readOnly && (
-            <span className="gs-grp gs-grp-risky">
-              <span className="gs-tip">
-                <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={() => setResetOpen(true)}>
-                  처음부터
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  이름과 항목은 유지하고 <b>숫자와 기록만</b> 비워요. 같은 멤버로 한 판 더 할 때 사용해요.
-                </span>
-              </span>
-            </span>
-            )}
+
           </div>
         </div>
 
@@ -4761,7 +4760,7 @@ export default function GoldSettlement() {
             </li>
             <li>
               <b>같은 멤버로 한 판 더 해요</b>
-              '처음부터'를 누르면 이름과 항목은 두고 숫자·기록만 비워요.
+              '처음부터 → 새로 시작'을 누르면 이름과 항목은 두고 숫자·기록만 비워요.
             </li>
             <li>
               <b>어제 판을 다시 보고 싶어요</b>
@@ -4989,9 +4988,9 @@ export default function GoldSettlement() {
           hasLog={log.length > 0}
           hasRoom={!!activeRoom}
           presets={presets}
-          onRun={(kind, presetName) => {
+          onRun={(kind, presetName, size) => {
             const pre = presets.find((x) => x.name === presetName) || null;
-            clearAll(kind, pre);
+            clearAll(kind, pre, size);
             setResetOpen(false);
           }}
           onClose={() => setResetOpen(false)}
@@ -6151,47 +6150,63 @@ function PresetModal({ presets, onSave, onDelete, onClose }) {
   );
 }
 
-/* 처음부터 — 첫 문장은 목적만. 접힘에는 고르고 시작하는 것만 있습니다.
-   프리셋 만들기·지우기는 벌금표의 '프리셋' 창, 파일 내보내기는 헤더의 '백업' 창 몫입니다. */
+/* 처음부터 — 세 가지 시작이 전부 보입니다(접지 않음). 어느 쪽이든 지금 판은
+   지난 회차로 남습니다. 프리셋 만들기·지우기는 벌금표의 '프리셋' 창 몫입니다. */
 function ResetModal({ hasLog, hasRoom, presets, onRun, onClose }) {
-  const [more, setMore] = useState(false);
-  const [presetName, setPresetName] = useState("");
+  const [presetName, setPresetName] = useState(presets[0] ? presets[0].name : "");
+  const [size, setSize] = useState(8);
   return (
     <InfoModal title="처음부터" onClose={onClose}>
       <div className="gs-key">
         <p>
-          {hasLog ? "지금 판은 남겨두고 새로 시작해요." : "새로 시작해요."}
+          {hasLog ? "지금 판은 지난 회차로 남고, 새로 시작해요." : "새로 시작해요."}
           {hasRoom && <> 공유 주소·링크는 그대로예요.</>}
         </p>
-        <button className="gs-btn gs-btn-big" onClick={() => onRun("keep", "")}>
+        <button className="gs-btn gs-btn-big" onClick={() => onRun("keep", "", 8)}>
           새로 시작
           <em>이름·항목은 그대로, 숫자·기록만 비워요</em>
         </button>
-        <button className="gs-fold" onClick={() => setMore((v) => !v)} aria-expanded={more}>
-          {more ? "▾" : "▸"} 다른 구성으로 시작…
-        </button>
-        {more && (
-          <div className="gs-reset-preset">
-            <div className="gs-obs-acts">
-              <select
-                className="gs-rc-kind"
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                aria-label="프리셋으로 시작"
-              >
-                <option value="">빈 표</option>
-                {presets.map((x) => (
-                  <option key={x.name} value={x.name}>
-                    프리셋: {x.name}
-                  </option>
-                ))}
-              </select>
-              <button className="gs-btn gs-btn-sm" onClick={() => onRun("full", presetName)}>
-                전부 비우고 시작
-              </button>
-            </div>
+        <div className="gs-obs-acts gs-reset-row">
+          <button className="gs-btn gs-btn-sm" onClick={() => onRun("full", "", size)}>
+            전부 비우고 시작
+          </button>
+          <div className="gs-seg gs-seg-sm" role="group" aria-label="인원">
+            <button className={size === 4 ? "on" : ""} onClick={() => setSize(4)}>
+              4인
+            </button>
+            <button className={size === 8 ? "on" : ""} onClick={() => setSize(8)}>
+              8인
+            </button>
           </div>
-        )}
+          <span className="gs-reset-hint">이름·항목까지 지워요</span>
+        </div>
+        <div className="gs-obs-acts gs-reset-row">
+          <button
+            className="gs-btn gs-btn-sm"
+            disabled={!presets.length}
+            onClick={() => presetName && onRun("full", presetName, 8)}
+          >
+            프리셋으로 불러오기
+          </button>
+          {presets.length ? (
+            <select
+              className="gs-rc-kind"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              aria-label="불러올 프리셋"
+            >
+              {presets.map((x) => (
+                <option key={x.name} value={x.name}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="gs-reset-hint">
+              {"아직 없어요 — 벌금표의 '프리셋'에서 만들어요"}
+            </span>
+          )}
+        </div>
         <div className="gs-obs-acts" style={{ marginTop: 12 }}>
           <button className="gs-btn gs-btn-sm" onClick={onClose}>
             취소
@@ -8549,7 +8564,9 @@ const CSS = `
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:5px; padding:5px 10px}
 .gs-key-note{margin:10px 0 0; font-size:12.5px; color:var(--ink-body)}
 .gs-obs-keysline{margin:12px 0 0; font-size:12.5px; color:var(--ink-2); line-height:1.9}
-/* 처음부터 — 주 버튼과 접힘 줄 */
+/* 처음부터 — 주 버튼과 시작 줄들 */
+.gs-reset-row{align-items:center}
+.gs-reset-hint{font-size:11px; color:var(--ink-2)}
 .gs-btn-big{display:flex; flex-direction:column; align-items:center; gap:3px; width:100%;
   box-sizing:border-box; font:inherit; font-size:15px; font-weight:700; cursor:pointer;
   color:var(--gold-strong, var(--gold)); background:rgba(var(--gold-rgb),.09);
