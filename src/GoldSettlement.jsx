@@ -4993,6 +4993,10 @@ export default function GoldSettlement() {
             clearAll(kind, pre, size);
             setResetOpen(false);
           }}
+          onOpenPresets={() => {
+            setResetOpen(false);
+            setPresetOpen(true);
+          }}
           onClose={() => setResetOpen(false)}
         />
       )}
@@ -6150,11 +6154,15 @@ function PresetModal({ presets, onSave, onDelete, onClose }) {
   );
 }
 
-/* 처음부터 — 세 가지 시작이 전부 보입니다(접지 않음). 어느 쪽이든 지금 판은
-   지난 회차로 남습니다. 프리셋 만들기·지우기는 벌금표의 '프리셋' 창 몫입니다. */
-function ResetModal({ hasLog, hasRoom, presets, onRun, onClose }) {
+/* 처음부터 — 무엇을 남길지 고르고, 실행 버튼은 하나(C안). 기본 선택이 첫째 갈래라
+   다수 흐름은 열자마자 [새로 시작] 한 번입니다. 어느 쪽이든 지금 판은 지난 회차로 남고,
+   프리셋 만들기·관리는 밑줄 문으로 건너갑니다. */
+function ResetModal({ hasLog, hasRoom, presets, onRun, onOpenPresets, onClose }) {
+  const [mode, setMode] = useState("keep"); // keep | full | preset
   const [presetName, setPresetName] = useState(presets[0] ? presets[0].name : "");
   const [size, setSize] = useState(8);
+  const run = () =>
+    onRun(mode === "keep" ? "keep" : "full", mode === "preset" ? presetName : "", size);
   return (
     <InfoModal title="처음부터" onClose={onClose}>
       <div className="gs-key">
@@ -6162,55 +6170,85 @@ function ResetModal({ hasLog, hasRoom, presets, onRun, onClose }) {
           {hasLog ? "지금 판은 지난 회차로 남고, 새로 시작해요." : "새로 시작해요."}
           {hasRoom && <> 공유 주소·링크는 그대로예요.</>}
         </p>
-        <div className="gs-obs-acts gs-reset-row">
-          <button className="gs-btn gs-btn-sm" onClick={() => onRun("keep", "", 8)}>
-            새로 시작
-          </button>
-          <span className="gs-reset-hint">이름·항목은 그대로, 숫자·기록만 비워요</span>
-        </div>
-        <div className="gs-obs-acts gs-reset-row">
-          <button className="gs-btn gs-btn-sm" onClick={() => onRun("full", "", size)}>
-            전부 비우고 시작
-          </button>
-          <div className="gs-seg gs-seg-sm" role="group" aria-label="인원">
-            <button className={size === 4 ? "on" : ""} onClick={() => setSize(4)}>
-              4인
-            </button>
-            <button className={size === 8 ? "on" : ""} onClick={() => setSize(8)}>
-              8인
-            </button>
-          </div>
-          <span className="gs-reset-hint">이름·항목까지 지워요</span>
-        </div>
-        <div className="gs-obs-acts gs-reset-row">
-          <button
-            className="gs-btn gs-btn-sm"
-            disabled={!presets.length}
-            onClick={() => presetName && onRun("full", presetName, 8)}
+        <div className="gs-reset-opts">
+          <div
+            className={"gs-reset-opt" + (mode === "keep" ? " on" : "")}
+            onClick={() => setMode("keep")}
           >
-            프리셋으로 불러오기
-          </button>
-          {presets.length ? (
-            <select
-              className="gs-rc-kind"
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
-              aria-label="불러올 프리셋"
-            >
-              {presets.map((x) => (
-                <option key={x.name} value={x.name}>
-                  {x.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="gs-reset-hint">
-              {"아직 없어요 — 벌금표의 '프리셋'에서 만들어요"}
+            <input
+              type="radio"
+              name="gs-reset-mode"
+              checked={mode === "keep"}
+              onChange={() => setMode("keep")}
+              aria-label="이름·항목은 그대로"
+            />
+            <b>이름·항목은 그대로</b> — 숫자·기록만 비워요
+          </div>
+          <div
+            className={"gs-reset-opt" + (mode === "full" ? " on" : "")}
+            onClick={() => setMode("full")}
+          >
+            <input
+              type="radio"
+              name="gs-reset-mode"
+              checked={mode === "full"}
+              onChange={() => setMode("full")}
+              aria-label="전부 비우고"
+            />
+            <b>전부 비우고</b>
+            <span className="gs-seg gs-seg-sm" role="group" aria-label="인원">
+              <button className={size === 4 ? "on" : ""} onClick={() => setSize(4)}>
+                4인
+              </button>
+              <button className={size === 8 ? "on" : ""} onClick={() => setSize(8)}>
+                8인
+              </button>
             </span>
+          </div>
+          {presets.length > 0 ? (
+            <div
+              className={"gs-reset-opt" + (mode === "preset" ? " on" : "")}
+              onClick={() => setMode("preset")}
+            >
+              <input
+                type="radio"
+                name="gs-reset-mode"
+                checked={mode === "preset"}
+                onChange={() => setMode("preset")}
+                aria-label="프리셋으로"
+              />
+              <b>프리셋으로</b>
+              <select
+                className="gs-rc-kind"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                aria-label="불러올 프리셋"
+              >
+                {presets.map((x) => (
+                  <option key={x.name} value={x.name}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+              <button className="gs-reset-manage" onClick={onOpenPresets}>
+                프리셋 관리
+              </button>
+            </div>
+          ) : (
+            <div className="gs-reset-opt off">
+              <input type="radio" disabled aria-label="프리셋으로 (아직 없음)" />
+              <b>프리셋으로</b> — 아직 없어요
+              <button className="gs-reset-manage" onClick={onOpenPresets}>
+                프리셋 만들기
+              </button>
+            </div>
           )}
         </div>
-        <div className="gs-obs-acts" style={{ marginTop: 12 }}>
-          <button className="gs-btn gs-btn-sm" onClick={onClose}>
+        <div className="gs-obs-acts gs-acts-end">
+          <button className="gs-btn" onClick={run}>
+            새로 시작
+          </button>
+          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onClose}>
             취소
           </button>
         </div>
@@ -8566,10 +8604,20 @@ const CSS = `
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:5px; padding:5px 10px}
 .gs-key-note{margin:10px 0 0; font-size:12.5px; color:var(--ink-body)}
 .gs-obs-keysline{margin:12px 0 0; font-size:12.5px; color:var(--ink-2); line-height:1.9}
-/* 처음부터 — 세 시작 줄은 같은 룩: 같은 버튼, 같은 폭, 옆에 부속·설명 */
-.gs-reset-row{align-items:center}
-.gs-reset-row > .gs-btn{min-width:152px; text-align:center}
-.gs-reset-hint{font-size:11px; color:var(--ink-2)}
+/* 처음부터 — 무엇을 남길지 고르는 라디오 줄, 실행은 버튼 하나(C안) */
+.gs-reset-opts{display:flex; flex-direction:column; gap:12px; margin:15px 0 2px}
+.gs-reset-opt{display:flex; align-items:center; gap:9px; flex-wrap:wrap; cursor:pointer;
+  font-size:12.5px; color:var(--ink-2); line-height:1.6}
+.gs-reset-opt input{accent-color:var(--ink); margin:0; flex:none}
+.gs-reset-opt b{font-weight:600; color:var(--ink-body)}
+.gs-reset-opt.on{color:var(--ink)}
+.gs-reset-opt.on b{color:var(--ink)}
+.gs-reset-opt.off{cursor:default; opacity:.62}
+.gs-reset-manage{border:0; background:transparent; font:inherit; font-size:12px;
+  color:var(--ink-2); cursor:pointer; text-decoration:underline; text-underline-offset:3px;
+  padding:1px 0}
+.gs-reset-manage:hover{color:var(--ink)}
+.gs-acts-end{justify-content:flex-end; margin-top:16px}
 .gs-fold{display:block; font:inherit; font-size:12px; color:var(--ink-2);
   background:transparent; border:0; cursor:pointer; padding:8px 2px 2px; text-align:left}
 .gs-fold:hover{color:var(--ink)}
