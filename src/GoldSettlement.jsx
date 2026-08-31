@@ -28,6 +28,13 @@ const UNITS = [
   { v: "10000", label: "만G" },
   { v: "1", label: "1G" },
 ];
+/* 입력 단위 예시 — 친 숫자와 그게 되는 금액을 짝으로 보여 줍니다.
+   문장 안에 점으로 늘어놓으면 어디까지가 한 짝인지 안 읽혀서 칩으로 끊었습니다. */
+const UNIT_EX = {
+  "100000": [["5", "50만"], ["1.5", "15만"]],
+  "10000": [["5", "5만"], ["2.32", "2만 3,200"]],
+  "1": [["50,000", "50,000"]],
+};
 
 /* 셋째 항목은 이름을 비워 둡니다 — 플레이스홀더가 "여기에 항목을 만드세요"를 말해 줍니다 */
 /* 기본 항목 셋. 마지막은 룰렛입니다 — 비율은 안 적으면 기본 비율을 씁니다. */
@@ -183,6 +190,10 @@ const CARRY_REASON = "'메모장'에서 이관";
    기타 사유 칸은 암살·지각 같은 '왜'의 자리라, '어떻게'(경로)는 기록이 말하게 둡니다. */
 const ADJUST_REASON = "조정";
 const LOG_CAP = 200; // 기록은 최근 200줄만 남깁니다 (공유 링크엔 안 담김)
+/* 방송에 실어 보내는 연출거리 개수 — 이보다 오래된 건 이미 흘러간 것으로 봅니다 */
+const FX_CAP = 12;
+/* 서기가 STOP 을 안 누르고 자리를 뜨면 판이 영원히 돕니다 — 이만큼 지나면 저절로 멈춥니다 */
+const FREE_MAX_MS = 20000;
 
 /* 손대지 않은 예시 데이터인지. 맞으면 모드를 바꿀 때 조용히 상대 모드 예시로 갈아끼웁니다. */
 function isPristine(rows) {
@@ -396,15 +407,33 @@ const isNumKey = (k) => k !== PASS && !isMultKey(k);
 /* 도는 속도. 방송은 뜸을 들여야 재미가 사는 쪽이라 기본을 넉넉히 잡았습니다.
    roll 은 한 번 도는 시간, hold 는 멈춘 값을 보여 주는 시간입니다. */
 const SPINS = {
-  fast: { roll: 1200, hold: 700, end: 1100, label: "빠르게" },
-  normal: { roll: 2200, hold: 1200, end: 1700, label: "보통" },
-  slow: { roll: 3400, hold: 1700, end: 2200, label: "느리게" },
+  fast: { roll: 2200, hold: 700, end: 1100, label: "빠르게" },
+  normal: { roll: 4200, hold: 1100, end: 1500, label: "보통" },
+  slow: { roll: 7000, hold: 1500, end: 1900, label: "느리게" },
+  epic: { roll: 10000, hold: 1800, end: 2200, label: "아주 느리게" },
 };
 /* 기본은 느리게 — 방송은 뜸을 들여야 재미가 삽니다 */
 const spinSpeed = (k) => SPINS[k] || SPINS.slow;
+/* 답을 기다리는 동안 한 바퀴 도는 시간. 숫자가 안 읽힐 만큼 빨라야 "멈춰!"가 성립합니다.
+   감속 곡선은 이 속도에서 그대로 이어받게 계산하므로, 여기만 바꾸면 전체가 따라옵니다.
+   방송(page.js)의 ov-w-free 와 같은 값이라 서기 화면과 오버레이가 같은 속도로 돕니다. */
+const FREE_MS = 260;
+/* 판 번호에서 뽑는 씨앗 — 같은 판이면 어느 화면에서 보든 같게 흔들려야 합니다 */
+const seedOf = (v) => {
+  const t = String(v || "");
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+  return h;
+};
 /* 속도와 돌아가는 모습은 룰렛 열마다가 아니라 한 번만 정합니다 — 열마다 다른 속도로
    돌 이유가 없고, 어차피 방송에 보이는 것이라 OBS · 외형 설정에 함께 둡니다. */
 const spinSpd = (r) => ((r && r.spd) in SPINS ? r.spd : "slow");
+
+/* 벌금이 붙을 때의 연출 — 방송 화면에서만 쓰입니다.
+   fxSpd: 알림 카드를 얼마나 오래 띄울지(끔 포함). mvMode: 금액이 바뀌는 걸 어떻게 보일지.
+   둘은 하는 말이 다릅니다 — 카드는 "누가 무엇에", 금액 변동은 "그래서 얼마가 됐나". */
+/* 알림은 켜고 끄기만 — 머무는 시간은 손볼 만한 값이 아니라서 하나로 고정했습니다 */
+const fxOn = (r) => !(r && r.fx === "off");
 
 /* 양도권이 나왔을 때 누가 무느냐 — 사람 원판을 한 번 더 돌리거나(랜덤, 기본),
    서기가 고르거나(지정). 랜덤일 때 돌린 사람도 후보에 넣는 게 기본입니다 —
@@ -1477,6 +1506,24 @@ export default function GoldSettlement() {
   const [liveName, setLiveName] = useState("");
   const [liveTick, setLiveTick] = useState(0);   // 갱신이 올 때마다 +1 — 점이 깜빡입니다
   const [roPulse, setRoPulse] = useState(0);     // 뷰어가 뭘 누르면 배너가 한 번 꿈틀합니다
+  /* 십자 하이라이트 — 마우스를 올린 칸의 (줄, 열). 이름과 항목을 같이 밝혀
+     "이 사람 × 이 항목"을 눈이 두 번 되짚지 않게 합니다. 표를 벗어나면 지웁니다. */
+  const [cross, setCross] = useState(null);
+  /* 모달이 떠 있는 동안 뒤 페이지 스크롤을 잠급니다 — 창 바깥에 마우스를 두고 굴리면
+     뒤가 밀려서, 창을 닫았을 때 엉뚱한 자리에 와 있습니다.
+     창 종류가 여럿이라 상태를 일일이 세는 대신 화면에 창이 있는지로 봅니다. */
+  useEffect(() => {
+    const open = !!document.querySelector(".gs-modal");
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  });
+  /* 같은 이름이 둘이면 우편·장부가 사람을 못 가립니다. 치는 중에는 막지 않고(한 글자씩
+     칠 때마다 걸리면 못 씁니다), 칸을 벗어날 때 되돌립니다. 알림은 토스트라 표가 안 밀립니다. */
+  const dupName = (id, name) => {
+    const t = (name || "").trim();
+    if (!t) return false;
+    return rows.some((x) => x.id !== id && (x.name || "").trim() === t);
+  };
   /* 알림 한 줄. 룰렛을 우클릭했을 때처럼 "왜 안 되는지"를 그 자리에서 알려 줍니다 */
   const [toast, setToast] = useState(null);      // {t, msg}
   /* msg 는 글자여도 되고 조각(JSX)이어도 됩니다 — 안에 누를 것을 넣을 때가 있습니다 */
@@ -2133,12 +2180,26 @@ export default function GoldSettlement() {
   };
   /* 열 켜고 끄기는 연달아 누를 수 있어서, 늘 최신 값에서 뒤집습니다.
      { ...relay } 를 쓰면 같은 틱의 앞 토글이 덮여 사라집니다. */
+  /* 합계·순액 — 둘 다 켬이 기본이라 false 만 적어 둡니다 */
   const toggleOvCol = (key) =>
     setRelay((prev) => {
       const ov = { ...(prev.ov || {}) };
-      /* 항목은 켬이 기본이라 !== false 로, 순액은 끔이 기본이라 === true 로 읽습니다 */
-      const on = ov[key] !== false;
-      ov[key] = !on;
+      ov[key] = ov[key] === false;
+      const next = { ...prev, ov };
+      saveRelay(next);
+      return next;
+    });
+  /* 항목 열 하나 — 꺼진 것만 ov.off 에 적습니다. 옛 'items 한 덩어리로 끔' 설정이
+     남아 있으면, 지금 열 전부를 꺼진 상태로 펼쳐 놓고 그 위에서 뒤집습니다. */
+  const toggleOvItem = (colId) =>
+    setRelay((prev) => {
+      const ov = { ...(prev.ov || {}) };
+      const off = { ...(ov.off || {}) };
+      if (ov.items === false && !ov.off) activeCols.forEach((c) => (off[c.id] = true));
+      delete ov.items;
+      if (off[colId]) delete off[colId];
+      else off[colId] = true;
+      ov.off = off;
       const next = { ...prev, ov };
       saveRelay(next);
       return next;
@@ -2257,7 +2318,7 @@ export default function GoldSettlement() {
       g: Math.max(0, boardGold(x)),
       /* 항목별 횟수. 이름은 위(cols)에 한 번만 적고 여기는 순서대로 숫자만 —
          오버레이가 표처럼 열을 맞춰 그립니다. 메모장 모드는 항목이 하나뿐이라 안 보냅니다 */
-      c: simple || !ovShow().items ? [] : activeCols.map((col) => num(x.counts[col.id])),
+      c: ovCols().map((col) => num(x.counts[col.id])),
       d: Math.round(nets[i] || 0),
     }));
   };
@@ -2279,10 +2340,11 @@ export default function GoldSettlement() {
       spd: spin.spd || "slow",
       /* 랜덤 양도면 사람 원판도 같이 — 방송과 파티원 화면이 같은 장면을 봅니다 */
       pass2: spin.pass2 ? { faces: spin.pass2.faces, name: spin.pass2.name } : null,
-      steps: spin.steps.map((x) => ({ k: x.k, m: x.mult })),
-      n: spin.res.n,
-      gold: Math.round(spin.priceG * spin.res.count),
-      pass: !!spin.res.pass,
+      /* free 일 때는 아직 답이 없습니다 — 받는 쪽은 끝없이 돌기만 합니다 */
+      steps: (spin.steps || []).map((x) => ({ k: x.k, m: x.mult })),
+      n: spin.res ? spin.res.n : 0,
+      gold: spin.res ? Math.round(spin.priceG * spin.res.count) : 0,
+      pass: !!(spin.res && spin.res.pass),
       phase: spin.phase,
       /* 적용 결과 — 오버레이가 표 도착을 기다리지 않고 수식·벌금 변화를 그립니다.
          (표 푸시는 재생 종료와 경합할 수 있어서 믿을 시계가 못 됩니다) */
@@ -2294,13 +2356,45 @@ export default function GoldSettlement() {
 
   /* 오버레이 생김새 — 상태에 실어 보내면 파라미터 없는 기본 주소의 OBS가 즉시 갈아입습니다.
      주소에 테마를 직접 적은 쪽(공유 받은 방송인)은 그 파라미터가 우선이라 영향이 없습니다. */
-  /* 방송에 띄울 열 — 항목 횟수는 한 덩어리로 켜고 끕니다(하나씩 고르면 방송마다
-     열이 달라져 시청자가 헷갈립니다). 순위·변동·이름·금액은 늘 나옵니다. */
-  const ovShow = () => ({
-    items: (relay.ov || {}).items !== false,
-    /* 순액은 켜고 싶은 사람만 켭니다 — 기본 화면은 벌금만 보여 주는 게 단순합니다 */
-    net: (relay.ov || {}).net !== false,
-  });
+  /* 방송에 띄울 열 — 순위·변동·이름은 늘 나가고, 항목 열·합계·순액은 하나씩 끕니다.
+     꺼진 항목 열만 ov.off 에 적어 둡니다(기본은 켬). 항목 id 는 장부마다 달라서
+     다른 파티로 가면 저절로 다 켜집니다 — 그 파티의 항목이 아니니 그게 맞습니다.
+     ov.items 는 항목 전체를 한 덩어리로 끄던 옛 설정입니다. 열을 하나라도 만지면
+     off 집합으로 옮겨 가고, 그전까지는 전 열이 꺼진 것으로 읽습니다. */
+  const ovShow = () => {
+    const ov = relay.ov || {};
+    const legacyOff = ov.items === false && !ov.off;
+    const off = ov.off || {};
+    return {
+      itemOff: (id) => legacyOff || off[id] === true,
+      sum: ov.sum !== false,
+      net: ov.net !== false,
+    };
+  };
+  /* 머리(cols)와 줄(c)이 같은 목록을 써야 방송 표의 열이 안 어긋납니다 */
+  const ovCols = () => (simple ? [] : activeCols.filter((c) => !ovShow().itemOff(c.id)));
+  /* 방송에 보낼 연출거리 — 누른 순서대로 마지막 몇 개. 오버레이가 id 로 중복을 걸러
+     자기가 아직 안 보여 준 것만 재생합니다. 상태를 통째로 다시 보내도(재접속·새로고침)
+     같은 카드가 두 번 뜨지 않는 건 그 id 덕분입니다.
+     룰렛은 제 연출이 따로 있어 빼고, 기타·합계 수정은 "누가 무엇에"가 없어 뺍니다. */
+  const fxOut = () => {
+    if (!fxOn(relay)) return [];
+    const isPress = (id) => {
+      const o = log.find((x) => x.id === id);
+      return !!o && o.kind === "press";
+    };
+    const out = [];
+    for (let i = log.length - 1; i >= 0 && out.length < FX_CAP; i--) {
+      const e = log[i];
+      if (e.kind === "press" && e.n)
+        out.push({ i: e.id, k: e.n > 0 ? "add" : "sub", n: e.name, t: e.item, g: e.delta });
+      /* 취소는 원래 카드가 눌림이었을 때만 — 안 보여 준 것을 되돌리는 카드는 뜻이 없습니다 */
+      else if (e.kind === "cancel" && e.refId && isPress(e.refId))
+        out.push({ i: e.id, k: "cancel", ref: e.refId, n: e.name, t: e.item, g: e.delta });
+    }
+    return out.reverse();
+  };
+
   const lookOut = () => {
     const lk = relay.look || { t: "dark", alpha: 25 };
     return isPanelLook(lk) ? { t: lk.t, bg: 100 - (lk.alpha ?? 25) } : { t: lk.t };
@@ -2312,13 +2406,18 @@ export default function GoldSettlement() {
     name: partyReg.active === DEFAULT_ROOM_LABEL ? "벌금 현황판" : partyReg.active,
     board: boardOf(),
     /* 오버레이 표의 열 머리 */
-    cols: simple || !ovShow().items
-      ? []
-      : activeCols.map((c) => ({
-          t: (c.name || "").trim() || "항목",
-          r: isRoulette(c) ? 1 : 0,
-        })),
+    cols: ovCols().map((c) => ({
+      t: (c.name || "").trim() || "항목",
+      r: isRoulette(c) ? 1 : 0,
+    })),
     ovNet: ovShow().net,
+    ovSum: ovShow().sum,
+    /* 벌금이 붙을 때의 연출 — 카드 대기열과 그 설정 */
+    fx: fxOut(),
+    fxSpd: fxOn(relay) ? "norm" : "off",
+    /* 금액 변동은 스와이프 하나로 갑니다 — 칩은 판 밖으로 나가서 소스를 자르면
+       사라지는데, 잘렸다는 게 티가 안 나서 배우기 어려웠습니다 */
+    mvMode: "swipe",
     spin: spinOut(),
     /* 복구·이어가기가 이 스냅샷을 통째로 앉힙니다 — 기록·모드·메모까지 있어야 완전한 복원입니다 */
     full: {
@@ -2350,7 +2449,9 @@ export default function GoldSettlement() {
         });
     }, 300);
     return () => clearTimeout(pushTimer.current);
-  }, [readOnly, relay.on, activeRoom && activeRoom.roomId, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, partyReg.active,
+  }, [readOnly, relay.on, activeRoom && activeRoom.roomId, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, relay.fx, relay.mv, partyReg.active,
+      /* 연출거리는 기록에서 나옵니다 — 표가 안 바뀌는 취소도 방송에는 알려야 해서 */
+      log.length,
       /* 룰렛은 판이 시작·끝날 때, 양도 대기로 바뀔 때, 그리고 적용 결과(out)가 생길 때.
          out 을 안 걸면 종료 푸시에 합쳐져 오버레이 재생이 끝난 뒤에야 도착합니다. */
       spin && spin.sid, spin && spin.phase, spin && !!spin.out, !spin]);
@@ -2379,6 +2480,20 @@ export default function GoldSettlement() {
       saveRelay(next);
       return next;
     });
+  /* 회차가 닫히면 방송 주소도 같이 닫습니다.
+     안 그러면 지난 회차 사람이 다음 파티의 판을 계속 보게 됩니다 — 링크는 읽기 전용이라
+     손은 못 대지만, 파티가 바뀌어도 보는 사람은 안 바뀝니다. 그걸 끊는 방법이 이것뿐입니다.
+     새 주소를 여기서 미리 파지는 않습니다. 공유를 안 쓰는 사람이 초기화할 때마다
+     서버에 빈 방이 하나씩 생기고, 어차피 OBS 를 열어야 새 주소가 쓸모 있어서요. */
+  const endShare = () => {
+    const label = partyReg.active;
+    const room = relay.rooms[label];
+    if (!room) return;
+    relayApi.kill(room.roomId, room.key).catch(() => {});
+    const rooms = { ...relay.rooms };
+    delete rooms[label];
+    putRelay({ ...relay, on: false, rooms });
+  };
   const askShareOff = () =>
     setAsk({
       title: "공유를 끌까요?",
@@ -2432,6 +2547,9 @@ export default function GoldSettlement() {
     if (!vplay) return;
     /* 양도 대기 중에는 여기서 아무것도 안 합니다 — 서기가 고를 때까지 띄워 둡니다 */
     if (vplay.over && vplay.sp.phase === "pick" && !vplay.sp.pass2) return;
+    /* 답이 아직 없는 판도 마찬가지입니다 — 걸음을 세면 없는 결과(0)를 띄우게 됩니다.
+       서기가 STOP 을 눌러 phase 가 바뀌면 이 효과가 다시 돌면서 그때부터 셉니다 */
+    if (vplay.sp.phase === "free") return;
     const sp2 = spinSpeed(vplay.sp.spd);
     const ms = vplay.rolling || vplay.who === "roll" ? sp2.roll : vplay.over ? sp2.end : sp2.hold;
     const t = setTimeout(() => {
@@ -2688,28 +2806,39 @@ export default function GoldSettlement() {
   const HOLD_MS = spd.hold;
   const END_MS = spd.end;
 
+  /* 판을 멈춥니다 — 결과는 이때 뽑습니다.
+     미리 정해 놓고 돌리면 "언제 멈출지 모르는" 긴장이 안 생깁니다. 서기도 시청자도
+     누르는 순간까지 답을 모르는 게 이 연출의 전부라서요. */
+  const stopSpin = () => {
+    setSpin((x) => {
+      if (!x || x.phase !== "free") return x;
+      const col = cols.find((c) => c.id === x.colId);
+      const row = rows.find((r) => r.id === x.rowId);
+      if (!col || !row) return x;
+      const res = spinRoulette(weightsOf(col), null, liveFaces(col));
+      let pass2 = null;
+      if (res.pass && passMode(col) === "random") {
+        const cands = rows.filter((r) => passSelf(col) || r.id !== row.id);
+        if (cands.length) {
+          const seen = {};
+          const faces = cands.map((r) => {
+            const base = seatName(r, rows.indexOf(r));
+            seen[base] = (seen[base] || 0) + 1;
+            return seen[base] > 1 ? base + " " + seen[base] : base;
+          });
+          const k = Math.floor(Math.random() * cands.length);
+          pass2 = { faces, idx: k, rowId: cands[k].id, name: faces[k] };
+        }
+      }
+      return { ...x, res, steps: res.steps, pass2, phase: "roll", i: 0, rolling: true, tick: 0 };
+    });
+  };
+
   const startSpin = (row, col) => {
     if (readOnly || spin) return;
     if (!canSpin(col)) return say(NO_NUM_MSG);
-    const res = spinRoulette(weightsOf(col), null, liveFaces(col));
-    /* 랜덤 양도면 누가 물지도 지금 정해 둡니다 — 화면은 그걸 보여 주기만 합니다.
-       이름이 겹치면 원판의 칸을 구분할 수 없어서 뒤에 번호를 붙입니다. */
-    let pass2 = null;
-    if (res.pass && passMode(col) === "random") {
-      const cands = rows.filter((x) => passSelf(col) || x.id !== row.id);
-      if (cands.length) {
-        const seen = {};
-        const faces = cands.map((x) => {
-          const base = seatName(x, rows.indexOf(x));
-          seen[base] = (seen[base] || 0) + 1;
-          return seen[base] > 1 ? base + " " + seen[base] : base;
-        });
-        const k = Math.floor(Math.random() * cands.length);
-        pass2 = { faces, idx: k, rowId: cands[k].id, name: faces[k] };
-      }
-    }
     setSpin({
-      pass2,
+      pass2: null,
       sid: "s" + seq.current++, // 오버레이가 새 판인지 알아보는 표
       faces: liveFaces(col),
       w: weightsOf(col),
@@ -2721,27 +2850,39 @@ export default function GoldSettlement() {
       who: seatName(row, rows.indexOf(row)),
       item: col.name,
       priceG: Math.round(goldOf(col.price)),
-      steps: res.steps,
+      /* 아직 답이 없습니다 — 멈출 때 뽑습니다 */
+      steps: [],
       i: 0,
       rolling: true,
       tick: 0,
-      res,
-      phase: "roll",
+      res: null,
+      phase: "free",
     });
   };
 
+  /* 안 멈추면 저절로 — 창을 닫거나 잊어버려도 판이 영원히 돌지 않게 */
+  useEffect(() => {
+    if (!spin || spin.phase !== "free") return;
+    const t = setTimeout(stopSpin, FREE_MAX_MS);
+    return () => clearTimeout(t);
+  }, [spin && spin.sid, spin && spin.phase]);
+
   /* 도는 동안 면이 빠르게 바뀝니다 */
   useEffect(() => {
-    /* 숫자 판이 돌 때와 사람 릴이 돌 때 둘 다 시계가 필요합니다 */
+    /* 숫자 판이 돌 때와 사람 릴이 돌 때 둘 다 시계가 필요합니다.
+       free 는 답이 없는 채로 도는 상태라 여기도 시계가 있어야 글자가 바뀝니다 */
     const ticking =
       spin &&
-      ((spin.phase === "roll" && spin.rolling) ||
+      (spin.phase === "free" ||
+        (spin.phase === "roll" && spin.rolling) ||
         (spin.phase === "who" && spin.whoRolling));
     if (!ticking) return;
     const t = setInterval(
       () =>
         setSpin((x) =>
-          x && (x.rolling || x.whoRolling) ? { ...x, tick: x.tick + 1 } : x
+          x && (x.phase === "free" || x.rolling || x.whoRolling)
+            ? { ...x, tick: x.tick + 1 }
+            : x
         ),
       70
     );
@@ -3405,6 +3546,7 @@ export default function GoldSettlement() {
   const clearAll = (kind, preset, size) => {
     if (readOnly) return;
     closeRound();
+    endShare();
     const full = kind === "full" || isPristine(rows);
     takeSnap(
       "처음부터",
@@ -3669,10 +3811,24 @@ export default function GoldSettlement() {
                     setObsOpen(true);
                   }}
                 >
+                  {/* OBS 로고는 상표라 안 씁니다 — 이름을 글자로 쓰는 건 괜찮지만
+                      마크를 넣으면 OBS 쪽이 만든 것처럼 보일 여지가 있습니다.
+                      대신 송출을 뜻하는 모니터 아이콘을 답니다. */}
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="1.6" y="2.6" width="12.8" height="8.6" rx="1.4" />
+                      <path d="M5.6 14h4.8M8 11.2V14" />
+                    </g>
+                  </svg>
                   {/* 상태는 방이 생긴 뒤에만 — 시작도 안 했는데 중단이라 하면 헷갈립니다 */}
-                  {activeRoom ? "OBS 공유 · " + (relay.on ? "공유 중" : "중단") : "OBS 공유"}
+                  오버레이 공유 설정
+                  {/* 가운데점은 이름의 일부처럼 읽혀서, 상태는 세로선으로 갈라 둡니다 */}
                   {activeRoom && (
-                    <em className={relay.on ? "" : "off"} aria-hidden="true">●</em>
+                    <>
+                      <i className="gs-obsbtn-div" aria-hidden="true" />
+                      <span className="gs-obsbtn-st">{relay.on ? "공유 중" : "중단"}</span>
+                      <em className={relay.on ? "" : "off"} aria-hidden="true">●</em>
+                    </>
                   )}
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
@@ -3681,8 +3837,8 @@ export default function GoldSettlement() {
                 </span>
               </span>
             )}
-            {/* 외형 — 브라우저 전역 취향 (오버레이 테마·룰렛 외형·속도·열 토글) */}
-            {!readOnly && (
+            {/* 외형은 '오버레이 공유 설정' 안으로 들어갔습니다 — 방송에 나가는 것은 한 창에서 */}
+            {false && (
               <span className="gs-tip">
                 <button className="gs-btn gs-btn-ghost gs-keybtn" onClick={() => setLookOpen(true)}>
                   <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
@@ -3887,7 +4043,7 @@ export default function GoldSettlement() {
 
       {/* ── 벌금표 ───────────────────────────────────── */}
       {showSheet && (
-      <section className="gs-card">
+      <section className="gs-mail gs-sheetsec">
         <div className="gs-cardhead">
           <div className="gs-headleft">
             <h2 className="gs-h2">벌금표</h2>
@@ -3945,7 +4101,7 @@ export default function GoldSettlement() {
                 <span className="gs-guide" role="button" tabIndex={0} aria-label="모드 설명">
                   ?
                 </span>
-                <span className="gs-tip-body gs-tip-modes" role="tooltip">
+                <span className="gs-tip-body gs-tip-r gs-tip-modes" role="tooltip">
                   <span className="gs-tip-sec">
                     <b>메모장 모드</b>
                     이름과 금액을 한 줄씩 입력하면 자동으로 표로 정리돼요. 쓰던 메모를
@@ -3973,6 +4129,10 @@ export default function GoldSettlement() {
 
           </div>
         </div>
+
+        {/* 내용 상자 — 정산 장부·보낼 우편과 같은 뼈대입니다.
+            머리줄(제목·모드)은 상자 밖에 두어 세 탭의 윗부분이 한 줄로 맞습니다 */}
+        <div className="gs-card gs-sheetbox">
 
         {readOnly && !genView && (
           <div
@@ -4040,23 +4200,25 @@ export default function GoldSettlement() {
               {u.label}
             </label>
           ))}
+          {/* 설명 문장은 뺐습니다 — 친 숫자 → 그 금액 칩이 이미 같은 말을 합니다 */}
           <span className="gs-unitnote">
-            {(simple ? "칸에 적은 숫자가 " : "합계를 고칠 때 치는 숫자가 ") +
-              (unit === "100000"
-                ? "이 금액이에요 — 5 → 50만 · 1.5 → 15만"
-                : unit === "1"
-                ? "골드 그대로예요 — 50000 → 50,000"
-                : "이 금액이에요 — 5 → 5만 · 2.32 → 2만3,200")}
+            {(UNIT_EX[unit] || []).map(([typed, gold]) => (
+              <b className="gs-unitex" key={typed}>
+                <i>{typed}</i>
+                <em aria-hidden="true">→</em>
+                <span>{gold}</span>
+              </b>
+            ))}
           </span>
         </div>
-        {/* 조작법은 왼쪽, 채팅 복사는 표 오른쪽 위 — 표에 딸린 것끼리 한 줄 */}
+        {/* 누르는 것(복사)은 왼쪽, 읽는 것(조작법)은 오른쪽 — 손이 가는 쪽에 버튼을 둡니다 */}
         {!simple && (
           <div className="gs-tablebar">
+            <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />
             <p className="gs-cellnote">
               칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
               우클릭하면 1회 빠져요.
             </p>
-            <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />
           </div>
         )}
 
@@ -4068,23 +4230,23 @@ export default function GoldSettlement() {
               <div className="gs-memo-head">
                 <span className="gs-memo-left">
                   <span className="gs-caplab">메모장</span>
-                  <span className="gs-fontctl" role="group" aria-label="메모장 글자 크기">
-                    <button
-                      onClick={() => setMemoFont((f) => clampMemoFont(f - 1))}
-                      aria-label="글자 줄이기"
-                    >
-                      −
-                    </button>
-                    <b>{memoFont}</b>
-                    <button
-                      onClick={() => setMemoFont((f) => clampMemoFont(f + 1))}
-                      aria-label="글자 키우기"
-                    >
-                      +
-                    </button>
-                  </span>
+                  <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />
                 </span>
-                <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />
+                <span className="gs-fontctl" role="group" aria-label="메모장 글자 크기">
+                  <button
+                    onClick={() => setMemoFont((f) => clampMemoFont(f - 1))}
+                    aria-label="글자 줄이기"
+                  >
+                    −
+                  </button>
+                  <b>{memoFont}</b>
+                  <button
+                    onClick={() => setMemoFont((f) => clampMemoFont(f + 1))}
+                    aria-label="글자 키우기"
+                  >
+                    +
+                  </button>
+                </span>
               </div>
               <textarea
                 className="gs-ta gs-memo-ta"
@@ -4103,6 +4265,7 @@ export default function GoldSettlement() {
         {spin && (
           <SpinPanel
             spin={spin}
+            onStop={stopSpin}
             onSkip={skipSpin}
             onPickSelf={() => {
               const me = rows.find((x) => x.id === spin.rowId);
@@ -4111,7 +4274,18 @@ export default function GoldSettlement() {
           />
         )}
         <div className="gs-scroll">
-          <table className={"gs-grid" + (simple ? " gs-grid-narrow" : " gs-grid-count")}>
+          <table
+            className={"gs-grid" + (simple ? " gs-grid-narrow" : " gs-grid-count")}
+            /* 이름 열 폭 — 여섯 글자를 기본으로 두고, 그보다 긴 이름이 있으면 거기 맞춥니다.
+               한글은 글자 하나가 대략 1em 이라 글자 수를 그대로 폭으로 씁니다. */
+            style={{
+              "--namech": Math.max(
+                6,
+                ...rows.map((x, k) => (x.name || ANON(k)).length)
+              ),
+            }}
+            onMouseLeave={() => setCross(null)}
+          >
             <thead>
               <tr>
                 {simple ? (
@@ -4132,7 +4306,10 @@ export default function GoldSettlement() {
                 )}
                 {!simple &&
                   cols.map((c) => (
-                  <th key={c.id} className="gs-colh">
+                  <th
+                    key={c.id}
+                    className={"gs-colh" + (cross && cross.c === c.id ? " gs-litcol" : "")}
+                  >
                     <div className="gs-colh-top">
                       <input
                         className="gs-in gs-in-col"
@@ -4205,7 +4382,9 @@ export default function GoldSettlement() {
                   </th>
                 )}
                 {!simple && (
-                  <th className="gs-colh gs-disch">
+                  <th
+                    className={"gs-colh gs-disch" + (cross && cross.c === "etc" ? " gs-litcol" : "")}
+                  >
                     <div className="gs-disch-top">
                       기타
                       <span className="gs-tip">
@@ -4223,6 +4402,9 @@ export default function GoldSettlement() {
                 <th className="gs-sumh">
                   <span className="gs-caplab">합계</span>
                 </th>
+                {/* 도구 열 — 이름을 붙이지 않습니다. 합계 오른쪽의 세로 선이
+                    "여기부터는 숫자가 아니라 손잡이"라고 말해 줍니다 */}
+                {!readOnly && <th className="gs-toolh" />}
               </tr>
             </thead>
 
@@ -4237,42 +4419,54 @@ export default function GoldSettlement() {
                       className={
                         (open ? "gs-rowopen" : "") +
                         (spin && spin.phase === "pick" ? " gs-pickable" : "") +
-                        (spin && spin.phase === "pick" && spin.rowId === row.id ? " gs-pickself" : "")
+                        (spin && spin.phase === "pick" && spin.rowId === row.id ? " gs-pickself" : "") +
+                        (cross && cross.r === row.id ? " gs-litrow" : "")
                       }
                       onClick={
                         spin && spin.phase === "pick" ? () => pickPassTarget(row) : undefined
                       }
                     >
-                      <th className="gs-stick gs-l">
+                      <th
+                        className="gs-stick gs-l"
+                        /* 행 안의 모든 칸이 호버를 받습니다 — 켜는 자리가 카운터 칸에만
+                           있으면 이름·합계·기타로 옮겼을 때 끄는 사람이 없어 직전
+                           하이라이트가 그대로 남습니다. 이름·합계는 누를 자리가 아니라
+                           열은 안 밝히고 그 행만 밝힙니다. */
+                        onMouseEnter={() => setCross({ r: row.id, c: null })}
+                      >
                         <div className="gs-namecell">
+                          {/* 이름만 남깁니다 — 손잡이(기록·삭제)는 표 오른쪽 끝
+                              도구 열로 나갔습니다. 이름이 옆 칸(횟수)에 바로 붙습니다. */}
                           {/* 비워 두면 어디서든 이 이름으로 불립니다 — 칸에도 같은 글자를 */}
                           <input
-                            className="gs-in gs-in-name"
+                            className={"gs-in gs-in-name" + (dupName(row.id, row.name) ? " gs-dup" : "")}
                             value={row.name}
                             placeholder={ANON(i)}
                             onChange={(e) => patchRow(row.id, "name", e.target.value)}
+                            /* 칸을 벗어날 때 판정 — 겹치면 적기 전 이름으로 되돌립니다 */
+                            onFocus={(e) => (e.currentTarget.dataset.was = row.name || "")}
+                            onBlur={(e) => {
+                              if (!dupName(row.id, row.name)) return;
+                              const back = e.currentTarget.dataset.was || "";
+                              patchRow(row.id, "name", back);
+                              say("'" + (row.name || "").trim() + "'은 이미 있어요. 다른 이름으로 적어 주세요.");
+                            }}
+                            aria-invalid={dupName(row.id, row.name) || undefined}
+                            /* 탭은 아래 이름으로 — 이름은 위에서 아래로 죽 적는 칸이라,
+                               기본 탭 순서(옆 칸 → 횟수)를 따라가면 매번 손이 끊깁니다.
+                               첫·끝에서는 막지 않아 표 밖으로 빠져나갈 수 있습니다. */
+                            onKeyDown={(e) => {
+                              if (e.key !== "Tab") return;
+                              const all = [...e.currentTarget.closest("table").querySelectorAll(".gs-in-name")];
+                              const at = all.indexOf(e.currentTarget);
+                              const to = all[at + (e.shiftKey ? -1 : 1)];
+                              if (!to) return;
+                              e.preventDefault();
+                              to.focus();
+                              to.select();
+                            }}
                             aria-label="이름"
                           />
-                          {/* 사람별 기록 — 파괴적인 ×가 항상 맨 끝이도록 왼쪽에 둡니다 */}
-                          {!simple && !readOnly && (
-                            <button
-                              className="gs-rowlog gs-rowdel"
-                              onClick={() => openLog(row.id)}
-                              aria-haspopup="dialog"
-                              aria-label={`${row.name || "이 사람"}의 기록 보기`}
-                            >
-                              기록
-                            </button>
-                          )}
-                          {!readOnly && (
-                          <button
-                            className="gs-x gs-rowdel"
-                            onClick={() => askDelRow(row)}
-                            aria-label={`${row.name || "이 사람"} 삭제`}
-                          >
-                            ×
-                          </button>
-                          )}
                         </div>
                       </th>
                       {activeCols.map((c) => {
@@ -4280,11 +4474,29 @@ export default function GoldSettlement() {
                         const n = num(cnt);
                         if (!simple) {
                           return (
-                            <td key={c.id}>
+                            <td
+                              key={c.id}
+                              className={cross && cross.c === c.id ? "gs-litcol" : undefined}
+                              onMouseEnter={() => setCross({ r: row.id, c: c.id })}
+                            >
                               {/* 카운터 칸 — 왼클릭 = 1회, 우클릭 = 1회 빼기 (게임 인벤토리 문법).
                                   둘 다 기록에 남고, 실수는 반대 클릭이나 기록에서 바로잡습니다.
                                   보조 버튼을 칸 위에 겹치지 않아 오클릭 여지가 없습니다. */}
                               <div className="gs-hitwrap">
+                                {/* 누르면 얼마가 붙는지 — 십자 하이라이트는 "어디"만 말하고
+                                    금액은 안 말해 줍니다. 단가가 열마다 달라서 실수를 막습니다.
+                                    첫 줄은 위가 머리줄이라 아래로 뒤집습니다. */}
+                                {cross && cross.r === row.id && cross.c === c.id && (
+                                  <span
+                                    className={"gs-hovtip" + (i === 0 ? " down" : "")}
+                                    role="status"
+                                  >
+                                    <b>{seatName(row, i)}</b> · {(c.name || "").trim() || "항목"}{" "}
+                                    <b>
+                                      {isRoulette(c) ? "룰렛" : "+" + man(Math.round(goldOf(c.price)))}
+                                    </b>
+                                  </span>
+                                )}
                                 <button
                                   className={"gs-hit" + (n > 0 ? " gs-hit-on" : "")}
                                   onClick={() => pressCell(row, c, 1)}
@@ -4357,8 +4569,11 @@ export default function GoldSettlement() {
                       {!simple && !readOnly && <td className="gs-addcolcell" />}
                       {!simple && (
                       <td
-                        className="gs-disc"
-                        onMouseEnter={() => !readOnly && setDiscRow(row.id)}
+                        className={"gs-disc" + (cross && cross.c === "etc" ? " gs-litcol" : "")}
+                        onMouseEnter={() => {
+                          setCross({ r: row.id, c: "etc" }); // 기타도 항목이라 열까지 밝힙니다
+                          if (!readOnly) setDiscRow(row.id);
+                        }}
                         onMouseLeave={(e) => {
                           /* 한 글자라도 쳤으면 잠금 — 마우스가 나가도 타이핑이 안 끊깁니다.
                              스치기만 한 경우엔 바로 닫혀서 유령 패널이 안 남습니다. */
@@ -4402,9 +4617,17 @@ export default function GoldSettlement() {
                       {/* 합계는 행에서 직접 계산합니다 — 정산(r)은 빈 슬롯을 뺀 목록이라
                           표의 행 번호와 어긋날 수 있어서요 */}
                       {simple ? (
-                        <td className="gs-sumcell">{won(Math.max(0, simpleGold(row)))}</td>
+                        <td
+                          className="gs-sumcell"
+                          onMouseEnter={() => setCross({ r: row.id, c: null })}
+                        >
+                          {won(Math.max(0, simpleGold(row)))}
+                        </td>
                       ) : (
-                        <td className="gs-sumcell gs-sumcell-edit">
+                        <td
+                          className="gs-sumcell gs-sumcell-edit"
+                          onMouseEnter={() => setCross({ r: row.id, c: null })}
+                        >
                           <TotalEdit
                             display={Math.max(0, itemGold(row))}
                             base={itemGold(row)}
@@ -4414,11 +4637,53 @@ export default function GoldSettlement() {
                           />
                         </td>
                       )}
+                      {!readOnly && (
+                        <td
+                          className="gs-toolcell"
+                          onMouseEnter={() => setCross({ r: row.id, c: null })}
+                        >
+                          <div className="gs-toolbtns">
+                            {/* 기록 — 글자 '기록'은 표 안에서 숫자와 다투니
+                                아이콘(되감는 시계)으로 둡니다 */}
+                            {!simple && (
+                              <button
+                                className="gs-rowlog gs-rowdel"
+                                onClick={() => openLog(row.id)}
+                                aria-haspopup="dialog"
+                                title="이 사람의 기록 보기"
+                                aria-label={`${row.name || "이 사람"}의 기록 보기`}
+                              >
+                                <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">
+                                  <g
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.4"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M6.65 3.18A5.2 5.2 0 1 1 3.5 5.6" />
+                                    <path d="M1.3 6.6 3.5 5.6l.2 2.4" />
+                                    <path d="M8 5.4v2.8l2.3 1.3" />
+                                  </g>
+                                </svg>
+                              </button>
+                            )}
+                            {/* 파괴적인 ×는 늘 맨 끝에 */}
+                            <button
+                              className="gs-x gs-rowdel"
+                              onClick={() => askDelRow(row)}
+                              aria-label={`${row.name || "이 사람"} 삭제`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
 
                     {!simple && open && (
                       <tr className="gs-exrow">
-                        <td colSpan={cols.length + (readOnly ? 3 : 4)}>
+                        <td colSpan={cols.length + (readOnly ? 3 : 5)}>
                           <Discretion
                             who={seatName(row, i)}
                             extras={ex}
@@ -4444,6 +4709,8 @@ export default function GoldSettlement() {
                   )}
                 </th>
                 <td colSpan={simple ? 2 : cols.length + (readOnly ? 2 : 3)} />
+                {/* 세로 선이 끊기지 않게 도구 열은 따로 둡니다 */}
+                {!readOnly && <td className="gs-toolcell" />}
               </tr>
             </tbody>
 
@@ -4464,12 +4731,14 @@ export default function GoldSettlement() {
                   <span className="gs-caplab gs-foot-lab">합계</span>
                   {r ? (simple ? won(r.total) : man(r.total)) : "0"}
                 </td>
+                {!readOnly && <td className="gs-foot gs-toolcell" />}
               </tr>
             </tfoot>
           </table>
         </div>
         </div>
 
+        </div>
       </section>
       )}
 
@@ -5027,14 +5296,7 @@ export default function GoldSettlement() {
           onClose={() => setResetOpen(false)}
         />
       )}
-      {lookOpen && (
-        <LookModal
-          relay={relay}
-          putRelay={putRelay}
-          toggleOvCol={toggleOvCol}
-          onClose={() => setLookOpen(false)}
-        />
-      )}
+
       {keyOpen && (
         <KeyShare
           relay={relay}
@@ -5049,7 +5311,12 @@ export default function GoldSettlement() {
         <ObsShare
           relay={relay}
           putRelay={putRelay}
-          toggleOvCol={toggleOvCol}
+          ovCols={simple ? [] : activeCols}
+          isOff={(id) => ovShow().itemOff(id)}
+          sumOn={ovShow().sum}
+          netOn={ovShow().net}
+          onOvItem={toggleOvItem}
+          onOvKey={toggleOvCol}
           activeLabel={partyReg.active}
           snapshot={liveSnapshot}
           onAskReissue={askObsReissue}
@@ -5218,6 +5485,9 @@ function ViewSpinPanel({ pl }) {
     i: pl.i,
     rolling: pl.rolling,
     spd: sp.spd,
+    /* 서기가 아직 안 멈춘 판이면 여기서도 끝없이 돕니다 — 이게 없으면 답도 없는데
+       감속 곡선을 타서 파티원 화면만 혼자 멈춥니다 */
+    phase: sp.phase,
   };
   return (
     <div className="gs-spinwrap gs-spinwrap-view">
@@ -5322,7 +5592,10 @@ function ViewSpinPanel({ pl }) {
             </>
           )}
         </div>
-        <span className="gs-spin-skip off">누르면 건너뛰어요</span>
+        {/* 파티원은 멈출 수 없습니다 — 서기가 멈추길 같이 기다리는 화면입니다 */}
+      <span className="gs-spin-skip">
+        {sp.phase === "free" ? "돌고 있어요" : ""}
+      </span>
       </div>
     </div>
   );
@@ -5335,7 +5608,8 @@ function SpinWheel({ spin, landed }) {
   const faces = poolAt(all, spin.steps || [], spin.i || 0);
   const theme = spin.theme === "vegas" ? "vegas" : "satin";
   const segs = wheelArcs(faces, spin.w, theme);
-  const k = (spin.steps[spin.i] || {}).k;
+  const free = spin.phase === "free";
+  const k = ((spin.steps || [])[spin.i] || {}).k;
   const seg = segs.find((x) => x.k === k) || segs[0];
   const discRef = useRef(null);
   const rotRef = useRef(0);
@@ -5359,24 +5633,59 @@ function SpinWheel({ spin, landed }) {
       sidRef.current = spin.sid;
       rotRef.current = 0;
     }
-    const target = (4 + (spin.i || 0) * 2) * 360 - seg.mid;
+    /* 답이 없는 동안은 끝없이 등속으로 — CSS 애니메이션에 맡깁니다.
+       transform 을 직접 쓰면 매 프레임 리렌더가 필요해서 표까지 무거워집니다. */
+    if (free) {
+      el.style.transitionProperty = "none";
+      el.style.transform = "";
+      el.classList.add("gs-wheel-free");
+      return;
+    }
+    /* 멈추는 순간 — 돌던 각도를 그대로 이어받아야 튀지 않습니다.
+       애니메이션이 만든 지금 각도를 행렬에서 읽어 옵니다. */
+    const wasFree = el.classList.contains("gs-wheel-free");
+    if (wasFree) {
+      const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+      const deg = (Math.atan2(m.b, m.a) * 180) / Math.PI;
+      el.classList.remove("gs-wheel-free");
+      rotRef.current = (deg + 360) % 360;
+    }
+    /* 이 칸이 바늘 밑으로 오는, 지금보다 앞에 있는 첫 각도 */
+    const from = rotRef.current;
+    const seat = from + ((((-seg.mid - from) % 360) + 360) % 360);
     if (spin.skipped) {
       /* 건너뛰기 — 굴러가던 회전을 그 자리에서 끊고 결과로 붙입니다.
          시간만 0으로 바꾸면 이미 시작된 회전은 안 멈춥니다. */
       el.style.transitionProperty = 'none';
-      el.style.transform = 'rotate(' + target.toFixed(2) + 'deg)';
-      rotRef.current = target;
+      el.style.transform = 'rotate(' + seat.toFixed(2) + 'deg)';
+      rotRef.current = seat;
       return;
     }
+    /* 진짜 원판은 곡선 하나로 섭니다 — 등감속이면 처음 속도가 평균의 딱 두 배입니다.
+       그래서 timing-function 의 처음 기울기를 "돌던 속도 / 평균 속도"에 맞추면
+       멈추기 시작하는 순간에 이음매가 없습니다. 두 곡선을 이어 붙이면 그 이음매에서
+       속도가 툭 바뀌어 고장 난 것처럼 보였습니다.
+       매번 다르게 서는 맛은 곡선이 아니라 바퀴 수로 냅니다 — 같은 시간에 더 많이 돌면
+       그만큼 제동이 세고, 적게 돌면 길게 미끄러집니다. */
     const ms = spinSpeed(spin.spd).roll;
+    const base = Math.max(2, Math.round(ms / FREE_MS / 2)); // 등감속일 때의 바퀴 수
+    const turns = Math.max(1, base + ((seedOf(spin.sid + ":" + spin.i) % 3) - 1));
+    const target = seat + turns * 360;
+    const D = Math.max(1, target - from);
+    /* 처음 기울기 s 를 갖고 끝에서 0 이 되는 곡선: (1/3, s/3, 2/3, 1). s=2 가 등감속입니다 */
+    const s0 = Math.min(2.85, Math.max(1.35, ((360 / FREE_MS) * ms) / D));
     el.style.transitionProperty = 'none';
-    el.style.transform = 'rotate(' + rotRef.current.toFixed(2) + 'deg)';
+    el.style.transform = 'rotate(' + from.toFixed(2) + 'deg)';
     void el.offsetWidth;
     el.style.transitionProperty = 'transform';
+    el.style.transitionTimingFunction = wasFree
+      ? 'cubic-bezier(.333,' + (s0 / 3).toFixed(3) + ',.667,1)'
+      : /* 멈춰 있다 다시 도는 판(x2 등) — 붙었다가 같은 곡선으로 늘어지며 섭니다 */
+        'cubic-bezier(.34,0,.2,1)';
     el.style.transitionDuration = ms + 'ms';
     el.style.transform = 'rotate(' + target.toFixed(2) + 'deg)';
     rotRef.current = target;
-  }, [spin.sid, spin.i, spin.skipped]);
+  }, [spin.sid, spin.i, spin.skipped, free]);
   const layers = wheelLayers(wheelStops(segs, theme), theme);
   return (
     <div className="gs-wheel">
@@ -5416,25 +5725,29 @@ function SpinWheel({ spin, landed }) {
 
 /* 도는 중에 보여 주는 판. 결과는 이미 정해져 있고 여기서는 순서대로 보여 주기만 합니다.
    면이 바뀌는 건 tick 을 받아 돌아가는 글자뿐입니다. */
-function SpinPanel({ spin, onSkip, onPickSelf }) {
-  const cur = spin.steps[spin.i] || {};
+function SpinPanel({ spin, onStop, onSkip, onPickSelf }) {
+  /* free — 아직 답이 없는 채로 도는 중입니다. 아래 계산들은 답이 있어야 하는 것이라
+     이 상태에서는 빈 값으로 두고, 화면은 "돌고 있다 + 멈춰라"만 보여 줍니다. */
+  const free = spin.phase === "free";
+  const cur = (spin.steps || [])[spin.i] || {};
   /* 릴과 돌림 글자는 이 판의 실제 면 목록에서 뽑습니다 — 기본 목록으로 돌리면
      면을 고친 룰렛에서 없는 면이 스쳐 지나갑니다 */
   const pool = poolAt(
     spin.faces && spin.faces.length ? spin.faces : ROULETTE_KEYS,
-    spin.steps,
+    spin.steps || [],
     spin.i
   );
-  const idx = spin.rolling
+  const rolling = free || spin.rolling;
+  const idx = rolling
     ? spin.tick % pool.length
     : Math.max(0, pool.indexOf(cur.k));
-  const shown = spin.rolling ? pool[idx] : cur.k;
+  const shown = rolling ? pool[idx] : cur.k;
   const prevK = pool[(idx - 1 + pool.length) % pool.length];
   const nextK = pool[(idx + 1) % pool.length];
   const whoOn = spin.pass2 && (spin.phase === "who" || spin.target);
   /* 이번 판에 이미 나온 면들 — 도는 중인 면은 아직 안 나왔으니 뺍니다 */
-  const chips = spin.steps.slice(0, spin.i + (spin.rolling ? 0 : 1));
-  const gold = Math.round(spin.priceG * spin.res.count);
+  const chips = (spin.steps || []).slice(0, spin.i + (rolling ? 0 : 1));
+  const gold = spin.res ? Math.round(spin.priceG * spin.res.count) : 0;
   const picking = spin.phase === "pick";
   const done = spin.phase === "done";
   /* 자리를 차지하지 않게 화면에 띄웁니다 — 표가 밀리면 누르던 칸이 달아납니다.
@@ -5442,7 +5755,9 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
   return (
     <div
       className={"gs-spinwrap" + (picking ? " gs-spinwrap-pick" : "")}
-      onClick={picking ? undefined : onSkip}
+      /* 도는 동안은 STOP 버튼으로만 멈춥니다 — 아무 데나 눌러서 멈추면
+         화면을 스쳐 지나가는 손짓에도 판이 끝나 버립니다 */
+      onClick={free ? undefined : picking ? undefined : onSkip}
     >
     <div className={"gs-spin" + (picking ? " gs-spin-pick" : "")}>
       <div className="gs-spin-who">
@@ -5561,9 +5876,13 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
       <div className={"gs-spin-out" + (picking || done ? "" : " gs-spin-out-wait")}>
         {!(picking || done) && (
           <span className="gs-spin-status">
+            {/* STOP 을 누른 뒤에는 답이 이미 정해져 있습니다 — 그때도 "뽑는 중"이라고
+                하면 아직 안 정해진 것처럼 읽혀서, 하는 일 그대로 적습니다 */}
             {spin.phase === "who"
               ? "넘겨받을 사람을 뽑는 중이에요"
-              : "숫자를 뽑는 중이에요"}
+              : free
+              ? "숫자를 뽑는 중이에요"
+              : "멈추는 중이에요"}
           </span>
         )}
         {(picking || done) && (
@@ -5601,20 +5920,27 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
           </>
         )}
       </div>
+      {/* 도는 동안 화면에서 가장 큰 것은 "멈춰라" 여야 합니다 — 이 판의 주인공이라서 */}
+      {free && (
+        <button type="button" className="gs-spin-stop" onClick={onStop} autoFocus>
+          STOP!
+        </button>
+      )}
       <span className="gs-spin-skip">
-        {done
+        {free
+          ? ""
+          : done
           ? "누르면 닫혀요"
           : picking
           ? "줄을 누르면 그 사람에게 붙어요"
           : spin.phase === "who"
-          ? spin.whoRolling
-            ? "누르면 그 자리에 멈춰요"
-            : "누르면 결과를 바로 붙여요"
+          ? "누르면 결과를 바로 붙여요"
           : spin.rolling
-          ? "누르면 그 자리에 멈춰요"
-          : spin.i + 1 < spin.steps.length
+          ? /* STOP 뒤에는 답이 이미 정해져 있습니다 — 누르면 그 답으로 건너뜁니다 */
+            "누르면 결과를 바로 붙여요"
+          : spin.i + 1 < (spin.steps || []).length
           ? "누르면 다음 판이 바로 돌아요"
-          : !spin.res.pass
+          : !(spin.res && spin.res.pass)
           ? "누르면 결과를 바로 붙여요"
           : spin.pass2
           ? "누르면 다음 판이 바로 돌아요"
@@ -5625,34 +5951,186 @@ function SpinPanel({ spin, onSkip, onPickSelf }) {
   );
 }
 
-/* 켜고 끌 때 방송 화면이 어떻게 되는지 그 자리에서 보여 줍니다 — 켜 보고 OBS 로
-   건너가서 확인하는 수고를 없앱니다. */
-function OvColsPreview({ items, net }) {
-  const rows = [
-    { r: 1, n: "로마러", c: [2, 1, 3], g: "13만", d: "−6.4만", neg: 1 },
-    { r: 2, n: "조이냥", c: [1, 1, 1], g: "9만", d: "−2.4만", neg: 1 },
-    { r: 3, n: "하늘", c: [0, 0, 1], g: "3만", d: "+3.6만", neg: 0 },
+/* 눈 — 켜짐과 꺼짐 두 모양 */
+function Eye({ on }) {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <g fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+        {on ? (
+          <>
+            <path d="M1.4 8S3.9 3.6 8 3.6 14.6 8 14.6 8 12.1 12.4 8 12.4 1.4 8 1.4 8Z" />
+            <circle cx="8" cy="8" r="2.1" />
+          </>
+        ) : (
+          <>
+            <path d="M2.6 5.4C1.9 6.3 1.4 8 1.4 8s2.5 4.4 6.6 4.4c1 0 1.9-.2 2.7-.6" />
+            <path d="M13 10.3c1.1-1.2 1.6-2.3 1.6-2.3S12.1 3.6 8 3.6c-.7 0-1.3.1-1.9.3" />
+            <path d="M2.2 2.2l11.6 11.6" />
+          </>
+        )}
+      </g>
+    </svg>
+  );
+}
+
+/* 방송에 나갈 열 고르기 — 예시 표가 곧 스위치입니다. 열 위의 눈을 누르면 그 열에
+   빗금이 덮여, 켜 보고 OBS 로 건너가 확인하는 수고 없이 무엇이 빠지는지 그 자리에서 봅니다.
+   순위·이름에는 눈이 없습니다 — 판을 판으로 만드는 뼈대라 끄면 남는 게 없습니다.
+   항목 열은 예전에 한 덩어리로만 껐는데, 어느 항목을 방송에 띄울지는 서기가 정하는 게
+   맞다고 보고 열마다 풀었습니다. */
+function OvColsPreview({ cols, isOff, sumOn, netOn, onItem, onKey }) {
+  const [hint, setHint] = useState(null);
+  /* 예시 숫자 — 실제 횟수가 아니라 "이 열이 이렇게 보인다"를 위한 자리표시입니다 */
+  const EX = [
+    { r: 1, n: "로마러", g: "13만", d: "−6.4만", neg: 1, c: [2, 1, 3], m: "▲1" },
+    { r: 2, n: "조이냥", g: "9만", d: "−2.4만", neg: 1, c: [1, 1, 1], m: "" },
+    { r: 3, n: "하늘", g: "3만", d: "+3.6만", neg: 0, c: [0, 0, 1], m: "▼1" },
   ];
+  const zones = [
+    ...cols.map((c, i) => ({
+      k: "i" + c.id,
+      label: (c.name || "").trim() || "항목",
+      on: !isOff(c.id),
+      why: "이 항목을 몇 번 했는지",
+      hit: () => onItem(c.id),
+      val: (ri) => EX[ri].c[i % 3] || "",
+      cls: "gs-ovp-c",
+    })),
+    {
+      k: "sum",
+      label: "합계",
+      head: "25만",
+      on: sumOn,
+      why: "그 사람이 낸 벌금 총액",
+      hit: () => onKey("sum"),
+      val: (ri) => EX[ri].g,
+      cls: "gs-ovp-g",
+    },
+    {
+      k: "net",
+      label: "순액",
+      on: netOn,
+      why: "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)",
+      hit: () => onKey("net"),
+      val: (ri) => EX[ri].d,
+      cls: "gs-ovp-d",
+    },
+  ];
+  /* 격자 자리는 전부 못 박습니다 — 덮개(zone)가 표 위에 겹치는 격자라
+     자동 배치에 맡기면 덮개가 칸을 밀어냅니다 */
+  const at = (c, r, ce, re) => ({
+    gridColumn: ce ? c + "/" + ce : String(c),
+    gridRow: re ? r + "/" + re : String(r),
+  });
   return (
     <div className="gs-ovprev" aria-label="방송 화면 예시">
-      <div className="gs-ovprev-row gs-ovprev-head">
-        <span className="gs-ovprev-rank" />
-        <span className="gs-ovprev-nm">벌금표</span>
-        {items && ["잡힘", "죽음", "◎죽음"].map((t) => <span key={t} className="gs-ovprev-c">{t}</span>)}
-        <span className="gs-ovprev-g">25만</span>
-        {net && <span className="gs-ovprev-d">순액</span>}
+      <div
+        className="gs-ovp"
+        style={{
+          gridTemplateColumns:
+            "16px 20px minmax(52px,1fr) repeat(" + zones.length + ", minmax(40px,auto))",
+          gridTemplateRows: "repeat(6, auto)",
+        }}
+      >
+        <span className="gs-ovp-band gs-ovp-always" style={at(1, 1, 4)}>
+          항상 나와요
+        </span>
+        {zones.map((z, i) => (
+          <span className="gs-ovp-band" key={z.k} style={at(4 + i, 1)}>
+            <button
+              className={"gs-ovp-eye" + (z.on ? "" : " off")}
+              onClick={z.hit}
+              onMouseEnter={() => setHint(z)}
+              onMouseLeave={() => setHint(null)}
+              onFocus={() => setHint(z)}
+              onBlur={() => setHint(null)}
+              aria-pressed={z.on}
+              title={z.label}
+              aria-label={z.label + (z.on ? " 숨기기" : " 보이기")}
+            >
+              <Eye on={z.on} />
+            </button>
+          </span>
+        ))}
+
+        {/* 제목은 이름 열이 아니라 판 왼쪽 끝에서 — 방송 화면과 같은 자리입니다 */}
+        <span className="gs-ovp-cell gs-ovp-title" style={at(1, 2, 4)}>
+          벌금 순위
+        </span>
+        {zones.map((z, i) => (
+          <span
+            key={z.k}
+            className={"gs-ovp-cell gs-ovp-h " + z.cls + (z.on ? "" : " gs-ovp-dim")}
+            style={at(4 + i, 2)}
+          >
+            {z.head || z.label}
+          </span>
+        ))}
+        <span className="gs-ovp-rule" style={at(1, 3, zones.length + 4)} />
+
+        {EX.map((x, ri) => (
+          <Fragment key={x.r}>
+            <span
+              className={"gs-ovp-cell gs-ovp-rank" + (ri === 0 ? " top" : "")}
+              style={at(1, 4 + ri)}
+            >
+              {x.r}
+            </span>
+            {/* 순위 변동 — 방송에서는 순위가 바뀐 뒤 잠깐 떴다 사라집니다.
+                늘 자리를 차지하는 열이라 예시에도 그대로 둡니다 */}
+            <span
+              className={"gs-ovp-cell gs-ovp-mv" + (x.m[0] === "▲" ? " up" : x.m ? " down" : "")}
+              style={at(2, 4 + ri)}
+            >
+              {x.m}
+            </span>
+            <span
+              className={"gs-ovp-cell gs-ovp-nm" + (ri === 0 ? " top" : "")}
+              style={at(3, 4 + ri)}
+            >
+              {x.n}
+            </span>
+            {zones.map((z, i) => {
+              const v = z.val(ri);
+              return (
+                <span
+                  key={z.k}
+                  className={
+                    "gs-ovp-cell " +
+                    z.cls +
+                    (v ? "" : " gs-ovp-z") +
+                    (z.k === "net" ? (x.neg ? " neg" : " pos") : "") +
+                    (z.on ? "" : " gs-ovp-dim")
+                  }
+                  style={at(4 + i, 4 + ri)}
+                >
+                  {v}
+                </span>
+              );
+            })}
+          </Fragment>
+        ))}
+
+        {zones.map((z, i) => (
+          <span
+            key={z.k}
+            className={
+              "gs-ovp-zone" +
+              (z.on ? "" : " gs-ovp-dead") +
+              (hint && hint.k === z.k && z.on ? " gs-ovp-hi" : "")
+            }
+            style={at(4 + i, 2, null, 7)}
+          />
+        ))}
       </div>
-      {rows.map((x) => (
-        <div className="gs-ovprev-row" key={x.r}>
-          <span className="gs-ovprev-rank">{x.r}</span>
-          <span className="gs-ovprev-nm">{x.n}</span>
-          {items && x.c.map((v, i) => (
-            <span key={i} className={"gs-ovprev-c" + (v ? "" : " z")}>{v || ""}</span>
-          ))}
-          <span className="gs-ovprev-g">{x.g}</span>
-          {net && <span className={"gs-ovprev-d " + (x.neg ? "neg" : "pos")}>{x.d}</span>}
-        </div>
-      ))}
+      {/* 눈에 올렸을 때만 그 열의 설명. 무엇이 꺼졌는지는 표의 빗금이 이미 말합니다 */}
+      <p className="gs-ovp-cap">
+        {hint && (
+          <>
+            <b>{hint.label}</b> — {hint.why}
+          </>
+        )}
+      </p>
     </div>
   );
 }
@@ -6198,7 +6676,9 @@ function ResetModal({ hasLog, hasRoom, presets, onRun, onOpenPresets, onClose })
       <div className="gs-key">
         <p>
           {hasLog ? "지금 판은 지난 회차로 남고, 새로 시작해요." : "새로 시작해요."}
-          {hasRoom && <> 공유 주소·링크는 그대로예요.</>}
+          {hasRoom && (
+            <> 지금 방송 주소는 닫혀요 — 새로 시작한 뒤 새 주소를 받아 OBS 에 넣어주세요.</>
+          )}
         </p>
         <div className="gs-reset-opts">
           <div
@@ -6295,9 +6775,10 @@ function ResetModal({ hasLog, hasRoom, presets, onRun, onOpenPresets, onClose })
   );
 }
 
-/* 외형 — 오버레이 테마·방송 열·룰렛 외형. 취향은 브라우저에 붙는 전역 설정이라
-   헤더(전역 자리)에 있습니다. OBS 창에서는 「외형 설정 열기」 문으로 건너옵니다. */
-function LookModal({ relay, putRelay, toggleOvCol, onClose }) {
+/* 외형 — 오버레이 테마·방송 열·벌금 알림·룰렛 외형.
+   창을 따로 두면 "주소는 여기, 생김새는 저기"로 갈려서 한 번에 못 끝냅니다.
+   그래서 껍데기 없이 몸통만 내주고, 오버레이 공유 설정 창이 이걸 안에 답니다. */
+function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey }) {
   const [err, setErr] = useState("");
   const previewRef = useRef(null);
   /* 테마 확인용 창 — 늘 예시 방을 씁니다. 내 방은 벌금이 바뀌기 전엔 정지 화면이라
@@ -6317,53 +6798,64 @@ function LookModal({ relay, putRelay, toggleOvCol, onClose }) {
     if (w && !w.closed) w.location.replace(previewUrl(lk));
   };
   return (
-    <InfoModal title="외형" onClose={onClose} wide>
-      <div className="gs-obs-look" style={{ marginTop: 0 }}>
+    <>
+      {/* 주소 아래는 전부 생김새 — 한 단 굵은 제목으로 갈라 둡니다.
+          안 그러면 주소 설정과 외형 설정이 한 덩어리로 흘러내려 어디까지가
+          "주소를 만드는 일"인지 안 보입니다. */}
+      <h3 className="gs-obs-sub">오버레이 외형 설정</h3>
+      <div className="gs-obs-look gs-obs-look-first">
         <div className="gs-obs-lookhead">
           <h4>오버레이 테마</h4>
           <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={openPreview}>
             테마 미리보기
           </button>
         </div>
-        <p className="gs-obs-looknote">고르면 방송 화면에 바로 반영돼요 — OBS의 주소는 그대로 두면 돼요.</p>
         <LookPicker look={relay.look} onPick={pickLook} />
       </div>
       <div className="gs-obs-sec">
         <h4 className="gs-obs-h">방송 화면에 넣을 열</h4>
-        <p className="gs-obs-note">둘 다 기본으로 켜져 있어요 — 여기서 끌 수 있어요.</p>
-        <div className="gs-ovcols">
-          {[
-            ["items", "항목 횟수", "잡힘·죽음 같은 항목을 몇 번 했는지"],
-            ["net", "순액", "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)"],
-          ].map(([key, label, hint]) => {
-            const on =
-              key === "net"
-                ? (relay.ov || {}).net !== false
-                : (relay.ov || {})[key] !== false;
-            return (
-              <button
-                key={key}
-                className={"gs-ovcol" + (on ? " on" : "")}
-                onClick={() => toggleOvCol(key)}
-                aria-pressed={on}
-              >
-                <b>{label}</b>
-                <span>{hint}</span>
-                <em>{on ? "켬" : "끔"}</em>
-              </button>
-            );
-          })}
-        </div>
         <OvColsPreview
-          items={(relay.ov || {}).items !== false}
-          net={(relay.ov || {}).net !== false}
+          cols={ovCols}
+          isOff={isOff}
+          sumOn={sumOn}
+          netOn={netOn}
+          onItem={onOvItem}
+          onKey={onOvKey}
         />
       </div>
       <div className="gs-obs-sec">
+        <h4 className="gs-obs-h">오버레이 클릭 알림</h4>
+        {/* 벌금표에서 칸을 눌렀을 때 방송 화면에 뜨는 그림 — 글로 설명하는 대신 보여 줍니다 */}
+        <div className="gs-fxprev" aria-label="클릭 알림 예시">
+          <div className="gs-fxprev-bg">
+            <span>1 로마러</span>
+            <span>2 조이냥</span>
+            <span>3 하늘</span>
+          </div>
+          <div className="gs-fxprev-card">
+            <b>로마러</b>
+            <span>죽음 <em>+3만</em></span>
+          </div>
+        </div>
+        <div className="gs-rc-look gs-obs-spd">
+          <span>알림</span>
+          {[
+            ["on", "켬"],
+            ["off", "끔"],
+          ].map(([v, label]) => (
+            <button
+              key={v}
+              className={"gs-rc-lookbtn" + (fxOn(relay) === (v === "on") ? " on" : "")}
+              onClick={() => putRelay({ ...relay, fx: v })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+      </div>
+      <div className="gs-obs-sec">
         <h4 className="gs-obs-h">룰렛 외형</h4>
-        <p className="gs-obs-note">
-          벌금표와 방송 화면에 똑같이 적용돼요. 룰렛 항목이 여럿이어도 하나로 가요.
-        </p>
         <div className="gs-rc-look gs-obs-spd">
           <span>도는 속도</span>
           {Object.keys(SPINS).map((k) => (
@@ -6384,7 +6876,7 @@ function LookModal({ relay, putRelay, toggleOvCol, onClose }) {
         />
       </div>
       {err && <p className="gs-obs-err">{err}</p>}
-    </InfoModal>
+    </>
   );
 }
 
@@ -6578,7 +7070,7 @@ function KeyShare({ relay, putRelay, onSeatBundle, onExportFile, onImportFile, o
   );
 }
 
-function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskReissue, onAskShareOff, onOpenKeys, onOpenLook, onClose }) {
+function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, activeLabel, snapshot, onAskReissue, onAskShareOff, onOpenKeys, onOpenLook, onClose }) {
   const room = relay.rooms[activeLabel] || null;
   const label = activeLabel === DEFAULT_ROOM_LABEL ? "기본" : activeLabel;
   const [busy, setBusy] = useState("");
@@ -6653,9 +7145,9 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
 
   return (
     <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="gs-dialog gs-dialog-wide" role="dialog" aria-modal="true" aria-label="OBS · 외형 설정">
+      <div className="gs-dialog gs-dialog-wide" role="dialog" aria-modal="true" aria-label="오버레이 공유 설정">
         <div className="gs-obs-head">
-          <h3>OBS · 외형 설정</h3>
+          <h3>오버레이 공유 설정</h3>
           <div className="gs-obs-headr">
             {room && (
               <label className="gs-switch">
@@ -6684,6 +7176,14 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
           아래 주소를 <b>OBS 브라우저 소스에 붙여넣으면</b>, 벌금 현황이 방송 화면에
           실시간으로 떠요. 브라우저로 열면 정산 장부와 보낼 우편까지 볼 수 있어요.
         </p>
+        {/* 링크를 보내기 전에 알아야 할 사실이라 맨 위에 둡니다 — 주소를 복사한 뒤에
+            알려 주면 이미 늦습니다. 이유는 눌러서 봅니다. */}
+        <p className="gs-obs-ro">
+          파티원 화면은 <b>읽기 전용</b>이에요.{" "}
+          <button className="gs-obs-why" onClick={() => setShowWhy(true)}>
+            왜 그런가요?
+          </button>
+        </p>
 
 
         {!room ? (
@@ -6699,7 +7199,7 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
             <div className="gs-obs-srcpick" role="group" aria-label="소스 구성">
               {[
                 ["one", "한 소스", "현황판과 룰렛이 한 주소에 같이 나와요"],
-                ["split", "나눈 소스", "룰렛이 따로 나와요 — 화면 전체에 크게 띄울 수 있어요"],
+                ["split", "나눈 소스", "룰렛을 화면 전체에 크게 띄울 수 있어요"],
               ].map(([v, label, hint]) => (
                 <button
                   key={v}
@@ -6843,21 +7343,20 @@ function ObsShare({ relay, putRelay, toggleOvCol, activeLabel, snapshot, onAskRe
             </div>
           </div>
         )}
-        {/* 링크를 보내기 직전에 알아야 할 사실. 이유는 눌러서 봅니다 */}
-        <p className="gs-obs-ro">
-          파티원 화면은 <b>읽기 전용</b>이에요.{" "}
-          <button className="gs-obs-why" onClick={() => setShowWhy(true)}>
-            왜 그런가요?
-          </button>
-        </p>
-
         {/* 꾸미기는 헤더의 외형 창으로 — 여정을 위해 건너가는 문만 둡니다 */}
-        <p className="gs-obs-keysline">
-          방송 화면의 테마·룰렛 외형은{" "}
-          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onOpenLook}>
-            외형 설정 열기
-          </button>
-        </p>
+        {/* 생김새도 여기서 — 주소와 생김새가 한 창에 있어야 한 번에 끝납니다 */}
+        {room && (
+          <LookBody
+            relay={relay}
+            putRelay={putRelay}
+            ovCols={ovCols}
+            isOff={isOff}
+            sumOn={sumOn}
+            netOn={netOn}
+            onOvItem={onOvItem}
+            onOvKey={onOvKey}
+          />
+        )}
 
         {err && <p className="gs-obs-err">{err}</p>}
       </div>
@@ -7318,6 +7817,8 @@ function PriceModal({ col, rows, per, unitLabel, onApply, onClose }) {
             value={draft}
             inputMode="decimal"
             onChange={(e) => setDraft(formatNumInput(e.target.value))}
+            /* Enter 는 '이제부터'로 넣습니다 — 지난 횟수까지 바꾸는 건 되돌리기 어려워
+               습관적인 Enter 로는 못 하게 합니다. 어느 쪽인지는 버튼에 적어 두었습니다. */
             onKeyDown={(e) => {
               if (e.key === "Enter" && changed) onApply(col, newG, false);
             }}
@@ -7336,8 +7837,11 @@ function PriceModal({ col, rows, per, unitLabel, onApply, onClose }) {
               {changed && retroG !== curG ? `${man(curG)} → ${man(retroG)}` : ""}
             </em>
           </button>
+          {/* Enter 가 누르는 버튼이라 그렇게 적어 둡니다 — 습관적으로 친 Enter 가
+              무엇을 했는지 모르는 채로 지나가지 않게 */}
           <button className="gs-btn" disabled={!changed} onClick={() => onApply(col, newG, false)}>
             이제부터 세는 것만 {man(changed ? newG : oldG)}으로
+            <em className="gs-pm-key">Enter</em>
           </button>
           <button className="gs-btn gs-btn-ghost" onClick={onClose}>
             취소
@@ -7927,6 +8431,8 @@ function Discretion({ who, extras, onAdd, onPatch, onFix, onRemove, onClose }) {
 }
 
 /* 보내는 사람 한 명 = 카드 한 장. 받는 사람은 카드 안에서 줄로 나뉩니다. */
+/* 받는 사람 줄의 key 는 이름이 아니라 순번입니다 — 동명이인이면 이름이 겹쳐서
+   줄이 빠지거나 섞입니다. 이름을 못 겹치게 막아 두었지만, 여기도 같이 받쳐 둡니다. */
 function Envelope({ idx, from, items, total, fee, feePct }) {
   return (
     <article className="gs-env" style={{ "--i": idx }}>
@@ -7939,8 +8445,8 @@ function Envelope({ idx, from, items, total, fee, feePct }) {
             </div>
 
             <ul className="gs-lines">
-              {items.map((t) => (
-                <li key={t.to}>
+              {items.map((t, i) => (
+                <li key={i}>
                   <span className="gs-line-who">
                     <span className="gs-addr-lab">받는 사람</span>
                     <span className="gs-line-nm">{t.to}</span>
@@ -8211,6 +8717,8 @@ const CSS = `
   z-index:30; pointer-events:none}
 .gs-tip-body b{color:var(--tip-em); font-weight:600}
 .gs-tip-r{left:auto; right:-6px; transform:none}
+/* 어느 쪽에 붙든 화면 밖으로는 안 나갑니다 — 넓은 툴팁이 오른쪽 끝에서 잘리던 것 */
+.gs-tip-body{max-width:min(340px, calc(100vw - 28px))}
 /* focus-within 을 쓰면 버튼을 클릭한 뒤에도(포커스가 남아) 툴팁이 안 사라집니다.
    키보드 포커스(focus-visible)에만 반응시키고, 마우스는 hover 로만 띄웁니다. */
 .gs-tip:hover .gs-tip-body,.gs-tip:has(:focus-visible) .gs-tip-body{display:block;
@@ -8311,11 +8819,36 @@ const CSS = `
 .gs-cellnote{margin:-9px 0 13px; padding-left:2px; font-size:11.5px; color:var(--ink-2);
   letter-spacing:.01em}
 .gs-unitbar input{accent-color:var(--ink); margin:0}
-.gs-unitnote{flex:1; min-width:180px; font-size:11.5px; color:var(--ink-2)}
+.gs-unitnote{flex:1; min-width:180px; font-size:11.5px; color:var(--ink-2);
+  display:flex; align-items:center; flex-wrap:wrap; gap:0 6px}
+/* 친 숫자 → 그 금액. 한 짝이 한 칩이라 눈이 안 헤맵니다 */
+.gs-unitex{display:inline-flex; align-items:baseline; gap:5px; font-weight:400;
+  padding:2px 9px; border-radius:99px; white-space:nowrap;
+  background:rgba(var(--lift-rgb),.32); border:1px solid rgba(var(--kraftdk-rgb),.45)}
+.gs-unitex i{font-style:normal; font-family:var(--mono); color:var(--ink-body)}
+.gs-unitex em{font-style:normal; font-size:10.5px; opacity:.55}
+.gs-unitex span{color:var(--gold); font-weight:700}
 .gs-simpleh{min-width:150px}
 .gs-simple-lab{color:var(--ink) !important}
 .gs-fee{display:flex; align-items:center; gap:7px; font-size:12.5px}
 .gs-fee .gs-in-fee{width:48px; border-bottom:1.5px solid var(--ink); text-align:center; padding:4px 0}
+
+/* 스크롤바 — 기본 두께는 이 화면(창 안의 창)에 비해 너무 굵습니다.
+   라이브러리 없이 표준 속성으로 얇게 만듭니다. scrollbar-width 는 파이어폭스와
+   최신 크로뮴이, ::-webkit-scrollbar 는 크로뮴·사파리가 읽습니다. */
+html,body,.gs,.gs *{scrollbar-width:thin;
+  scrollbar-color:rgba(var(--ink-rgb),.28) transparent}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:9px; height:9px}
+html::-webkit-scrollbar-track,body::-webkit-scrollbar-track{background:transparent}
+html::-webkit-scrollbar-thumb,body::-webkit-scrollbar-thumb{
+  background:rgba(var(--ink-rgb),.22); border-radius:99px}
+html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
+  background:rgba(var(--ink-rgb),.4)}
+.gs *::-webkit-scrollbar{width:7px; height:7px}
+.gs *::-webkit-scrollbar-track{background:transparent}
+.gs *::-webkit-scrollbar-thumb{background:rgba(var(--ink-rgb),.24); border-radius:99px}
+.gs *::-webkit-scrollbar-thumb:hover{background:rgba(var(--ink-rgb),.42)}
+.gs *::-webkit-scrollbar-corner{background:transparent}
 
 /* 입력 공통 */
 .gs-in{border:0; background:transparent; font:inherit; color:var(--ink); padding:6px 2px;
@@ -8343,8 +8876,12 @@ const CSS = `
 /* 카운터 표 — 핵심(이름·×N·합계) 25px. 셀이 곧 버튼이라 큼직하게 둡니다.
    합계·기타 열도 최소 폭을 깔아 두어 자릿수가 늘어도 표가 안 밀립니다. */
 .gs-grid-count .gs-in-name{font-size:25px; padding:10px 0}
-/* 이름 네 글자 + 호버 버튼(기록·×)이 겹치지 않는 폭을 미리 확보합니다 */
-.gs-grid-count .gs-stick{min-width:180px}
+/* width:1% 로 두면 표가 남는 폭을 이 열에 안 나눠 줍니다 — 이름 칸은 딱 제 몫만,
+   남는 폭은 눌러야 하는 횟수 칸들이 가져갑니다 */
+.gs-grid-count .gs-stick{width:1%}
+/* 폭은 이름 입력칸에 직접 겁니다 — 셀에 걸면 em 이 셀 글꼴(15px) 기준이라
+   정작 25px 로 그려지는 이름이 안 들어갑니다. 여섯 글자가 기본, 더 길면 그만큼. */
+.gs-in-name{min-width:calc(var(--namech, 6) * 1.02em)}
 .gs-grid-narrow .gs-stick{min-width:152px}
 .gs-grid-count .gs-sumcell{font-size:25px; min-width:10ch}
 .gs-grid-count td.gs-disc, .gs-grid-count th.gs-disch{width:140px; min-width:140px; max-width:140px}
@@ -8352,7 +8889,7 @@ const CSS = `
    남는 자리는 이름·합계 열이 가져갑니다. */
 .gs-grid-count .gs-colh,.gs-grid-count .gs-disch{width:auto; min-width:124px}
 /* 항목명은 열이 무엇을 세는지 알리는 제목이라 크게. 단가는 그 아래 작게 남깁니다 */
-.gs-grid-count .gs-in-col{font-size:21px; font-weight:700; padding:5px 0}
+.gs-grid-count .gs-in-col{font-size:25px; font-weight:700; padding:5px 0}
 .gs-grid-count .gs-colh-top{max-width:none}
 .gs-grid-count .gs-disch-top{font-size:19px}
 .gs-grid-count .gs-colh-price{font-size:11px; margin-top:3px}
@@ -8470,6 +9007,8 @@ const CSS = `
 .gs-unit{font-size:12.5px; letter-spacing:.06em; color:var(--ink-2)}
 /* 장부 상자 — 우편 봉투와 같은 자리에 서는 종이 상자. 단위는 상자 안 오른쪽 위 */
 .gs-ledgersec .gs-ledgerbox{margin-top:0; position:relative}
+/* 벌금표도 같은 뼈대 — 머리줄은 상자 밖, 내용은 상자 안 */
+.gs-sheetsec .gs-sheetbox{margin-top:0}
 .gs-unit-in{display:block; text-align:right; margin:0 0 10px}
 /* 정산 방식 — 모드와 같은 세그먼트 */
 .gs-splitpick{display:inline-flex; align-items:center; gap:10px}
@@ -8490,22 +9029,62 @@ const CSS = `
 .gs-sumh{min-width:88px; text-align:right; padding-right:6px !important}
 
 .gs-grid tbody tr th,.gs-grid tbody tr td{border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
-.gs-in-name{font-size:15px; font-family:'Gowun Batang',serif; font-weight:700; padding:9px 0}
+.gs-in-name{font-size:15px; font-family:'Gowun Batang',serif; font-weight:700; padding:9px 0;
+  text-align:right}
 .gs-in-cnt{font-family:var(--mono); font-size:16px; text-align:center; padding:9px 0}
 .gs-sumcell{font-family:var(--mono); font-size:14px; text-align:right;
   padding-right:6px !important; color:var(--gold); white-space:nowrap}
 
-/* 이름 칸: 행 삭제·기록 버튼은 평소 숨기고 그 행에 마우스를 올렸을 때만.
-   이름 열은 방송에서 제일 많이 읽히는 자리라 평소엔 글자만 남깁니다. */
-.gs-rowlog{flex:none; font:inherit; font-size:10.5px; letter-spacing:.02em; cursor:pointer;
-  color:var(--ink-2); background:transparent; border:1px solid rgba(var(--ink-rgb),.3);
-  border-radius:2px; padding:2px 6px; white-space:nowrap}
-.gs-rowlog:hover{color:var(--ink); border-color:var(--ink)}
+/* 이름 칸은 이름만 — 손잡이는 오른쪽 끝 도구 열에 삽니다 */
 .gs-namecell{display:flex; align-items:center; gap:4px}
+/* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
+   손잡이"라고 가릅니다. 선은 머리줄부터 바닥줄까지 칸마다 왼쪽 테두리로 이어집니다.
+   세는 손이 오가는 카운터 칸에서 가장 먼 자리라 오클릭 여지도 가장 적습니다. */
+.gs-toolh,.gs-toolcell{border-left:1px solid rgba(var(--ink-rgb),.2);
+  width:1%; white-space:nowrap; padding:0 4px 0 9px !important}
+.gs-toolbtns{display:flex; align-items:center; justify-content:flex-end; gap:2px}
+.gs-rowlog{flex:none; display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer; color:rgba(var(--ink-rgb),.4); background:transparent; border:0;
+  border-radius:3px; padding:5px 6px; line-height:0}
+.gs-toolcell .gs-x{font-size:22px; padding:3px 7px}
+.gs-rowlog:hover{color:var(--ink); background:rgba(var(--lift-rgb),.5)}
+/* 평소엔 숨기고 그 줄에 마우스를 올렸을 때만 — 방송에 잡히는 표라 평소엔 조용하게.
+   숨겨도 자리는 그대로 차지하므로(opacity) 표가 흔들리지 않습니다. */
 .gs-rowdel{flex:none; opacity:0; transition:opacity .12s}
 .gs-grid tbody tr:hover .gs-rowdel,
-.gs-namecell:focus-within .gs-rowdel,
+.gs-toolcell:focus-within .gs-rowdel,
 .gs-rowdel:focus-visible{opacity:1}
+
+/* 십자 하이라이트 — 칸에 올리면 그 줄과 그 열에 옅은 금색 띠가 깔리고,
+   이름·항목 이름이 금색으로 바뀝니다. 이름 칸은 sticky 라 제 배경(--paper)이
+   불투명해야 해서, 색 대신 그림 한 겹을 덧대 배경을 살려 둡니다.
+   메모장 모드에는 안 답니다 — 열이 금액 하나뿐이라 띠가 할 일이 없습니다. */
+.gs-grid-count tbody tr.gs-litrow > th,
+.gs-grid-count tbody tr.gs-litrow > td,
+.gs-grid-count thead th.gs-litcol,
+.gs-grid-count tbody td.gs-litcol{
+  background-image:linear-gradient(rgba(var(--gold-rgb),.1),rgba(var(--gold-rgb),.1))}
+.gs-grid-count tr.gs-litrow .gs-in-name,
+.gs-grid-count th.gs-litcol .gs-in-col{color:var(--gold)}
+.gs-in-name,.gs-in-col{transition:color .12s}
+/* 누르면 얼마 — 그 칸 바로 위에 붙습니다. 꼬리가 어느 칸 이야기인지 가리켜서
+   커서를 안 가리고도 대상이 분명합니다. 표는 안 밀립니다(절대 배치). */
+.gs-hitwrap{position:relative}
+.gs-hovtip{position:absolute; left:50%; bottom:calc(100% + 7px); transform:translateX(-50%);
+  z-index:6; white-space:nowrap; pointer-events:none;
+  font-size:12.5px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:400;
+  padding:5px 11px; border-radius:4px; color:var(--ink);
+  background:var(--paper-2); border:1px solid rgba(var(--gold-rgb),.55);
+  box-shadow:0 4px 14px rgba(var(--shadow-rgb),.4)}
+.gs-hovtip b{color:var(--gold); font-weight:700}
+.gs-hovtip::after{content:''; position:absolute; left:50%; top:100%; margin-left:-5px;
+  border:5px solid transparent; border-top-color:rgba(var(--gold-rgb),.55)}
+.gs-hovtip.down{bottom:auto; top:calc(100% + 7px)}
+.gs-hovtip.down::after{top:auto; bottom:100%;
+  border-top-color:transparent; border-bottom-color:rgba(var(--gold-rgb),.55)}
+@media (prefers-reduced-motion:reduce){ .gs-hovtip{box-shadow:none} }
+/* 같은 이름 — 치는 동안 빨갛게 알리고, 칸을 벗어나면 되돌립니다. 표는 안 밀립니다 */
+.gs-in-name.gs-dup{color:var(--red); box-shadow:inset 0 -2px 0 var(--red)}
 
 /* 횟수 칸: +/− 는 숫자에 붙여 한 덩어리로 묶습니다.
    입력칸이 width:100% 면 버튼이 셀 양 끝으로 밀려나 옆 칸 버튼과 붙어 버립니다.
@@ -8524,6 +9103,8 @@ const CSS = `
 .gs-rowopen > th,.gs-rowopen > td{border-bottom:0 !important; background:rgba(var(--kraft-rgb),.16)}
 .gs-rowopen > .gs-stick{background:var(--paper-3)}
 .gs-addrow th,.gs-addrow td{border-bottom:0 !important}
+/* 이름이 오른쪽 끝으로 갔으니 '+ 인원 추가'도 그 줄에 맞춥니다 — 새 줄이 생길 자리 바로 밑 */
+.gs-addrow .gs-stick{text-align:right}
 .gs-add{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--ink-2);
   cursor:pointer; padding:10px 0; letter-spacing:.03em}
 .gs-add:hover{color:var(--ink)}
@@ -8535,7 +9116,11 @@ const CSS = `
   max-width:124px; margin-inline:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
 /* OBS로 공유 */
-.gs-obsbtn em{font-style:normal; color:var(--red); margin-left:6px; font-size:9px; opacity:1}
+/* 아이콘 · 이름 · 상태 — 셋이 붙으면 한 덩어리로 뭉쳐 보여서 사이를 띄웁니다.
+   이름이 주인공이고 상태는 곁다리라, 칸막이 뒤로는 옅게 물립니다. */
+.gs-obsbtn{display:inline-flex; align-items:center; gap:7px}
+.gs-obsbtn svg{flex:none; opacity:.75}
+.gs-obsbtn em{font-style:normal; color:var(--red); font-size:9px; opacity:1}
 .gs-obsbtn em.off{color:rgba(var(--ink-rgb),.32)}
 .gs-obs-room{display:flex; align-items:baseline; gap:9px; margin-top:14px; padding-bottom:11px;
   border-bottom:1px dotted rgba(var(--ink-rgb),.28)}
@@ -8554,6 +9139,9 @@ const CSS = `
 .gs-obs-toggle input{accent-color:var(--ink); margin:0}
 .gs-obs-note{font-size:11.5px; color:var(--ink-2); margin-top:10px; line-height:1.7}
 .gs-obs-sec{margin-top:18px; padding-top:14px; border-top:1px dotted rgba(var(--ink-rgb),.28)}
+/* 생김새 묶음의 머리 — 점선보다 한 단 굵게 그어 "여기부터 다른 이야기"를 만듭니다 */
+.gs-obs-sub{font-family:'Gowun Batang',serif; font-size:15px; font-weight:700; margin:22px 0 0;
+  padding-top:16px; border-top:1px solid var(--kraft-dk); letter-spacing:.02em}
 .gs-obs-sec h4{margin:0 0 6px; font-size:13px}
 .gs-obs-sec p{margin:0; font-size:12px; color:var(--ink-2); line-height:1.7}
 .gs-obs-claim{flex:1 1 220px; min-width:0; font-family:var(--mono); font-size:12px;
@@ -8628,7 +9216,11 @@ const CSS = `
   font-size:12px; color:var(--ink-2); cursor:pointer; text-decoration:underline;
   text-underline-offset:3px; padding:2px 0}
 .gs-lookmore:hover{color:var(--ink)}
-.gs-obs-look{margin-top:16px}
+/* 첫 칸에도 칸막이를 — 위 내용(주소·복사)과 붙어 있으면 어디부터가 생김새인지 안 보입니다 */
+.gs-obs-look{margin-top:18px; padding-top:14px;
+  border-top:1px dotted rgba(var(--ink-rgb),.28)}
+/* 서브헤더 바로 밑은 선을 겹치지 않게 */
+.gs-obs-look-first{margin-top:12px; padding-top:0; border-top:0}
 .gs-obs-lookhead{display:flex; align-items:center; gap:12px; margin-bottom:4px}
 .gs-obs-look h4{margin:0; font-size:13px}
 .gs-obs-lookhead .gs-btn{margin-left:auto}
@@ -8869,7 +9461,8 @@ const CSS = `
 .gs-modebar .gs-seg button{display:inline-flex; align-items:center; gap:6px}
 .gs-modebar .gs-seg svg{opacity:.85; flex:none}
 /* 표 윗줄 — 왼쪽 조작법, 오른쪽 채팅 복사 */
-.gs-tablebar{display:flex; align-items:flex-end; justify-content:space-between; gap:12px}
+.gs-tablebar{display:flex; align-items:flex-end; justify-content:space-between; gap:12px;
+  margin-bottom:16px}
 .gs-tablebar .gs-cellnote{margin-bottom:8px}
 /* 창 머리 — 제목은 왼쪽, X는 항상 오른쪽 위. 본문만 스크롤됩니다 */
 .gs-dialog-head{display:flex; align-items:center; gap:14px; margin-bottom:12px; flex:none}
@@ -9052,6 +9645,7 @@ const CSS = `
   .gs-grid-count .gs-in-col{font-size:15px; padding:3px 0}
   .gs-in-col{width:44px}
   .gs-namecell{gap:2px}
+  .gs-toolh,.gs-toolcell{padding:0 2px 0 5px !important}
   /* 데스크톱에서 깔아 둔 최소 폭들이 좁은 화면에서는 표를 밀어냅니다 */
   .gs-grid{min-width:0}
   .gs-grid-count .gs-stick{min-width:96px}
@@ -9153,6 +9747,29 @@ const CSS = `
 .gs-spin-who b{font-size:24px; color:var(--ink)}
 .gs-spin-stage{position:relative; display:flex; align-items:center; justify-content:center;
   min-height:72px; min-width:150px}
+/* 답이 없는 동안 끝없이 도는 원판 — 멈출 때 지금 각도를 이어받습니다 */
+/* from 을 반드시 적습니다 — 시작값이 rotate() 가 아니면 행렬 보간으로 떨어져
+   한 바퀴가 제자리가 됩니다 */
+@keyframes gs-freespin{from{transform:rotate(0deg)} to{transform:rotate(360deg)}}
+.gs-wheel-free{animation:gs-freespin var(--freems,260ms) linear infinite; transition:none !important}
+/* STOP — 도는 동안 화면에서 제일 큰 것. 눌러야 멈춥니다.
+   깜빡임을 밝기로 주면 버튼이 꺼져 보여서, 테두리에서 퍼지는 파동으로 줍니다 */
+.gs-spin-stop{display:block; margin:12px auto 0; padding:10px 42px; border-radius:9px;
+  font:800 27px/1 'IBM Plex Sans KR',system-ui,sans-serif; letter-spacing:.08em;
+  color:var(--gold); background:rgba(var(--gold-rgb),.10);
+  border:2px solid rgba(var(--gold-rgb),.7); cursor:pointer;
+  animation:gs-stopblink 1.5s ease-out infinite}
+.gs-spin-stop:hover{background:rgba(var(--gold-rgb),.2); animation:none}
+.gs-spin-stop:active{transform:translateY(1px)}
+.gs-spin-stop:focus-visible{outline:2px solid var(--gold); outline-offset:3px}
+@keyframes gs-stopblink{
+  0%{box-shadow:0 0 0 0 rgba(var(--gold-rgb),.45)}
+  70%,100%{box-shadow:0 0 0 13px rgba(var(--gold-rgb),0)}}
+@media (prefers-reduced-motion:reduce){
+  .gs-wheel-free{animation-duration:900ms}
+  .gs-spin-stop{animation:none; opacity:1}
+}
+
 /* 물리 룰렛 */
 .gs-wheel{position:relative; width:380px; height:380px; margin:24px 0 18px}
 .gs-wheel-disc{position:absolute; inset:0; border-radius:50%;
@@ -9354,38 +9971,79 @@ const CSS = `
 .gs-pickable:hover{background:rgba(var(--gold-rgb),.14)}
 .gs-pickself:hover{background:rgba(var(--ink-rgb),.08)}
 
-.gs-ovcols{display:grid; gap:8px; margin-top:10px}
-.gs-ovcol{display:grid; grid-template-columns:1fr auto; gap:2px 10px; text-align:left;
-  padding:10px 13px; cursor:pointer; border:1px solid rgba(var(--ink-rgb),.22);
-  border-radius:5px; background:transparent; font:inherit}
-.gs-ovcol b{font-size:14px; color:var(--ink-2)}
-.gs-ovcol span{grid-column:1; font-size:12px; color:var(--ink-body); opacity:.8; line-height:1.6}
-.gs-ovcol em{grid-row:1/3; grid-column:2; align-self:center; font-style:normal; font-size:12px;
-  color:var(--ink-2); border:1px solid rgba(var(--ink-rgb),.28); border-radius:99px; padding:3px 11px}
-.gs-ovcol.on{border-color:var(--gold-ink); background:rgba(var(--gold-rgb),.08)}
-.gs-ovcol.on b{color:var(--ink)}
-.gs-ovcol.on em{color:var(--gold-ink); border-color:var(--gold-ink); font-weight:700}
 
 /* 방송 화면 예시 — 실제 오버레이의 비율을 줄여 옮겼습니다 */
-.gs-ovprev{margin-top:12px; padding:10px 12px; border-radius:6px; background:#241f1b;
+/* 방송 화면 예시 — 이 표가 곧 스위치입니다. 방송에 나가는 판이라 앱 테마와 무관하게
+   늘 어두운 판으로 그립니다(테마를 따라가면 "이게 방송 화면"이라는 게 안 읽힙니다). */
+.gs-ovprev{margin-top:12px; padding:9px 11px 11px; border-radius:6px; background:#241f1b;
   color:#f5f0e6; overflow-x:auto}
-.gs-ovprev-row{display:flex; align-items:baseline; gap:9px; padding:3px 0;
-  font-size:15px; white-space:nowrap}
-.gs-ovprev-head{font-size:10px; opacity:.6; border-bottom:1px solid rgba(255,255,255,.14);
-  margin-bottom:3px; padding-bottom:4px}
-.gs-ovprev-head .gs-ovprev-nm{font-size:14px; font-weight:700; opacity:1}
-.gs-ovprev-head .gs-ovprev-g{font-size:12px}
-.gs-ovprev-rank{width:14px; flex:none; text-align:center; opacity:.7; font-size:12px}
-.gs-ovprev-nm{flex:1; min-width:52px}
-.gs-ovprev-c{width:26px; flex:none; text-align:center; font-variant-numeric:tabular-nums}
-.gs-ovprev-c.z{opacity:.18}
-.gs-ovprev-g{width:42px; flex:none; text-align:right; color:#e8c66a;
-  font-variant-numeric:tabular-nums}
-.gs-ovprev-d{width:48px; flex:none; text-align:right; font-size:12px; font-weight:700;
-  font-variant-numeric:tabular-nums}
-.gs-ovprev-d.pos{color:#6fb4ff}
-.gs-ovprev-d.neg{color:#ff7d6b}
-.gs-ovprev-head .gs-ovprev-d{color:inherit; font-weight:400}
+.gs-ovp{display:grid; align-items:center; position:relative; min-width:min(100%,300px)}
+.gs-ovp-cell{padding:3px; font-size:15px; white-space:nowrap; text-align:center;
+  font-variant-numeric:tabular-nums; position:relative; z-index:1}
+.gs-ovp-rank{font-size:11px; opacity:.68}
+/* 1위는 금색 순위에 굵은 이름 — 방송 판의 초점을 그대로 옮겨 왔습니다 */
+.gs-ovp-rank.top{color:#e8c66a; opacity:1; font-weight:700}
+.gs-ovp-nm.top{font-weight:700}
+.gs-ovp-mv{font-size:9px; font-weight:700}
+.gs-ovp-mv.up{color:#8fd89b}
+.gs-ovp-mv.down{color:#e59a90}
+/* 이름은 왼쪽 정렬 — 방송 판이 그렇습니다(벌금표와 반대라 헷갈리지 않게 여기서 맞춥니다) */
+.gs-ovp-nm{text-align:left; padding-right:7px; overflow:hidden; text-overflow:ellipsis}
+/* 제목도 방송 판과 같이 판 왼쪽 끝에서 시작합니다 */
+.gs-ovp-title{text-align:left; font-size:13.5px; font-weight:700; padding-bottom:5px}
+.gs-ovp-g{text-align:right; color:#e8c66a}
+.gs-ovp-d{text-align:right; font-size:12px; font-weight:700}
+.gs-ovp-d.pos{color:#6fb4ff}
+.gs-ovp-d.neg{color:#ff7d6b}
+.gs-ovp-h{font-size:10px; opacity:.55; padding-bottom:5px; letter-spacing:.02em;
+  overflow:hidden; text-overflow:ellipsis}
+.gs-ovp-h.gs-ovp-g{font-size:11.5px; opacity:.85}
+.gs-ovp-h.gs-ovp-d{color:inherit; font-weight:400}
+.gs-ovp-rule{height:1px; background:rgba(255,255,255,.14); margin-bottom:3px}
+.gs-ovp-z{opacity:.18}
+.gs-ovp-dim{opacity:.3}
+/* 눈이 앉는 띠 — 열마다 하나씩, 못 끄는 자리에는 이유를 적어 둡니다 */
+.gs-ovp-band{display:flex; align-items:center; justify-content:center; padding:1px 0 7px;
+  position:relative; z-index:3; font-size:9.5px; letter-spacing:.02em; white-space:nowrap}
+.gs-ovp-always{opacity:.32}
+.gs-ovp-eye{display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+  background:transparent; color:#f5f0e6; padding:3px 5px; border-radius:99px; line-height:0;
+  border:1px solid rgba(255,255,255,.24); transition:background .14s, border-color .14s, color .14s}
+.gs-ovp-eye:hover{background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.55)}
+.gs-ovp-eye.off{color:rgba(245,240,230,.4); border-color:rgba(255,255,255,.12)}
+.gs-ovp-eye.off:hover{color:#f5f0e6}
+/* 꺼진 열에 덮는 빗금 — 숫자가 비쳐 보여서 무엇이 빠지는지 계속 읽힙니다.
+   눈에 올리기만 해도 그 열이 금색으로 밝아져, 누르기 전에 범위를 확인할 수 있어요. */
+.gs-ovp-zone{pointer-events:none; z-index:2; border-radius:3px; align-self:stretch;
+  opacity:0; transition:opacity .15s}
+.gs-ovp-hi{opacity:1; background:rgba(232,198,106,.11);
+  box-shadow:inset 0 0 0 1px rgba(232,198,106,.45)}
+.gs-ovp-dead{opacity:1; box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);
+  background:repeating-linear-gradient(-45deg,
+    rgba(255,255,255,.17) 0 3.5px, transparent 3.5px 8px)}
+.gs-ovp-cap{font-size:11.5px; color:var(--ink-2); margin:10px 0 0; min-height:2.6em;
+  line-height:1.65}
+.gs-ovp-cap b{color:var(--ink-body)}
+.gs-fx-hint{margin-top:9px}
+/* 클릭 알림 예시 — 방송 판 위에 카드가 얹히는 모습 그대로 */
+.gs-fxprev{position:relative; margin:10px 0 12px; padding:12px 14px; border-radius:6px;
+  background:#241f1b; color:#f5f0e6; overflow:hidden}
+.gs-fxprev-bg{display:flex; flex-direction:column; gap:7px; font-size:14px; opacity:.5}
+.gs-fxprev-card{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  text-align:center; padding:10px 22px; border-radius:5px; background:#1b1611;
+  border:1px solid rgba(220,174,94,.55)}
+.gs-fxprev-card b{display:block; font-size:17px; font-weight:700; line-height:1.15}
+.gs-fxprev-card span{display:block; margin-top:3px; font-size:12px; opacity:.92}
+.gs-fxprev-card em{font-style:normal; font-weight:700; color:#8fd89b}
+/* 버튼 이름과 상태 사이의 칸막이 — 가운데점을 쓰면 이름의 일부로 읽힙니다 */
+.gs-obsbtn-div{width:1px; height:13px; flex:none; margin:0 1px;
+  background:rgba(var(--ink-rgb),.22)}
+.gs-obsbtn-st{opacity:.62; font-size:11.5px; letter-spacing:.02em}
+/* Enter 가 누르는 버튼임을 알리는 작은 글쇠 표시 */
+.gs-pm-key{display:inline-block; margin-left:7px; font-style:normal; font-size:10px;
+  letter-spacing:.04em; padding:1px 5px; border-radius:3px; vertical-align:middle;
+  border:1px solid currentColor; opacity:.6}
+@media (prefers-reduced-motion:reduce){ .gs-ovp-zone,.gs-ovp-eye{transition:none} }
 
 /* 알림 한 줄 — 화면 아래에 잠깐 떴다 사라집니다. 누를 것이 없어 조작을 안 막습니다 */
 /* 토스트 안에서 누를 수 있는 말 — 토스트는 클릭을 안 받게 두고(밑의 표를 가리면

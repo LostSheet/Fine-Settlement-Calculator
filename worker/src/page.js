@@ -26,8 +26,17 @@ export const PAGE_HTML = `<!doctype html>
     position:relative; will-change:transform; color:var(--ink)}
   /* 총액을 금액 열과 같은 선에 세웁니다 — 증감액 열 10.5 + 열 간격 1.6 + 줄 안쪽 여백 .4 */
   /* 총액도 금액 열과 같은 선에 — 줄 안쪽 여백(.4vw)만 빼면 됩니다 */
-  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.5vw; padding:0 .4vw}
-  .ov-name-t{flex:1; min-width:6vw; padding-right:1.6vw}
+  /* position:relative — 밑의 구분선(::after)이 판 전체가 아니라 이 줄에 붙게 */
+  .ov-head{display:flex; align-items:baseline; gap:1.6vw; margin-bottom:.5vw; padding:0 .4vw;
+    position:relative}
+  /* 제목은 이름 열이 아니라 판 왼쪽 끝에서 시작합니다 — 한 열의 머리글로 보이지 않게.
+     flex:1 이라 음수 여백만큼 왼쪽으로 늘어날 뿐, 뒤의 항목 열은 밀리지 않습니다.
+     덤으로 머리줄이 판 폭을 정하지 않게 되어 판이 좁아지고, 그만큼 확대 배율이 올라
+     방송에 나오는 글자가 전부 커집니다. */
+  .ov-name-t{flex:1; min-width:6vw; padding-right:1.6vw; margin-left:-14vw}
+  /* 머리줄과 표를 가르는 선 — currentColor 라 네 가지 테마에서 알아서 맞습니다 */
+  .ov-head::after{content:''; position:absolute; left:0; right:0; bottom:-.34vw;
+    height:.32vw; background:currentColor; opacity:.34}
   .ov-name-t{font-size:4.2vw; font-weight:600; letter-spacing:.03em;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .ov-total{font-size:3.4vw; font-weight:600; color:var(--gold);
@@ -49,24 +58,28 @@ export const PAGE_HTML = `<!doctype html>
     font-variant-numeric:tabular-nums; opacity:.9}
   .ov-cnum.rl{color:var(--ink)}
   .ov-cnum.z{opacity:.16}
-  .ov-chead{width:6.4vw; flex:none; text-align:center; font-size:1.6vw; opacity:.6;
+  /* 글자 크기는 fitCheads 가 칸에 맞춰 정합니다 (1.6~2.6vw). 여기 값은 그 전의 밑값 */
+  .ov-chead{width:6.4vw; flex:none; text-align:center; font-size:1.6vw; opacity:.8;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .ov-chead.rl{opacity:.72}
+  .ov-chead.rl{opacity:.9}
+  /* 룰렛 표시는 작게 — ◎ 가 글자 한 칸을 통째로 먹으면 정작 항목 이름이 손해입니다 */
+  .ov-rlmk{font-size:.7em; font-style:normal; opacity:.85; margin-right:.05em}
   /* 순액 — 받을 몫에서 낸 벌금을 뺀 값. 받는 쪽은 파랑, 보내는 쪽은 빨강 */
   /* 폭은 금액 열과 같은 예산·래칫 변수 — 커진 순액이 잘리는 일이 없습니다 */
   .ov-net{flex:none; width:var(--netw, 11.5vw); text-align:right; font-size:2.9vw; font-weight:700;
     font-variant-numeric:tabular-nums; opacity:.5; white-space:nowrap; overflow:hidden}
   .ov-net.plus{color:#6fb4ff; opacity:1}
   .ov-net.minus{color:#ff7d6b; opacity:1}
-  .ov-nethead{flex:none; width:var(--netw, 11.5vw); text-align:right; font-size:1.6vw; opacity:.6}
+  .ov-nethead{flex:none; width:var(--netw, 11.5vw); text-align:right; font-size:1.6vw; opacity:.8}
   /* 폭은 렌더마다 실측한 --goldw 를 전 줄이 공유 — 줄마다 제 금액대로 늘면 열이 어긋납니다 */
   .ov-gold{font-variant-numeric:tabular-nums; color:var(--gold); flex:none;
-    text-align:right; min-width:9.5vw; width:var(--goldw, auto); white-space:nowrap}
-  /* 증감액 — 금액 뒤의 고정폭 열. 판 안에 머물면서 금액 열의 오른쪽 끝은 안 밉니다 */
-  /* 증감액은 이름과 금액 사이의 빈 자리에 붙습니다 — 어느 열도 밀지 않고 여백도 안 먹습니다 */
-  /* 줄 전체를 기준으로 오른쪽 바깥에 답니다 — 순액 열을 덮지 않게 */
-  .ov-delta{position:absolute; right:.4vw; top:50%; transform:translateY(-50%);
-    white-space:nowrap;
+    text-align:right; min-width:9.5vw; width:var(--goldw, auto); white-space:nowrap;
+    position:relative}
+  /* 증감액 — 개인 벌금(합계) 바로 오른쪽에 붙습니다. 줄 오른쪽 끝에 걸어 두면
+     순액이 꺼져 있을 때 정작 벌금을 덮어 버립니다. 순액은 덮여도 되는 값이라
+     켜져 있을 때는 그 열 위에 얹힙니다. */
+  .ov-delta{position:absolute; left:100%; margin-left:.6vw; top:50%;
+    transform:translateY(-50%); white-space:nowrap;
     font-size:3.4vw; font-weight:600; color:var(--gold);
     padding:.1vw .8vw; border-radius:99px; background:rgba(20,17,14,.72)}
   /* 밝은 판·진한 글자 테마에서는 칩도 밝게 */
@@ -74,7 +87,56 @@ export const PAGE_HTML = `<!doctype html>
   .ov-delta.plus{color:#8fd89b}
   /* 비어 있을 때는 칩 배경만 남지 않도록 아예 감춥니다 */
   .ov-delta:empty{display:none}
+  /* 순액이 꺼져 있으면 칩은 판 바깥(투명 영역)으로 나갑니다 — 카드를 넓히지 않으니
+     판이 작아지지 않고, OBS 소스에 어차피 남던 여백을 대신 씁니다.
+     잘리지 않게 fitBoard 가 그 튀어나온 만큼을 폭에 얹어서 배율을 잽니다. */
   .ov-row.zero{opacity:.5}
+
+  /* 벌금 알림 — 룰렛과 같은 결의 카드. 원판과 달리 글자 두 줄뿐이라 크게 잡을 필요가
+     없어서, 소스 크기를 재지 않고 내용에 맞춰 세웁니다. */
+  /* 카드만 뜹니다 — 뒤를 어둡게 깔지 않습니다. 소스가 화면 모퉁이의 작은 상자라
+     막을 깔면 그 상자 전체가 어두워질 뿐, 얻는 게 없습니다. */
+  #ovfx:not(:empty){position:fixed; inset:0; z-index:3; display:flex;
+    align-items:center; justify-content:center; padding:2%;
+    pointer-events:none; animation:ov-spin-in .18s ease-out}
+  /* 평평하게 — 조명·광택 없이 색 하나와 얇은 테두리로만 */
+  .ov-fx{max-width:86%; text-align:center; color:#ece4d6; padding:3.4vw 6vw;
+    border-radius:1.4vw; animation:ov-fx-in .2s cubic-bezier(.2,1.3,.4,1);
+    background:#1b1611; border:.26vw solid rgba(220,174,94,.55)}
+  .ov-fx b{display:block; font-size:6.4vw; font-weight:700; line-height:1.1;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .ov-fx span{display:block; margin-top:1.2vw; font-size:4.2vw; opacity:.92;
+    white-space:nowrap}
+  .ov-fx em{font-style:normal; font-weight:700}
+  .ov-fx.up em{color:#8fd89b}
+  .ov-fx.dn em{color:#e59a90}
+  @keyframes ov-fx-in{from{opacity:0; transform:scale(.86)} to{opacity:1; transform:scale(1)}}
+
+  /* 금액 스와이프 — 오르면 위로, 깎이면 아래로. 가운데에 증감을 한 번 보여 주고 멈춥니다 */
+  /* 두루마리 창 — 한 줄 높이만 남기고 나머지는 잘라 냅니다.
+     overflow 만으로는 애니메이션 중인(합성된) 자식이 새어 나가서 clip-path 로 못 박고,
+     릴은 절대 배치해 줄 높이(strut)에 밀리지 않게 위에 딱 붙입니다.
+     폭은 금액 열이 이미 --goldw 로 정해 두었으니 그대로 채웁니다. */
+  /* 이름은 ov-mv* 로 — .ov-reel 은 룰렛 슬롯이 이미 쓰고 있습니다(가운데 정렬·고정 크기).
+     같은 이름을 쓰면 그 규칙이 덮어써서 금액이 반 칸씩 어긋납니다. */
+  .ov-mvbox{position:relative; display:inline-block; width:100%; height:1.16em;
+    overflow:hidden; clip-path:inset(0); vertical-align:bottom; line-height:0}
+  .ov-mvreel{position:absolute; top:0; left:0; right:0; display:flex; flex-direction:column}
+  .ov-mvreel > i{font-style:normal; display:block; height:1.16em; line-height:1.16em}
+  .ov-mvreel.up > i.d{color:#8fd89b}
+  .ov-mvreel.dn > i.d{color:#e59a90}
+  .ov-mvreel.up{animation:ov-mv-up var(--mvdur,1120ms) cubic-bezier(.3,0,.2,1) forwards}
+  .ov-mvreel.dn{animation:ov-mv-dn var(--mvdur,1120ms) cubic-bezier(.3,0,.2,1) forwards}
+  @keyframes ov-mv-up{
+    0%{transform:translateY(0)} 25%{transform:translateY(-33.333%)}
+    75%{transform:translateY(-33.333%)} 100%{transform:translateY(-66.666%)}}
+  @keyframes ov-mv-dn{
+    0%{transform:translateY(-66.666%)} 25%{transform:translateY(-33.333%)}
+    75%{transform:translateY(-33.333%)} 100%{transform:translateY(0)}}
+  @media (prefers-reduced-motion:reduce){
+    .ov-mvreel.up,.ov-mvreel.dn{animation-duration:1ms}
+    .ov-fx{animation:none}
+  }
 
   /* 1위 — 금색 순위와 살짝 밝은 이름으로 초점을 만듭니다 */
   .ov-row.top .ov-rank{color:var(--gold); opacity:1; font-weight:700}
@@ -84,9 +146,11 @@ export const PAGE_HTML = `<!doctype html>
   .ov-row.hit{animation:ov-flash 1.6s ease-out}
   /* 룰렛 — 보드가 아니라 소스(뷰포트) 전체를 덮습니다. 보드가 좁고 길어도
      원판은 소스 크기로 큽니다 */
+  /* 뒤를 어둡게 깔지 않습니다 — 소스가 화면 모퉁이의 작은 상자라, 막은 게임이 아니라
+     우리 판만 덮습니다. 나눈 소스(룰렛 전용)에서는 아예 검은 사각형으로 보이고요.
+     판(.ov-sp)이 이미 불투명해서 원판 뒤는 그것으로 가려집니다. */
   #ovspin:not(:empty){position:fixed; inset:0; z-index:3; display:flex;
     align-items:center; justify-content:center; padding:2%;
-    background:rgba(12,10,8,.78);
     animation:ov-spin-in .18s ease-out}
   @keyframes ov-spin-in{from{opacity:0} to{opacity:1}}
   .ov-sp{position:relative; display:flex; width:96%; max-height:100%; text-align:center;
@@ -145,6 +209,11 @@ export const PAGE_HTML = `<!doctype html>
     box-shadow:0 0 0 calc(var(--u)*.9*var(--wu,1)) #3a2e25, 0 0 0 calc(var(--u)*1.1*var(--wu,1)) rgba(220,174,94,.75),
       0 calc(var(--u)*1.2) calc(var(--u)*3.6) rgba(0,0,0,.55),
       inset 0 0 calc(var(--u)*3) rgba(0,0,0,.28)}
+  /* 답이 없는 동안 끝없이 도는 원판 */
+  /* from 을 반드시 적습니다 — to 만 쓰면 시작값이 .ov-w-disc 의 translateZ(0),
+     즉 함수 목록이 달라 행렬 보간으로 떨어지고, 항등행렬끼리라 한 바퀴가 제자리입니다 */
+  @keyframes ov-w-free{from{transform:rotate(0deg)} to{transform:rotate(360deg)}}
+  .ov-w-free{animation:ov-w-free 260ms linear infinite}
   .ov-w-pin{position:absolute; left:50%; top:calc(var(--u)*-1.7*var(--wu,1)); width:0; height:0;
     transform:translateX(-50%); z-index:2;
     border-left:calc(var(--u)*1.6*var(--wu,1)) solid transparent;
@@ -321,16 +390,34 @@ export const PAGE_HTML = `<!doctype html>
   var board = null;   // [{n,g,c}] — 앱이 계산해서 보내줍니다
   var cols = [];      // [{t,r}] — 항목 열 머리
   var showNet = true; // 순액 열을 켤지 (기본 켬)
-  var pend = null;    // 룰렛이 도는 동안 도착한 표 (끝나고 반영)
+  var showSum = true; // 합계 열을 켤지 (기본 켬). 끄면 증감 칩도 같이 빠집니다 —
+                      // 금액을 안 보여 주면서 증감만 띄우면 읽을 수가 없어서요
+  /* 마지막으로 받은 판. 연출(카드·룰렛)이 다 끝나야 화면에 앉힙니다 —
+     연출 중에 숫자가 먼저 바뀌면 답이 새어 나가고, 무엇 때문에 바뀐 건지도 안 보입니다.
+     여러 번 받아도 최신 것 하나만 남으니 밀릴 일이 없습니다. */
+  var next = null;
+  /* 연출 대기열 — 항목 카드와 룰렛이 도착 순서대로 한 줄에 섭니다.
+     그래서 '항목 → 룰렛 → 항목'이 그 순서 그대로 나갑니다. */
+  var fxQ = [];
+  var fxSeen = {};    // 큐에 넣은 적 있는 id — 상태를 다시 받아도 두 번 안 넣습니다
+  var fxShown = {};   // 실제로 화면에 띄운 카드 id — 취소가 카드를 띄울지 가릅니다
+  var fxCard = null;  // 지금 떠 있는 카드
+  var fxTimer = null;
+  var fxBooted = false; // 첫 상태의 대기열은 '이미 흘러간 것'으로 봅니다
+  var applying = false; // 판 반영(스와이프·순위 이동) 중
+  var FX_HOLD = 1600;   // 카드가 머무는 시간
+  var MV_DUR = 1120;    // 금액 스와이프 한 판
+  var mvMode = "swipe"; // swipe | chip | off
   var spin = null;      // 앱이 보낸 판 (한 번에 통째로)
   var play = null;      // 방송이 제 시계로 재생하는 상태
   var spinTimer = null; // 도는 글자
   var stepTimer = null; // 다음 걸음
   /* 속도는 판마다 옵니다. 앱·방송·파티원 화면이 같은 속도로 돌아야 따로 놀지 않습니다 */
   var SPINS = {
-    fast: { roll: 1200, hold: 700, end: 1100 },
-    normal: { roll: 2200, hold: 1200, end: 1700 },
-    slow: { roll: 3400, hold: 1700, end: 2200 },
+    fast: { roll: 2200, hold: 700, end: 1100 },
+    normal: { roll: 4200, hold: 1100, end: 1500 },
+    slow: { roll: 7000, hold: 1500, end: 1900 },
+    epic: { roll: 10000, hold: 1800, end: 2200 },
   };
   var OV_ROLL = 2200, OV_HOLD = 1200, OV_END = 1700;
   var useSpeed = function (sp) {
@@ -433,6 +520,28 @@ export const PAGE_HTML = `<!doctype html>
     box.style.setProperty("--netw", netHW + "px");
   };
 
+  /* 항목명 크기 — 칸(6.4vw)에 들어가는 최대 크기를 이름마다 재서 정합니다.
+     칸을 넓히는 건 답이 아닙니다: 판이 가로로 커지면 contain 확대 배율이 그만큼
+     떨어져 결국 제자리라서요. 늘릴 수 있는 건 다른 글자 대비 비율뿐입니다.
+     짧은 이름은 커지고, 긴 이름만 지금 크기(1.6vw)로 남습니다 — 손해 보는 열은 없습니다. */
+  var fitCheads = function () {
+    var MAXV = 2.6, MINV = 1.6;
+    var box = 6.4 * (window.innerWidth / 100); // 칸 폭(px). 배율 전 레이아웃 기준
+    if (!box) return;
+    [].forEach.call(document.querySelectorAll(".ov-chead"), function (el) {
+      /* 잘린 채로 재면 칸 폭이 그대로 나옵니다 — 잠깐 풀어서 진짜 폭을 잽니다.
+         offsetWidth 는 확대(transform) 전 값이라 box 와 같은 자로 잽니다 */
+      el.style.fontSize = MAXV + "vw";
+      el.style.width = "auto";
+      el.style.overflow = "visible";
+      var need = el.offsetWidth;
+      el.style.width = "";
+      el.style.overflow = "";
+      el.style.fontSize =
+        (need > box ? Math.max(MINV, (MAXV * box) / need) : MAXV).toFixed(2) + "vw";
+    });
+  };
+
   var rowsHtml = function (rows) {
     var list = ranked(rows);
     var now = Date.now();
@@ -458,14 +567,17 @@ export const PAGE_HTML = `<!doctype html>
       }
     });
 
+    /* 0원을 흐리게 하는 건 "아직 안 낸 사람"을 가리려는 것이라, 모두가 0이면 뜻이 없습니다.
+       단가를 0으로 두고 횟수만 세는 판이 그렇습니다 — 그때는 아무도 안 흐리게 둡니다. */
+    var anyPaid = list.some(function (r) { return (r.g || 0) !== 0; });
     var html = list.map(function (r, i) {
       var was = prev[r.n];
       var justHit = !!was && r.g - was.g !== 0;   // 번쩍임은 바뀐 그 순간만
       var rc = recent[r.n] || {};
       var dAge = rc.dAt == null ? Infinity : now - rc.dAt;
       var mAge = rc.mvAt == null ? Infinity : now - rc.mvAt;
-      var showD = dAge < DELTA_MS, showM = mAge < MOVE_MS;
-      var cls = "ov-row" + (r.g ? "" : " zero") + (justHit ? " hit" : "") +
+      var showD = mvMode === "chip" && dAge < DELTA_MS, showM = mAge < MOVE_MS;
+      var cls = "ov-row" + (r.g || !anyPaid ? "" : " zero") + (justHit ? " hit" : "") +
         (i === 0 && r.g ? " top" : "");
       /* 이미 흐르던 표시는 지난 만큼 앞당겨 이어 붙입니다 — 다시 처음부터 뜨지 않게 */
       var delay = function (age) { return ' style="animation-delay:-' + Math.round(age) + 'ms"'; };
@@ -480,11 +592,13 @@ export const PAGE_HTML = `<!doctype html>
           return '<span class="ov-cnum' + (c.r ? ' rl' : '') + (v ? '' : ' z') + '">' +
             (v ? esc(v) : '') + '</span>';
         }).join('') +
-        '<span class="ov-gold">' + manShort(r.g) +
-          '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
-            (showD ? delay(dAge) : "") + '>' +
-            (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>' +
-        '</span>' +
+        (showSum
+          ? '<span class="ov-gold">' + manShort(r.g) +
+              '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
+                (showD ? delay(dAge) : "") + '>' +
+                (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>' +
+            '</span>'
+          : "") +
         (showNet
           ? '<span class="ov-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
               (r.d > 0 ? "+" : "") + manShort(r.d) + '</span>'
@@ -618,10 +732,20 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   /* 한 걸음 굴립니다. 원판은 앞으로만, 걸음마다 두 바퀴 넘게 더 돌게 목표를 올립니다 */
+  /* 답이 없는 동안 원판을 끝없이 돌립니다 — CSS 애니메이션에 맡기면
+     프레임마다 계산할 게 없어서 OBS 소스에서도 가볍습니다 */
+  var freeWheel = function (on) {
+    var el = document.getElementById("ovdisc");
+    if (!el) return;
+    if (on) { el.style.transition = "none"; el.style.transform = ""; el.classList.add("ov-w-free"); }
+    else el.classList.remove("ov-w-free");
+  };
+
   var rollStep = function () {
     if (!play) return;
     if (play.sp.look === "num") rollFace(play);
-    else spinTo(poolAt(play.sp, play.i), play.sp.w, play.sp.steps[play.i].k);
+    else if (play.free) freeWheel(true);
+    else spinTo(poolAt(play.sp, play.i), play.sp.w, (play.sp.steps[play.i] || {}).k);
   };
 
   /* 양도권은 한 판에 한 번뿐 — 이미 나왔으면 그 뒤 회차의 원판에서 뺍니다 */
@@ -757,9 +881,9 @@ export const PAGE_HTML = `<!doctype html>
       stepTimer = setTimeout(stepPlay, 400);
       return;
     }
-    /* 적용 결과(out)나 새 표(pend)가 아직이면 결과 화면을 붙잡습니다 — 앱 탭이
+    /* 적용 결과(out)나 새 표(next)가 아직이면 결과 화면을 붙잡습니다 — 앱 탭이
        느려져(백그라운드 스로틀 등) 오버레이가 먼저 끝나면 벌금 변화가 못 뜹니다 */
-    if (spin && spin.sid === play.sp.sid && !play.sp.out && !pend) {
+    if (spin && spin.sid === play.sp.sid && !play.sp.out && !next) {
       play.waited = true;
       stepTimer = setTimeout(stepPlay, 300);
       return;
@@ -774,19 +898,25 @@ export const PAGE_HTML = `<!doctype html>
     doneSid = play.sp.sid;
     play = null;
     drawPlay();
-    if (pend) {
-      board = pend.board;
-      cols = pend.cols;
-      showNet = pend.net;
-      pend = null;
-      render();
-    }
+    pump(); // 다음 연출로, 큐가 비었으면 판을 앉힙니다
   };
 
   var startPlay = function (sp) {
     clearPlayTimers();
     useSpeed(sp);
-    play = { sp: sp, i: 0, rolling: true, over: false };
+    play = { sp: sp, i: 0, rolling: true, over: false, free: sp.phase === "free" };
+    drawPlay();
+    rollStep();
+    /* 답이 없는 판은 걸음을 안 셉니다 — 서기가 멈춰 답이 올 때 그때부터 셉니다 */
+    if (!play.free) stepTimer = setTimeout(stepPlay, OV_ROLL);
+  };
+
+  /* 답이 도착했습니다 — 돌던 자리에서 이어서 감속으로 넘어갑니다 */
+  var leaveFree = function () {
+    if (!play || !play.free) return;
+    play.free = false;
+    /* 클래스는 spinTo 가 벗깁니다 — 여기서 먼저 벗기면 돌던 각도를 못 읽어
+       원판이 0도로 튄 뒤에 감속을 시작합니다 */
     drawPlay();
     rollStep();
     stepTimer = setTimeout(stepPlay, OV_ROLL);
@@ -945,7 +1075,7 @@ export const PAGE_HTML = `<!doctype html>
       "</div></div>";
   };
 
-  /* 결과 줄 — 실제 깎이거나 붙은 값은 표(pend)와의 차로 잽니다. 잘린 감면이면
+  /* 결과 줄 — 실제 깎이거나 붙은 값은 표(next)와의 차로 잽니다. 잘린 감면이면
      "벌금까지만"을 덧붙입니다. 대상은 금액이 변한 줄에서 찾습니다(지정 양도 포함). */
   var outInfo = function (sp) {
     /* 앱이 적용 결과를 실어 보냈으면 그걸 씁니다 — 표 diff 는 그물일 뿐입니다 */
@@ -959,7 +1089,7 @@ export const PAGE_HTML = `<!doctype html>
       };
     }
     var oldB = board || [];
-    var newB = pend && pend.board ? pend.board : null;
+    var newB = next && next.board ? next.board : null;
     var target = null, oldG = null, newG = null;
     if (newB) {
       for (var i = 0; i < newB.length; i++) {
@@ -978,7 +1108,25 @@ export const PAGE_HTML = `<!doctype html>
     };
   };
 
-  /* 당첨 칸이 12시 바늘 아래로 오도록 원판을 돌립니다. 걸음마다 몇 바퀴 더 얹습니다 */
+  /* 판 번호에서 뽑는 씨앗 — 같은 판이면 어느 소스에서 보든 같은 각도로 돌아야 해서
+     난수 대신 이걸 씁니다. 결과는 앱이 정해 보내므로 흔드는 건 연출뿐입니다. */
+  var seedOf = function (v) {
+    var t = String(v || ""), h = 0;
+    for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+    return h;
+  };
+
+  /* 자유 회전 한 바퀴에 걸리는 시간. 앱의 FREE_MS 와 같은 값이어야
+     서기 화면과 방송 화면이 같은 속도로 돕니다. */
+  var OV_FREE_MS = 260;
+
+  /* 당첨 칸이 12시 바늘 아래로 오도록 원판을 돌립니다.
+     진짜 원판은 곡선 하나로 섭니다 — 등감속이면 처음 속도가 평균의 딱 두 배라서,
+     timing-function 의 처음 기울기를 "돌던 속도 / 평균 속도"에 맞추면 멈추기 시작하는
+     순간에 이음매가 없습니다. 곡선 두 개를 이어 붙이면 그 이음매에서 속도가 툭 바뀌어
+     고장 난 것처럼 보였습니다.
+     매번 다르게 서는 맛은 곡선이 아니라 바퀴 수로 냅니다 — 같은 시간에 더 많이 돌면
+     제동이 세고, 적게 돌면 길게 미끄러집니다. */
   var spinTo = function (faces, weights, k) {
     var el = document.getElementById("ovdisc");
     if (!el) return;
@@ -986,26 +1134,193 @@ export const PAGE_HTML = `<!doctype html>
     var seg = null;
     for (var i = 0; i < segs.length; i++) if (segs[i].k === k) seg = segs[i];
     if (!seg) seg = segs[0];
-    /* 지금 각도보다 항상 앞에 있는 목표를 고릅니다 — 뒤로 감기면 어색합니다 */
+    /* 끝없이 돌던 중이면 그 각도를 이어받습니다 — 안 그러면 멈추는 순간 튑니다 */
+    var wasFree = el.classList.contains("ov-w-free");
+    if (wasFree) {
+      var mm = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+      el.classList.remove("ov-w-free");
+      wheelRot = ((Math.atan2(mm.b, mm.a) * 180) / Math.PI + 360) % 360;
+    }
+    /* 이 칸이 바늘 밑으로 오는, 지금보다 앞에 있는 첫 각도 */
     var from = wheelRot;
-    var target = wheelRot + 720 - seg.mid;
-    while (target <= wheelRot + 360) target += 360;
+    var seat = from + ((((-seg.mid - from) % 360) + 360) % 360);
+    /* 바퀴 수 — 판마다 흔들어서 같은 결과라도 매번 다르게 섭니다 */
+    var seed = seedOf((play && play.sp.sid) + ":" + (play ? play.i : 0));
+    var base = Math.max(2, Math.round(OV_ROLL / OV_FREE_MS / 2));
+    var turns = Math.max(1, base + ((seed % 3) - 1));
+    var target = seat + turns * 360;
     wheelRot = target;
+
+    var D = Math.max(1, target - from);
+    /* 처음 기울기 s 를 갖고 끝에서 0 이 되는 곡선: (1/3, s/3, 2/3, 1). s=2 가 등감속입니다 */
+    var s0 = Math.min(2.85, Math.max(1.35, ((360 / OV_FREE_MS) * OV_ROLL) / D));
+    var cz = wasFree
+      ? "cubic-bezier(.333," + (s0 / 3).toFixed(3) + ",.667,1)"
+      : "cubic-bezier(.34,0,.2,1)"; // 멈춰 있다 다시 도는 판(x2 등)
+
     /* 시작 각도를 전환 없이 먼저 못 박고, 강제로 한 번 계산시킨 뒤 목표를 줍니다.
        프레임 콜백을 기다리지 않아 OBS 브라우저 소스에서도 확실히 돕니다. */
     el.style.transition = "none";
     el.style.transform = "rotate(" + from.toFixed(2) + "deg)";
     void el.offsetWidth;
-    el.style.transition = "transform " + OV_ROLL + "ms cubic-bezier(.16,.9,.28,1)";
+    el.style.transition = "transform " + OV_ROLL + "ms " + cz;
     el.style.transform = "rotate(" + target.toFixed(2) + "deg)";
+  };
+
+  /* 설정 — 앱이 상태에 실어 보냅니다 */
+  var FX_HOLDS = { fast: 1000, norm: 1600, slow: 2400 };
+  var fxOn = true;
+  var applyFxCfg = function (st) {
+    var sp = st.fxSpd;
+    /* 앱이 알림을 끄면 연출거리를 아예 안 보내지만, 받는 쪽에서도 한 번 더 겁니다 */
+    fxOn = sp !== "off";
+    FX_HOLD = FX_HOLDS[sp] || FX_HOLDS.norm;
+    MV_DUR = Math.round(FX_HOLD * 0.7);
+    mvMode = st.mvMode === "chip" || st.mvMode === "off" ? st.mvMode : "swipe";
+  };
+
+  /* 받은 연출거리를 큐에 세웁니다 */
+  var ingestFx = function (list) {
+    if (!list) list = [];
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (!e || !e.i || fxSeen[e.i]) continue;
+      fxSeen[e.i] = 1;
+      if (!fxBooted || !fxOn) continue; // 붙기 전에 있었던 일과, 알림을 끈 판은 지나갑니다
+      if (e.k === "cancel") {
+        /* 아직 안 뜬 카드를 취소했으면 그 카드를 큐에서 빼고 끝냅니다 —
+           아무도 못 봤으니 없던 일입니다. 오입력이 방송에 아예 안 나갑니다. */
+        var hit = -1;
+        for (var j = 0; j < fxQ.length; j++) if (fxQ[j].i === e.ref) hit = j;
+        if (hit >= 0) { fxQ.splice(hit, 1); continue; }
+        /* 이미 뜬 뒤라면 본 사람에게 정정을 알려야 합니다 — 짧게 띄웁니다 */
+        if (!fxShown[e.ref]) continue;
+      }
+      fxQ.push(e);
+    }
+    fxBooted = true;
+    var ks = Object.keys(fxSeen);
+    if (ks.length > 300) for (var k = 0; k < 150; k++) delete fxSeen[ks[k]];
+    var hs = Object.keys(fxShown);
+    if (hs.length > 300) for (var h = 0; h < 150; h++) delete fxShown[hs[h]];
+  };
+
+  var fxCardHtml = function (e) {
+    var up = e.g > 0;
+    return '<div class="ov-fx ' + (up ? "up" : "dn") + '">' +
+      "<b>" + esc(e.n) + "</b>" +
+      "<span>" + esc(e.t || "") + ' <em>' + (up ? "+" : "\u2212") +
+      manShort(Math.abs(e.g)) + "</em></span></div>";
+  };
+
+  var playCard = function (e) {
+    fxShown[e.i] = 1;
+    fxCard = e;
+    /* 정정(취소·빼기)은 짧게 — 알리되 붙는 것만큼 크게 다루지 않습니다.
+       그리고 밀리면 더 짧게: 다 보여 주되 속도만 올려 다음 판을 안 잡아먹습니다. */
+    var hold = e.k === "add" ? FX_HOLD : Math.round(FX_HOLD * 0.7);
+    if (fxQ.length > 4) hold = Math.round(hold * 0.5);
+    var host = document.getElementById("ovfx");
+    /* 카드는 벌금표에 대한 이야기라 표 소스에 뜹니다. 룰렛 소스는 룰렛만 —
+       소스를 나눈 뜻이 "표는 작게, 룰렛은 크게"인데 거기에 카드가 끼면 화면 한복판을
+       클릭마다 가립니다. 안 그리는 쪽도 시간은 똑같이 흘려서 두 소스의 판이
+       같은 순간에 바뀌게 합니다. */
+    if (host && TYPE !== "spin") host.innerHTML = fxCardHtml(e);
+    clearTimeout(fxTimer);
+    fxTimer = setTimeout(function () {
+      fxCard = null;
+      var h = document.getElementById("ovfx");
+      if (h) h.innerHTML = "";
+      pump();
+    }, hold);
+  };
+
+  /* 굴릴 거리 — 금액이 바뀐 줄과 총액 */
+  var swipePlan = function (oldB, newB) {
+    var was = {}, out = [];
+    oldB.forEach(function (r) { was[r.n] = r.g || 0; });
+    var oldSum = 0, newSum = 0;
+    oldB.forEach(function (r) { oldSum += r.g || 0; });
+    newB.forEach(function (r) {
+      newSum += r.g || 0;
+      if (was[r.n] != null && was[r.n] !== (r.g || 0))
+        out.push({ n: r.n, from: was[r.n], to: r.g || 0 });
+    });
+    if (oldSum !== newSum) out.push({ total: 1, from: oldSum, to: newSum });
+    return out;
+  };
+
+  /* 금액 칸 안에서 굴립니다 — 오르면 위로, 깎이면 아래로.
+     판 밖으로 나가는 게 없어서 소스를 좁게 잘라도 안 사라집니다. */
+  var paintSwipe = function (moves) {
+    var box = document.querySelector(".ov");
+    if (box) box.style.setProperty("--mvdur", MV_DUR + "ms");
+    var rows = document.querySelectorAll(".ov-row");
+    moves.forEach(function (m) {
+      var el = null;
+      if (m.total) el = document.querySelector(".ov-total");
+      else
+        for (var i = 0; i < rows.length; i++)
+          if (rows[i].getAttribute("data-k") === m.n) el = rows[i].querySelector(".ov-gold");
+      if (!el) return;
+      var up = m.to > m.from;
+      var mid = (up ? "+" : "\u2212") + manShort(Math.abs(m.to - m.from));
+      var a = manShort(m.from), c = manShort(m.to);
+      /* 아래로 굴릴 때는 순서를 뒤집고 반대 방향으로 — 둘 다 새 값에서 멈춥니다 */
+      var items = up ? [a, mid, c] : [c, mid, a];
+      el.innerHTML =
+        '<span class="ov-mvbox"><span class="ov-mvreel ' + (up ? "up" : "dn") + '">' +
+        '<i>' + items[0] + '</i><i class="d">' + items[1] + '</i><i>' + items[2] + "</i>" +
+        "</span></span>";
+    });
+  };
+
+  /* 큐가 다 끝난 뒤 한 번에 — 금액이 굴러가고, 그다음 순위가 움직입니다.
+     둘 다 세로 움직임이라 겹치면 무엇이 무엇인지 안 읽힙니다. */
+  var settle = function () {
+    if (!next) return;
+    var nb = next.board, nc = next.cols, nn = next.net, ns = next.sum;
+    var sameCols = JSON.stringify(nc) === JSON.stringify(cols);
+    var moves =
+      mvMode === "swipe" && ovBoard && board && board.length && nb && nb.length &&
+      sameCols && nn === showNet && ns === showSum
+        ? swipePlan(board, nb)
+        : [];
+    var done = function () {
+      board = nb; cols = nc; showNet = nn; showSum = ns;
+      next = null;
+      applying = false;
+      render();
+      pump();
+    };
+    if (!moves.length) { done(); return; }
+    applying = true;
+    paintSwipe(moves);
+    setTimeout(done, MV_DUR + 150); // 숨 고르고 나서 순위를 옮깁니다
+  };
+
+  /* 연출 한 줄 세우기 — 재생 중이면 기다리고, 큐가 비면 판을 앉힙니다 */
+  var pump = function () {
+    if (play || fxCard || applying) return;
+    if (fxQ.length) {
+      var e = fxQ.shift();
+      if (e.k === "spin") {
+        if (e.sp && e.sp.sid !== doneSid) startPlay(e.sp);
+        else pump();
+      } else playCard(e);
+      return;
+    }
+    if (next) settle();
   };
 
   var render = function () {
     /* 룰렛 전용 소스 — 보드도 알림도 안 그립니다. 판이 없으면 그냥 투명입니다 */
     if (TYPE === "spin") {
       if (!document.getElementById("ovspin")) app.innerHTML = '<div id="ovspin"></div>';
-      if (spin && spin.sid !== doneSid && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
-      else if (play) play.sp = spin || play.sp;
+      if (play && spin && spin.sid === play.sp.sid) {
+        play.sp = spin; // 시작은 연출 큐가 맡습니다
+        if (play.free && spin.phase !== "free") leaveFree();
+      }
       drawPlay();
       return;
     }
@@ -1020,7 +1335,7 @@ export const PAGE_HTML = `<!doctype html>
     root.dataset.notice = "0";
     if (!ovBoard) {
       app.innerHTML = '<div class="ov"><div class="ov-head" id="ovhead"></div>' +
-        '<div id="ovboard"></div></div><div id="ovspin"></div>';
+        '<div id="ovboard"></div></div><div id="ovspin"></div><div id="ovfx"></div>';
       ovBoard = document.getElementById("ovboard");
       setGoldW(board);
       ovBoard.innerHTML = rowsHtml(board);
@@ -1031,23 +1346,29 @@ export const PAGE_HTML = `<!doctype html>
     /* 룰렛 판 — 새 판이 오면 재생을 시작하고, 그 뒤로는 제 시계로 굴립니다.
        현황판 전용 소스는 판을 안 돌립니다 — 증감 칩이 표에서 결과를 대신 말해요 */
     if (TYPE !== "board") {
-      if (spin && spin.sid !== doneSid && (!play || play.sp.sid !== spin.sid)) startPlay(spin);
-      else if (play) play.sp = spin || play.sp; // 양도 대기 여부만 갱신
+      if (play && spin && spin.sid === play.sp.sid) {
+        play.sp = spin; // 양도 대기 여부만 갱신. 시작은 연출 큐가 맡습니다
+        if (play.free && spin.phase !== "free") leaveFree();
+      }
       drawPlay();
     }
-    /* 오버레이 제목은 파티명이 아니라 '벌금표' — 방송 화면에 뜨는 건 표지판이지 명패가 아닙니다 */
+    /* 오버레이 제목은 파티명이 아니라 '벌금 순위' — 방송 화면에 뜨는 건 표지판이지 명패가 아닙니다.
+       금액 내림차순으로 서는 판이라 '표'보다 '순위'가 화면이 하는 일을 그대로 말합니다 */
     /* 항목 이름은 머리줄에 한 번만 — 줄마다 되뇌면 방송에서 읽히지 않습니다.
        칸 구성은 본문 줄과 하나하나 같아야 열이 맞습니다 */
     document.getElementById("ovhead").innerHTML =
       '<span class="ov-rank"></span><span class="ov-move"></span>' +
-      '<span class="ov-name-t">벌금표</span>' +
+      '<span class="ov-name-t">벌금 순위</span>' +
       cols.map(function (c) {
         return '<span class="ov-chead' + (c.r ? " rl" : "") + '">' +
-          (c.r ? "\u25ce" : "") + esc(c.t) + "</span>";
+          (c.r ? '<i class="ov-rlmk">\u25ce</i>' : "") + esc(c.t) + "</span>";
       }).join("") +
-      '<span class="ov-total">' +
-      manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>" +
+      (showSum
+        ? '<span class="ov-total">' +
+          manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>"
+        : "") +
       (showNet ? '<span class="ov-nethead">순액</span>' : "");
+    fitCheads(); // 머리줄을 그린 뒤에 — 확대(fitBoard) 전에 크기를 정해야 합니다
     fitBoard();
   };
 
@@ -1103,22 +1424,43 @@ export const PAGE_HTML = `<!doctype html>
       if (ev.data === "pong") return;
       try {
         var m = JSON.parse(ev.data);
-        if (m.kind === "dead") { dead = true; board = null; spin = null; play = null; pend = null; }
-        else if (m.kind === "state") {
+        if (m.kind === "dead") {
+          dead = true; board = null; spin = null; play = null;
+          next = null; fxQ = []; fxCard = null; clearTimeout(fxTimer);
+        } else if (m.kind === "state") {
           dead = false;
-          var nb = m.state && m.state.board ? m.state.board : null;
-          var nc = (m.state && m.state.cols) || [];
-          var nn = !(m.state && m.state.ovNet === false);
-          /* 도는 동안 온 표는 담아 두었다가 재생이 끝나고 보여 줍니다 — 안 그러면
-             바늘이 멈추기 전에 뒤의 금액이 먼저 바뀌어 답이 새어 나갑니다 */
-          if (play) pend = { board: nb, cols: nc, net: nn };
-          else { board = nb; cols = nc; showNet = nn; pend = null; }
-          spin = m.state && m.state.spin ? m.state.spin : null;
-          name = (m.state && m.state.name) || "";
-          applyLook(m.state && m.state.look);
+          var st = m.state || {};
+          /* 판은 바로 그리지 않고 담아 둡니다 — 연출이 다 끝나야 앉힙니다 */
+          next = {
+            board: st.board ? st.board : null,
+            cols: st.cols || [],
+            net: !(st.ovNet === false),
+            sum: !(st.ovSum === false),
+          };
+          applyFxCfg(st);
+          ingestFx(st.fx);
+          /* 룰렛도 같은 줄에 세웁니다 — 도착한 자리에서 차례를 기다립니다 */
+          var sp = st.spin || null;
+          if (sp && sp.sid !== doneSid && !fxSeen["S" + sp.sid] && (!play || play.sp.sid !== sp.sid)) {
+            fxSeen["S" + sp.sid] = 1;
+            fxQ.push({ k: "spin", i: "S" + sp.sid, sp: sp });
+          }
+          spin = sp;
+          /* 재생 중에는 pump 가 일찍 빠져나가 render 가 안 돕니다 —
+             돌고 있는 판의 최신 상태(양도 대기·답 도착)는 여기서 직접 이어 줍니다 */
+          /* 지금 돌고 있는 그 판일 때만 갱신합니다 — 다음 판이 먼저 도착해도
+             재생 중인 판을 덮어쓰면 엉뚱한 결과로 멈춥니다 */
+          if (play && spin && spin.sid === play.sp.sid) {
+            play.sp = spin;
+            if (play.free && spin.phase !== "free") leaveFree();
+            else drawPlay();
+          }
+          name = st.name || "";
+          applyLook(st.look);
         } else return;
         wait = 1000;
-        render();
+        if (dead) render();
+        else pump();
       } catch (e) {}
     };
     ws.onclose = function () {
