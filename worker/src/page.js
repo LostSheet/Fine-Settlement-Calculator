@@ -100,6 +100,9 @@ export const PAGE_HTML = `<!doctype html>
     align-items:center; justify-content:center; padding:2%;
     pointer-events:none; animation:ov-spin-in .18s ease-out}
   /* 평평하게 — 조명·광택 없이 색 하나와 얇은 테두리로만 */
+  /* 룰렛 결과 카드 — 방금 본 바퀴의 것이라고 표시합니다 */
+  .ov-fx.roul{border-color:rgba(220,174,94,.85)}
+  .ov-fx.roul b::before{content:"◎ "; color:#dcae5e}
   .ov-fx{max-width:86%; text-align:center; color:#ece4d6; padding:3.4vw 6vw;
     border-radius:1.4vw; animation:ov-fx-in .2s cubic-bezier(.2,1.3,.4,1);
     background:#1b1611; border:.26vw solid rgba(220,174,94,.55)}
@@ -267,6 +270,10 @@ export const PAGE_HTML = `<!doctype html>
     overflow:hidden; text-overflow:ellipsis;
     text-shadow:-1px 0 0 #241206, 1px 0 0 #241206, 0 -1px 0 #241206, 0 1px 0 #241206,
       0 1px 3px rgba(0,0,0,.4)}
+  /* 사람 이름은 숫자보다 훨씬 길어서, 숫자 기준 크기로 두면 허브를 덮고 안쪽에 뭉칩니다.
+     글자 끝을 림에 붙이는 규칙은 그대로 두고, 크기와 뻗는 길이만 줄입니다 */
+  .ov-wheel-who .ov-w-lab i{font-size:calc(var(--u)*2.3*var(--wu,1));
+    max-width:calc(var(--u)*13*var(--wu,1))}
   /* 중앙 허브 — 축은 늘 있고, 멈추면 값이 그 안에 뜹니다 */
   .ov-w-hub{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     width:calc(var(--u)*13*var(--wu,1)); height:calc(var(--u)*13*var(--wu,1)); border-radius:50%; z-index:2;
@@ -403,6 +410,8 @@ export const PAGE_HTML = `<!doctype html>
   var fxShown = {};   // 실제로 화면에 띄운 카드 id — 취소가 카드를 띄울지 가릅니다
   var fxCard = null;  // 지금 떠 있는 카드
   var fxTimer = null;
+  var pendSpin = null;   // 큐 위로 올라갈 판
+  var settleNow = false; // 룰렛 결과 뒤에는 카드가 남아 있어도 판을 먼저 앉힙니다
   var fxBooted = false; // 첫 상태의 대기열은 '이미 흘러간 것'으로 봅니다
   var applying = false; // 판 반영(스와이프·순위 이동) 중
   var FX_HOLD = 1600;   // 카드가 머무는 시간
@@ -612,21 +621,34 @@ export const PAGE_HTML = `<!doctype html>
 
   var faceTimer = null; // 숫자 모드에서 글자가 바뀌는 타이머
   /* 숫자만 보여주는 모드에서 면이 빠르게 바뀌게 합니다 */
+  /* 릴도 원판과 같은 규칙으로 — 답이 없는 동안은 같은 속도로, 멈추는 동안은
+     간격이 늘어나며 감속을 보여 줍니다. 원판만 감속하고 릴은 툭 서면 같은 판인데
+     하나만 고장 난 것처럼 보입니다. */
   var rollFace = function (pl) {
-    if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+    if (faceTimer) { clearTimeout(faceTimer); faceTimer = null; }
     if (!pl || pl.sp.look !== "num" || !pl.rolling) return;
     var t = 0;
+    var free = !!pl.free;
+    var t0 = Date.now();
     var fs2 = pl.sp.faces && pl.sp.faces.length ? pl.sp.faces : ["1"];
-    faceTimer = setInterval(function () {
+    var step = function () {
       var el = document.getElementById("ovface");
-      if (!el) { clearInterval(faceTimer); faceTimer = null; return; }
+      if (!el) { faceTimer = null; return; }
       var i = t++ % fs2.length;
       el.textContent = faceLabel(fs2[i]);
       var pv = document.getElementById("ovprev");
       var nx = document.getElementById("ovnext");
       if (pv) pv.textContent = faceLabel(fs2[(i - 1 + fs2.length) % fs2.length]);
       if (nx) nx.textContent = faceLabel(fs2[(i + 1) % fs2.length]);
-    }, 80);
+      if (free) { faceTimer = setTimeout(step, OV_FACE_MS); return; }
+      var el2 = Date.now() - t0;
+      var gap = faceGap(el2 / OV_ROLL);
+      /* 마지막 한 칸은 결과가 차지합니다 — 끝나기 직전에 한 번 더 넘기면
+         엉뚱한 면이 스쳤다가 곧바로 결과로 바뀌어 두 번 바뀝니다 */
+      if (OV_ROLL - el2 < gap * 1.35) { faceTimer = null; return; }
+      faceTimer = setTimeout(step, gap);
+    };
+    faceTimer = setTimeout(step, OV_FACE_MS);
   };
   var playKey = null;   // 지금 그려 둔 판
   var doneSid = null;   // 이미 끝까지 재생한 판 — 늦게 온 푸시가 같은 판을 또 돌리지 않게
@@ -651,7 +673,9 @@ export const PAGE_HTML = `<!doctype html>
     hitKey = key;
     if (play.rolling) { el.textContent = "?"; el.className = "ov-w-hit q"; return; }
     /* 원판이 완전히 멈춘 뒤에 띄웁니다 — 같이 띄우면 바늘과 숫자가 어긋나 보입니다 */
-    var txt = faceLabel(play.sp.steps[play.i].k);
+    var st0 = (play.sp.steps || [])[play.i];
+    if (!st0) return; // 아직 안 뽑힌 자리 — 보여 줄 값이 없습니다
+    var txt = faceLabel(st0.k);
     setTimeout(function () {
       var e2 = document.getElementById("ovhit");
       if (!e2 || !play || play.rolling) return;
@@ -691,7 +715,8 @@ export const PAGE_HTML = `<!doctype html>
         if (sp.look === "num" && !play.who && !play.rolling) {
           var f = document.getElementById("ovface");
           var pool = poolAt(sp, play.i);
-          var k = sp.steps[play.i].k;
+          var k = ((sp.steps || [])[play.i] || {}).k;
+          if (k == null) return;
           var at = Math.max(0, pool.indexOf(k));
           if (f) f.textContent = faceLabel(k);
           var pv = document.getElementById("ovprev");
@@ -737,7 +762,12 @@ export const PAGE_HTML = `<!doctype html>
   var freeWheel = function (on) {
     var el = document.getElementById("ovdisc");
     if (!el) return;
-    if (on) { el.style.transition = "none"; el.style.transform = ""; el.classList.add("ov-w-free"); }
+    if (on) {
+      el.style.transition = "none";
+      el.style.transform = "";
+      el.style.animationDuration = OV_FREE_MS + "ms";
+      el.classList.add("ov-w-free");
+    }
     else el.classList.remove("ov-w-free");
   };
 
@@ -773,7 +803,7 @@ export const PAGE_HTML = `<!doctype html>
     }
     var wrap = box.querySelector(".ov-wheel") || box.querySelector(".ov-reel");
     if (wrap) {
-      wrap.outerHTML = wheelHtml(sp.pass2.faces, {}, sp.theme);
+      wrap.outerHTML = wheelHtml(sp.pass2.faces, {}, sp.theme, true);
       wheelRot = 0;
       hitKey = null;
     }
@@ -809,24 +839,16 @@ export const PAGE_HTML = `<!doctype html>
       stepTimer = setTimeout(stepPlay, OV_HOLD);
       return;
     }
-    if (play.i + 1 < play.sp.steps.length) {
-      var was = poolAt(play.sp, play.i).length;
-      play.i += 1;
-      drawPlay();
-      /* 후보가 줄었으면 원판을 새로 그립니다 (칸 수가 달라집니다) */
-      if (poolAt(play.sp, play.i).length !== was) {
-        var box = document.querySelector("#ovspin .ov-wheel");
-        if (box) {
-          box.outerHTML = wheelHtml(poolAt(play.sp, play.i), play.sp.w, play.sp.theme);
-          wheelRot = 0;
-          hitKey = null;
-        }
-      }
-      play.rolling = true;
-      rollStep();
-      stepTimer = setTimeout(stepPlay, OV_ROLL);
+    /* 다음 면은 앱이 정합니다 — 여기서 앞서가면 아직 안 뽑힌 면을 보여 주게 됩니다.
+       서기가 다시 STOP 을 누르면 상태가 오고, 그때 enterFree / leaveFree 가 잇습니다.
+       단, 판이 사라졌으면 기다릴 상대가 없으니 그대로 마무리합니다. */
+    if (!play.appGone && (play.sp.phase === "roll" || spFree(play.sp))) {
+      /* 표시를 남깁니다 — 기다리다 상태가 오면 이걸 보고 깨워야 합니다.
+         타이머는 이미 터진 뒤라 id 만 보고는 기다리는 중인지 알 수 없습니다. */
+      play.waiting = true;
       return;
     }
+    play.waiting = false;
     /* 랜덤 양도 — 사람 원판을 한 번 더 */
     if (play.sp.pass2 && !play.who) {
       play.who = "roll";
@@ -838,9 +860,14 @@ export const PAGE_HTML = `<!doctype html>
     }
     if (play.who === "roll") {
       play.who = "land";
+      if (!play.sp.pass2 || !play.sp.pass2.name) {
+        /* 서기가 뽑기 전에 판을 닫았습니다 — 이름 없이 그대로 넘어갑니다 */
+        stepTimer = setTimeout(stepPlay, OV_HOLD);
+        return;
+      }
       if (play.sp.look === "num") {
         /* 이름 릴 정지 — 가운데에 뽑힌 이름, 위아래엔 이웃 */
-        if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+        if (faceTimer) { clearTimeout(faceTimer); faceTimer = null; }
         (function (sp) {
           var nm2 = sp.pass2.faces;
           var at = Math.max(0, nm2.indexOf(sp.pass2.name));
@@ -901,23 +928,93 @@ export const PAGE_HTML = `<!doctype html>
     pump(); // 다음 연출로, 큐가 비었으면 판을 앉힙니다
   };
 
+  /* 답이 아직 없는 상태 — 숫자 판이든 사람 판이든 같은 규칙입니다 */
+  var spFree = function (sp) { return !!sp && (sp.phase === "free" || !!sp.whoFree); };
+
+  /* 후보가 줄면(양도권이 빠지면) 칸 수가 달라져서 원판을 새로 그려야 합니다 */
+  var refitWheel = function () {
+    if (!play || play.sp.look === "num" || play.who) return;
+    var pool = poolAt(play.sp, play.i);
+    if (play.poolN != null && pool.length !== play.poolN) {
+      var box = document.querySelector("#ovspin .ov-wheel");
+      if (box) {
+        box.outerHTML = wheelHtml(pool, play.sp.w, play.sp.theme);
+        wheelRot = 0;
+        hitKey = null;
+      }
+    }
+    play.poolN = pool.length;
+  };
+
   var startPlay = function (sp) {
     clearPlayTimers();
     useSpeed(sp);
-    play = { sp: sp, i: 0, rolling: true, over: false, free: sp.phase === "free" };
+    useSpinCfg(sp);
+    var free = spFree(sp);
+    play = {
+      sp: sp,
+      i: free ? (sp.steps || []).length : Math.max(0, (sp.steps || []).length - 1),
+      rolling: true,
+      over: false,
+      free: free,
+    };
+    if (sp.whoFree) play.who = "roll";
     drawPlay();
+    refitWheel();
     rollStep();
     /* 답이 없는 판은 걸음을 안 셉니다 — 서기가 멈춰 답이 올 때 그때부터 셉니다 */
     if (!play.free) stepTimer = setTimeout(stepPlay, OV_ROLL);
+  };
+
+  /* 다음 면을 뽑을 차례 — 답이 올 때까지 다시 끝없이 돕니다.
+     ×2 나 양도권이 나오면 앱이 여기로 되돌아옵니다. */
+  var enterFree = function () {
+    if (!play || play.free) return;
+    play.free = true;
+    clearTimeout(stepTimer);
+    stepTimer = null;
+    if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+    var steps = play.sp.steps || [];
+    if (play.sp.whoFree) {
+      /* 사람 원판 — 후보 이름으로 판을 갈아 끼우고 답 없이 돌립니다 */
+      play.who = "roll";
+      whoWheel(play);
+    } else {
+      play.i = steps.length;
+      play.rolling = true;
+      drawPlay();
+      refitWheel();
+    }
+    rollStep();
   };
 
   /* 답이 도착했습니다 — 돌던 자리에서 이어서 감속으로 넘어갑니다 */
   var leaveFree = function () {
     if (!play || !play.free) return;
     play.free = false;
+    freeWheel(false);
+    var sp = play.sp;
+    /* 답 없이 사라진 판 — 돌던 자리에서 그냥 멈춥니다 */
+    if (play.appGone && !(play.who === "roll" && sp.pass2 && sp.pass2.name)) {
+      /* 자유 회전은 아직 안 뽑힌 자리를 가리킵니다 — 마지막으로 뽑힌 걸음으로 돌려놓습니다 */
+      play.i = Math.max(0, (sp.steps || []).length - 1);
+      play.rolling = false;
+      drawPlay();
+      stepTimer = setTimeout(stepPlay, OV_HOLD);
+      return;
+    }
+    /* 사람 원판이면 뽑힌 이름으로 세웁니다 */
+    if (play.who === "roll" && sp.pass2 && sp.pass2.name) {
+      if (sp.look !== "num") spinTo(sp.pass2.faces, {}, sp.pass2.name);
+      stepTimer = setTimeout(stepPlay, OV_ROLL);
+      return;
+    }
+    play.i = Math.max(0, (sp.steps || []).length - 1);
+    play.rolling = true;
     /* 클래스는 spinTo 가 벗깁니다 — 여기서 먼저 벗기면 돌던 각도를 못 읽어
        원판이 0도로 튄 뒤에 감속을 시작합니다 */
     drawPlay();
+    refitWheel();
     rollStep();
     stepTimer = setTimeout(stepPlay, OV_ROLL);
   };
@@ -1002,13 +1099,14 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 물리 룰렛 원판. 칸을 원뿔 그러데이션으로 그리고 글자는 칸 가운데에 세웁니다.
      바늘은 위(12시)에 고정이고, 원판이 돌아 그 아래로 당첨 칸이 옵니다. */
-  var wheelHtml = function (faces, weights, theme) {
+  var wheelHtml = function (faces, weights, theme, who) {
     var segs = wheelArcs(faces, weights, theme);
     var labs = segs.map(function (x) {
       return '<span class="ov-w-lab" style="transform:rotate(' + x.mid.toFixed(2) + 'deg)">' +
         "<i>" + esc(faceLabel(x.k)) + "</i></span>";
     }).join("");
-    return '<div class="ov-wheel"><div class="ov-w-disc" id="ovdisc" style="background:' +
+    return '<div class="ov-wheel' + (who ? " ov-wheel-who" : "") +
+      '"><div class="ov-w-disc" id="ovdisc" style="background:' +
       wheelLayers2(wheelStops2(segs, theme), theme) + '">' + labs + "</div>" +
       '<span class="ov-w-hub"><span class="ov-w-hit q" id="ovhit">?</span></span>' +
       '<div class="ov-w-pin"></div></div>';
@@ -1119,6 +1217,21 @@ export const PAGE_HTML = `<!doctype html>
   /* 자유 회전 한 바퀴에 걸리는 시간. 앱의 FREE_MS 와 같은 값이어야
      서기 화면과 방송 화면이 같은 속도로 돕니다. */
   var OV_FREE_MS = 260;
+  /* 도는 규칙 — 앱이 판에 실어 보냅니다. 여기 있는 값은 그게 안 왔을 때의 기본값이고,
+     오면 갈아 끼웁니다. 복사본을 들고 있으면 한쪽만 고쳐도 눈치채기 어렵습니다. */
+  var OV_SPIN_AIM = 1.7, OV_TAIL = 0.72, OV_FACE_MS = 70;
+  var useSpinCfg = function (sp) {
+    var c = sp && sp.cfg;
+    if (!c) return;
+    if (c.free > 0) OV_FREE_MS = c.free;
+    if (c.aim > 0) OV_SPIN_AIM = c.aim;
+    if (c.tail > 0) OV_TAIL = c.tail;
+    if (c.face > 0) OV_FACE_MS = c.face;
+  };
+  /* 멈추는 동안 면이 바뀌는 간격 — 앱의 faceGap 과 같은 식입니다 */
+  var faceGap = function (p) {
+    return Math.round(OV_FACE_MS * Math.pow(6, Math.min(1, Math.max(0, p))));
+  };
 
   /* 당첨 칸이 12시 바늘 아래로 오도록 원판을 돌립니다.
      진짜 원판은 곡선 하나로 섭니다 — 등감속이면 처음 속도가 평균의 딱 두 배라서,
@@ -1141,22 +1254,30 @@ export const PAGE_HTML = `<!doctype html>
       el.classList.remove("ov-w-free");
       wheelRot = ((Math.atan2(mm.b, mm.a) * 180) / Math.PI + 360) % 360;
     }
-    /* 이 칸이 바늘 밑으로 오는, 지금보다 앞에 있는 첫 각도 */
     var from = wheelRot;
-    var seat = from + ((((-seg.mid - from) % 360) + 360) % 360);
-    /* 바퀴 수 — 판마다 흔들어서 같은 결과라도 매번 다르게 섭니다 */
+    /* 늘 칸 한가운데에 서면 짜인 것처럼 보입니다 — 칸 안에서 서는 자리를 흔들되
+       가장자리는 피합니다. 앱과 같은 씨앗이라 같은 자리에 섭니다. */
     var seed = seedOf((play && play.sp.sid) + ":" + (play ? play.i : 0));
-    var base = Math.max(2, Math.round(OV_ROLL / OV_FREE_MS / 2));
+    var arc = Math.max(1, seg.to - seg.from);
+    var off = (((seed >>> 7) % 1000) / 1000 - 0.5) * arc * 0.72;
+    /* 이 자리가 바늘 밑으로 오는, 지금보다 앞에 있는 첫 각도 */
+    var seat = from + ((((-(seg.mid + off) - from) % 360) + 360) % 360);
+    /* 목표 배속에서 나오는 바퀴 수 — 판마다 ±1 바퀴 흔듭니다 */
+    var v0 = (360 / OV_FREE_MS) * OV_ROLL;
+    var base = Math.max(1, Math.round(v0 / (OV_SPIN_AIM * 360)));
     var turns = Math.max(1, base + ((seed % 3) - 1));
     var target = seat + turns * 360;
     wheelRot = target;
 
     var D = Math.max(1, target - from);
-    /* 처음 기울기 s 를 갖고 끝에서 0 이 되는 곡선: (1/3, s/3, 2/3, 1). s=2 가 등감속입니다 */
-    var s0 = Math.min(2.85, Math.max(1.35, ((360 / OV_FREE_MS) * OV_ROLL) / D));
+    /* 처음 기울기 s0 를 갖고 끝에서 0 이 되는 곡선 (x1, s0·x1, x2, 1).
+       x1 을 줄여야 s0 를 3 넘게 키울 수 있습니다 — y1 이 1 을 넘으면 목표를 지나쳤다
+       되돌아오고, 그건 원판이 뒤로 감기는 것으로 보입니다. */
+    var s0 = Math.min(2.4, Math.max(1.3, v0 / D));
+    var x1 = Math.min(0.5, 0.96 / s0);
     var cz = wasFree
-      ? "cubic-bezier(.333," + (s0 / 3).toFixed(3) + ",.667,1)"
-      : "cubic-bezier(.34,0,.2,1)"; // 멈춰 있다 다시 도는 판(x2 등)
+      ? "cubic-bezier(" + x1.toFixed(3) + "," + (s0 * x1).toFixed(3) + "," + OV_TAIL + ",1)"
+      : "cubic-bezier(.35,0,.28,1)"; // 멈춰 있다 다시 도는 판
 
     /* 시작 각도를 전환 없이 먼저 못 박고, 강제로 한 번 계산시킨 뒤 목표를 줍니다.
        프레임 콜백을 기다리지 않아 OBS 브라우저 소스에서도 확실히 돕니다. */
@@ -1196,7 +1317,10 @@ export const PAGE_HTML = `<!doctype html>
         /* 이미 뜬 뒤라면 본 사람에게 정정을 알려야 합니다 — 짧게 띄웁니다 */
         if (!fxShown[e.ref]) continue;
       }
-      fxQ.push(e);
+      /* 룰렛 결과는 방금 본 판의 것이라 줄 맨 앞으로 — 밀린 카드 뒤에 서면
+         바퀴가 선 한참 뒤에야 그 결과가 나옵니다 */
+      if (e.k === "roul") fxQ.unshift(e);
+      else fxQ.push(e);
     }
     fxBooted = true;
     var ks = Object.keys(fxSeen);
@@ -1207,7 +1331,7 @@ export const PAGE_HTML = `<!doctype html>
 
   var fxCardHtml = function (e) {
     var up = e.g > 0;
-    return '<div class="ov-fx ' + (up ? "up" : "dn") + '">' +
+    return '<div class="ov-fx ' + (up ? "up" : "dn") + (e.k === "roul" ? " roul" : "") + '">' +
       "<b>" + esc(e.n) + "</b>" +
       "<span>" + esc(e.t || "") + ' <em>' + (up ? "+" : "\u2212") +
       manShort(Math.abs(e.g)) + "</em></span></div>";
@@ -1218,7 +1342,10 @@ export const PAGE_HTML = `<!doctype html>
     fxCard = e;
     /* 정정(취소·빼기)은 짧게 — 알리되 붙는 것만큼 크게 다루지 않습니다.
        그리고 밀리면 더 짧게: 다 보여 주되 속도만 올려 다음 판을 안 잡아먹습니다. */
-    var hold = e.k === "add" ? FX_HOLD : Math.round(FX_HOLD * 0.7);
+    var hold = e.k === "add" || e.k === "roul" ? FX_HOLD : Math.round(FX_HOLD * 0.7);
+    /* 룰렛 결과가 지나가면 판을 바로 앉힙니다 — 밀린 카드를 다 볼 때까지
+       바퀴의 결과가 표에 안 뜨면, 방금 본 것과 표가 따로 놉니다 */
+    if (e.k === "roul") settleNow = true;
     if (fxQ.length > 4) hold = Math.round(hold * 0.5);
     var host = document.getElementById("ovfx");
     /* 카드는 벌금표에 대한 이야기라 표 소스에 뜹니다. 룰렛 소스는 룰렛만 —
@@ -1300,16 +1427,19 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   /* 연출 한 줄 세우기 — 재생 중이면 기다리고, 큐가 비면 판을 앉힙니다 */
+  /* 룰렛은 큐에 서지 않고 그 위에 뜹니다. 길이가 사람 손에 달려 있어서(STOP 대기),
+     줄에 세우면 뒤에 선 카드들이 인질이 됩니다. 대신 재생 중인 카드 한 장은
+     끝까지 보여 주고 — 뜨자마자 지우면 그 클릭은 아무도 못 본 것이 됩니다. */
   var pump = function () {
-    if (play || fxCard || applying) return;
-    if (fxQ.length) {
-      var e = fxQ.shift();
-      if (e.k === "spin") {
-        if (e.sp && e.sp.sid !== doneSid) startPlay(e.sp);
-        else pump();
-      } else playCard(e);
-      return;
+    if (applying || fxCard) return;
+    if (pendSpin) {
+      var sp2 = pendSpin;
+      pendSpin = null;
+      if (sp2.sid !== doneSid) { startPlay(sp2); return; }
     }
+    if (play) return; // 판이 떠 있는 동안 큐는 멈춥니다. 쌓인 카드는 끝난 뒤에
+    if (next && settleNow) { settleNow = false; settle(); return; }
+    if (fxQ.length) { playCard(fxQ.shift()); return; }
     if (next) settle();
   };
 
@@ -1319,7 +1449,9 @@ export const PAGE_HTML = `<!doctype html>
       if (!document.getElementById("ovspin")) app.innerHTML = '<div id="ovspin"></div>';
       if (play && spin && spin.sid === play.sp.sid) {
         play.sp = spin; // 시작은 연출 큐가 맡습니다
-        if (play.free && spin.phase !== "free") leaveFree();
+        var nf1 = spFree(spin);
+        if (nf1 && !play.free) enterFree();
+        else if (!nf1 && play.free) leaveFree();
       }
       drawPlay();
       return;
@@ -1348,7 +1480,9 @@ export const PAGE_HTML = `<!doctype html>
     if (TYPE !== "board") {
       if (play && spin && spin.sid === play.sp.sid) {
         play.sp = spin; // 양도 대기 여부만 갱신. 시작은 연출 큐가 맡습니다
-        if (play.free && spin.phase !== "free") leaveFree();
+        var nf2 = spFree(spin);
+        if (nf2 && !play.free) enterFree();
+        else if (!nf2 && play.free) leaveFree();
       }
       drawPlay();
     }
@@ -1443,7 +1577,7 @@ export const PAGE_HTML = `<!doctype html>
           var sp = st.spin || null;
           if (sp && sp.sid !== doneSid && !fxSeen["S" + sp.sid] && (!play || play.sp.sid !== sp.sid)) {
             fxSeen["S" + sp.sid] = 1;
-            fxQ.push({ k: "spin", i: "S" + sp.sid, sp: sp });
+            pendSpin = sp; // 큐가 아니라 위층
           }
           spin = sp;
           /* 재생 중에는 pump 가 일찍 빠져나가 render 가 안 돕니다 —
@@ -1452,8 +1586,24 @@ export const PAGE_HTML = `<!doctype html>
              재생 중인 판을 덮어쓰면 엉뚱한 결과로 멈춥니다 */
           if (play && spin && spin.sid === play.sp.sid) {
             play.sp = spin;
-            if (play.free && spin.phase !== "free") leaveFree();
-            else drawPlay();
+            var nf = spFree(spin);
+            if (nf && !play.free) enterFree();
+            else if (!nf && play.free) leaveFree();
+            else {
+              drawPlay();
+              /* 다음 면을 기다리다 답이 왔습니다 — 안 깨우면 판이 안 끝납니다 */
+              if (play.waiting) {
+                play.waiting = false;
+                clearTimeout(stepTimer);
+                stepTimer = setTimeout(stepPlay, 0);
+              }
+            }
+          } else if (play && !spin) {
+            /* 서기가 판을 닫았습니다 — 다음 면을 기다리던 것을 풀고 제 시계로 끝냅니다.
+               안 그러면 오지 않을 답을 영원히 기다리며 표까지 붙잡고 있습니다. */
+            play.appGone = true;
+            if (play.free) leaveFree();
+            else if (!stepTimer) stepTimer = setTimeout(stepPlay, OV_HOLD);
           }
           name = st.name || "";
           applyLook(st.look);
