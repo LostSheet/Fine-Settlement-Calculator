@@ -7953,7 +7953,12 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
           <p className="gs-auth-warn">{SUBTLE_MSG}</p>
         ) : (
         <>
-        {ctx && ctx.why && <p className="gs-auth-why">{ctx.why}</p>}
+        {/* 이 창이 왜 떴는지. 헤더에서 스스로 연 사람은 이유를 모르니, 계정이
+            어디 쓰이는지와 "벌금 세는 데는 필요 없다"를 대신 적어 둡니다 */}
+        <p className="gs-auth-why">
+          {(ctx && ctx.why) ||
+            "계정은 파티 모드와 내 방송용 주소에 써요. 벌금을 세고 정산하는 데는 계정이 필요 없어요."}
+        </p>
         <label className="gs-field">
           아이디
           <input
@@ -8010,7 +8015,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
         </button>
         {/* 반대편으로 가는 문 — 눌러도 적어 둔 아이디·비밀번호는 그대로 둡니다 */}
         <p className="gs-authswap">
-          {mode === "login" ? "계정이 처음이신가요? " : "이미 계정이 있어요 · "}
+          {mode === "login" ? "아직 계정이 없어요 · " : "이미 계정이 있어요 · "}
           <button
             onClick={() => {
               setErr("");
@@ -8391,14 +8396,15 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
              주 버튼 하나만 두고 이미 계정이 있는 사람은 밑줄 문으로 보냅니다. */
           <div className="gs-obs-make">
             <p>
-              <b>로그인하면 내 방송용 주소가 생겨요.</b> 그 주소 하나를 OBS 브라우저 소스에
-              넣으면, 지금 들어가 있는 파티의 벌금 현황이 방송 화면에 실시간으로 떠요.
+              <b>방송용 주소를 받으려면 계정이 필요해요.</b> 계정을 만들면 내 주소가 하나
+              생기고, 그 주소를 OBS 브라우저 소스에 넣으면 지금 들어가 있는 파티의 벌금
+              현황이 방송 화면에 실시간으로 떠요.
             </p>
             <div className="gs-obs-acts">
               <button className="gs-btn" onClick={() => onOpenAuth("register")}>
                 계정 만들기
               </button>
-              <button className="gs-obs-why" onClick={() => onOpenAuth("login")}>
+              <button className="gs-swaplink" onClick={() => onOpenAuth("login")}>
                 이미 계정이 있어요
               </button>
             </div>
@@ -11452,10 +11458,11 @@ tr:hover .gs-lb-kick{opacity:.55}
   font-weight:600; text-align:center}
 .gs-authswap{margin:14px 0 0; padding-top:13px; text-align:center; font-size:12.5px;
   color:var(--ink-2); border-top:1px solid rgba(var(--ink-rgb),.16)}
-.gs-authswap button{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
+/* 반대편으로 가는 문 — 경고가 아니라 안내라서 빨강을 안 씁니다 */
+.gs-authswap button,.gs-swaplink{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
   background:none; border:0; cursor:pointer; padding:0;
   text-decoration:underline; text-underline-offset:3px}
-.gs-authswap button:hover{color:var(--ink)}
+.gs-authswap button:hover,.gs-swaplink:hover{color:var(--ink)}
 .gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
   color:var(--ink-2)}
 .gs-field-hint{letter-spacing:0; font-size:11px}
