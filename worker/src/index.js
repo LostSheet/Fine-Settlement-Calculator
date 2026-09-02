@@ -1013,7 +1013,7 @@ export class Room {
     server.serializeAttachment({ k: "v", acct: me ? me.id : null });
     this.ctx.acceptWebSocket(server);
     const on = this.scribeOn();
-    this.send(server, { kind: "hello", you, scribeOn: on });
+    this.send(server, { kind: "hello", you, scribeOn: on, ownerNick: (await S.get("ownerNick")) || "" });
     this.send(server, { kind: "state", state: (await S.get("state")) || null, scribeOn: on });
     return new Response(null, { status: 101, webSocket: client });
   }

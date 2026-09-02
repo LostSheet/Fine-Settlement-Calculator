@@ -1149,6 +1149,10 @@ const EXAMPLE_PARTY = "현자들";
 const BURST_MS = 60 * 1000;
 /* 8인 파티가 전멸하면 여덟 줄입니다 — 그게 확인하고 싶은 묶음이라 그보다 적게 자르면 안 됩니다 */
 const BURST_MAX = 8;
+/* 파티원이 다른 탭에서 이만큼 아무 조작도 안 하면 자수 화면으로 돌아옵니다 */
+const IDLE_BACK_MS = 30 * 1000;
+/* 자수로 바뀐 칸이 번쩍이고 말풍선이 떠 있는 시간 */
+const CONFESS_FX_MS = 2000;
 
 function loadSaved() {
   if (typeof window === "undefined") return null;
@@ -1818,9 +1822,7 @@ export default function GoldSettlement() {
   const simple = mode === "simple";
   /* 보기 방식은 탭으로 고정했습니다 — 스크롤 보기를 쓰던 브라우저도 조용히 탭으로 */
   const tabbed = true;
-  const showSheet = !tabbed || tab === "sheet";
-  const showLedger = !tabbed || tab === "ledger";
-  const showMail = !tabbed || tab === "mail";
+  /* 어느 탭을 그릴지는 파티원 자격을 알아야 정해집니다 — showSheet 들은 아래(guestPlaying 뒤)에서 셉니다 */
   const pickTab = (k) => {
     setTab(k);
     window.scrollTo(0, 0);
@@ -2078,6 +2080,19 @@ export default function GoldSettlement() {
   const [scribeOn, setScribeOn] = useState(true); // 방장 앱이 켜져 있는지
   const [denied, setDenied] = useState(null); // "invite" | "member"
   const [confessErr, setConfessErr] = useState("");
+  /* 방 이름 기본값이 '벌금 현황판'이라 어느 방인지 알 수 없습니다 — 방장 닉으로 부릅니다 */
+  const [ownerNick, setOwnerNick] = useState("");
+  const [roomOpen, setRoomOpen] = useState(false); // 머리줄 방 표시 칩의 패널
+  /* 방 패널도 계정 드롭다운과 같은 규칙 — 바깥을 누르면 닫힙니다 */
+  useEffect(() => {
+    if (!roomOpen) return;
+    const onDown = (e) => {
+      if (e.target.closest && e.target.closest(".gs-roomdd")) return;
+      setRoomOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [roomOpen]);
   /* 지난 판 드롭다운 — 바깥을 클릭하면 닫습니다 */
   useEffect(() => {
     if (!gensOpen) return;
@@ -2611,6 +2626,14 @@ export default function GoldSettlement() {
     kickMember(acct);
   };
 
+  /* 자수로 바뀐 칸 — {rowId, colId, nick, t}. 잠깐 번쩍이고 말풍선이 떴다가 스스로 사라집니다 */
+  const [confessFx, setConfessFx] = useState(null);
+  useEffect(() => {
+    if (!confessFx) return;
+    const t = setTimeout(() => setConfessFx(null), CONFESS_FX_MS);
+    return () => clearTimeout(t);
+  }, [confessFx]);
+
   /* ---------- 자수 반영 (방장) ----------
      파티원이 누른 것을 방장 앱이 장부에 적습니다 — pressCell 과 같은 계산이고,
      기록만 kind:"confess" 로 남아 화면에 "자수"로 읽힙니다. 취소(역분개)는 그대로 됩니다. */
@@ -2638,8 +2661,18 @@ export default function GoldSettlement() {
     live.current.n[row.id + ":" + col.id] = before + d;
     live.current.total[row.id] = after;
     bump(row.id, col.id, d, gold);
+    const id = "L" + seq.current++;
+    /* 자수도 '방금 바뀐' 카드에 섞습니다 — 되돌리는 자리가 이미 거기라서 새 장치를 안 만듭니다 */
+    notePress(id);
+    /* 방장의 눈은 판에 있으니 판에서도 알립니다 — 그 칸이 잠깐 금색으로 번쩍입니다 */
+    setConfessFx({
+      rowId: row.id,
+      colId: col.id,
+      nick: seatName(row, rows.indexOf(row)),
+      t: Date.now(),
+    });
     appendLog({
-      id: "L" + seq.current++,
+      id,
       kind: "confess",
       rowId: row.id,
       colId: col.id,
@@ -2722,7 +2755,8 @@ export default function GoldSettlement() {
         setScribeLive(false);
         if (stop) return;
         setTimeout(connect, wait);
-        wait = Math.min(wait * 2, 15000);
+        /* 서기가 끊긴 동안은 파티원의 자수가 통째로 막힙니다 — 오래 기다리면 안 됩니다 */
+        wait = Math.min(wait * 2, 4000);
       };
       ws.onerror = () => {
         try {
@@ -3200,6 +3234,51 @@ export default function GoldSettlement() {
     scribeOn &&
     !vlobby;
 
+  /* ---------- 자수 탭 ----------
+     파티원에게만 있는 탭이고, 그 사람의 기본 화면입니다. 자격이 사라지면(내보내짐·대기실로
+     되돌아감) 그릴 것이 없으니 벌금표로 돌려놓습니다 — 빈 화면이 남지 않게 여기서 셉니다. */
+  const tabNow = tab === "confess" && !guestPlaying ? "sheet" : tab;
+  const showConfess = tabNow === "confess";
+  const showSheet = !tabbed || tabNow === "sheet";
+  const showLedger = !tabbed || tabNow === "ledger";
+  const showMail = !tabbed || tabNow === "mail";
+  /* 출발하면 자수 화면부터 — 파티원이 처음 볼 것은 자기 칸입니다 */
+  const wasPlaying = useRef(false);
+  useEffect(() => {
+    if (guestPlaying && !wasPlaying.current) setTab("confess");
+    if (!guestPlaying && wasPlaying.current && tab === "confess") setTab("sheet");
+    wasPlaying.current = guestPlaying;
+  }, [guestPlaying]);
+  /* 30초 복귀 — 다른 탭에서 아무 조작이 없으면 자수 화면으로 돌아옵니다.
+     어떤 조작에나 타이머가 처음으로 돌아가서, 읽는 중에는 끌려가지 않습니다. */
+  useEffect(() => {
+    if (!guestPlaying || tab === "confess") return;
+    let id = null;
+    const arm = () => {
+      clearTimeout(id);
+      id = setTimeout(() => setTab("confess"), IDLE_BACK_MS);
+    };
+    const kinds = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"];
+    kinds.forEach((k) => window.addEventListener(k, arm, { passive: true, capture: true }));
+    arm();
+    return () => {
+      clearTimeout(id);
+      kinds.forEach((k) => window.removeEventListener(k, arm, { capture: true }));
+    };
+  }, [guestPlaying, tab]);
+  /* 내 줄과 내 벌금 — 자수 카드 위에 적습니다 */
+  const myRow = guestPlaying && you.rowId ? rows.find((x) => x.id === you.rowId) : null;
+  const myGold = myRow ? itemGold(myRow) : 0;
+
+  /* ---------- 방 표시 칩 ----------
+     "어느 방인가"와 "잘 붙어 있나"를 칩 하나가 같이 답합니다. 방장은 서기 소켓이 붙어 있어야
+     자수를 받으므로, 끊긴 것을 자기 화면에서 알아야 고칠 수 있습니다. */
+  const hostChip = !readOnly && !!auth && !!relay.room && (relay.on || lobbyOn);
+  const guestChip = readOnly && !genView && !demoRoom && guestPlaying;
+  const roomCount = rows.length; // 인원 수는 판의 줄 수로 셉니다
+  const roomTitle = guestChip ? (ownerNick || "방장") + "네 파티" : "내 파티";
+  const roomLive = guestChip ? scribeOn : scribeLive;
+
   /* --- 뷰어: 구독해서 방장 화면을 그대로 비춥니다 --- */
   useEffect(() => {
     if (!readOnly || !liveRoom || liveRoom === DEMO_ROOM) return;
@@ -3269,6 +3348,7 @@ export default function GoldSettlement() {
           else if (m.kind === "hello") {
             setDenied(null);
             setYou(m.you || null);
+            if (m.ownerNick) setOwnerNick(m.ownerNick);
             if (m.scribeOn != null) setScribeOn(!!m.scribeOn);
           } else if (m.kind === "presence") {
             setScribeOn(!!m.scribeOn);
@@ -4424,6 +4504,118 @@ export default function GoldSettlement() {
       <div className="gs-sysbar">
         <div className="gs-sysbar-in">
           <span className="gs-sysbrand">벌금 정산</span>
+          {/* 방 표시 — 어느 방에 있고 잘 붙어 있는지. 누르면 그 방의 사람과 주소가 나옵니다 */}
+          {(hostChip || guestChip) && (
+            <div className="gs-roomdd">
+              <button
+                className={"gs-roomchip" + (roomLive ? "" : " gs-roomchip-down") + (roomOpen ? " on" : "")}
+                onClick={() => setRoomOpen((v) => !v)}
+                aria-expanded={roomOpen}
+                aria-haspopup="menu"
+              >
+                {guestChip ? (
+                  <>
+                    <b>{ownerNick || "방장"}</b>네 파티 ·{" "}
+                    {roomLive ? roomCount + "명" : <b>방장 없음</b>}
+                  </>
+                ) : (
+                  <>내 파티 · {roomLive ? roomCount + "명" : <b>연결 끊김</b>}</>
+                )}
+                <em className={"gs-roomdot" + (roomLive ? "" : " warn")} aria-hidden="true" />
+              </button>
+              {roomOpen && (
+                <div className="gs-roompanel" role="menu">
+                  <h5 className="gs-room-h">{roomTitle}</h5>
+                  <p className="gs-room-sub">
+                    {guestChip
+                      ? roomCount +
+                        "명 · " +
+                        (roomLive ? "실시간으로 이어져 있어요" : "방장이 자리를 비웠어요")
+                      : roomCount +
+                        "명 · " +
+                        (roomLive ? "방송에 나가는 중" : "연결이 끊겼어요")}
+                  </p>
+                  <p className="gs-room-mem">
+                    {guestChip
+                      ? rows
+                          .map((x, i) => seatName(x, i) + (you && x.id === you.rowId ? "(나)" : ""))
+                          .join(" · ")
+                      : members.filter((m) => m.st === "ok").length === 0
+                      ? "아직 참여한 파티원이 없어요"
+                      : members
+                          .filter((m) => m.st === "ok")
+                          .slice(0, 3)
+                          .map((m) => m.nick || m.acct)
+                          .join(" · ") +
+                        (members.filter((m) => m.st === "ok").length > 3
+                          ? " 외 " + (members.filter((m) => m.st === "ok").length - 3) + "명"
+                          : "")}
+                  </p>
+                  {guestChip ? (
+                    <>
+                      {auth && auth.obsToken && (
+                        <p className="gs-room-row">
+                          내 방송용 주소
+                          <b>{showObs ? roomApi.obsUrl(auth.obsToken) : "●".repeat(8)}</b>
+                        </p>
+                      )}
+                      <div className="gs-room-btns">
+                        {auth && auth.obsToken && (
+                          <button
+                            className="gs-btn gs-btn-sm gs-btn-ghost"
+                            onClick={() => copy(roomApi.obsUrl(auth.obsToken), "obsurl")}
+                          >
+                            {flash === "obsurl" ? "복사했어요" : "주소 복사"}
+                          </button>
+                        )}
+                        <button
+                          className="gs-btn gs-btn-sm gs-btn-ghost gs-room-end"
+                          onClick={() => {
+                            setRoomOpen(false);
+                            leaveRoom();
+                          }}
+                        >
+                          나가기
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="gs-room-row">
+                        초대 링크
+                        <b>
+                          {relay.invite && relay.invite.exp
+                            ? Math.max(0, Math.round((relay.invite.exp - Date.now()) / 60000)) +
+                              "분 남음"
+                            : "아직 초대가 없어요"}
+                        </b>
+                      </p>
+                      <div className="gs-room-btns">
+                        <button
+                          className="gs-btn gs-btn-sm gs-btn-ghost"
+                          disabled={!relay.invite || !relay.invite.code}
+                          onClick={() =>
+                            copy(roomApi.inviteUrl(relay.room, relay.invite.code), "roominv")
+                          }
+                        >
+                          {flash === "roominv" ? "복사했어요" : "초대 복사"}
+                        </button>
+                        <button
+                          className="gs-btn gs-btn-sm gs-btn-ghost"
+                          onClick={() => {
+                            setRoomOpen(false);
+                            setObsOpen(true);
+                          }}
+                        >
+                          파티원 관리
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {/* 지난 판 — 전역(장부 이력)이라 헤더 왼쪽, 앱 이름 옆입니다 */}
           {!viewer && (
             <div className="gs-gensdd">
@@ -4475,9 +4667,10 @@ export default function GoldSettlement() {
           )}
           <div className="gs-sysbar-r">
             {/* 계정 — 로그인은 눌러서 찾아가는 것이지, 하려던 일에 걸려 나오는 것이 아닙니다.
-                로그인한 뒤에는 닉네임이 곧 벌금판의 내 이름이라, 여기 떠 있는 것이 정보입니다. */}
-            {!readOnly && (
-              <div className="gs-acctdd">
+                로그인한 뒤에는 닉네임이 곧 벌금판의 내 이름이라, 여기 떠 있는 것이 정보입니다.
+                파티원도 자기 계정으로 들어온 사람이라 닉네임 확인과 로그아웃이 되어야 합니다.
+                지난 판 보기는 방장이 자기 옛 판을 보는 것이라 머리줄이 그대로 나옵니다. */}
+            <div className="gs-acctdd">
                 {auth ? (
                   <>
                     <button
@@ -4537,8 +4730,7 @@ export default function GoldSettlement() {
                     </span>
                   </span>
                 )}
-              </div>
-            )}
+            </div>
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
             {!readOnly && (
               <span className="gs-tip">
@@ -4734,7 +4926,10 @@ export default function GoldSettlement() {
           </button>
         </div>
       )}
-      {readOnly && !genView && (
+      {/* 읽기 전용 안내는 벌금표 카드 안으로 옮겼습니다 — 바깥 배너는 어느 탭에서나 봐야 하는
+          것만 맡습니다(대기·거절·방장 부재·내 방송용 주소). 방장 부재도 자수 탭에서는 카드가
+          말하므로 여기서는 뺍니다 — 같은 말이 화면에 둘이면 하나는 읽히지 않습니다. */}
+      {readOnly && !genView && !(guestPlaying && liveState !== "dead" && !left && !denied && (scribeOn || showConfess)) && (
         <div
           key={roPulse}
           className={
@@ -4770,14 +4965,7 @@ export default function GoldSettlement() {
                 <b>대기실에 들어왔어요</b> — 방장이 출발하면 시작돼요.
               </>
             ) : guestPlaying ? (
-              scribeOn ? (
-                <>
-                  <b>내 줄만</b> 누를 수 있어요 — 칸 클릭 +1회 · 우클릭 −1회. 나머지는 읽기
-                  전용이에요.
-                </>
-              ) : (
-                "방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요."
-              )
+              "방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요."
             ) : liveState === "on" ? (
               <>
                 <b>읽기 전용 화면</b>이에요 — 참여하려면 초대가 필요해요.
@@ -4898,6 +5086,16 @@ export default function GoldSettlement() {
             {tabbed && (
               <nav className="gs-tabs" aria-label="화면 선택">
                 {[
+                  /* 자수는 파티원의 기본 화면이라 맨 왼쪽입니다 — 다른 탭은 읽으러 가는 곳입니다 */
+                  ...(guestPlaying
+                    ? [
+                        {
+                          k: "confess",
+                          label: "자수",
+                          tip: "내 벌금을 직접 세는 화면이에요. 카드를 누르면 1회 쌓이고, 우클릭하면 1회 빠져요.",
+                        },
+                      ]
+                    : []),
                   { k: "sheet", label: "벌금표", tip: "벌금을 입력하는 화면이에요. 정산 장부와 보낼 우편은 이 표를 기준으로 계산돼요." },
                   { k: "ledger", label: "정산 장부", tip: "각자 낸 벌금과 받을 몫, 실제 송금 금액을 보여줘요." },
                   { k: "mail", label: "보낼 우편", tip: "누가 누구에게 얼마를 보낼지, 우편 수수료까지 계산해요." },
@@ -4928,6 +5126,82 @@ export default function GoldSettlement() {
           </div>
         </div>
       </header>
+
+      {/* ── 자수 — 파티원의 기본 화면. 항목마다 큰 카드 하나이고,
+             누르면 +1회 · 우클릭하면 −1회입니다. 서버가 방장 앱에 넘겨 장부에 적히고,
+             그 결과가 푸시로 돌아와야 숫자가 바뀝니다(낙관 갱신 없음) ── */}
+      {showConfess && guestPlaying && (
+        <section className="gs-mail gs-confsec">
+          <div className="gs-cardhead">
+            <div className="gs-headleft">
+              <h2 className="gs-h2">자수</h2>
+            </div>
+          </div>
+          <div className="gs-card gs-confbox">
+            {!scribeOn && (
+              <div className="gs-slip" role="status">
+                <span className="gs-slip-msg">
+                  <b>방장이 자리를 비웠어요</b> — 돌아오면 다시 누를 수 있어요.
+                </span>
+              </div>
+            )}
+            <div className="gs-conf-who">
+              <b>{myRow ? seatName(myRow, rows.indexOf(myRow)) : you.nick || "나"}</b>
+              <span className="gs-conf-tag">나</span>
+              <span className="gs-conf-sum">
+                내 벌금 <b>{man(myGold)}</b>
+              </span>
+            </div>
+            <p className="gs-conf-howto">
+              칸을 <b>누르면 1회 쌓이고, 우클릭하면 1회 빠져요.</b> 누른 것은 방장 장부에 자수로
+              남아요.
+            </p>
+            {!myRow || cols.length === 0 ? (
+              <div className="gs-empty">
+                <p>아직 내 줄이 없어요.</p>
+                <p className="gs-empty-sub">방장이 줄을 만들면 여기에 항목이 나와요.</p>
+              </div>
+            ) : (
+              <div className="gs-confgrid">
+                {cols.map((c) => {
+                  const roul = isRoulette(c);
+                  const lock = roul || !scribeOn;
+                  const n = num(myRow.counts[c.id]);
+                  const nm = (c.name || "").trim() || "항목";
+                  return (
+                    <button
+                      key={c.id}
+                      className={"gs-confcard" + (lock ? " gs-confcard-off" : "")}
+                      disabled={lock}
+                      onClick={() => !lock && sendConfess(myRow.id, c.id, 1)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        if (!lock) sendConfess(myRow.id, c.id, -1);
+                      }}
+                      aria-label={nm + " 1회 추가 (우클릭: 1회 빼기)"}
+                    >
+                      <span className="gs-confname">{roul ? "◎ " + nm : nm}</span>
+                      <span className="gs-confprice">
+                        {roul
+                          ? "나온 숫자 × " + man(Math.round(goldOf(c.price))) + "G"
+                          : "1회 " + man(Math.round(goldOf(c.price))) + "G"}
+                      </span>
+                      {roul ? (
+                        <span className="gs-conflock">룰렛은 방장이 돌려요</span>
+                      ) : (
+                        <span className={"gs-confn" + (n > 0 ? "" : " zero")}>
+                          {commafy(n)}
+                          <em>회</em>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ── 벌금표 ───────────────────────────────────── */}
       {/* ── 로비(대기실) — 다음 판 미리보기. 열려 있는 동안 세 탭을 대신합니다 ── */}
@@ -5072,6 +5346,16 @@ export default function GoldSettlement() {
             머리줄(제목·모드)은 상자 밖에 두어 세 탭의 윗부분이 한 줄로 맞습니다 */}
         <div className="gs-card gs-sheetbox">
 
+        {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다 */}
+        {guestPlaying && (
+          <div className="gs-slip gs-slip-back" role="status">
+            <i className="gs-ring" aria-hidden="true" />
+            <span className="gs-slip-msg">
+              <b>읽기 전용</b>이에요 — 내 벌금은 <b>자수</b> 탭에서 세요. 30초 동안 안 누르면 자수
+              화면으로 돌아가요.
+            </span>
+          </div>
+        )}
 
         {privWarn && (
           <div className="gs-slip" role="status">
@@ -5403,6 +5687,14 @@ export default function GoldSettlement() {
                                   둘 다 기록에 남고, 실수는 반대 클릭이나 기록에서 바로잡습니다.
                                   보조 버튼을 칸 위에 겹치지 않아 오클릭 여지가 없습니다. */}
                               <div className="gs-hitwrap">
+                                {/* 자수로 바뀐 칸 — 방장의 눈은 판에 있으니 판에서 알립니다 */}
+                                {confessFx &&
+                                  confessFx.rowId === row.id &&
+                                  confessFx.colId === c.id && (
+                                    <span className="gs-hovtip gs-conftip" role="status">
+                                      <b>{confessFx.nick}</b> 자수
+                                    </span>
+                                  )}
                                 {/* 누르면 얼마가 붙는지 — 십자 하이라이트는 "어디"만 말하고
                                     금액은 안 말해 줍니다. 단가가 열마다 달라서 실수를 막습니다.
                                     첫 줄은 위가 머리줄이라 아래로 뒤집습니다. */}
@@ -5418,12 +5710,24 @@ export default function GoldSettlement() {
                                   </span>
                                 )}
                                 <button
+                                  key={
+                                    confessFx &&
+                                    confessFx.rowId === row.id &&
+                                    confessFx.colId === c.id
+                                      ? "fx" + confessFx.t
+                                      : "cell"
+                                  }
                                   className={
                                     "gs-hit" +
                                     (n > 0 ? " gs-hit-on" : "") +
                                     /* 자수할 수 있는 칸만 금색으로 — 나머지는 읽기 전용입니다 */
                                     (canConfess(row, c) ? " gs-hit-mine" : "") +
-                                    (confessMode && !canConfess(row, c) ? " gs-hit-far" : "")
+                                    (confessMode && !canConfess(row, c) ? " gs-hit-far" : "") +
+                                    (confessFx &&
+                                    confessFx.rowId === row.id &&
+                                    confessFx.colId === c.id
+                                      ? " gs-hit-conf"
+                                      : "")
                                   }
                                   onClick={() => pressCell(row, c, 1)}
                                   onContextMenu={(e) => {
@@ -5694,6 +5998,15 @@ export default function GoldSettlement() {
             </div>
           </div>
           <div className="gs-card gs-ledgerbox">
+          {/* 장부는 원래 읽기만 하는 화면이라 복귀 안내만 남습니다 */}
+          {guestPlaying && (
+            <div className="gs-slip gs-slip-back" role="status">
+              <i className="gs-ring" aria-hidden="true" />
+              <span className="gs-slip-msg">
+                30초 동안 안 누르면 <b>자수</b> 화면으로 돌아가요.
+              </span>
+            </div>
+          )}
           <span className="gs-unit gs-unit-in">단위: G(골드)</span>
           <div className="gs-scroll">
             <table className="gs-ledger">
@@ -5746,6 +6059,14 @@ export default function GoldSettlement() {
             </div>
           </div>
           <div className="gs-card gs-ledgerbox">
+            {guestPlaying && (
+              <div className="gs-slip gs-slip-back" role="status">
+                <i className="gs-ring" aria-hidden="true" />
+                <span className="gs-slip-msg">
+                  30초 동안 안 누르면 <b>자수</b> 화면으로 돌아가요.
+                </span>
+              </div>
+            )}
             <div className="gs-empty">
               <p>정산할 사람이 없어요.</p>
               <p className="gs-empty-sub">벌금표에 금액을 입력하면 장부가 여기에 만들어져요.</p>
@@ -5786,6 +6107,16 @@ export default function GoldSettlement() {
             </label>
           </div>
         </div>
+
+        {/* 우편도 읽기만 하는 화면이라 복귀 안내만 — 맨 위 한 줄입니다 */}
+        {guestPlaying && (
+          <div className="gs-slip gs-slip-back" role="status">
+            <i className="gs-ring" aria-hidden="true" />
+            <span className="gs-slip-msg">
+              30초 동안 안 누르면 <b>자수</b> 화면으로 돌아가요.
+            </span>
+          </div>
+        )}
 
         {!r || r.transfers.length === 0 ? (
           <div className="gs-empty">
@@ -6404,7 +6735,7 @@ export default function GoldSettlement() {
             />
           </div>
           <div className="gs-press-head">
-            방금 누른 <b>{burstRows.length}건</b>
+            방금 바뀐 <b>{burstRows.length}건</b>
           </div>
           <ul className="gs-press-rows">
             {burstRows.map((e) => (
@@ -6414,6 +6745,8 @@ export default function GoldSettlement() {
                   {Math.max(0, Math.floor((burstNow - e.t) / 1000))}초 전
                 </span>
                 <b>{e.name}</b>
+                {/* 파티원이 누른 것과 방장이 누른 것을 갈라 봅니다 — 안 그러면 "내가 저걸 눌렀나?"가 됩니다 */}
+                {e.kind === "confess" && <span className="gs-press-conf">자수</span>}
                 <i>{e.item}</i>
                 <u className={e.delta < 0 ? "dn" : undefined}>
                   {(e.delta > 0 ? "+" : "−") + man(Math.abs(e.delta))}
@@ -11539,4 +11872,88 @@ tr:hover .gs-lb-kick{opacity:.55}
 .gs-mem-id{color:var(--ink-2); font-size:11.5px}
 .gs-mem-req{font-size:10.5px; letter-spacing:.08em; color:var(--gold)}
 .gs-memlist li .gs-btn{margin-left:auto}
+
+/* ── 방 표시 칩 — 머리줄 하나로 "어느 방인가"와 "잘 붙어 있나"를 같이 답합니다 ── */
+.gs-roomdd{position:relative}
+.gs-roomchip{font:inherit; font-size:12.5px; cursor:pointer; height:32px;
+  display:inline-flex; align-items:center; gap:2px; padding:0 10px;
+  border:1px solid rgba(var(--gold-rgb),.5); border-radius:7px;
+  background:rgba(var(--gold-rgb),.06); color:var(--gold); white-space:nowrap}
+.gs-roomchip b{font-family:'Gowun Batang',serif; font-weight:700; font-size:13.5px; color:var(--gold)}
+.gs-roomchip:hover,.gs-roomchip.on{background:rgba(var(--gold-rgb),.14)}
+/* 끊기면 빨강 — 방장이 자기 화면에서 알아야 고칠 수 있습니다 */
+.gs-roomchip-down{border-color:rgba(var(--red-rgb),.5); background:rgba(var(--red-rgb),.07);
+  color:var(--red)}
+.gs-roomchip-down b{color:var(--red)}
+.gs-roomchip-down:hover,.gs-roomchip-down.on{background:rgba(var(--red-rgb),.14)}
+.gs-roomdot{display:inline-block; width:6px; height:6px; border-radius:50%; flex:none;
+  background:#6fbf73; margin-left:6px}
+.gs-roomdot.warn{background:var(--red)}
+.gs-roompanel{position:absolute; top:calc(100% + 7px); left:0; z-index:30; width:262px;
+  background:var(--paper); border:1px solid var(--kraft-dk); border-radius:8px; padding:12px 13px;
+  box-shadow:0 14px 34px rgba(var(--shadow-rgb),.34)}
+.gs-room-h{margin:0; font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
+.gs-room-sub{margin:3px 0 0; font-size:11.5px; color:var(--ink-2)}
+.gs-room-mem{margin:7px 0 0; font-size:12px; line-height:1.8; color:var(--ink-body)}
+.gs-room-row{display:flex; align-items:center; gap:7px; margin:9px 0 0; padding-top:9px;
+  font-size:12.5px; border-top:1px solid rgba(var(--ink-rgb),.14)}
+.gs-room-row b{margin-left:auto; font-family:var(--mono); font-size:11.5px; color:var(--ink-2);
+  font-weight:400; word-break:break-all; text-align:right}
+.gs-room-btns{display:flex; gap:8px; margin-top:11px}
+.gs-room-end{margin-left:auto}
+@media (max-width:640px){ .gs-roompanel{width:min(262px,calc(100vw - 40px))} }
+
+/* ── 복귀 안내 줄 — 카드 맨 위. 왼쪽 고리가 돌아서 글자를 안 읽어도 흐르는 것이 보입니다 ── */
+.gs-slip-back{border-left-color:var(--kraft-dk); background:rgba(var(--ink-rgb),.06)}
+.gs-slip-back .gs-slip-msg{color:var(--ink-body)}
+.gs-slip-back .gs-slip-msg b{color:var(--ink)}
+.gs-ring{flex:none; width:16px; height:16px; border-radius:50%; display:inline-block;
+  border:2px solid rgba(var(--gold-rgb),.5); border-top-color:transparent;
+  animation:gs-ringspin 1.6s linear infinite}
+@keyframes gs-ringspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){ .gs-ring{animation:none} }
+
+/* ── 자수 탭 — 항목마다 큰 카드 하나. 방송 화면에서도 읽히게 숫자를 크게 씁니다 ── */
+.gs-conf-who{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px}
+.gs-conf-who > b{font-family:'Gowun Batang',serif; font-size:24px; font-weight:700; color:var(--gold)}
+.gs-conf-tag{font-size:9.5px; letter-spacing:.1em; color:var(--gold); padding:1px 5px;
+  border:1px solid rgba(var(--gold-rgb),.55); border-radius:4px}
+.gs-conf-sum{margin-left:auto; font-size:12px; color:var(--ink-2)}
+.gs-conf-sum b{font-family:var(--mono); font-size:20px; color:var(--gold); font-weight:400}
+.gs-conf-howto{margin:0 0 14px; font-size:12px; line-height:1.75; color:var(--ink-2)}
+.gs-conf-howto b{color:var(--ink-body); font-weight:600}
+.gs-confgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px}
+.gs-confcard{font:inherit; cursor:pointer; color:var(--ink); text-align:center;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  min-height:132px; padding:14px; border-radius:8px;
+  border:1.5px solid rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.07)}
+.gs-confcard:hover{background:rgba(var(--gold-rgb),.14); border-color:var(--gold)}
+.gs-confcard:active{transform:translateY(1px)}
+.gs-confcard-off{cursor:default; opacity:.62; border-color:rgba(var(--ink-rgb),.18);
+  background:rgba(var(--ink-rgb),.05)}
+.gs-confcard-off:hover{background:rgba(var(--ink-rgb),.05); border-color:rgba(var(--ink-rgb),.18)}
+.gs-confcard-off:active{transform:none}
+.gs-confname{font-family:'Gowun Batang',serif; font-size:19px; font-weight:700}
+.gs-confcard-off .gs-confname{color:var(--ink-2)}
+.gs-confprice{font-size:11.5px; color:var(--ink-2); margin-top:1px}
+.gs-confn{font-family:var(--mono); font-size:34px; line-height:1.15; margin-top:6px}
+.gs-confn em{font-style:normal; font-family:'IBM Plex Sans KR',sans-serif; font-size:13px;
+  color:var(--ink-2); margin-left:3px}
+.gs-confn.zero{color:rgba(var(--ink-rgb),.32)}
+.gs-conflock{font-size:11px; color:var(--ink-2); margin-top:8px}
+/* 자수 탭은 파티원의 기본 화면이라, 탭 줄에서도 금색으로 먼저 눈에 듭니다 */
+.gs-tab-confess{border-color:rgba(var(--gold-rgb),.55)}
+.gs-tab-confess.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
+
+/* ── 자수가 왔다는 표시 ── */
+.gs-press-conf{flex:none; font-size:10px; letter-spacing:.08em; color:var(--gold);
+  border:1px solid rgba(var(--gold-rgb),.5); border-radius:3px; padding:1px 4px}
+/* 자수로 바뀐 칸이 잠깐 번쩍입니다 — 방장의 눈은 판에 있습니다 */
+.gs-hit-conf{animation:gs-confflash 1.1s ease-out}
+@keyframes gs-confflash{
+  0%{background:rgba(var(--gold-rgb),.55); box-shadow:0 0 0 3px rgba(var(--gold-rgb),.4)}
+  100%{background:var(--cell); box-shadow:0 0 0 0 rgba(var(--gold-rgb),0)}
+}
+.gs-conftip{border-color:rgba(var(--gold-rgb),.7)}
+@media (prefers-reduced-motion:reduce){ .gs-hit-conf{animation:none} }
 `;
