@@ -3282,6 +3282,11 @@ export default function GoldSettlement() {
             }
             setDenied(m.why || "member");
             setYou(null);
+            /* 볼 자격이 없어졌으면 판도 같이 거둡니다 — 내보내진 뒤에도 마지막으로 받은
+               표가 남아 있으면, 못 보는 판을 계속 보여 주는 셈입니다 */
+            setRows([]);
+            setVlobby(null);
+            setLiveState("empty");
             stop = true;
             try {
               ws.close();
@@ -5529,6 +5534,10 @@ export default function GoldSettlement() {
                         <td className="gs-sumcell">
                           {won(Math.max(0, simpleGold(row)))}
                         </td>
+                      ) : readOnly ? (
+                        /* 파티원 화면의 합계는 읽기 전용입니다 — 눌러도 입력칸이 열리지
+                           않아야 고칠 수 있는 칸처럼 보이지 않습니다 */
+                        <td className="gs-sumcell">{man(Math.max(0, itemGold(row)))}</td>
                       ) : (
                         <td className="gs-sumcell gs-sumcell-edit">
                           <TotalEdit
