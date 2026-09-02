@@ -1143,6 +1143,12 @@ function slotGold(slot) {
 
 /* 예시 표·기록이 든 파티 이름 — 로비와 파티 메뉴에서 만들 수 있습니다 */
 const EXAMPLE_PARTY = "현자들";
+/* 방금 누른 것 — 묶음 전체에 시계가 하나입니다. 누를 때마다 처음으로 돌아가고,
+   손을 떼고 이만큼 조용하면 카드가 통째로 사라집니다. 한 번 기록하는 묶음(전멸 한 번)은
+   몇 초 간격으로 이어지고 다음 묶음까지는 몇 분이라, 그 사이 어디쯤이면 됩니다. */
+const BURST_MS = 60 * 1000;
+/* 8인 파티가 전멸하면 여덟 줄입니다 — 그게 확인하고 싶은 묶음이라 그보다 적게 자르면 안 됩니다 */
+const BURST_MAX = 8;
 
 function loadSaved() {
   if (typeof window === "undefined") return null;
@@ -1670,6 +1676,19 @@ export default function GoldSettlement() {
   // 정산 방식도 수수료처럼 파티 장부에 붙어 다닙니다
   const [splitMode, setSplitMode] = useState(boot.current.splitMode === "solo" ? "solo" : "pot");
   const [showSplitHelp, setShowSplitHelp] = useState(false);
+  /* 방금 누른 것 — 이번 묶음의 기록 id 들. 새것이 뒤에 붙고, 카드는 아래가 고정이라
+     방금 누른 줄이 늘 같은 자리에 있습니다. 기록에서 다시 읽으므로 취소도 기록과 한 몸입니다. */
+  const [burst, setBurst] = useState([]);
+  const [burstKey, setBurstKey] = useState(0); // 시간 막대를 다시 채우는 열쇠
+  const [burstHold, setBurstHold] = useState(false); // 올려 둔 동안은 시계가 멉니다
+  const notePress = (id) => {
+    setBurst((prev) => {
+      const next = [...prev, id];
+      return next.length > BURST_MAX ? next.slice(next.length - BURST_MAX) : next;
+    });
+    setBurstKey((k) => k + 1);
+  };
+
   /* 튜토리얼 중인지 — 예시 표는 화면에만 얹고 저장하지 않습니다. 저장하면 지난 판에
      남의 예시가 남고, 끝난 뒤 치우는 일이 사용자 몫이 됩니다. 끝나면 아래 장부로 돌아갑니다:
      첫 방문이면 빈 판, 나중에 다시 본 것이면 보던 장부(그래야 남의 장부를 안 덮습니다). */
@@ -1682,6 +1701,12 @@ export default function GoldSettlement() {
 
   const coachRef = useRef(null);
   coachRef.current = coach;
+
+  useEffect(() => {
+    if (!burst.length || burstHold) return;
+    const t = setTimeout(() => setBurst([]), BURST_MS);
+    return () => clearTimeout(t);
+  }, [burst, burstHold, burstKey]);
 
   /* 코스 진행 — 해당 조작이 실제로 일어났을 때만 다음으로 */
   const courseHit = (what) => {
@@ -1709,6 +1734,17 @@ export default function GoldSettlement() {
   /* 기록 — 카운터의 ＋·직접 수정이 델타로 한 줄씩 쌓입니다. 영수증이지 원본이 아니라서
      정산·공유는 이 목록을 보지 않습니다. 취소는 줄을 지우지 않고 반대 기록을 덧붙입니다(역분개). */
   const [log, setLog] = useState(boot.current.log || []);
+  /* 카드에 그릴 줄들. id 만 들고 있다가 기록에서 읽어 오므로, 어디서 취소하든
+     (카드에서든 기록 창에서든) 같은 줄이 같이 사라집니다. */
+  const burstRows = useMemo(() => {
+    if (!burst.length) return [];
+    const by = {};
+    log.forEach((e) => {
+      by[e.id] = e;
+    });
+    return burst.map((id) => by[id]).filter((e) => e && !e.cancelled);
+  }, [burst, log]);
+
   const [showLog, setShowLog] = useState(false);
   /* 기록 모달의 사람 필터 — 이름 칸의 '기록'으로 들어오면 그 사람 것만 봅니다.
      벌금 시비는 사람 단위로 붙어서, 전체 로그를 훑는 것보다 이쪽이 빠릅니다. */
@@ -2110,6 +2146,7 @@ export default function GoldSettlement() {
       nextSeq({ cols: slot.cols, rows: slot.rows, log: slot.log || [], memoFreeze: slot.memoFreeze })
     );
     setOpenRow(null);
+    setBurst([]); // 앞 판에서 누른 것이 새 표 위에 남으면 안 됩니다
     clearHash();
   };
   /* ---------- 지난 판 이름 짓기 ---------- */
@@ -2355,8 +2392,8 @@ export default function GoldSettlement() {
     if (readOnly) return;
     const a = authRef.current;
     if (!a)
-      return openAuth("login", startParty, {
-        title: "파티 모드",
+      /* 파티 모드를 처음 누르는 사람은 대개 계정도 처음이라 가입부터 엽니다 */
+      return openAuth("register", startParty, {
         why: "파티원을 모으려면 계정이 필요해요. 닉네임이 벌금판에 올라가는 내 이름이에요.",
         loginVerb: "로그인하고 시작",
         joinVerb: "가입하고 시작",
@@ -3808,6 +3845,7 @@ export default function GoldSettlement() {
     live.current.total[row.id] = after;
     bump(row.id, col.id, dir, gold);
     const id = "L" + seq.current++;
+    notePress(id);
     appendLog({
       id,
       kind: "press",
@@ -4740,15 +4778,15 @@ export default function GoldSettlement() {
             <button
               className="gs-btn gs-btn-sm gs-slip-act"
               onClick={() =>
-                openAuth("login", null, {
-                  title: "참여하기",
+                /* 초대를 받고 들어온 사람은 이 앱이 처음일 확률이 높습니다 */
+                openAuth("register", null, {
                   why: "이 파티에 참여하려면 계정이 필요해요. 닉네임이 벌금판에 올라가는 내 이름이에요.",
                   loginVerb: "로그인하고 참여",
                   joinVerb: "가입하고 참여",
                 })
               }
             >
-              로그인하고 참여
+              참여하기
             </button>
           )}
           {guestWaiting && (
@@ -6148,7 +6186,6 @@ export default function GoldSettlement() {
           auth={auth}
           onOpenAuth={(tab) =>
             openAuth(tab, null, {
-              title: "계정",
               why: "방송용 주소와 초대 링크는 계정마다 하나씩이에요. 로그인만 하면 다른 브라우저에서도 같은 주소를 써요.",
               loginVerb: "로그인",
               joinVerb: "가입하기",
@@ -6326,6 +6363,48 @@ export default function GoldSettlement() {
             {vcard.t || ""}{" "}
             <em>{(vcard.g > 0 ? "+" : "−") + man(Math.abs(vcard.g))}</em>
           </span>
+        </div>
+      )}
+      {/* 방금 누른 것 — 아래가 고정이고 위로 자랍니다. 새 줄이 맨 아래에 붙어서
+          방금 누른 것은 늘 같은 자리에 있습니다. 올려 두면 시계가 멈춥니다. */}
+      {!readOnly && burstRows.length > 0 && (
+        <div
+          className="gs-press"
+          onMouseEnter={() => setBurstHold(true)}
+          onMouseLeave={() => {
+            setBurstHold(false);
+            setBurstKey((k) => k + 1); // 손을 떼면 시계도 막대도 처음부터
+          }}
+        >
+          <div className="gs-press-track">
+            <i
+              className="gs-press-bar"
+              key={burstKey}
+              style={{ animationDuration: BURST_MS + "ms" }}
+              aria-hidden="true"
+            />
+          </div>
+          <div className="gs-press-head">
+            방금 누른 <b>{burstRows.length}건</b>
+          </div>
+          <ul className="gs-press-rows">
+            {burstRows.map((e) => (
+              <li key={e.id}>
+                <b>{e.name}</b>
+                <i>{e.item}</i>
+                <u className={e.delta < 0 ? "dn" : undefined}>
+                  {(e.delta > 0 ? "+" : "−") + man(Math.abs(e.delta))}
+                </u>
+                <button
+                  className="gs-press-x"
+                  onClick={() => cancelEntry(e)}
+                  aria-label={(e.name || "이 줄") + " " + (e.item || "항목") + " 취소"}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {toast && (
@@ -7830,6 +7909,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const title = mode === "login" ? "로그인" : "가입";
   const okId = /^[A-Za-z0-9]{4,20}$/.test(id.trim());
   const okNick = [...nick.trim()].length >= 2 && [...nick.trim()].length <= 3;
   const ready = okId && pw.length > 0 && (mode === "login" || okNick);
@@ -7857,17 +7937,13 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
 
   return (
     <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="gs-dialog" role="dialog" aria-modal="true" aria-label={(ctx && ctx.title) || "계정"}>
+      <div className="gs-dialog" role="dialog" aria-modal="true" aria-label={title}>
+        {/* 한 화면은 한 가지 일만 합니다. 어느 쪽으로 열지는 들어온 자리가 정하고
+            (파티·초대는 처음 쓰는 사람이 많아 가입, 헤더의 [로그인]은 로그인),
+            반대편은 아래 한 줄로 갑니다. 탭을 위에 두면 제목과 자리를 다투는데다
+            작아서, 처음 온 사람이 로그인으로 한 번 실패한 뒤에야 찾게 됩니다. */}
         <div className="gs-auth-head">
-          <h3>{(ctx && ctx.title) || "계정"}</h3>
-          <span className="gs-seg gs-seg-sm" role="group" aria-label="로그인 또는 가입">
-            <button className={mode === "login" ? "on" : ""} onClick={() => setMode("login")}>
-              로그인
-            </button>
-            <button className={mode === "register" ? "on" : ""} onClick={() => setMode("register")}>
-              가입
-            </button>
-          </span>
+          <h3>{title}</h3>
           <button className="gs-x gs-dialog-x" onClick={onClose} aria-label="닫기">
             ×
           </button>
@@ -7925,15 +8001,25 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
           </>
         )}
         {err && <p className="gs-obs-err">{err}</p>}
-        <div className="gs-obs-acts gs-acts-end">
-          <button className="gs-btn" onClick={submit} disabled={!ready || busy}>
-            {busy
-              ? "잠시만요…"
-              : mode === "login"
-              ? (ctx && ctx.loginVerb) || "로그인"
-              : (ctx && ctx.joinVerb) || "가입하기"}
+        <button className="gs-btn gs-authgo" onClick={submit} disabled={!ready || busy}>
+          {busy
+            ? "잠시만요…"
+            : mode === "login"
+            ? (ctx && ctx.loginVerb) || "로그인"
+            : (ctx && ctx.joinVerb) || "가입하기"}
+        </button>
+        {/* 반대편으로 가는 문 — 눌러도 적어 둔 아이디·비밀번호는 그대로 둡니다 */}
+        <p className="gs-authswap">
+          {mode === "login" ? "계정이 처음이신가요? " : "이미 계정이 있어요 · "}
+          <button
+            onClick={() => {
+              setErr("");
+              setMode(mode === "login" ? "register" : "login");
+            }}
+          >
+            {mode === "login" ? "가입하기" : "로그인"}
           </button>
-        </div>
+        </p>
         </>
         )}
       </div>
@@ -8300,18 +8386,20 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
         </div>
 
         {!auth ? (
-          /* 계정이 먼저입니다 — 주소도 초대도 계정에 붙어 있습니다 */
+          /* 계정이 먼저입니다 — 방송용 주소와 초대 링크는 계정마다 하나씩입니다.
+             고를 것을 두 개 놓으면 "나는 어느 쪽인가"를 또 묻는 셈이라, 여기도
+             주 버튼 하나만 두고 이미 계정이 있는 사람은 밑줄 문으로 보냅니다. */
           <div className="gs-obs-make">
             <p>
               <b>로그인하면 내 방송용 주소가 생겨요.</b> 그 주소 하나를 OBS 브라우저 소스에
               넣으면, 지금 들어가 있는 파티의 벌금 현황이 방송 화면에 실시간으로 떠요.
             </p>
             <div className="gs-obs-acts">
-              <button className="gs-btn" onClick={() => onOpenAuth("login")}>
-                로그인
+              <button className="gs-btn" onClick={() => onOpenAuth("register")}>
+                계정 만들기
               </button>
-              <button className="gs-btn gs-btn-ghost" onClick={() => onOpenAuth("register")}>
-                가입하기
+              <button className="gs-obs-why" onClick={() => onOpenAuth("login")}>
+                이미 계정이 있어요
               </button>
             </div>
           </div>
@@ -11160,6 +11248,41 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-fxcard.roul b::before{content:'\u25ce '; color:var(--gold)}
 @keyframes gs-fxin{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
 @media (prefers-reduced-motion:reduce){ .gs-fxcard{animation:none} }
+/* 방금 누른 것 — 장부 결로. 줄 사이는 점선, 숫자는 고정폭.
+   취소는 올린 줄에만 나타나서 평소에는 읽기만 하는 카드입니다. */
+.gs-press{position:fixed; right:18px; bottom:18px; z-index:45; width:326px;
+  background:var(--paper-2); border:1px solid var(--kraft-dk); border-radius:4px;
+  box-shadow:0 10px 30px rgba(var(--shadow-rgb),.45); overflow:hidden;
+  animation:gs-press-in .16s ease-out}
+/* 남은 시간 — 묶음 전체에 하나뿐인 시계입니다 */
+.gs-press-track{height:2px; background:rgba(var(--ink-rgb),.09)}
+.gs-press-bar{display:block; height:2px; background:rgba(var(--gold-rgb),.85);
+  transform-origin:left; animation:gs-press-run linear forwards}
+@keyframes gs-press-run{from{transform:scaleX(1)} to{transform:scaleX(0)}}
+.gs-press:hover .gs-press-bar{animation-play-state:paused}
+.gs-press-head{padding:9px 14px 8px; font-size:13px; color:var(--ink-2);
+  border-bottom:1px solid rgba(var(--ink-rgb),.1)}
+.gs-press-head b{color:var(--ink); font-weight:600; font-family:var(--mono); font-size:13.5px}
+.gs-press-rows{list-style:none; margin:0; padding:0}
+.gs-press-rows li{display:flex; align-items:center; gap:9px; padding:9px 14px; min-height:38px}
+.gs-press-rows li + li{border-top:1px dotted rgba(var(--ink-rgb),.13)}
+.gs-press-rows b{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px; color:var(--ink)}
+.gs-press-rows i{font-style:normal; font-size:13px; color:var(--ink-2)}
+.gs-press-rows u{text-decoration:none; margin-left:auto; font-family:var(--mono);
+  font-size:15px; color:var(--red)}
+.gs-press-rows u.dn{color:var(--blue)}
+.gs-press-x{width:24px; height:24px; flex:none; display:grid; place-items:center; padding:0;
+  border:1px solid transparent; background:transparent; color:var(--ink-2); font:inherit;
+  font-size:12px; border-radius:3px; cursor:pointer; opacity:0}
+.gs-press-rows li:hover .gs-press-x,.gs-press-x:focus-visible{opacity:1;
+  border-color:rgba(var(--ink-rgb),.28)}
+.gs-press-x:hover{color:var(--ink); background:rgba(var(--ink-rgb),.1)}
+@keyframes gs-press-in{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .gs-press{animation:none}
+  .gs-press-bar{animation:none; transform:scaleX(1)}
+}
+@media (max-width:640px){ .gs-press{right:10px; bottom:10px; width:min(326px,calc(100vw - 20px))} }
 .gs-toast{position:fixed; left:50%; bottom:max(18px,4vh); transform:translateX(-50%);
   z-index:70; max-width:min(560px,92vw); padding:12px 18px; border-radius:6px;
   background:var(--paper,#2a2320); color:var(--ink); font-size:13.5px; line-height:1.65;
@@ -11324,6 +11447,15 @@ tr:hover .gs-lb-kick{opacity:.55}
 /* 계정 창 */
 .gs-auth-head{display:flex; align-items:center; gap:10px}
 .gs-auth-head h3{margin-right:auto}
+/* 주 버튼은 폭을 다 씁니다 — 이 창에서 할 일이 하나라 고민할 자리가 없습니다 */
+.gs-authgo{display:block; width:100%; margin-top:16px; padding:11px 14px; font-size:13.5px;
+  font-weight:600; text-align:center}
+.gs-authswap{margin:14px 0 0; padding-top:13px; text-align:center; font-size:12.5px;
+  color:var(--ink-2); border-top:1px solid rgba(var(--ink-rgb),.16)}
+.gs-authswap button{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
+  background:none; border:0; cursor:pointer; padding:0;
+  text-decoration:underline; text-underline-offset:3px}
+.gs-authswap button:hover{color:var(--ink)}
 .gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
   color:var(--ink-2)}
 .gs-field-hint{letter-spacing:0; font-size:11px}
