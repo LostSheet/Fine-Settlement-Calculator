@@ -8820,6 +8820,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
   const [showObs, setShowObs] = useState(false); // 방송 중 유출 방지 — 기본 가림
   const [showInv, setShowInv] = useState(false);
   const [nickDraft, setNickDraft] = useState("");
+  /* 닉 고치는 칸은 접어 둡니다 — 늘 열려 있으면 입력칸과 버튼이 계정 줄을 채워서
+     정작 자주 쓰는 것(로그아웃·아이디 정하기)과 무게가 같아 보입니다 */
+  const [nickOpen, setNickOpen] = useState(false);
   const [busy, setBusy] = useState("");
   const obsUrl = auth && auth.obsToken ? roomApi.obsUrl(auth.obsToken) : "";
   const invUrl = relay.room && invite && invite.code ? roomApi.inviteUrl(relay.room, invite.code) : "";
@@ -8879,6 +8882,16 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
 
   /* 초대 남은 시간 — 30분짜리라 분 단위면 충분합니다 */
   const invLeft = invite && invite.exp ? Math.max(0, Math.round((invite.exp - Date.now()) / 60000)) : 0;
+  /* 화면에 죽은 링크를 띄우지 않습니다 — 창을 열었는데 만료돼 있으면 그때 새로 냅니다.
+     복사는 복사만 하고 새로 발급은 눌러야 한다는 규칙을 지키면서, "0분 남음" 같은
+     상태를 사람이 마주치지 않게 하는 자리가 여기입니다. */
+  const invRef = useRef(false);
+  useEffect(() => {
+    if (guest || !auth || !relay.room || invRef.current) return;
+    if (invite && invite.exp && invite.exp > Date.now()) return;
+    invRef.current = true;
+    onInvite();
+  }, [guest, auth, relay.room, invite && invite.exp]);
 
   return (
     <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -8903,12 +8916,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
                 </span>
               </label>
             )}
-            <button className="gs-obs-guideopen" onClick={() => setShowGuide(true)}>
-              <i aria-hidden="true">?</i> OBS에 넣는 방법
-            </button>
-            <button className="gs-obs-guideopen" onClick={() => setShowGain(true)}>
-              <i aria-hidden="true">?</i> 로그인하면 어떤 게 좋나요?
-            </button>
+            {/* 도움말 둘을 머리에 나란히 두면 제목이 밀려 두 줄로 접힙니다.
+                각자 답하는 물음이 있는 자리로 내려보내고, 머리에는 제목과 공유 토글만 둡니다 */}
             <button className="gs-x gs-dialog-x" onClick={onClose} aria-label="닫기">
               ×
             </button>
@@ -8954,6 +8963,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
                 </button>
               </div>
               <p className="gs-obs-makenote">나중에 계정을 만들면 이 주소를 그대로 옮겨요</p>
+              <button className="gs-obs-guideopen gs-obs-gainline" onClick={() => setShowGain(true)}>
+                <i aria-hidden="true">?</i> 로그인하면 어떤 게 좋나요?
+              </button>
             </div>
           </div>
         ) : (
@@ -8962,33 +8974,73 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
               <span className="gs-caplab">계정</span>
               <b>{auth.nick}</b>
               <span className="gs-obs-acctid">({auth.anon ? "아이디 없음" : auth.id})</span>
-              <input
-                className="gs-in gs-in-nick"
-                value={nickDraft}
-                placeholder="닉 바꾸기"
-                onChange={(e) => setNickDraft(e.target.value)}
-                aria-label="닉네임 바꾸기"
-              />
-              <button
-                className="gs-btn gs-btn-sm gs-btn-ghost"
-                onClick={changeNick}
-                disabled={busy === "nick" || !nickDraft.trim()}
-              >
-                {busy === "nick" ? "바꾸는 중…" : "바꾸기"}
-              </button>
-              {/* 익명 계정에서 정식으로 올라가는 길 — 주소는 안 바뀝니다 (§3-11) */}
-              {auth.anon && (
-                <button className="gs-btn gs-btn-sm" onClick={onUpgrade}>
-                  아이디 정하기
-                </button>
+              {nickOpen ? (
+                <>
+                  <input
+                    className="gs-in gs-in-nick"
+                    value={nickDraft}
+                    placeholder="2~3글자"
+                    autoFocus
+                    onChange={(e) => setNickDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && changeNick()}
+                    aria-label="닉네임 바꾸기"
+                  />
+                  <span className="gs-obs-acctr">
+                    <button
+                      className="gs-btn gs-btn-sm"
+                      onClick={changeNick}
+                      disabled={busy === "nick" || !nickDraft.trim()}
+                    >
+                      {busy === "nick" ? "바꾸는 중…" : "바꾸기"}
+                    </button>
+                    <button
+                      className="gs-btn gs-btn-sm gs-btn-ghost"
+                      onClick={() => {
+                        setNickOpen(false);
+                        setNickDraft("");
+                      }}
+                    >
+                      취소
+                    </button>
+                  </span>
+                </>
+              ) : (
+                <span className="gs-obs-acctr">
+                  <button
+                    className="gs-swaplink"
+                    onClick={() => {
+                      setNickDraft(auth.nick || "");
+                      setNickOpen(true);
+                    }}
+                  >
+                    닉 바꾸기
+                  </button>
+                  {/* 익명 계정에서 정식으로 올라가는 길 — 주소는 안 바뀝니다 (§3-11) */}
+                  {auth.anon && (
+                    <button className="gs-btn gs-btn-sm" onClick={onUpgrade}>
+                      아이디 정하기
+                    </button>
+                  )}
+                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onLogout}>
+                    로그아웃
+                  </button>
+                </span>
               )}
-              <button className="gs-btn gs-btn-sm gs-btn-ghost gs-obs-logout" onClick={onLogout}>
-                로그아웃
-              </button>
             </div>
+            {/* 계정이 뭘 더 해주는지 — 아이디가 없는 사람에게만 묻고 싶은 물음입니다 */}
+            {auth.anon && (
+              <button className="gs-obs-guideopen gs-obs-gainline" onClick={() => setShowGain(true)}>
+                <i aria-hidden="true">?</i> 로그인하면 어떤 게 좋나요?
+              </button>
+            )}
 
             {/* 내 방송용 주소 — 영구(재발급 전까지), 읽기 전용 */}
-            <h4 className="gs-key-h">내 방송용 주소</h4>
+            <h4 className="gs-key-h">
+              내 방송용 주소
+              <button className="gs-obs-guideopen" onClick={() => setShowGuide(true)}>
+                <i aria-hidden="true">?</i> OBS에 넣는 방법
+              </button>
+            </h4>
             <p>
               OBS·XSplit·프리즘 등 어떤 방송 프로그램이든, 브라우저 소스에 이 주소를 넣으면
               돼요. 주소는 계속 같아서, 파티가 바뀌어도 다시 넣을 일이 없어요.
@@ -9011,8 +9063,10 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
               <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={openObsPreview}>
                 미리보기
               </button>
+              {/* 가장 안 눌러야 할 버튼이라 무게를 낮춥니다 — 빨간 테두리로 두면
+                  주소 줄에서 주목도 1등이 됩니다. 위험은 확인창이 말합니다 */}
               <span className="gs-obs-reissue">
-                <button className="gs-btn gs-btn-sm gs-btn-warn2" onClick={onAskReissue}>
+                <button className="gs-swaplink gs-swaplink-mute" onClick={onAskReissue}>
                   주소 새로 발급
                 </button>
                 <span className="gs-tip">
@@ -9091,7 +9145,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
                     {copied === "surl" ? "복사됐어요" : "복사"}
                   </button>
                 </div>
-                <div className="gs-obs-copyrow">
+                <div className="gs-obs-copyrow gs-obs-copyrow-r">
                   <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", partyMsg())}>
                     {copied === "msg" ? "복사했어요" : "파티원에게 보낼 메시지 복사"}
                   </button>
@@ -9134,17 +9188,23 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
                   >
                     <Eye on={showInv} />
                   </button>
+                </>
+              )}
+              {/* 오른쪽 끝은 손이 가는 자리라 주 동작(복사)이 앉습니다. 새로 발급은
+                  링크가 샜을 때 쓰는 것이라 그 왼쪽으로 물러납니다 */}
+              <span className="gs-obs-rowr">
+                <button className="gs-swaplink" onClick={onInvite}>
+                  {invUrl ? "새로 발급" : "초대 발급"}
+                </button>
+                {invUrl && (
                   <button
                     className="gs-btn gs-btn-sm"
                     onClick={() => copy2("inv", inviteMsg(auth.nick, invUrl))}
                   >
                     {copied === "inv" ? "복사했어요" : "디코용 복사"}
                   </button>
-                </>
-              )}
-              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onInvite}>
-                {invUrl ? "새로 발급" : "초대 발급"}
-              </button>
+                )}
+              </span>
             </div>
 
             {/* 명단 — 닉과 아이디를 같이 적습니다. 같은 닉이 둘이어도 누구인지 갈립니다 */}
@@ -11000,6 +11060,20 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   background:rgba(var(--lift-rgb),.3); user-select:none; font:inherit}
 .gs-obs-copybox{cursor:auto}
 .gs-obs-copyrow{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:11px}
+/* 버튼은 오른쪽 끝 한 선에 섭니다 — 눈이 한 군데만 보게 */
+.gs-obs-copyrow-r{justify-content:flex-end}
+.gs-obs-rowr{margin-left:auto; display:flex; align-items:center; gap:10px}
+.gs-obs-acctr{margin-left:auto; display:flex; align-items:center; gap:10px}
+/* 버튼보다 가벼운 문 — 채운 버튼과 무게를 다투지 않게 밑줄 글자로 */
+.gs-swaplink{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
+  background:none; border:0; cursor:pointer; padding:0; white-space:nowrap;
+  text-decoration:underline; text-underline-offset:3px}
+.gs-swaplink:hover{color:var(--ink)}
+/* 되돌릴 수 없는 것은 눈에 띄되 손이 먼저 가지 않는 무게로 */
+.gs-swaplink-mute{color:var(--ink-2); font-weight:400}
+.gs-swaplink-mute:hover{color:var(--red)}
+/* 계정이 무엇을 더 해주는지 — 아이디 없는 사람에게만 묻는 물음 */
+.gs-obs-gainline{margin-top:9px}
 .gs-obs-copybox.copied{border-color:var(--gold); background:rgba(var(--gold-rgb),.08)}
 .gs-obs-urltext{display:block; font-family:var(--mono); font-size:13px; color:var(--ink);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -11057,7 +11131,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 오버레이 테마 — 사선 배경(밝은/어두운 화면 반반) 위에 실제 조합을 미리 보여줍니다 */
 .gs-obs-ro{margin-top:12px; font-size:12.5px; color:var(--ink-2)}
 .gs-obs-ro b{color:var(--ink)}
-.gs-obs-why{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--red);
+/* 물음은 경고가 아닙니다 — 빨강은 되돌릴 수 없는 것에만 씁니다 */
+.gs-obs-why{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--gold);
   cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0}
 .gs-lookmore{display:block; margin-top:9px; border:0; background:transparent; font:inherit;
   font-size:12px; color:var(--ink-2); cursor:pointer; text-decoration:underline;
@@ -11143,7 +11218,9 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   border-top:1px dotted rgba(var(--ink-rgb),.25)}
 .gs-obs-warn{color:var(--red) !important; opacity:.9}
 /* 공유 설정 창의 단 제목 */
-.gs-key-h{margin:18px 0 6px; font-size:13.5px; color:var(--ink)}
+.gs-key-h{margin:18px 0 6px; font-size:13.5px; color:var(--ink);
+  display:flex; align-items:center; gap:10px}
+.gs-key-h .gs-obs-guideopen{margin-left:auto}
 .gs-key h4.gs-key-h:first-child{margin-top:0}
 /* 문장 안에 버튼을 끼우면 줄바꿈에 따라 "두세요."만 남고 그 옆에 버튼이 붙어
    답답해 보입니다. 버튼은 제 줄에 세웁니다 */
