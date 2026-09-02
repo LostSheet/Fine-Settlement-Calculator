@@ -294,10 +294,17 @@ v1 스키마(board/cols/full/fx/spin/look/name)를 유지하고 두 가지를 �
 
 ### 5.5 지우는 것
 
-방 열쇠 체계(rooms/key/kill/재발급), handoff·recovery 전부(RECOVERY_ON 코드째, KeyShare의
-해당 섹션 — 파일 백업은 유지), endShare와 회차-주소 결합, ResetModal의 주소 닫힘 문구,
+방 열쇠 체계(rooms/key/kill/재발급), handoff·recovery 전부(RECOVERY_ON 코드째),
+endShare와 회차-주소 결합, ResetModal의 주소 닫힘 문구,
 seatFromBundle의 서버 복구 경로(→ 로그인 후 `GET read`로 앉히는 단순한 경로로 대체),
 지난 회차 잠금·복원 UI.
+
+**파일 백업도 통째로 없앤다** — `KeyShare` 컴포넌트, 헤더의 [백업] 버튼, `exportPartyFile`·
+`importPartyFile`, 관련 상태와 CSS까지. 계정이 그 일을 대신한다: 다른 기기에서 로그인하면
+`GET read`로 장부가 돌아오고, 표 자체는 URL 공유가 링크 하나에 담고, 최근 20판은 지난 판에
+남는다. 남는 구멍은 하나 — 계정과 브라우저를 동시에 잃으면 기록까지 담긴 사본이 없다.
+비밀번호 재설정이 없으니 실제로 일어날 수 있는 일이지만, 그 대가로 지키는 것(개념 하나,
+헤더 버튼 하나, 창 하나)이 더 크다고 보고 뺀다.
 
 ## 6. 검증 (배포 전, 전부 로컬)
 
