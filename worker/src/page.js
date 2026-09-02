@@ -1,7 +1,9 @@
 /* ---------------- 공유 주소가 가는 두 곳 ----------------
    OBS 브라우저 소스(window.obsstudio 주입됨) → 여기서 투명 오버레이를 그립니다.
    일반 브라우저 → 앱의 읽기 전용 화면으로 넘깁니다. 뷰어는 장부 관리자와 같은 3탭을 봐야 하고,
-   그 화면은 앱이 이미 갖고 있으니 여기서 다시 그리지 않습니다. */
+   그 화면은 앱이 이미 갖고 있으니 여기서 다시 그리지 않습니다.
+   주소는 둘입니다: /r/방주소(초대 코드는 해시 #j=)와 /o/방송용토큰(계정이 지금 있는 방).
+   같은 파일이 __ROOM__ / __OTOK__ 중 하나만 채워진 채로 서빙됩니다. */
 
 export const APP_URL = "https://lostsheet.github.io/Fine-Settlement-Calculator/";
 
@@ -339,13 +341,26 @@ export const PAGE_HTML = `<!doctype html>
     text-shadow:0 1px 3px rgba(0,0,0,.9)}
   html[data-notice="1"] .ov-notice{display:block}
 
+  /* 대기실 — 아직 판이 없으니 이름만 한 줄로 잇습니다. 표와 같은 판(.ov) 안에 앉습니다.
+     제목은 .ov-name-t 를 안 씁니다 — 거기 붙은 음수 여백(순위·변동 열을 넘어가는 장치)이
+     열 없는 대기실에서는 제목을 판 밖으로 밀어냅니다 */
+  .ov-lobby-t{flex:1; min-width:6vw; font-size:4.2vw; font-weight:600; letter-spacing:.03em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .ov-lobby{font-size:4.2vw; font-weight:600; line-height:1.35; padding:.9vw .4vw .2vw;
+    max-width:72vw}
+  .ov-lobby-note{font-size:2.6vw; opacity:.66; padding:.2vw .4vw .3vw}
+
   @media (prefers-reduced-motion:reduce){ .ov-row{transition:none} }
 </style>
 </head>
 <body><div id="app"></div>
 <script>
 (function () {
+  /* 두 주소가 이 한 페이지로 옵니다. /r/방주소 면 ROOM 만, /o/방송용토큰 이면 OTOK 만 찹니다 */
   var ROOM = "__ROOM__";
+  var OTOK = "__OTOK__";
+  /* 초대 코드는 해시에 실려 옵니다 — 서버로 안 가는 자리라 방송 화면에 덜 남습니다 */
+  var JCODE = (location.hash.match(/[#&]j=([A-Za-z0-9]+)/) || [])[1] || "";
   /* 예시 방 — 서버에 방을 만들지 않고 페이지가 스스로 굴립니다. 지워질 일도, 만료될 일도 없어요. */
   var DEMO_ROOM = "CAFE22";
   var isDemo = ROOM === DEMO_ROOM;
@@ -367,7 +382,9 @@ export const PAGE_HTML = `<!doctype html>
     var dest = "__APP__";
     if (location.hostname === "localhost" || location.hostname === "127.0.0.1")
       dest = "http://localhost:5175/";
-    location.replace(dest + "#live=" + ROOM);
+    /* 초대 코드는 그대로 앱에 넘깁니다 — 앱이 로그인 뒤 그 코드로 참여합니다 */
+    location.replace(dest + (OTOK ? "#o=" + OTOK
+      : "#live=" + ROOM + (JCODE ? "&j=" + JCODE : "")));
     return;
   }
 
@@ -440,7 +457,8 @@ export const PAGE_HTML = `<!doctype html>
   var recent = {};
   var DELTA_MS = 4200, MOVE_MS = 6000;
   var name = "";
-  var dead = false;
+  var dead = false;   // 판을 볼 수 없는 상태 — 침묵이 기본입니다
+  var lobby = null;   // 로비가 열려 있는 동안만. 순위표 대신 대기실을 그립니다
 
   /* 앱과 같은 만 단위 표기 */
   var man = function (g) {
@@ -1456,10 +1474,29 @@ export const PAGE_HTML = `<!doctype html>
       drawPlay();
       return;
     }
+    /* 로비가 열려 있으면 대기실입니다 — 아직 판이 없으니 순위표를 그릴 게 없습니다 */
+    if (lobby) {
+      ovBoard = null;
+      prev = {};
+      recent = {};
+      root.dataset.notice = "0";
+      var lnames = (lobby.names || []).map(function (x) {
+        return esc(x && x.n ? x.n : "");
+      }).join(" · ");
+      var ln = lobby.n != null ? lobby.n : (lobby.names || []).length;
+      app.innerHTML =
+        '<div class="ov"><div class="ov-head"><span class="ov-lobby-t">대기실 ' +
+        ln + "/" + (lobby.cap || 8) + "</span></div>" +
+        '<div class="ov-lobby">' + lnames + "</div>" +
+        '<div class="ov-lobby-note">모이는 중이에요…</div></div>';
+      fitBoard();
+      return;
+    }
     if (dead || !board || !board.length) {
       ovBoard = null;
       prev = {};
       recent = {};
+      if (!dead) root.dataset.notice = "0";
       app.innerHTML = '<div class="ov-notice" id="notice"></div>';
       maybeNotice();
       return;
@@ -1532,6 +1569,9 @@ export const PAGE_HTML = `<!doctype html>
   var fitPreview = fitBoard;
 
   /* 방송 중이 아님이 확인될 때만 알립니다. 판별 실패는 침묵(안전한 쪽) */
+  var NOTICE = OTOK
+    ? "지금 들어가 있는 파티가 없어요. 초대를 받아 참여하면 다시 보여요."
+    : "이 주소만으로는 판을 볼 수 없어요. 자수 화면의 '내 방송용 주소'를 넣어주세요.";
   var maybeNotice = function () {
     if (!dead || !window.obsstudio || typeof window.obsstudio.getStatus !== "function") return;
     try {
@@ -1539,31 +1579,44 @@ export const PAGE_HTML = `<!doctype html>
         if (!st || st.streaming || st.recording) return;
         var el = document.getElementById("notice");
         if (!el) return;
-        el.textContent = "이 주소는 더 이상 갱신되지 않아요. 장부 관리자에게 새 주소를 받아 URL만 바꿔주세요.";
+        el.textContent = NOTICE;
         root.dataset.notice = "1";
       });
     } catch (e) { /* 권한 없음 → 침묵 */ }
   };
 
-  /* 구독 — 접속 즉시 스냅샷 한 번, 이후 변경분. 끊기면 물러났다 다시 붙습니다 */
+  /* 구독 — 접속 즉시 스냅샷 한 번, 이후 변경분. 끊기면 물러났다 다시 붙습니다.
+     자격은 쿼리로 갑니다: 방송용 토큰(?o) 아니면 초대 코드(?j). 주소창에는 안 실립니다 */
   var wait = 1000;
+  var CUR = ROOM;   // 지금 붙어 있는 방 (/o/ 는 resolve 로 알아냅니다)
+  var authQ = function () {
+    return OTOK ? "?o=" + encodeURIComponent(OTOK)
+      : JCODE ? "?j=" + encodeURIComponent(JCODE) : "";
+  };
   var connect = function () {
     var ws;
     try {
       ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") +
-        location.host + "/api/r/" + ROOM + "/live");
+        location.host + "/api/r/" + CUR + "/live" + authQ());
     } catch (e) { setTimeout(connect, wait); return; }
     var beat = setInterval(function () { if (ws.readyState === 1) ws.send("ping"); }, 50000);
     ws.onmessage = function (ev) {
       if (ev.data === "pong") return;
       try {
         var m = JSON.parse(ev.data);
-        if (m.kind === "dead") {
-          dead = true; board = null; spin = null; play = null;
+        /* 자격이 없다는 답 — 방송 화면에는 에러를 그리지 않습니다. 조용히 물러납니다 */
+        if (m.kind === "denied") {
+          dead = true; board = null; lobby = null; spin = null; play = null;
           next = null; fxQ = []; fxCard = null; clearTimeout(fxTimer);
+        } else if (m.kind === "you") {
+          /* 명단에서 빠졌습니다(내보내기·나가기). 이미 붙어 있는 줄은 서버가 안 끊으므로
+             여기서 떼고 다시 물어봅니다 — 자격이 없으면 그 답이 denied 로 와서 침묵합니다 */
+          if (!m.you) { try { ws.close(); } catch (e2) {} }
+          return;
         } else if (m.kind === "state") {
           dead = false;
           var st = m.state || {};
+          lobby = st.lobby || null;
           /* 판은 바로 그리지 않고 담아 둡니다 — 연출이 다 끝나야 앉힙니다 */
           next = {
             board: st.board ? st.board : null,
@@ -1609,17 +1662,32 @@ export const PAGE_HTML = `<!doctype html>
           applyLook(st.look);
         } else return;
         wait = 1000;
-        if (dead) render();
+        /* 대기실은 연출 큐를 안 탑니다 — 기다릴 판이 없으니 바로 그립니다 */
+        if (dead || lobby) render();
         else pump();
       } catch (e) {}
     };
     ws.onclose = function () {
       clearInterval(beat);
-      if (dead) return;            // 죽은 방은 다시 붙지 않습니다
+      /* 자격이 없으면 다시 붙지 않습니다. 다만 방송용 주소는 방이 바뀌었을 수 있어
+         1분마다 어느 방인지부터 다시 묻습니다 */
+      if (dead) { if (OTOK) setTimeout(boot, 60000); return; }
       setTimeout(connect, wait);
       wait = Math.min(wait * 2, 15000);
     };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
+  };
+
+  /* /o/ 는 토큰이 가리키는 방을 먼저 물어봅니다 — 이 계정이 지금 들어가 있는 방입니다 */
+  var boot = function () {
+    if (!OTOK) { CUR = ROOM; connect(); return; }
+    fetch("/api/o/" + encodeURIComponent(OTOK) + "/resolve")
+      .then(function (r) { if (!r.ok) throw new Error("no room"); return r.json(); })
+      .then(function (d) {
+        if (!d || !d.roomId) throw new Error("no room");
+        CUR = d.roomId; dead = false; wait = 1000; connect();
+      })
+      .catch(function () { dead = true; render(); setTimeout(boot, 60000); });
   };
 
   /* 예시: 몇 초마다 한 사람에게 벌금이 붙고, 순위가 바뀌면 줄이 미끄러집니다 */
@@ -1644,7 +1712,7 @@ export const PAGE_HTML = `<!doctype html>
   window.addEventListener("resize", fitBoard);
 
   if (isDemo) startDemo();
-  else { render(); connect(); }
+  else { render(); boot(); }
 })();
 </script>
 </body>

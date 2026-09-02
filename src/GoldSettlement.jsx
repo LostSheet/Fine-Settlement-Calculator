@@ -712,26 +712,13 @@ function decodeState(token) {
 
 const MODE_KEY = "m";
 const LIVE_KEY = "live"; // #live=ROOMID 로 들어오면 읽기 전용 뷰어
-/* #k=CODE — 열쇠를 나르는 링크. 6자면 5분짜리 일회용 이사 코드, 12자면 오래 보관하는
-   복구 코드입니다. 코드를 손으로 옮겨 적는 대신 링크를 보냅니다. */
-const HANDOFF_KEY = "k";
-const handoffUrl = (c) =>
-  window.location.origin + window.location.pathname + "#" + HANDOFF_KEY + "=" + c;
-/* 붙여넣은 게 링크든 코드든 코드만 뽑아냅니다 — 링크가 깨져서 오는 일이 있습니다 */
-const codeFromText = (t) => {
-  /* 복구 코드는 4자씩 끊어 보여 줍니다 — 붙여넣을 때 붙임표·공백은 걷어냅니다 */
-  const v = (t || "").trim().toUpperCase().replace(/[\s-]/g, "");
-  const m = v.match(/(?:^|[#&])K=([A-Z0-9]{12}|[A-Z0-9]{6})/);
-  return m ? m[1] : /^(?:[A-Z0-9]{12}|[A-Z0-9]{6})$/.test(v) ? v : "";
-};
+const JOIN_KEY = "j"; // #live=ID&j=CODE — 초대 코드. 읽기 권한까지만 나릅니다
+const OBS_KEY = "o"; // #o=TOKEN — 내 방송용 주소. 지금 들어가 있는 방을 비춥니다
 /* 예시 방 — 서버에 방이 없습니다. 앱이 예시 장부를 직접 비춰서, 실제 링크와 똑같이 동작합니다 */
 const DEMO_ROOM = "CAFE22";
-/* 복구 코드 — 서버가 들고 있는 '사실상 계정'이라, 방(링크 세션)으로 이어가기가
-   자리를 잡을 때까지 입구만 닫아 둡니다. 코드는 그대로 두고 화면에서만 뺍니다. */
-const RECOVERY_ON = false;
 
 /* ================= OBS 중계 =================
-   장부 관리자의 앱만 상태를 밀어 올리고, OBS와 뷰어는 읽기 전용으로 구독합니다.
+   방장의 앱만 상태를 밀어 올리고, OBS와 파티원은 읽기 전용으로 구독합니다.
    서버는 저장소가 아니라 릴레이입니다 — 진본은 이 브라우저에 있습니다.
    기록(로그)은 보내지 않습니다. */
 const RELAY_BASE = (() => {
@@ -811,22 +798,29 @@ const savePresets = (l) => {
 };
 
 function loadRelay() {
-  if (typeof window === "undefined") return { on: false, rooms: {}, active: DEFAULT_ROOM_LABEL };
+  if (typeof window === "undefined") return { on: false };
   try {
     const v = JSON.parse(window.localStorage.getItem(RELAY_KEY) || "null");
     if (!v || typeof v !== "object") throw 0;
+    /* v1 의 rooms/active/rcode 는 읽어서 버립니다 — 방 열쇠 체계가 계정으로 바뀌었습니다.
+       외형 취향만 그대로 이주합니다. */
     const out = {
       on: !!v.on,
-      rooms: v.rooms && typeof v.rooms === "object" ? v.rooms : {},
-      active: typeof v.active === "string" ? v.active : DEFAULT_ROOM_LABEL,
+      /* 내 방 — 계정당 하나. 서버가 처음 필요할 때 만들어 줍니다 */
+      room: typeof v.room === "string" ? v.room : undefined,
+      invite:
+        v.invite && typeof v.invite.code === "string" ? { code: v.invite.code, exp: v.invite.exp } : undefined,
+      /* 로비 초안 열 — 로비가 열려 있는 동안만. 닫으면 버립니다 */
+      lobbyDraft: Array.isArray(v.lobbyDraft) ? v.lobbyDraft : undefined,
+      lobbyCap: v.lobbyCap >= 2 && v.lobbyCap <= 16 ? v.lobbyCap : undefined,
       /* 화면 취향들 — 여기서 안 받아 주면 새로고침마다 기본값으로 돌아갑니다 */
       ov: v.ov && typeof v.ov === "object" ? v.ov : undefined,
+      fx: v.fx === "off" ? "off" : undefined,
       /* epic 이 빠져 있어서 '아주 느리게'를 골라도 새로고침하면 되돌아갔습니다 */
       spd: v.spd in SPINS ? v.spd : undefined,
       spinLook: v.spinLook === "num" || v.spinLook === "wheel" ? v.spinLook : undefined,
       wheelTheme: v.wheelTheme === "vegas" ? "vegas" : undefined,
       ovsrc: v.ovsrc === "split" ? "split" : undefined,
-      rcode: typeof v.rcode === "string" ? v.rcode : undefined,
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
           ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25 }
@@ -844,7 +838,7 @@ function loadRelay() {
     }
     return out;
   } catch (e) {
-    return { on: false, rooms: {}, active: DEFAULT_ROOM_LABEL, look: { t: "dark", alpha: 25 } };
+    return { on: false, look: { t: "dark", alpha: 25 } };
   }
 }
 function saveRelay(v) {
@@ -856,91 +850,157 @@ function saveRelay(v) {
   }
 }
 
-const relayApi = {
-  createRoom: () =>
-    fetch(RELAY_BASE + "/api/rooms", { method: "POST" }).then((r) => {
-      if (!r.ok) throw new Error("방을 만들지 못했어요");
-      return r.json();
-    }),
-  push: (roomId, key, state) =>
-    fetch(`${RELAY_BASE}/api/r/${roomId}/state`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key, state }),
-    }),
-  kill: (roomId, key) =>
-    fetch(`${RELAY_BASE}/api/r/${roomId}/kill`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key }),
-    }),
-  handoffIssue: (bundle) =>
-    fetch(RELAY_BASE + "/api/handoff", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(bundle),
-    }).then((r) => {
-      if (!r.ok) throw new Error("코드를 만들지 못했어요");
-      return r.json();
-    }),
-  handoffClaim: (code) =>
-    fetch(`${RELAY_BASE}/api/handoff/${code}`).then((r) => {
-      if (r.status === 404) throw new Error("그런 코드가 없어요. 시간이 지났거나 이미 쓴 코드예요.");
-      if (!r.ok) throw new Error("코드를 받지 못했어요");
-      return r.json();
-    }),
-  /* 열쇠를 가진 기기가 방의 스냅샷을 통째로 읽습니다 — 복구·이어가기의 공통 기반 */
-  readState: (roomId, key) =>
-    fetch(`${RELAY_BASE}/api/r/${roomId}/read`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key }),
-    }).then((r) => {
-      if (r.status === 410) {
-        const e = new Error("방이 만료됐거나 닫혀 있어요");
-        e.gone = true;
-        throw e;
-      }
-      if (!r.ok) throw new Error("장부를 읽지 못했어요");
-      return r.json();
-    }),
-  recoveryIssue: (bundle) =>
-    fetch(RELAY_BASE + "/api/recovery", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(bundle),
-    }).then((r) => {
-      if (!r.ok) throw new Error("코드를 만들지 못했어요");
-      return r.json();
-    }),
-  recoveryClaim: (code) =>
-    fetch(`${RELAY_BASE}/api/recovery/${code}`).then((r) => {
-      if (r.status === 404)
-        throw new Error("그런 코드가 없어요. 새로 발급됐거나 잘못 적혔을 수 있어요.");
-      if (!r.ok) throw new Error("코드를 받지 못했어요");
-      return r.json();
-    }),
-  recoveryRevoke: (code) =>
-    fetch(RELAY_BASE + "/api/recovery/revoke", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code }),
-    }).catch(() => {}),
-  /* 직전 회차 한 장을 방에 보관 — 복구 코드 복원 때 함께 돌아옵니다 */
-  archive: (roomId, key, state) =>
-    fetch(`${RELAY_BASE}/api/r/${roomId}/archive`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key, state }),
-    }),
-  shareUrl: (roomId) => `${RELAY_BASE}/r/${roomId}`,
+/* ---------- 계정 ----------
+   사람의 신원은 계정입니다. URL 은 읽기까지만 나르고, 쓰기는 전부 이 세션 토큰입니다. */
+const AUTH_KEY = "goldSettlement.auth";
+function loadAuth() {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = JSON.parse(window.localStorage.getItem(AUTH_KEY) || "null");
+    if (v && typeof v.id === "string" && typeof v.token === "string") return v;
+  } catch (e) {}
+  return null;
+}
+function saveAuth(v) {
+  if (typeof window === "undefined") return;
+  try {
+    if (v) window.localStorage.setItem(AUTH_KEY, JSON.stringify(v));
+    else window.localStorage.removeItem(AUTH_KEY);
+  } catch (e) {}
+}
+
+/* 비밀번호 원문은 서버에 도착하지 않습니다 — 브라우저가 먼저 갈아 둡니다.
+   솔트에 id 를 섞어서, 같은 비밀번호를 쓴 두 계정의 선해시가 겹치지 않게 합니다. */
+const PW_SALT = "gold-settlement/v1|";
+const PW_ITER = 310000;
+const hasSubtle = () =>
+  typeof crypto !== "undefined" && !!crypto.subtle && typeof crypto.subtle.deriveBits === "function";
+const SUBTLE_MSG =
+  "이 주소에서는 로그인을 쓸 수 없어요 — 브라우저가 안전한 연결(https)에서만 비밀번호를 처리해요.";
+async function preHash(id, pw) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: enc.encode(PW_SALT + String(id || "").toLowerCase()),
+      iterations: PW_ITER,
+      hash: "SHA-256",
+    },
+    key,
+    256
+  );
+  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/* 서버 응답 규칙 하나로 모읍니다 — 화면에 그대로 띄울 한국어 메시지를 붙여서 던집니다 */
+const NET_MSG = "서버에 닿지 못했어요. 인터넷을 확인하고 다시 시도해 주세요.";
+async function callApi(path, { method = "GET", body, token } = {}) {
+  const headers = {};
+  if (body !== undefined) headers["content-type"] = "application/json";
+  if (token) headers.authorization = "Bearer " + token;
+  let res;
+  try {
+    res = await fetch(RELAY_BASE + path, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (e) {
+    const err = new Error(NET_MSG);
+    err.offline = true;
+    throw err;
+  }
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (e) {}
+  if (!res.ok) {
+    const err = new Error((data && data.msg) || apiMsg(res.status, data && data.error));
+    err.status = res.status;
+    err.code = data && data.error;
+    throw err;
+  }
+  return data || {};
+}
+const apiMsg = (status, code) => {
+  if (code === "scribe-off") return "방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요.";
+  if (status === 401) return "아이디나 비밀번호가 맞지 않아요.";
+  if (status === 403) return "권한이 없어요. 초대를 다시 받아 주세요.";
+  if (status === 404) return "찾을 수 없어요 — 시간이 지났거나 새로 발급됐을 수 있어요.";
+  if (status === 409) return "이미 있어요.";
+  if (status === 429) return "잠시 뒤에 다시 시도해 주세요.";
+  if (status === 400) return "입력한 내용을 다시 확인해 주세요.";
+  return "실패했어요. 잠시 뒤에 다시 시도해 주세요.";
 };
 
-/* 뷰어로 들어왔는지 — #live=ROOMID */
+const authApi = {
+  register: async (id, pw, nick) =>
+    callApi("/api/auth/register", { method: "POST", body: { id, pw: await preHash(id, pw), nick } }),
+  login: async (id, pw) =>
+    callApi("/api/auth/login", { method: "POST", body: { id, pw: await preHash(id, pw) } }),
+  logout: (token) => callApi("/api/auth/logout", { method: "POST", body: { token } }),
+  me: (token) => callApi("/api/auth/me", { token }),
+  nick: (token, nick) => callApi("/api/auth/nick", { method: "POST", body: { nick }, token }),
+  obsReissue: (token) => callApi("/api/auth/obs-reissue", { method: "POST", body: {}, token }),
+  /* 내 방송용 주소가 지금 어느 방을 비추는지 — OBS 조회도 활동으로 칩니다 */
+  resolveObs: (t) => callApi("/api/o/" + encodeURIComponent(t) + "/resolve"),
+};
+
+const roomApi = {
+  /* 계정당 방 하나 — 처음 필요할 때 서버가 만들어 줍니다 */
+  myRoom: (token) => callApi("/api/my/room", { method: "POST", body: {}, token }),
+  putState: (token, roomId, state, bindings) =>
+    callApi(`/api/r/${roomId}/state`, {
+      method: "PUT",
+      body: bindings ? { state, bindings } : { state },
+      token,
+    }),
+  read: (token, roomId) => callApi(`/api/r/${roomId}/read`, { token }),
+  /* 서버는 {invite:{code,exp}} 로 감싸서 줍니다 — 호출한 쪽이 알맹이만 보게 풀어 둡니다 */
+  invite: (token, roomId) =>
+    callApi(`/api/r/${roomId}/invite`, { method: "POST", body: {}, token }).then(
+      (r) => r.invite || r
+    ),
+  lobby: (token, roomId, open, cap) =>
+    callApi(`/api/r/${roomId}/lobby`, {
+      method: "POST",
+      body: cap != null ? { open, cap } : { open },
+      token,
+    }),
+  members: (token, roomId) => callApi(`/api/r/${roomId}/members`, { token }),
+  member: (token, roomId, acct, action) =>
+    callApi(`/api/r/${roomId}/member`, { method: "POST", body: { acct, action }, token }),
+  join: (token, roomId, j) =>
+    callApi(`/api/r/${roomId}/join`, { method: "POST", body: { j }, token }),
+  leave: (token, roomId) => callApi(`/api/r/${roomId}/leave`, { method: "POST", body: {}, token }),
+  confess: (token, roomId, rowId, colId, dir) =>
+    callApi(`/api/r/${roomId}/confess`, { method: "POST", body: { rowId, colId, dir }, token }),
+  /* 초대 링크는 방 주소 + 해시의 코드입니다 — 방 주소는 비밀이 아니고, 코드가 권한입니다 */
+  inviteUrl: (roomId, code) => `${RELAY_BASE}/r/${roomId}#${JOIN_KEY}=${code}`,
+  /* 내 방송용 주소 — 지금 들어가 있는 방을 비춥니다. 읽기 전용, 영구(재발급 전까지) */
+  obsUrl: (obsToken) => `${RELAY_BASE}/o/${obsToken}`,
+  roomUrl: (roomId) => `${RELAY_BASE}/r/${roomId}`,
+};
+const WS_BASE = RELAY_BASE.replace(/^http/, "ws");
+
+/* 뷰어로 들어왔는지 — #live=ROOMID (&j=CODE) */
 function readLiveRoom() {
   const v = hashParams().get(LIVE_KEY) || "";
-  return /^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{6}$/.test(v) ? v : null;
+  return /^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{4,16}$/.test(v) ? v : null;
 }
+function readJoinCode() {
+  const v = (hashParams().get(JOIN_KEY) || "").toUpperCase();
+  return /^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(v) ? v : null;
+}
+/* #o=TOKEN — 방을 모른 채 들어옵니다. 앱이 resolve 로 찾아서 뷰어를 엽니다 */
+function readObsToken() {
+  const v = hashParams().get(OBS_KEY) || "";
+  return /^[A-Za-z0-9]{12,40}$/.test(v) ? v : null;
+}
+/* 디코용 복사 — 마스크드 링크 한 줄. 주소가 글자로 노출되지 않게 감싸 둡니다 */
+const inviteMsg = (hostNick, url) =>
+  `[🔔 ${hostNick}네 벌금 현황판 — 눌러서 참여](<${url}>)`;
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -1046,7 +1106,7 @@ function syncHashMode(mode) {
 /* ---------- 새로고침해도 남도록 브라우저에 저장 ---------- */
 const STORE_KEY = "goldSettlement.v1";
 /* 파티 카드에 적는 합계 — 정산과 같은 식으로 슬롯에서 바로 뽑습니다 */
-/* 회차 라벨 — 기록 시간 범위로 부릅니다. 같은 날이면 날짜를 한 번만 적습니다 */
+/* 지난 판 라벨 — 기록 시간 범위로 부릅니다. 같은 날이면 날짜를 한 번만 적습니다 */
 const fmtSpan = (from, to) => {
   const f = new Date(from);
   const t = new Date(to);
@@ -1409,28 +1469,22 @@ export default function GoldSettlement() {
   const boot = useRef(null);
   if (!boot.current) {
     /* #live=ROOMID 로 들어오면 읽기 전용 뷰어입니다. 이 브라우저에 저장된 장부는
-       손대지 않고(저장도 안 하고), 장부 관리자가 밀어 주는 상태만 비춥니다. */
+       손대지 않고(저장도 안 하고), 방장이 밀어 주는 상태만 비춥니다.
+       #o=TOKEN 은 방을 모른 채 들어오는 길입니다 — resolve 로 찾아 같은 뷰어를 엽니다. */
     const liveRoom = readLiveRoom();
-    /* 단, 장부 관리자 본인이 자기 공유 주소를 열었다면 — 쓰기 열쇠가 이 브라우저에 있으니
-       구경꾼 화면 대신 그 파티의 장부(입력 화면)로 들어갑니다 */
-    const ownLabel = liveRoom
-      ? (Object.entries(loadRelay().rooms).find(([, r]) => r.roomId === liveRoom) || [null])[0]
-      : null;
-    if (ownLabel) {
-      const reg = loadPartyReg();
-      if (reg && reg.list.some((x) => x.name === ownLabel)) {
-        reg.active = ownLabel;
-        savePartyReg(reg);
-      }
-      if (canOwnUrl && typeof window !== "undefined") {
-        const hp = hashParams();
-        hp.delete(LIVE_KEY);
-        const { pathname, search } = window.location;
-        const rest = hp.toString();
-        window.history.replaceState(null, "", pathname + search + (rest ? "#" + rest : ""));
-      }
+    const obsToken = readObsToken();
+    /* 단, 방장 본인이 자기 방 주소를 열었다면 — 쓰기 세션이 이 브라우저에 있으니
+       구경꾼 화면 대신 자기 장부(입력 화면)로 들어갑니다 */
+    const own = liveRoom && loadRelay().room === liveRoom && !!loadAuth();
+    if (own && canOwnUrl && typeof window !== "undefined") {
+      const hp = hashParams();
+      hp.delete(LIVE_KEY);
+      hp.delete(JOIN_KEY);
+      const { pathname, search } = window.location;
+      const rest = hp.toString();
+      window.history.replaceState(null, "", pathname + search + (rest ? "#" + rest : ""));
     }
-    if (liveRoom && !ownLabel) {
+    if ((liveRoom && !own) || obsToken) {
       boot.current = {
         cols: DEFAULT_COLS,
         rows: [],
@@ -1442,7 +1496,9 @@ export default function GoldSettlement() {
         tab: "sheet",
         theme: (loadSaved() || {}).theme || "system",
         firstVisit: false,
-        liveRoom,
+        liveRoom: liveRoom || null,
+        joinCode: readJoinCode(),
+        obsToken,
       };
     }
   }
@@ -1474,28 +1530,12 @@ export default function GoldSettlement() {
       partyReg = loadPartyReg() || { list: [{ name: "기본", t: Date.now() }], active: "기본" };
       if (!partyReg.list.some((x) => x.name === partyReg.active))
         partyReg.active = partyReg.list[0].name;
-      /* 진짜 첫 방문은 현자들(튜토리얼 파티)로 들어갑니다 — 빈 표 대신 채워진 예시에서
-         해보기 코스가 바로 시작되고, 기본 파티는 빈 표로 대기합니다 */
-      if (!stored && !hashMode && !partyReg.list.some((x) => x.name === EXAMPLE_PARTY)) {
-        savePartySlot(partyReg.active, partyLedgerOf(data));
-        savePartySlot(EXAMPLE_PARTY, {
-          mode: "items",
-          unit: "10000",
-          cols: DEFAULT_COLS,
-          rows: DEFAULT_ROWS,
-          log: demoLog(),
-          feePercent: "5",
-          splitMode: "pot",
-          memoFreeze: null,
-          undoSnap: null,
-        });
-        partyReg.list.push({ name: EXAMPLE_PARTY, t: Date.now() });
-        partyReg.active = EXAMPLE_PARTY;
-      }
+      /* 첫 방문자도 빈 판으로 시작합니다 — 예시는 튜토리얼을 고른 사람에게만 얹습니다.
+         묻지 않고 예시 파티에 앉히면, 안 볼 사람까지 남의 데이터를 치우고 시작해야 합니다. */
       const slot = loadPartySlot(partyReg.active);
       if (slot) Object.assign(data, slot);
       else savePartySlot(partyReg.active, partyLedgerOf(data));
-      /* 단일 장부 전환 이주 — 활성이 아닌 옛 파티는 전부 「잠긴 지난 회차」가 됩니다.
+      /* 단일 장부 전환 이주 — 활성이 아닌 옛 파티는 전부 「지난 판」이 됩니다.
          데이터는 자리 그대로 두고 표시만 바꾸므로 손실이 없고, 빈 껍데기(기록도
          벌금도 없는 파티)는 목록에서만 뺍니다(저장소는 안 지웁니다 — 되돌릴 수 있게). */
       partyReg.list = partyReg.list.filter(
@@ -1522,16 +1562,22 @@ export default function GoldSettlement() {
       tab: stored ? stored.tab : "sheet",
       // 화면 밝기 취향은 표와 무관하니 공유 링크로 들어와도 이 브라우저 것을 씁니다
       theme: stored ? stored.theme : "system",
-      // 저장도, 공유 링크도 없는 진짜 첫 방문에만 모드 선택 화면을 띄웁니다
-      firstVisit: !shared && !stored && !hashMode,
+      /* 저장된 장부도 공유 링크도 없으면 첫 방문입니다. 주소의 #m= 은 보지 않습니다 —
+         앱이 제 주소에 그걸 적기 때문에, 조건에 넣으면 두 번째 방문처럼 보입니다.
+         관문은 묻기만 하므로 해시를 달고 온 사람에게 떠도 아무것도 안 망가집니다. */
+      firstVisit: !shared && !stored,
     };
   }
 
-  /* 뷰어(읽기 전용)인지 — 이 값이 참이면 어떤 조작도 상태를 바꾸지 못합니다 */
-  const liveRoom = boot.current.liveRoom || null;
-  /* 지난 회차 보기 — 읽기 전용. 회차는 들춰보는 것이고, 장부는 쓰는 것입니다 */
+  /* 뷰어(읽기 전용)인지 — 이 값이 참이면 어떤 조작도 이 브라우저의 장부를 바꾸지 못합니다.
+     #o=TOKEN 은 방을 모르고 들어오므로, 뷰어 여부는 부트에서 정하고 방 id 는 나중에 채웁니다. */
+  const viewer = !!boot.current.liveRoom || !!boot.current.obsToken;
+  const [liveRoom, setLiveRoom] = useState(boot.current.liveRoom || null);
+  const obsEntry = boot.current.obsToken || null;
+  const joinCode = boot.current.joinCode || null;
+  /* 지난 판 보기 — 읽기 전용. 지난 판은 들춰보는 것이고, 장부는 쓰는 것입니다 */
   const [genView, setGenView] = useState(null);
-  const readOnly = !!liveRoom || !!genView;
+  const readOnly = viewer || !!genView;
   const [liveState, setLiveState] = useState(readOnly ? "connecting" : null); // connecting|on|empty|dead
   const [liveName, setLiveName] = useState("");
   const [liveTick, setLiveTick] = useState(0);   // 갱신이 올 때마다 +1 — 점이 깜빡입니다
@@ -1624,6 +1670,12 @@ export default function GoldSettlement() {
   // 정산 방식도 수수료처럼 파티 장부에 붙어 다닙니다
   const [splitMode, setSplitMode] = useState(boot.current.splitMode === "solo" ? "solo" : "pot");
   const [showSplitHelp, setShowSplitHelp] = useState(false);
+  /* 튜토리얼 중인지 — 예시 표는 화면에만 얹고 저장하지 않습니다. 저장하면 지난 판에
+     남의 예시가 남고, 끝난 뒤 치우는 일이 사용자 몫이 됩니다. 끝나면 아래 장부로 돌아갑니다:
+     첫 방문이면 빈 판, 나중에 다시 본 것이면 보던 장부(그래야 남의 장부를 안 덮습니다). */
+  const [tutorial, setTutorial] = useState(false);
+  const tutorialBack = useRef(null);
+
   /* 코치마크 진행 상태 — {kind:"course",step} | {kind:"obs"} | {kind:"hint"} */
   const [coach, setCoach] = useState(null);
   const obsCoachPending = useRef(false);
@@ -1684,10 +1736,11 @@ export default function GoldSettlement() {
   const [undoSnap, setUndoSnap] = useState(boot.current.undoSnap || null);
   const snapHold = useRef(false); // true 면 이번 rows/cols 변경은 스냅샷을 접지 않음
   const snapBooted = useRef(false);
-  /* 첫 방문 — 모드를 고르고 시작합니다. 한 번 저장되면 다시 안 나옵니다. */
-  /* 모드 선택 화면 — "first"는 첫 방문 관문(닫을 수 없음), "guide"는 나중에 다시 열어 본 것 */
-  // 모드 안내는 첫 화면이 아니라 '자세히 보기'로만 엽니다 — 첫 안내는 코치마크가 맡습니다
-  const [intro, setIntro] = useState(null);
+  /* 첫 방문 관문 — "first"는 튜토리얼을 볼지 묻는 화면(닫을 수 없음),
+     "guide"는 '자세히 보기'로 나중에 다시 연 모드 안내입니다.
+     관문이 떠 있는 동안은 저장도, 주소 수정도 하지 않습니다 — 고르지 않고 새로고침하면
+     관문이 다시 나와야 하는데, 그 사이 뭐라도 저장되면 두 번째 방문으로 잡힙니다. */
+  const [intro, setIntro] = useState(boot.current.firstVisit ? "first" : null);
   /* 카운터 → 메모장으로 갈 때 동결해 두는 구성. 돌아올 때 이름으로 대조해 복원합니다. */
   const [memoFreeze, setMemoFreeze] = useState(boot.current.memoFreeze || null);
   /* 화면 밝기 — 기본은 시스템 설정을 따르고, 원하면 낮/밤으로 고정합니다.
@@ -1940,7 +1993,7 @@ export default function GoldSettlement() {
   const picking = !!spin && spin.phase === "pick";
 
   /* --- 파티원 화면의 룰렛 ---
-     장부 관리자가 판 전체를 한 번에 보내 주므로, 여기서도 제 시계로 돌립니다.
+     방장이 판 전체를 한 번에 보내 주므로, 여기서도 제 시계로 돌립니다.
      오버레이와 같은 속도로 맞춰서, 방송과 파티원 화면이 따로 놀지 않게 합니다. */
   /* 파티원 화면도 그 판의 속도를 그대로 씁니다 — 방송과 따로 놀지 않게 */
   const [vplay, setVplay] = useState(null); // {sp, i, rolling, over}
@@ -1956,13 +2009,29 @@ export default function GoldSettlement() {
   const [partyReg, setPartyReg] = useState(
     boot.current.partyReg || { list: [{ name: "기본", t: 0 }], active: "기본" }
   );
-  const [partyDD, setPartyDD] = useState(false);
-  const [lobby, setLobby] = useState(false); // (로비 화면은 폐지 — 렌더 안 함)
-  const [lookOpen, setLookOpen] = useState(false); // 외형 창
   const [resetOpen, setResetOpen] = useState(false); // 처음부터 창
   const [presetOpen, setPresetOpen] = useState(false); // 프리셋 창
-  const [gensOpen, setGensOpen] = useState(false); // 지난 회차 드롭다운
-  /* 지난 회차 드롭다운 — 바깥을 클릭하면 닫습니다 */
+  const [gensOpen, setGensOpen] = useState(false); // 지난 판 드롭다운
+
+  /* ---------- 계정·로비 ----------
+     로비는 화면이 아니라 서버에 사는 상태입니다. 방장이 화면을 떠나도 유지되고,
+     메인 상단의 상시 위젯으로 언제든 돌아옵니다. */
+  const [auth, setAuth] = useState(loadAuth);
+  /* 계정 창 — {tab, after}. after 는 로그인이 끝난 뒤 이어서 할 일입니다 */
+  const [authOpen, setAuthOpen] = useState(null);
+  const [lobbyView, setLobbyView] = useState(false); // 로비 화면을 보고 있는지
+  const [lobbyOn, setLobbyOn] = useState(false); // 서버 로비가 열려 있는지
+  const [lobbyCap, setLobbyCap] = useState(8); // 정원 2~16
+  const [members, setMembers] = useState([]); // [{acct,nick,rowId,st,t}]
+  const [handAdd, setHandAdd] = useState([]); // 방장이 손으로 넣은 미연결 줄 (닉만)
+  const [joinAsk, setJoinAsk] = useState(null); // 출발 후 합류 신청 카드 {acct,nick}
+  const [scribeLive, setScribeLive] = useState(false); // 서기 소켓이 붙어 있는지
+  /* --- 파티원 쪽 --- */
+  const [you, setYou] = useState(null); // {nick, rowId, st} — 이 방에서의 나
+  const [scribeOn, setScribeOn] = useState(true); // 방장 앱이 켜져 있는지
+  const [denied, setDenied] = useState(null); // "invite" | "member"
+  const [confessErr, setConfessErr] = useState("");
+  /* 지난 판 드롭다운 — 바깥을 클릭하면 닫습니다 */
   useEffect(() => {
     if (!gensOpen) return;
     const onDown = (e) => {
@@ -2032,31 +2101,7 @@ export default function GoldSettlement() {
     setOpenRow(null);
     clearHash();
   };
-  const switchParty = (name) => {
-    if (readOnly || name === partyReg.active) return;
-    savePartySlot(partyReg.active, currentLedger());
-    applyLedger(loadPartySlot(name) || blankPartyLedger());
-    putPartyReg({
-      list: partyReg.list.map((x) => (x.name === name ? { ...x, t: Date.now() } : x)),
-      active: name,
-    });
-  };
-  const createParty = (name, size = 8) => {
-    const nm = (name || "").trim();
-    if (readOnly || !nm || partyReg.list.some((x) => x.name === nm)) return false;
-    savePartySlot(partyReg.active, currentLedger());
-    const led = blankPartyLedger(size);
-    savePartySlot(nm, led);
-    applyLedger(led);
-    putPartyReg({ list: [...partyReg.list, { name: nm, t: Date.now() }], active: nm });
-    /* 첫 파티 — 파티에 공유 주소가 붙는다는 걸 이 순간 한 번 보여줍니다 */
-    if (!coachSeen("obsScribe")) {
-      obsCoachPending.current = true;
-      setTimeout(() => setObsOpen(true), 400);
-    }
-    return true;
-  };
-  /* ---------- 복구·이어가기 — 서버 스냅샷을 파티로 앉힙니다 ---------- */
+  /* ---------- 지난 판 이름 짓기 ---------- */
   const uniquePartyName = (base) => {
     const root = (base || "").trim() || "불러온 파티";
     if (!partyReg.list.some((x) => x.name === root)) return root;
@@ -2066,6 +2111,7 @@ export default function GoldSettlement() {
     }
     return root + " " + Date.now();
   };
+  /* 서버 스냅샷 → 장부 한 벌. "지난 판 이어가기"가 이 길로 앉힙니다 */
   const ledgerFromSnapshot = (st) => {
     const f = (st && st.full) || {};
     if (!Array.isArray(f.cols) || !Array.isArray(f.rows)) return null;
@@ -2080,121 +2126,6 @@ export default function GoldSettlement() {
       memoFreeze: f.memoFreeze || null,
       undoSnap: null,
     };
-  };
-  /* 링크(6자)든 복구 코드(12자)든 같은 길: 방을 읽어 장부부터 앉히고, 그다음에야
-     열쇠를 묶습니다 — 권한만 있고 장부는 빈 상태(빈 푸시로 방을 덮는 사고)를 봉쇄 */
-  const seatFromBundle = async (got) => {
-    const entries = Object.entries(got.rooms || {});
-    const nextRooms = { ...relay.rooms };
-    const seatedNames = [];
-    const prevSeats = [];
-    let refreshed = 0,
-      gone = 0,
-      failed = 0,
-      firstName = null;
-    for (const [label, bind] of entries) {
-      if (!bind || !bind.roomId || !bind.key) continue;
-      const bound = Object.keys(nextRooms).find(
-        (nm) => nextRooms[nm] && nextRooms[nm].roomId === bind.roomId
-      );
-      if (bound) {
-        /* 이미 이 방에 묶인 파티가 있음 — 데이터는 두고 열쇠만 새로 맞춥니다 */
-        nextRooms[bound] = bind;
-        refreshed++;
-        continue;
-      }
-      let snap = null;
-      try {
-        snap = await relayApi.readState(bind.roomId, bind.key);
-      } catch (e) {
-        if (e && e.gone) gone++;
-        else failed++;
-        continue;
-      }
-      const led = ledgerFromSnapshot(snap && snap.state);
-      if (!led) {
-        failed++;
-        continue;
-      }
-      const nm = uniquePartyName((snap.state && snap.state.name) || label);
-      savePartySlot(nm, led);
-      nextRooms[nm] = bind;
-      seatedNames.push(nm);
-      if (!firstName) firstName = nm;
-      /* 방에 남은 직전 회차 한 장도 같이 — 잠기지 않은 지난 회차로 */
-      const pled = ledgerFromSnapshot(snap && snap.prev);
-      if (pled) {
-        const pts = (pled.log || []).map((e) => e.t).filter(Boolean);
-        const pname = uniquePartyName(
-          pts.length ? fmtSpan(Math.min(...pts), Math.max(...pts)) : nm + " 직전 회차"
-        );
-        savePartySlot(pname, pled);
-        prevSeats.push({
-          name: pname,
-          t: Date.now() - 1,
-          gen: true,
-          locked: false,
-          gold: slotGold(pled),
-          from: pts.length ? Math.min(...pts) : undefined,
-          to: pts.length ? Math.max(...pts) : undefined,
-        });
-      }
-    }
-    if (seatedNames.length || refreshed) {
-      if (seatedNames.length) {
-        /* 교대 — 지금 장부는 지난 회차로 닫히고, 첫 복원분이 현재가 됩니다.
-           나머지 복원분과 직전 회차는 지난 회차로 나란히 놓입니다. */
-        const old = partyReg.active;
-        const oldLed = currentLedger();
-        let folded = foldIntoGens(oldLed, partyReg.list);
-        folded = folded.filter((x) => x.name !== old);
-        delete nextRooms[old];
-        /* 활성 장부의 이름은 항상 '기본' */
-        savePartySlot(DEFAULT_ROOM_LABEL, loadPartySlot(firstName));
-        if (firstName !== DEFAULT_ROOM_LABEL) {
-          dropPartySlot(firstName);
-          nextRooms[DEFAULT_ROOM_LABEL] = nextRooms[firstName];
-          delete nextRooms[firstName];
-        }
-        putPartyReg({
-          list: [
-            ...folded,
-            ...prevSeats,
-            ...seatedNames
-              .filter((nm) => nm !== firstName)
-              .map((nm) => ({
-                name: nm,
-                t: Date.now(),
-                gen: true,
-                locked: true,
-                gold: slotGold(loadPartySlot(nm)),
-              })),
-            { name: DEFAULT_ROOM_LABEL, t: Date.now() },
-          ],
-          active: DEFAULT_ROOM_LABEL,
-        });
-        if (old !== DEFAULT_ROOM_LABEL) dropPartySlot(old);
-        applyLedger(loadPartySlot(DEFAULT_ROOM_LABEL) || blankPartyLedger());
-      }
-      putRelay({
-        ...relay,
-        on: got.on != null ? !!got.on : relay.on,
-        rooms: nextRooms,
-        active: got.active || relay.active,
-        look: got.look || relay.look,
-        spd: got.spd || relay.spd,
-        spinLook: got.spinLook || relay.spinLook,
-        wheelTheme: got.wheelTheme || relay.wheelTheme,
-      });
-    }
-    return { seated: seatedNames.length, refreshed, gone, failed, firstName };
-  };
-  const seatMsg = (r) => {
-    if (r.seated)
-      return "'" + r.firstName + "' 장부를 그대로 이어받았어요 — 기록 권한도 함께요.";
-    if (r.refreshed) return "이미 연결돼 있던 파티예요 — 열쇠만 새로 맞췄어요.";
-    if (r.gone) return "방이 만료됐거나 닫혀 있어요. 새 코드가 필요해요.";
-    return "장부를 가져오지 못했어요. 인터넷을 확인하고 다시 시도해 주세요.";
   };
   /* ---------- 파일 백업 — 서버 수명과 무관하게 남는 층 ---------- */
   const exportPartyFile = () => {
@@ -2222,7 +2153,7 @@ export default function GoldSettlement() {
     const led = data && data.ledger;
     if (!led || !Array.isArray(led.cols) || !Array.isArray(led.rows))
       return "파일을 읽지 못했어요 — 벌금표에서 내보낸 파일이 맞는지 확인해 주세요.";
-    /* 교대 — 지금 장부는 지난 회차로 닫히고, 불러온 것이 현재(이름은 늘 '기본')가 됩니다 */
+    /* 교대 — 지금 장부는 지난 판으로 닫히고, 불러온 것이 현재(이름은 늘 '기본')가 됩니다 */
     const old = partyReg.active;
     const oldLed = currentLedger();
     let list = foldIntoGens(oldLed, partyReg.list);
@@ -2233,36 +2164,9 @@ export default function GoldSettlement() {
       list: [...list, { name: DEFAULT_ROOM_LABEL, t: Date.now() }],
       active: DEFAULT_ROOM_LABEL,
     });
-    const rooms = { ...relay.rooms };
-    const cur = rooms[old];
-    delete rooms[old];
-    if (cur) rooms[DEFAULT_ROOM_LABEL] = cur;
-    putRelay({ ...relay, rooms });
     applyLedger(loadPartySlot(DEFAULT_ROOM_LABEL) || blankPartyLedger());
-    return "백업 파일을 현재 장부로 불러왔어요 — 이전 장부는 지난 회차로 남았어요.";
+    return "백업 파일을 현재 장부로 불러왔어요 — 이전 장부는 지난 판으로 남았어요.";
   };
-  const askDeleteParty = (name) =>
-    setAsk({
-      title: `'${name}' 파티를 지울까요?`,
-      body: "이 파티의 표와 기록, 공유 주소가 함께 사라져요. 되돌릴 수 없어요.",
-      action: "지우기",
-      onYes: () => {
-        const rest = partyReg.list.filter((x) => x.name !== name);
-        if (!rest.length) return;
-        dropPartySlot(name);
-        const room = relay.rooms[name];
-        if (room) relayApi.kill(room.roomId, room.key).catch(() => {});
-        const rooms = { ...relay.rooms };
-        delete rooms[name];
-        putRelay({ ...relay, rooms });
-        if (name === partyReg.active) {
-          applyLedger(loadPartySlot(rest[0].name) || blankPartyLedger());
-          putPartyReg({ list: rest, active: rest[0].name });
-        } else {
-          putPartyReg({ ...partyReg, list: rest });
-        }
-      },
-    });
   const putRelay = (next) => {
     setRelay(next);
     saveRelay(next);
@@ -2293,49 +2197,17 @@ export default function GoldSettlement() {
       saveRelay(next);
       return next;
     });
-  /* 지금 어느 명단으로 나가는지 — 프리셋을 불러오면 그 이름, 아니면 '기본' */
-  /* 파티 이름 바꾸기 — 이름이 곧 저장 열쇠라서, 장부와 공유 방을 새 이름으로 옮겨 답니다.
-     현자들을 개명하면 보통 파티가 되고, 로비에 예시 만들기 카드가 다시 나타납니다. */
-  const renameParty = (oldName, newName) => {
-    const nm = (newName || "").trim();
-    if (readOnly || !nm || nm === oldName || partyReg.list.some((x) => x.name === nm)) return false;
-    const slot = loadPartySlot(oldName);
-    if (slot) savePartySlot(nm, slot);
-    dropPartySlot(oldName);
-    if (relay.rooms[oldName]) {
-      const rooms = { ...relay.rooms, [nm]: relay.rooms[oldName] };
-      delete rooms[oldName];
-      putRelay({ ...relay, rooms });
-    }
-    putPartyReg({
-      list: partyReg.list.map((x) => (x.name === oldName ? { ...x, name: nm } : x)),
-      active: partyReg.active === oldName ? nm : partyReg.active,
-    });
-    return true;
-  };
-
-  /* 해보기 코스 — 예시 파티에 처음 들어오면 시작합니다. 코치는 동시에 하나만 */
-  useEffect(() => {
-    if (readOnly || partyReg.active !== EXAMPLE_PARTY || coachSeen("course")) return;
-    const t = setTimeout(() => {
-      const cur = coachRef.current;
-      if (!cur || cur.kind === "hint") {
-        pickTab("sheet"); // 1단계 대상(칸)이 벌금표에 있습니다 — 다른 탭이면 시작부터 죽어요
-        setCoach({ kind: "course", step: 0 });
-      }
-    }, 700);
-    return () => clearTimeout(t);
-  }, [partyReg.active]);
-
-  /* 예시 파티 — 예시 표·기록이 든 파티를 만들어 그리로 갑니다.
-     지금 표를 안 덮으니 확인창이 필요 없고, 다 보면 파티째 지우면 됩니다. */
-  const openExampleParty = () => {
+  /* 튜토리얼 시작 — 예시 표를 화면에만 얹습니다. 파티로 만들지 않으니 저장할 것도,
+     끝나고 치울 것도 없습니다. 첫 방문이 아니면 보던 장부를 떠 뒀다가 끝날 때 돌려 놓습니다. */
+  const startTutorial = () => {
     if (readOnly) return;
-    if (partyReg.list.some((x) => x.name === EXAMPLE_PARTY)) return switchParty(EXAMPLE_PARTY);
-    savePartySlot(partyReg.active, currentLedger());
-    const led = {
-      mode: "items", // 새 파티 기본과 같게 — 예시도 카운터로 엽니다
-      unit: "10000", // 예시 금액은 만G 기준으로 설계돼 있습니다
+    tutorialBack.current = currentLedger();
+    setTutorial(true);
+    setIntro(null);
+    coachReset("course");
+    applyLedger({
+      mode: "items", // 예시는 카운터로 엽니다 — 코스 1·2걸음이 칸 누르기입니다
+      unit: "10000", // 예시 금액은 만G 기준으로 짜여 있습니다
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       log: demoLog(),
@@ -2343,19 +2215,25 @@ export default function GoldSettlement() {
       splitMode: "pot",
       memoFreeze: null,
       undoSnap: null,
-    };
-    savePartySlot(EXAMPLE_PARTY, led);
-    applyLedger(led);
-    putPartyReg({
-      list: [...partyReg.list, { name: EXAMPLE_PARTY, t: Date.now() }],
-      active: EXAMPLE_PARTY,
     });
+    setCoach({ kind: "course", step: 0 });
+  };
+
+  /* 튜토리얼 종료 — 끝까지 봤든 중간에 그만뒀든 같은 자리로 나옵니다.
+     예시는 저장된 적이 없으니 그냥 덮어쓰면 사라집니다. */
+  const endTutorial = () => {
+    coachDone("course");
+    setTutorial(false);
+    applyLedger(tutorialBack.current || blankPartyLedger(8));
+    tutorialBack.current = null;
   };
 
   // 고칠 때마다 저장해 두면 새로고침해도 그대로 돌아옵니다
   useEffect(() => {
     // 첫 선택 전엔 저장하지 않습니다 — 선택 없이 새로고침하면 선택 화면이 다시 나오게
     if (intro === "first") return;
+    // 예시는 구경거리라 남기지 않습니다 — 저장하면 지난 판에 끼고, 치우는 건 사용자 몫이 됩니다
+    if (tutorial) return;
     // 뷰어는 남의 장부를 비추는 중이라, 이 브라우저에 저장하면 내 장부를 덮어씁니다
     if (readOnly) return;
     savePartySlot(partyReg.active, partyLedgerOf({ mode, unit, cols, rows, log, feePercent, splitMode, memoFreeze, undoSnap }));
@@ -2374,15 +2252,444 @@ export default function GoldSettlement() {
       memoFreeze,
       theme,
     });
-  }, [cols, rows, feePercent, splitMode, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro, readOnly, partyReg.active]);
+  }, [cols, rows, feePercent, splitMode, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro, tutorial, readOnly, partyReg.active]);
 
-  const roomOf = (label) => relay.rooms[label] || null;
-  const activeRoom = roomOf(partyReg.active);
+  /* 방장으로서 밀어 올릴 수 있는 상태인지 — 로그인 + 내 방 */
+  const myRoom = (auth && relay.room) || null;
+  const canPush = !readOnly && !!auth && !!relay.room;
+  /* 로비 화면을 보고 있는지 — 열려 있는 동안 세 탭 대신 대기실을 그립니다 */
+  const inLobby = !readOnly && lobbyView && lobbyOn;
 
   useEffect(() => {
     // 방을 이미 만들어 본 사람은 OBS 공유를 아는 사람입니다
-    if (!readOnly && Object.keys(relay.rooms || {}).length) coachDone("obsScribe");
+    if (!readOnly && relay.room) coachDone("obsScribe");
   }, []);
+
+  /* ================= 계정 ================= */
+  /* 로그인 직후 이어서 할 일(after)은 로그인 전 클로저라 auth 가 낡아 있습니다 —
+     거울을 하나 두고 그때그때 최신 계정을 봅니다 */
+  const authRef = useRef(null);
+  authRef.current = auth;
+  const putAuth = (v) => {
+    setAuth(v);
+    saveAuth(v);
+  };
+  /* 로그인이 필요한 자리에서 부릅니다 — 끝나면 하려던 일을 이어서 합니다 */
+  const openAuth = (tab, after) => setAuthOpen({ tab: tab || "login", after: after || null });
+  const doLogout = () => {
+    if (auth) authApi.logout(auth.token).catch(() => {});
+    putAuth(null);
+    setMembers([]);
+    setLobbyOn(false);
+    setLobbyView(false);
+    putRelay({ ...relay, room: undefined, invite: undefined, lobbyDraft: undefined, on: false });
+  };
+  /* 세션은 90일이고 쓸 때마다 연장됩니다 — 열 때 한 번 확인해서 닉·OBS 토큰도 맞춥니다.
+     서버가 없거나 끊겨 있으면 조용히 지나갑니다(방송 화면에 에러를 그리지 않습니다). */
+  useEffect(() => {
+    if (!auth) return;
+    let gone = false;
+    authApi
+      .me(auth.token)
+      .then((m) => {
+        if (gone || !m || !m.id) return;
+        putAuth({ ...auth, id: m.id, nick: m.nick || auth.nick, obsToken: m.obsToken || auth.obsToken });
+      })
+      .catch((e) => {
+        /* 세션이 죽었을 때만 지웁니다 — 네트워크 사고로 로그아웃되면 안 됩니다 */
+        if (!gone && e && e.status === 401) putAuth(null);
+      });
+    return () => {
+      gone = true;
+    };
+  }, [auth && auth.token]);
+
+  /* ================= 로비 (방장) ================= */
+  /* 대기실 한 줄 = 앱으로 들어온 사람(초록 점) 또는 방장이 손으로 넣은 사람(회색 점) */
+  const lobbySeats = useMemo(() => {
+    const live = members
+      .filter((m) => m.st === "ok")
+      .map((m) => ({ acct: m.acct, nick: m.nick, rowId: m.rowId || null }));
+    /* 방장은 늘 첫 자리 — 서버 명단에 아직 안 올라와 있어도 자기 자리는 보여야 합니다 */
+    if (auth && !live.some((x) => x.acct === auth.id))
+      live.unshift({ acct: auth.id, nick: auth.nick, rowId: null });
+    return [...live, ...handAdd.map((n) => ({ acct: null, nick: n, rowId: null }))];
+  }, [members, handAdd, auth]);
+  /* 출발 후 합류 신청 — 방장이 수락/거절을 고릅니다 */
+  const pending = members.filter((m) => m.st === "req");
+  /* 명단이 바뀌었는지 한 줄로 — 인원 수가 같아도 사람이나 상태가 바뀌면 다시 밀어야 합니다 */
+  const memberSig = members.map((m) => m.acct + ":" + m.st + ":" + (m.rowId || "")).join("|");
+
+  const refreshMembers = async () => {
+    const a = authRef.current;
+    if (!a || !relay.room) return;
+    try {
+      const r = await roomApi.members(a.token, relay.room);
+      if (Array.isArray(r.list)) setMembers(r.list);
+      else if (Array.isArray(r)) setMembers(r);
+    } catch (e) {
+      /* 명단을 못 읽어도 화면은 그대로 둡니다 */
+    }
+  };
+
+  /* [파티 모드 시작하기] — 로비를 서버에 열고 로비 화면으로 갑니다 */
+  const startParty = async () => {
+    if (readOnly) return;
+    const a = authRef.current;
+    if (!a) return openAuth("login", startParty);
+    try {
+      const r = await roomApi.myRoom(a.token);
+      const roomId = r.roomId;
+      const cap = (r.lobby && r.lobby.cap) || relay.lobbyCap || 8;
+      await roomApi.lobby(a.token, roomId, true, cap);
+      let inv = r.invite && r.invite.code ? r.invite : null;
+      if (!inv || !inv.exp || inv.exp < Date.now()) {
+        try {
+          inv = await roomApi.invite(a.token, roomId);
+        } catch (e2) {}
+      }
+      putRelay({
+        ...relay,
+        room: roomId,
+        invite: inv ? { code: inv.code, exp: inv.exp } : relay.invite,
+        /* 열은 지금 판에서 복사한 초안입니다 — 출발 전까지 지금 판은 안 건드립니다 */
+        lobbyDraft: cols.map((c) => ({ ...c })),
+        lobbyCap: cap,
+        on: true,
+      });
+      setLobbyCap(cap);
+      setLobbyOn(true);
+      setLobbyView(true);
+      setHandAdd([]);
+      refreshMembers();
+    } catch (e) {
+      say(e.message);
+    }
+  };
+  /* 방은 처음 필요할 때 서버가 만들어 줍니다 — 로그인 직후·초대 발급 전에 부릅니다 */
+  const ensureRoom = async () => {
+    if (!auth) return null;
+    if (relay.room) return relay.room;
+    try {
+      const r = await roomApi.myRoom(auth.token);
+      putRelay({
+        ...relay,
+        room: r.roomId,
+        invite: r.invite && r.invite.code ? { code: r.invite.code, exp: r.invite.exp } : relay.invite,
+      });
+      return r.roomId;
+    } catch (e) {
+      say(e.message);
+      return null;
+    }
+  };
+  const newInvite = async () => {
+    if (!auth || !relay.room) return;
+    try {
+      const inv = await roomApi.invite(auth.token, relay.room);
+      putRelay({ ...relay, invite: { code: inv.code, exp: inv.exp } });
+    } catch (e) {
+      say(e.message);
+    }
+  };
+  /* 로비 밖에서도 초대를 낼 수 있습니다 — 방이 없으면 먼저 팝니다 */
+  const ensureInvite = async () => {
+    const room = await ensureRoom();
+    if (!room || !auth) return;
+    try {
+      const inv = await roomApi.invite(auth.token, room);
+      putRelay({ ...relay, room, invite: { code: inv.code, exp: inv.exp } });
+    } catch (e) {
+      say(e.message);
+    }
+  };
+  /* 닉네임 변경 — 서버가 방장 앱에 알리고, 방장 앱이 그 줄 이름을 바꿉니다 */
+  const changeNick = async (nm) => {
+    if (!auth) return;
+    await authApi.nick(auth.token, nm);
+    putAuth({ ...auth, nick: nm });
+  };
+  /* 로그인 직후 한 번 — 손 안 댄 판이고 서버에 저장된 판이 있으면 이어가기를 제안합니다 */
+  const askResume = async (a) => {
+    if (!a || !isPristine(rows) || log.length) return;
+    try {
+      const r = await roomApi.myRoom(a.token);
+      if (!r || !r.roomId) return;
+      putRelay({ ...relay, room: r.roomId });
+      const got = await roomApi.read(a.token, r.roomId);
+      const led = ledgerFromSnapshot(got && got.state);
+      if (!led || !led.rows.length) return;
+      setAsk({
+        title: "지난 판 이어가기",
+        body: "서버에 저장된 판이 있어요. 지금 화면은 손대지 않은 빈 판이라, 그 판을 그대로 앉힐 수 있어요.",
+        action: "이어가기",
+        onYes: () => {
+          savePartySlot(partyReg.active, led);
+          applyLedger(led);
+        },
+      });
+    } catch (e) {
+      /* 서버가 없거나 판이 없으면 조용히 지나갑니다 */
+    }
+  };
+  const putCap = async (n) => {
+    const cap = Math.max(2, Math.min(16, n));
+    setLobbyCap(cap);
+    putRelay({ ...relay, lobbyCap: cap });
+    if (auth && relay.room && lobbyOn)
+      roomApi.lobby(auth.token, relay.room, true, cap).catch(() => {});
+  };
+  const closeLobby = async () => {
+    if (auth && relay.room) roomApi.lobby(auth.token, relay.room, false).catch(() => {});
+    setLobbyOn(false);
+    setLobbyView(false);
+    setHandAdd([]);
+    putRelay({ ...relay, lobbyDraft: undefined });
+  };
+  const askCloseLobby = () =>
+    setAsk({
+      title: "로비를 닫을까요?",
+      body: "모인 사람과 초안은 사라져요. 지금 판은 그대로예요.",
+      action: "닫기",
+      onYes: closeLobby,
+    });
+  /* [출발] — 지금 판을 지난 판으로 보관하고, 로비 인원 × 초안 항목으로 새 판을 엽니다 */
+  const departLobby = async () => {
+    if (!auth || !relay.room) return;
+    closeRound();
+    const nCols = (relay.lobbyDraft && relay.lobbyDraft.length ? relay.lobbyDraft : cols).map((c) => ({
+      ...c,
+    }));
+    const bindings = {};
+    const nRows = lobbySeats.map((s) => {
+      const id = "r" + seq.current++;
+      if (s.acct) bindings[s.acct] = id;
+      return { id, name: s.nick, counts: {}, extras: [] };
+    });
+    snapHold.current = true;
+    setCols(nCols);
+    setRows(nRows);
+    setLog([]);
+    setMemoFreeze(null);
+    setUndoSnap(null);
+    setOpenRow(null);
+    setLobbyOn(false);
+    setLobbyView(false);
+    setHandAdd([]);
+    putRelay({ ...relay, lobbyDraft: undefined, on: true });
+    try {
+      await roomApi.putState(auth.token, relay.room, departSnapshot(nCols, nRows), bindings);
+    } catch (e) {
+      /* 못 밀어도 장부는 이 브라우저에 있습니다 — 다음 변경 때 다시 밀립니다 */
+    }
+    roomApi.lobby(auth.token, relay.room, false).catch(() => {});
+  };
+  /* 출발 직후의 판은 전부 0 이라, 여기서 손으로 한 장 만들어 보냅니다.
+     (React 상태는 아직 갱신 전이라 liveSnapshot 은 옛 판을 그립니다) */
+  const departSnapshot = (nCols, nRows) => {
+    const acols = nCols.filter((c) => !ovShow().itemOff(c.id));
+    return {
+      v: 1,
+      name: "벌금 현황판",
+      board: nRows.map((x, i) => ({ n: seatName(x, i), g: 0, c: acols.map(() => 0), d: 0 })),
+      cols: acols.map((c) => ({ t: (c.name || "").trim() || "항목", r: isRoulette(c) ? 1 : 0 })),
+      ovNet: ovShow().net,
+      ovSum: ovShow().sum,
+      fx: [],
+      fxSpd: fxOn(relay) ? "norm" : "off",
+      mvMode: "swipe",
+      spin: null,
+      full: { mode, cols: nCols, rows: nRows, feePercent, unit, splitMode, log: [], memoFreeze: null },
+      rows2: nRows.map((x, i) => ({ rowId: x.id, n: seatName(x, i) })),
+      look: lookOut(),
+      t: Date.now(),
+    };
+  };
+  /* 내보내기 = 이 방에서 빠짐. 영구 차단은 없고, 다시 초대하면 됩니다 */
+  const kickMember = (acct) => {
+    if (!auth || !relay.room) return;
+    setMembers((prev) => prev.filter((m) => m.acct !== acct));
+    roomApi.member(auth.token, relay.room, acct, "remove").catch(() => refreshMembers());
+  };
+  /* 수락 — 같은 닉의 미연결 줄이 있으면 그 줄에, 없으면 끝에 새 줄 */
+  const approveMember = async (acct, nick) => {
+    if (!auth || !relay.room) return;
+    setJoinAsk(null);
+    try {
+      await roomApi.member(auth.token, relay.room, acct, "approve");
+    } catch (e) {
+      say(e.message);
+      return;
+    }
+    const taken = new Set(members.filter((m) => m.rowId).map((m) => m.rowId));
+    const free = rows.find((x) => (x.name || "").trim() === nick && !taken.has(x.id));
+    let rowId = free ? free.id : null;
+    if (!rowId) {
+      rowId = "r" + seq.current++;
+      setRows((prev) => [...prev, { id: rowId, name: nick, counts: {}, extras: [] }]);
+    }
+    setMembers((prev) =>
+      prev.map((m) => (m.acct === acct ? { ...m, st: "ok", rowId } : m))
+    );
+    roomApi
+      .putState(auth.token, relay.room, pushRef.current(), { [acct]: rowId })
+      .catch(() => {});
+  };
+  const denyMember = (acct) => {
+    setJoinAsk(null);
+    kickMember(acct);
+  };
+
+  /* ---------- 자수 반영 (방장) ----------
+     파티원이 누른 것을 방장 앱이 장부에 적습니다 — pressCell 과 같은 계산이고,
+     기록만 kind:"confess" 로 남아 화면에 "자수"로 읽힙니다. 취소(역분개)는 그대로 됩니다. */
+  const applyConfess = (rowId, colId, dir) => {
+    const row = rows.find((x) => x.id === rowId);
+    const col = cols.find((c) => c.id === colId);
+    if (!row || !col || isRoulette(col)) return;
+    const d = dir < 0 ? -1 : 1;
+    const before = liveN(row, col.id);
+    if (d > 0 ? before >= MAX_COUNT : before <= 0) return;
+    const priceG = Math.round(goldOf(col.price));
+    const lastPress =
+      d < 0
+        ? [...log].reverse().find(
+            (e) =>
+              (e.kind === "press" || e.kind === "confess") &&
+              e.rowId === row.id &&
+              e.colId === col.id &&
+              e.n > 0 &&
+              !e.cancelled
+          )
+        : null;
+    const gold = d > 0 ? priceG : -(lastPress ? lastPress.delta : priceG);
+    const after = liveTotal(row) + gold;
+    live.current.n[row.id + ":" + col.id] = before + d;
+    live.current.total[row.id] = after;
+    bump(row.id, col.id, d, gold);
+    appendLog({
+      id: "L" + seq.current++,
+      kind: "confess",
+      rowId: row.id,
+      colId: col.id,
+      n: d,
+      delta: gold,
+      name: seatName(row, rows.indexOf(row)),
+      item: col.name,
+      after,
+    });
+  };
+  /* 소켓 핸들러는 한 번만 만들어지므로, 최신 함수를 거울로 들고 갑니다 */
+  const scribeRef = useRef({});
+  scribeRef.current = {
+    confess: applyConfess,
+    refresh: refreshMembers,
+    lobbyOn,
+    /* 닉 변경 — 서버가 알려 주면 그 줄 이름을 바꾸고 다음 푸시에 실어 보냅니다 */
+    nick: (acct, nick) => {
+      setMembers((prev) => prev.map((m) => (m.acct === acct ? { ...m, nick } : m)));
+      const m = members.find((x) => x.acct === acct);
+      if (m && m.rowId) setRows((prev) => prev.map((x) => (x.id === m.rowId ? { ...x, name: nick } : x)));
+    },
+    join: (m) => {
+      if (!m || !m.acct) return refreshMembers();
+      if (m.st === "req") setJoinAsk({ acct: m.acct, nick: m.nick || m.acct });
+      refreshMembers();
+    },
+    /* 서버가 로비를 닫으면(6시간 방치) 화면도 따라 닫습니다 */
+    lobby: (lb) => {
+      if (!lb) return;
+      setLobbyOn(!!lb.open);
+      if (lb.cap) setLobbyCap(lb.cap);
+      if (!lb.open) setLobbyView(false);
+    },
+  };
+
+  /* --- 서기 소켓: 공유 켬(또는 로비 열림) 동안 상시 연결 --- */
+  useEffect(() => {
+    if (readOnly || !auth || !relay.room || (!relay.on && !lobbyOn)) return;
+    let ws = null,
+      beat = null,
+      wait = 1000,
+      stop = false;
+    const connect = () => {
+      if (stop) return;
+      try {
+        ws = new WebSocket(
+          `${WS_BASE}/api/r/${relay.room}/scribe?s=${encodeURIComponent(auth.token)}`
+        );
+      } catch (e) {
+        setTimeout(connect, wait);
+        return;
+      }
+      ws.onopen = () => {
+        setScribeLive(true);
+        wait = 1000;
+      };
+      beat = setInterval(() => {
+        if (ws && ws.readyState === 1) ws.send("ping");
+      }, 50000);
+      ws.onmessage = (ev) => {
+        if (ev.data === "pong") return;
+        let m = null;
+        try {
+          m = JSON.parse(ev.data);
+        } catch (e) {
+          return;
+        }
+        if (!m || !m.kind) return;
+        if (m.kind === "members") setMembers(Array.isArray(m.list) ? m.list : []);
+        else if (m.kind === "join") scribeRef.current.join(m.member || m);
+        else if (m.kind === "left") scribeRef.current.refresh();
+        else if (m.kind === "nick") scribeRef.current.nick(m.acct, m.nick);
+        else if (m.kind === "lobby") scribeRef.current.lobby(m.lobby);
+        else if (m.kind === "confess")
+          scribeRef.current.confess(m.rowId, m.colId, m.dir != null ? m.dir : m.n);
+      };
+      ws.onclose = () => {
+        clearInterval(beat);
+        setScribeLive(false);
+        if (stop) return;
+        setTimeout(connect, wait);
+        wait = Math.min(wait * 2, 15000);
+      };
+      ws.onerror = () => {
+        try {
+          ws.close();
+        } catch (e) {}
+      };
+    };
+    connect();
+    return () => {
+      stop = true;
+      clearInterval(beat);
+      setScribeLive(false);
+      try {
+        ws && ws.close();
+      } catch (e) {}
+    };
+  }, [readOnly, auth && auth.token, relay.room, relay.on, lobbyOn]);
+
+  /* 로그인해 두면 어느 기기든 로비 상태가 따라옵니다 — 열어 둔 로비를 되찾습니다 */
+  useEffect(() => {
+    if (readOnly || !auth || !relay.room) return;
+    let gone = false;
+    roomApi
+      .myRoom(auth.token)
+      .then((r) => {
+        if (gone || !r) return;
+        if (r.lobby && r.lobby.open) {
+          setLobbyOn(true);
+          if (r.lobby.cap) setLobbyCap(r.lobby.cap);
+        }
+        if (r.invite && r.invite.code) putRelay({ ...relay, invite: { code: r.invite.code, exp: r.invite.exp } });
+        refreshMembers();
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [auth && auth.token]);
 
   /* 오버레이가 그릴 순위표 — 금액 계산은 앱이 합니다. 서버에 그 로직을 또 두면
      단가 결정화(sums)까지 두 곳에서 관리하게 돼서요. */
@@ -2476,12 +2783,13 @@ export default function GoldSettlement() {
     if (!fxOn(relay)) return [];
     const isPress = (id) => {
       const o = log.find((x) => x.id === id);
-      return !!o && o.kind === "press";
+      return !!o && (o.kind === "press" || o.kind === "confess");
     };
     const out = [];
     for (let i = log.length - 1; i >= 0 && out.length < FX_CAP; i--) {
       const e = log[i];
-      if (e.kind === "press" && e.n)
+      /* 자수도 누름과 같은 카드로 나갑니다 — 방송에서 "누가 무엇에"는 같은 이야기입니다 */
+      if ((e.kind === "press" || e.kind === "confess") && e.n)
         out.push({ i: e.id, k: e.n > 0 ? "add" : "sub", n: e.name, t: e.item, g: e.delta });
       /* 룰렛 결과 — 판이 바뀌는 것을 한 건으로 떼어 내는 카드입니다.
          이게 없으면 룰렛이 닫히는 순간 밀려 있던 변화가 한꺼번에 반영돼서,
@@ -2530,47 +2838,57 @@ export default function GoldSettlement() {
       log: (log || []).slice(-200),
       memoFreeze,
     },
+    /* rowId↔이름 — 파티원 앱이 자기 줄(you.rowId)을 찾는 데 씁니다 */
+    rows2: rows.map((x, i) => ({ rowId: x.id, n: seatName(x, i) })),
+    /* 로비가 열려 있는 동안만 — 뷰어·오버레이가 순위표 대신 대기실을 그립니다 */
+    lobby: lobbyOn
+      ? {
+          n: lobbySeats.length,
+          cap: lobbyCap,
+          names: lobbySeats.map((s) => ({
+            n: s.nick,
+            live: !!s.acct,
+            host: !!auth && s.acct === auth.id,
+          })),
+        }
+      : undefined,
     look: lookOut(),
     t: Date.now(),
   });
 
-  /* --- 장부 관리자: 바뀔 때마다 밀어 올립니다 (디바운스 300ms) --- */
+  /* --- 방장: 바뀔 때마다 밀어 올립니다 (디바운스 300ms) --- */
   const pushTimer = useRef(null);
   const pushRef = useRef(null);
   pushRef.current = liveSnapshot;
   useEffect(() => {
-    if (readOnly || !relay.on || !activeRoom) return;
+    if (!canPush || (!relay.on && !lobbyOn)) return;
     clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
-      relayApi
-        .push(activeRoom.roomId, activeRoom.key, pushRef.current())
+      roomApi
+        .putState(auth.token, relay.room, pushRef.current())
         .catch(() => {
           /* 인터넷이 끊겨도 기록은 계속됩니다. 다음 변경 때 다시 시도합니다. */
         });
     }, 300);
     return () => clearTimeout(pushTimer.current);
-  }, [readOnly, relay.on, activeRoom && activeRoom.roomId, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, relay.fx, relay.mv, partyReg.active,
+  }, [canPush, relay.on, relay.room, lobbyOn, lobbyCap, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, relay.fx, relay.mv,
       /* 연출거리는 기록에서 나옵니다 — 표가 안 바뀌는 취소도 방송에는 알려야 해서 */
       log.length,
+      /* 대기실이 차오르는 것도 방송에 그대로 나갑니다 — 수가 같아도 사람이 바뀌면 다시 밉니다 */
+      memberSig, handAdd.length,
       /* 룰렛은 판이 시작·끝날 때, 양도 대기로 바뀔 때, 그리고 적용 결과(out)가 생길 때.
          out 을 안 걸면 종료 푸시에 합쳐져 오버레이 재생이 끝난 뒤에야 도착합니다. */
       spin && spin.sid, spin && spin.phase, spin && !!spin.out, !spin]);
 
-  /* 주소 새로 발급 — 새 방을 파고, 옛 방은 닫습니다. 되돌릴 수 없어서 한 번 물어봅니다 */
+  /* 내 방송용 주소 새로 발급 — 옛 주소는 즉시 무효라 한 번 물어봅니다 */
   const obsReissue = async () => {
-    const label = partyReg.active;
-    const old = relay.rooms[label];
+    if (!auth) return;
     try {
-      const r = await relayApi.createRoom();
-      putRelay({
-        ...relay,
-        on: true,
-        rooms: { ...relay.rooms, [label]: { roomId: r.roomId, key: r.key } },
-      });
-      relayApi.push(r.roomId, r.key, pushRef.current()).catch(() => {});
-      if (old) relayApi.kill(old.roomId, old.key).catch(() => {});
+      const r = await authApi.obsReissue(auth.token);
+      putAuth({ ...auth, obsToken: r.obsToken });
+      say("새 주소를 발급했어요 — OBS 소스의 주소도 새것으로 바꿔 주세요.");
     } catch (e) {
-      /* 실패해도 옛 방은 그대로 — 모달에서 다시 시도하면 됩니다 */
+      say(e.message);
     }
   };
   /* 끄기는 방송에 바로 티가 나는 일이라 한 번 물어봅니다. 켜기는 그냥 켜집니다. */
@@ -2580,20 +2898,6 @@ export default function GoldSettlement() {
       saveRelay(next);
       return next;
     });
-  /* 회차가 닫히면 방송 주소도 같이 닫습니다.
-     안 그러면 지난 회차 사람이 다음 파티의 판을 계속 보게 됩니다 — 링크는 읽기 전용이라
-     손은 못 대지만, 파티가 바뀌어도 보는 사람은 안 바뀝니다. 그걸 끊는 방법이 이것뿐입니다.
-     새 주소를 여기서 미리 파지는 않습니다. 공유를 안 쓰는 사람이 초기화할 때마다
-     서버에 빈 방이 하나씩 생기고, 어차피 OBS 를 열어야 새 주소가 쓸모 있어서요. */
-  const endShare = () => {
-    const label = partyReg.active;
-    const room = relay.rooms[label];
-    if (!room) return;
-    relayApi.kill(room.roomId, room.key).catch(() => {});
-    const rooms = { ...relay.rooms };
-    delete rooms[label];
-    putRelay({ ...relay, on: false, rooms });
-  };
   const askShareOff = () =>
     setAsk({
       title: "공유를 끌까요?",
@@ -2603,8 +2907,8 @@ export default function GoldSettlement() {
     });
   const askObsReissue = () =>
     setAsk({
-      title: "주소를 새로 발급할까요?",
-      body: "지금 주소는 바로 못 쓰게 돼요. 파티원들에게 새 주소를 다시 보내야 해요.",
+      title: "내 방송용 주소를 새로 발급할까요?",
+      body: "지금 주소는 바로 못 쓰게 돼요. OBS 소스의 주소를 새것으로 바꿔야 해요.",
       action: "새로 발급",
       onYes: obsReissue,
     });
@@ -2711,7 +3015,121 @@ export default function GoldSettlement() {
     setLiveTick((t) => t + 1);
   }, [!vplay]);
 
-  /* --- 뷰어: 구독해서 장부 관리자 화면을 그대로 비춥니다 --- */
+  /* ================= 파티원 =================
+     #o=TOKEN 은 방을 모른 채 들어옵니다 — resolve 로 지금 들어가 있는 방을 찾습니다.
+     denied 로 닫히면 방이 바뀌었을 수 있으니 60초마다 처음부터 다시 봅니다. */
+  useEffect(() => {
+    if (!obsEntry) return;
+    let gone = false;
+    const find = () => {
+      authApi
+        .resolveObs(obsEntry)
+        .then((r) => {
+          if (gone || !r || !r.roomId) return;
+          setLiveRoom(r.roomId);
+          setDenied(null);
+        })
+        .catch(() => {
+          /* 방송 화면에 에러를 그리지 않습니다 — 조용히 다시 봅니다 */
+          if (!gone) setLiveState("empty");
+        });
+    };
+    find();
+    const t = setInterval(find, 60000);
+    return () => {
+      gone = true;
+      clearInterval(t);
+    };
+  }, [obsEntry]);
+
+  /* 서버에 붙을 때 쓸 자격 — 로그인 세션 > 내 방송용 주소 > 초대 코드 순.
+     세션이 있으면 초대가 만료돼도 계속 보이고, 없으면 초대가 읽기 권한을 나릅니다. */
+  const wsCred = auth
+    ? "s=" + encodeURIComponent(auth.token)
+    : obsEntry
+    ? "o=" + encodeURIComponent(obsEntry)
+    : joinCode
+    ? "j=" + joinCode
+    : "";
+  /* 로비가 열려 있으면 대기실을 그립니다 (state.lobby) */
+  const [vlobby, setVlobby] = useState(null);
+
+  /* 자동 입장 — 로그인만 하면 수락 없이 대기실에 들어갑니다.
+     스스로 나간 사람은 다시 안 넣습니다 — 안 그러면 [나가기]가 무슨 뜻인지 없어집니다. */
+  const [left, setLeft] = useState(false);
+  const joinTried = useRef("");
+  /* 입장이 서버에 닿기 전에 소켓이 먼저 닿으면 아직 멤버가 아니라 거절당합니다.
+     그건 권한 문제가 아니라 순서 문제라, 거절을 붙잡아 두지 않고 다시 붙습니다. */
+  const joining = useRef(false);
+  /* 붙는 순간 서버가 최신 판을 한 장 보내 줍니다 — 자리에 앉자마자 한 번 다시 붙어서
+     사이에 놓쳤을지 모르는 푸시를 메웁니다 */
+  const [sockGen, setSockGen] = useState(0);
+  useEffect(() => {
+    if (!readOnly || !auth || !liveRoom || liveRoom === DEMO_ROOM || !joinCode || left) return;
+    if (you || joinTried.current === liveRoom + joinCode) return;
+    joinTried.current = liveRoom + joinCode;
+    joining.current = true;
+    roomApi
+      .join(auth.token, liveRoom, joinCode)
+      .then((r) => {
+        joining.current = false;
+        setDenied(null);
+        const y = r.you || { nick: auth.nick, rowId: null, st: r.st || "ok" };
+        setYou({ nick: y.nick || auth.nick, rowId: y.rowId || null, st: y.st || r.st || "ok" });
+        setSockGen((n) => n + 1);
+      })
+      .catch((e) => {
+        joining.current = false;
+        if (e && e.status === 409) say("대기실이 가득 찼어요. 방장에게 정원을 늘려 달라고 해주세요.");
+        else if (e && e.status === 403) setDenied("invite");
+      });
+  }, [readOnly, auth && auth.token, liveRoom, joinCode, !!you, left]);
+
+  const leaveRoom = () => {
+    if (!auth || !liveRoom) return;
+    roomApi.leave(auth.token, liveRoom).catch(() => {});
+    joinTried.current = "";
+    setYou(null);
+    setLeft(true);
+  };
+  /* 다시 참여 — 초대가 아직 살아 있으면 그대로 들어갑니다 */
+  const rejoin = () => {
+    joinTried.current = "";
+    setLeft(false);
+    setDenied(null);
+  };
+  /* 자수 — 낙관 갱신을 하지 않습니다. 방장이 장부에 적고 푸시로 돌아온 것만 화면에 뜹니다 */
+  const sendConfess = (rowId, colId, dir) => {
+    if (!auth || !liveRoom) return;
+    setConfessErr("");
+    roomApi.confess(auth.token, liveRoom, rowId, colId, dir).catch((e) => {
+      if (e && (e.status === 409 || e.code === "scribe-off")) {
+        setScribeOn(false);
+        setConfessErr("방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요.");
+      } else setConfessErr(e.message || "지금은 누를 수 없어요.");
+    });
+  };
+  /* 파티원 화면의 갈래 — 배너와 표가 이 셋으로 갈립니다 */
+  const demoRoom = liveRoom === DEMO_ROOM;
+  const guestLobby = readOnly && !genView && !!vlobby;
+  const guestWaiting = !!you && you.st === "ok" && !!vlobby;
+  const guestPlaying = !!you && you.st === "ok" && !vlobby;
+  const guestSeated = guestWaiting;
+  /* 자수할 줄이 실제로 있을 때만 나머지 칸을 물러나게 합니다 */
+  const confessMode = guestPlaying && !!you.rowId;
+  const [showObs, setShowObs] = useState(false); // 내 방송용 주소 — 기본 가림
+  /* 내 줄의 보통 항목 칸만 누를 수 있습니다 — 룰렛·기타·합계는 읽기 전용입니다 */
+  const canConfess = (row, col) =>
+    !!auth &&
+    !!you &&
+    you.st === "ok" &&
+    !!you.rowId &&
+    row.id === you.rowId &&
+    !isRoulette(col) &&
+    scribeOn &&
+    !vlobby;
+
+  /* --- 뷰어: 구독해서 방장 화면을 그대로 비춥니다 --- */
   useEffect(() => {
     if (!readOnly || !liveRoom || liveRoom === DEMO_ROOM) return;
     let ws = null,
@@ -2727,6 +3145,8 @@ export default function GoldSettlement() {
       setLiveName(st.name || "");
       setLiveState("on");
       setLiveTick((t) => t + 1);
+      /* 로비가 열려 있는 동안만 실립니다 — 사라지면 출발한 것입니다 */
+      setVlobby(st.lobby || null);
     };
     const apply = (st) => {
       if (!st || !st.full) return;
@@ -2761,7 +3181,7 @@ export default function GoldSettlement() {
       if (stop) return;
       try {
         ws = new WebSocket(
-          RELAY_BASE.replace(/^http/, "ws") + "/api/r/" + liveRoom + "/live"
+          `${WS_BASE}/api/r/${liveRoom}/live` + (wsCred ? "?" + wsCred : "")
         );
       } catch (e) {
         setTimeout(connect, wait);
@@ -2775,9 +3195,46 @@ export default function GoldSettlement() {
         try {
           const m = JSON.parse(ev.data);
           if (m.kind === "dead") setLiveState("dead");
-          else if (m.kind === "state") {
+          else if (m.kind === "hello") {
+            setDenied(null);
+            setYou(m.you || null);
+            if (m.scribeOn != null) setScribeOn(!!m.scribeOn);
+          } else if (m.kind === "presence") {
+            setScribeOn(!!m.scribeOn);
+            if (m.scribeOn) setConfessErr("");
+          }
+          else if (m.kind === "you") {
+            /* 내 자리가 바뀌었습니다. 새 자리는 그 자리에서 앉히고(출발 직후 자기 줄이
+               잠깐 죽어 있지 않게), 자격은 붙었다 떼서 hello 로 다시 확인합니다 */
+            setYou(m.you || null);
+            try {
+              ws.close();
+            } catch (e2) {}
+          } else if (m.kind === "denied") {
+            /* 입장이 아직 서버에 안 닿았을 뿐이면 권한 문제가 아닙니다 —
+               붙잡아 두지 말고 닫았다가 다시 붙습니다 */
+            if (joining.current) {
+              try {
+                ws.close();
+              } catch (e2) {}
+              return;
+            }
+            setDenied(m.why || "member");
+            setYou(null);
+            stop = true;
+            try {
+              ws.close();
+            } catch (e2) {}
+          } else if (m.kind === "lobby") {
+            /* 서버가 로비를 닫았을 때(6시간 방치) 판으로 바로 돌아옵니다 */
+            if (m.lobby && !m.lobby.open) setVlobby(null);
+          } else if (m.kind === "state") {
+            if (m.scribeOn != null) setScribeOn(!!m.scribeOn);
             if (m.state) apply(m.state);
-            else setLiveState("empty");
+            else {
+              setLiveState("empty");
+              setVlobby(null);
+            }
           }
           wait = 1000;
         } catch (e) {}
@@ -2803,7 +3260,7 @@ export default function GoldSettlement() {
         ws && ws.close();
       } catch (e) {}
     };
-  }, [readOnly, liveRoom]);
+  }, [readOnly, liveRoom, wsCred, sockGen]);
 
   /* 복구 제안은 "다음 편집 전까지" — 표를 고치기 시작하면 조용히 접습니다 */
   useEffect(() => {
@@ -2845,8 +3302,11 @@ export default function GoldSettlement() {
   useEffect(() => {
     // 첫 선택 전엔 주소도 건드리지 않습니다 — 해시가 생기면 첫 방문 판정이 깨집니다
     if (intro === "first") return;
+    /* 뷰어 주소는 남의 방을 가리키는 남의 주소입니다. 여기에 m= 을 얹으면 그 사람이
+       주소를 다시 넘길 때 딸려 가고, 자기 장부를 쓰려고 #live= 만 지우면 m= 이 남습니다. */
+    if (readOnly) return;
     syncHashMode(mode);
-  }, [mode, intro]);
+  }, [mode, intro, readOnly]);
 
   // 주소를 직접 고치거나 뒤로가기를 눌러도 모드가 따라오게
   useEffect(() => {
@@ -3268,6 +3728,11 @@ export default function GoldSettlement() {
      읽히도록 그 시점 글자를 같이 적어 둡니다. 왼클릭 +1, 우클릭 −1, 둘 다 기록됩니다. */
   const pressCell = (row, col, dir = 1) => {
     if (readOnly) {
+      /* 파티원은 자기 줄의 보통 항목만 — 서버로 보내고, 반영은 방장 푸시로만 옵니다 */
+      if (canConfess(row, col)) {
+        sendConfess(row.id, col.id, dir > 0 ? 1 : -1);
+        return;
+      }
       setRoPulse(Date.now()); // "정적인 화면이구나"로 오해하지 않게, 배너가 반응합니다
       return;
     }
@@ -3305,7 +3770,12 @@ export default function GoldSettlement() {
     const lastPress =
       dir < 0
         ? [...log].reverse().find(
-            (e) => e.kind === "press" && e.rowId === row.id && e.colId === col.id && e.n > 0 && !e.cancelled
+            (e) =>
+              (e.kind === "press" || e.kind === "confess") &&
+              e.rowId === row.id &&
+              e.colId === col.id &&
+              e.n > 0 &&
+              !e.cancelled
           )
         : null;
     const gold = dir > 0 ? priceG : -(lastPress ? lastPress.delta : priceG);
@@ -3627,17 +4097,26 @@ export default function GoldSettlement() {
   // 실제로 쓰기 시작할 때. 인원·숫자는 비우고 항목은 기본값으로 되돌립니다.
   /* 한 판 끝나고 같은 멤버로 또 한 판 — 이름과 항목은 두고 숫자만 비웁니다.
      손 안 댄 예시라면 남의 명단이니 이름까지 치웁니다. 행은 여덟 줄로 맞춥니다. */
-  /* ---------- 회차 — 처음부터 사이의 한 세션 ---------- */
-  const GEN_KEEP = 5; // 잠금 안 한 지난 회차는 최근 5개만
+  /* ---------- 지난 판 — 출발·처음부터 사이의 한 세션 ----------
+     로컬 전용입니다. 읽기 조회만 있고, 잠금·복원·서버 보관은 없앴습니다. */
+  const GEN_KEEP = 20; // 최근 20판, 넘치면 오래된 것부터
   const genEntries = () => partyReg.list.filter((x) => x.gen);
   const gensList = () =>
     genEntries()
       .slice()
       .sort((a, b) => (b.t || 0) - (a.t || 0))
-      .map((g) => (g.gold != null ? g : { ...g, gold: slotGold(loadPartySlot(g.name)) }));
+      .map((g) => {
+        if (g.gold != null && g.n != null) return g;
+        const slot = loadPartySlot(g.name);
+        return {
+          ...g,
+          gold: g.gold != null ? g.gold : slotGold(slot),
+          n: g.n != null ? g.n : ((slot && slot.rows) || []).length,
+        };
+      });
   const askDropGen = (nm) =>
     setAsk({
-      title: "이 지난 회차를 지울까요?",
+      title: "이 지난 판을 지울까요?",
       body: nm + " — 로컬 보관에서 지워져요. 파일로 남긴 게 없으면 되돌릴 수 없어요.",
       action: "지우기",
       onYes: () => {
@@ -3649,26 +4128,16 @@ export default function GoldSettlement() {
         });
       },
     });
-  const toggleGenLock = (nm) =>
-    putPartyReg({
-      ...partyReg,
-      list: partyReg.list.map((x) =>
-        x.name === nm ? { ...x, locked: !x.locked } : x
-      ),
-    });
-  /* 지금 장부를 「지난 회차」로 닫습니다. 기록이 없으면 남길 것도 없습니다.
-     넘치는 옛 회차(잠금 제외)는 목록·저장소에서 걷어냅니다. */
+  /* 지금 장부를 「지난 판」으로 닫습니다. 기록이 없으면 남길 것도 없습니다.
+     넘치는 옛 판은 목록·저장소에서 걷어냅니다. */
   const closeRound = () => {
     const before = partyReg.list;
     const list = foldIntoGens(currentLedger(), before);
     if (list === before) return null;
     putPartyReg({ list, active: partyReg.active });
-    /* 서버에도 직전 회차 한 장 — 복구 코드로 새 기기에서 직전까지 살릴 수 있게 */
-    if (activeRoom)
-      relayApi.archive(activeRoom.roomId, activeRoom.key, liveSnapshot()).catch(() => {});
     return true;
   };
-  /* 장부 하나를 지난 회차로 밀어 넣습니다 — 목록을 받아 갱신된 목록을 돌려줍니다 */
+  /* 장부 하나를 지난 판으로 밀어 넣습니다 — 목록을 받아 갱신된 목록을 돌려줍니다 */
   const foldIntoGens = (led, list) => {
     const ts = ((led && led.log) || []).map((e) => e.t).filter(Boolean);
     if (!ts.length) return list;
@@ -3680,13 +4149,13 @@ export default function GoldSettlement() {
         name: label,
         t: Date.now(),
         gen: true,
-        locked: false,
         from: Math.min(...ts),
         to: Math.max(...ts),
         gold: slotGold(led),
+        n: ((led && led.rows) || []).length,
       },
     ];
-    const loose = out.filter((x) => x.gen && !x.locked);
+    const loose = out.filter((x) => x.gen);
     if (loose.length > GEN_KEEP) {
       const drop = loose
         .slice()
@@ -3702,7 +4171,7 @@ export default function GoldSettlement() {
     const slot = loadPartySlot(name);
     if (!slot) return;
     /* 이미 보기 중이면 활성 장부는 처음 열 때 떠 놨습니다 — 다시 저장하면
-       보고 있던 회차 내용으로 덮어써 버립니다 */
+       보고 있던 판 내용으로 덮어써 버립니다 */
     if (!genView) savePartySlot(partyReg.active, currentLedger());
     applyLedger(slot);
     setGenView(name);
@@ -3712,49 +4181,11 @@ export default function GoldSettlement() {
     applyLedger(loadPartySlot(partyReg.active) || blankPartyLedger());
     setGenView(null);
   };
-  /* 복원 = 교대 — 지금 장부가 지난 회차로 닫히고, 보고 있던 회차가 현재가 됩니다.
-     물러나는 항목은 목록에서 빠지고(회차 사본이 대신함), 방송 주소는 새 활성을 따라갑니다
-     — 주소 영속: 링크가 바뀌는 유일한 순간은 여전히 '주소 새로 발급'뿐입니다. */
-  const restoreGen = () => {
-    const name = genView;
-    if (!name) return;
-    const old = partyReg.active;
-    const oldLed = loadPartySlot(old); // openGen 때 저장해 둔, 물러나는 장부
-    let list = foldIntoGens(oldLed, partyReg.list);
-    list = list.filter((x) => x.name !== old && x.name !== name);
-    /* 활성 장부의 이름은 항상 '기본' — 회차 라벨이 파일명·메시지로 새지 않게 */
-    const led2 = loadPartySlot(name);
-    savePartySlot(DEFAULT_ROOM_LABEL, led2);
-    if (name !== DEFAULT_ROOM_LABEL) dropPartySlot(name);
-    if (old !== DEFAULT_ROOM_LABEL) dropPartySlot(old);
-    putPartyReg({
-      list: [...list, { name: DEFAULT_ROOM_LABEL, t: Date.now() }],
-      active: DEFAULT_ROOM_LABEL,
-    });
-    const rooms = { ...relay.rooms };
-    const keep = rooms[old] || rooms[name]; /* 주소 영속 — 현 주소 우선, 없으면 유산 */
-    delete rooms[old];
-    delete rooms[name];
-    if (keep) rooms[DEFAULT_ROOM_LABEL] = keep;
-    putRelay({ ...relay, rooms });
-    setGenView(null);
-    say("'" + name + "' 회차를 현재 장부로 복원했어요 — 이전 장부는 지난 회차로 남았어요.");
-  };
-  const askRestoreGen = () =>
-    setAsk({
-      title: "이 회차를 현재 장부로 복원할까요?",
-      body: "지금 장부는 지난 회차로 닫혀요. 사라지는 것은 없어요.",
-      action: "복원",
-      onYes: restoreGen,
-    });
-
   /* 초기화 — keep: 이름·항목 남기고 비우기 / full: 전부 비우기(프리셋 시작 가능) */
   const clearAll = (kind, preset, size) => {
     if (readOnly) return;
-    /* 세션이 닫혔을 때만 주소도 닫습니다 — closeRound 는 기록이 하나도 없으면
-       지난 세션을 안 만들고 null 을 돌려줍니다. 이름만 만져보다 초기화하는 것은
-       세션의 끝이 아니라 세팅이라, 그때 OBS 를 다시 붙이게 하면 안 됩니다. */
-    if (closeRound()) endShare();
+    /* 방·초대·멤버십은 건드리지 않습니다 — 계정에 붙어 있어서 판을 비운다고 끊길 이유가 없습니다 */
+    closeRound();
     const full = kind === "full" || isPristine(rows);
     takeSnap(
       "처음부터",
@@ -3800,33 +4231,6 @@ export default function GoldSettlement() {
     return () => clearTimeout(t);
   }, [toast && toast.t]);
 
-  /* 편집 권한 링크(#k=)로 들어온 경우 — 열쇠를 받아 이 브라우저에 붙입니다.
-     주소에 남겨 두면 뒤로 가기나 재공유로 또 흘러다니니 바로 지웁니다. */
-  const tookKey = useRef(false);
-  useEffect(() => {
-    if (tookKey.current || typeof window === "undefined") return;
-    const c = (hashParams().get(HANDOFF_KEY) || "").toUpperCase();
-    if (!c) return;
-    tookKey.current = true;
-    if (canOwnUrl) {
-      const hp = hashParams();
-      hp.delete(HANDOFF_KEY);
-      const rest = hp.toString();
-      window.history.replaceState(
-        null,
-        "",
-        window.location.pathname + window.location.search + (rest ? "#" + rest : "")
-      );
-    }
-    /* 6자면 일회용 이사 링크, 12자면 복구 코드 — 어느 쪽이든 장부부터 앉힙니다 */
-    (c.length >= 10 ? relayApi.recoveryClaim(c) : relayApi.handoffClaim(c))
-      .then((got) => seatFromBundle(got))
-      .then((r) => say(seatMsg(r)))
-      .catch(() =>
-        say("만료됐거나 이미 쓴 링크예요. 원래 기기에서 새로 만들어 주세요.")
-      );
-  }, []);
-
   /* 되돌릴 수 없는 조작은 한 번 물어봅니다 */
   const askDelRow = (row) =>
     setAsk({
@@ -3855,9 +4259,7 @@ export default function GoldSettlement() {
     setAsk({
       title: "처음부터 다시 할까요?",
       body:
-        (partyReg.active === EXAMPLE_PARTY
-          ? "여기는 예시 파티예요 — 실사용은 새 파티로 시작하는 게 좋아요. "
-          : "") +
+        (tutorial ? "여기는 튜토리얼 예시라 저장되지 않아요. " : "") +
         (isPristine(rows)
           ? "예시 데이터를 치우고 빈 표로 시작해요."
           : "이름과 항목·단가는 그대로 두고, 숫자와 기록만 비워요."),
@@ -3945,8 +4347,8 @@ export default function GoldSettlement() {
       <div className="gs-sysbar">
         <div className="gs-sysbar-in">
           <span className="gs-sysbrand">벌금 정산</span>
-          {/* 지난 회차 — 전역(장부 이력)이라 헤더 왼쪽, 앱 이름 옆입니다 */}
-          {!liveRoom && (
+          {/* 지난 판 — 전역(장부 이력)이라 헤더 왼쪽, 앱 이름 옆입니다 */}
+          {!viewer && (
             <div className="gs-gensdd">
               <button
                 className={"gs-gensbtn" + (gensOpen ? " on" : "")}
@@ -3954,56 +4356,42 @@ export default function GoldSettlement() {
                 aria-expanded={gensOpen}
                 aria-haspopup="menu"
               >
-                지난 회차{genEntries().length > 0 && <b>{genEntries().length}</b>} ▾
+                지난 판{genEntries().length > 0 && <b>{genEntries().length}</b>} ▾
               </button>
               {gensOpen && (
                 <div className="gs-genspanel" role="menu">
-                  {gensList().length === 0 ? (
-                    <p className="gs-gens-empty">
-                      아직 지난 회차가 없어요.
-                      <br />
-                      {"'처음부터'로 판을 닫으면 여기 남아요."}
-                    </p>
-                  ) : (
-                    <>
-                      {gensList().map((g) => (
-                        <div className="gs-genrow" key={g.name}>
-                          <b>{g.name}</b>
-                          <span className="gs-genrow-meta">{man(g.gold || 0)}</span>
-                          <span className="gs-genrow-r">
-                            <button
-                              className={"gs-genlock" + (g.locked ? " on" : "")}
-                              onClick={() => toggleGenLock(g.name)}
-                              aria-pressed={!!g.locked}
-                              title={g.locked ? "잠금을 풀면 자동 정리 대상이 돼요" : "잠그면 자동 정리에서 빠져요"}
-                            >
-                              {g.locked ? "잠김" : "잠금"}
-                            </button>
-                            <button
-                              className="gs-btn gs-btn-sm"
-                              onClick={() => {
-                                setGensOpen(false);
-                                openGen(g.name);
-                              }}
-                            >
-                              보기
-                            </button>
-                            <button
-                              className="gs-x"
-                              onClick={() => askDropGen(g.name)}
-                              aria-label={g.name + " 지우기"}
-                            >
-                              ×
-                            </button>
-                          </span>
-                        </div>
-                      ))}
-                      <p className="gs-key-foot">
-                        잠금 안 한 회차는 최근 5개만 남아요. 보기는 읽기 전용 —
-                        이어서 쓰려면 보기 화면의 {"'현재 장부로 복원'"}을 눌러요.
-                      </p>
-                    </>
-                  )}
+                  <h4 className="gs-gens-h">지난 판</h4>
+                  <p className="gs-gens-lead">
+                    출발하거나 처음부터를 누르면 그때 판이 여기 남아요. 보기는 읽기 전용 — 최근
+                    20판까지요.
+                  </p>
+                  {gensList().map((g) => (
+                    <div className="gs-genrow" key={g.name}>
+                      <b>{g.name}</b>
+                      <span className="gs-genrow-meta">
+                        {g.n ? g.n + "명 · " : ""}
+                        {man(g.gold || 0)}
+                      </span>
+                      <span className="gs-genrow-r">
+                        <button
+                          className="gs-btn gs-btn-sm gs-btn-ghost"
+                          onClick={() => {
+                            setGensOpen(false);
+                            openGen(g.name);
+                          }}
+                        >
+                          보기
+                        </button>
+                        <button
+                          className="gs-x"
+                          onClick={() => askDropGen(g.name)}
+                          aria-label={g.name + " 지우기"}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -4035,9 +4423,9 @@ export default function GoldSettlement() {
                       다만 시작도 안 한 것을 '중단'이라 하면 그건 그것대로 거짓이라 말을 나눕니다. */}
                   <i className="gs-obsbtn-div" aria-hidden="true" />
                   <span className="gs-obsbtn-st">
-                    {!activeRoom ? "꺼짐" : relay.on ? "공유 중" : "중단"}
+                    {!myRoom ? "꺼짐" : relay.on ? "공유 중" : "중단"}
                   </span>
-                  <em className={activeRoom && relay.on ? "" : "off"} aria-hidden="true">●</em>
+                  <em className={myRoom && relay.on ? "" : "off"} aria-hidden="true">●</em>
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
                   벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를 OBS 브라우저
@@ -4045,33 +4433,7 @@ export default function GoldSettlement() {
                 </span>
               </span>
             )}
-            {/* 외형은 '오버레이 공유 설정' 안으로 들어갔습니다 — 방송에 나가는 것은 한 창에서 */}
-            {false && (
-              <span className="gs-tip">
-                <button className="gs-btn gs-btn-ghost gs-keybtn" onClick={() => setLookOpen(true)}>
-                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                    <g
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M8 1.8a6.2 6.2 0 1 0 0 12.4c1 0 1.4-.6 1.1-1.3-.3-.8 0-1.7 1-1.7h1.7c1.5 0 2.4-1 2.4-2.6C14.2 4.4 11.4 1.8 8 1.8Z" />
-                      <circle cx="5" cy="6.2" r=".4" />
-                      <circle cx="8.2" cy="4.6" r=".4" />
-                      <circle cx="11.2" cy="6.4" r=".4" />
-                      <circle cx="4.9" cy="9.6" r=".4" />
-                    </g>
-                  </svg>
-                  외형
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  벌금표와 방송 화면의 <b>테마·룰렛 외형</b>을 정해요.
-                </span>
-              </span>
-            )}
-            {/* 백업 — 지키고 살리는 전부: 복구 코드·받기·파일·지난 회차 */}
+            {/* 백업 — 장부를 파일로 남기고 되살리는 곳 */}
             {!readOnly && (
               <span className="gs-tip">
                 <button className="gs-btn gs-btn-ghost gs-keybtn" onClick={() => setKeyOpen(true)}>
@@ -4090,9 +4452,8 @@ export default function GoldSettlement() {
                   백업
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  {/* 지난 회차는 헤더 드롭다운에 있습니다 — 여기 있다고 하면 헛걸음합니다 */}
-                  <b>{RECOVERY_ON ? "복구 코드·파일 백업" : "파일 백업"}</b> — 장부를 파일로
-                  남기고 되살리는 곳이에요.
+                  {/* 지난 판은 헤더 드롭다운에 있습니다 — 여기 있다고 하면 헛걸음합니다 */}
+                  <b>파일 백업</b> — 장부를 파일로 남기고 되살리는 곳이에요.
                 </span>
               </span>
             )}
@@ -4154,7 +4515,7 @@ export default function GoldSettlement() {
               </span>
             </span>
             <button
-              className={"gs-qm" + (showHelp ? " gs-qm-on" : "")}
+              className={"gs-qm gs-helpbtn" + (showHelp ? " gs-qm-on" : "")}
               onClick={() => setShowHelp(true)}
               aria-haspopup="dialog"
               aria-label="사용법 보기"
@@ -4167,17 +4528,159 @@ export default function GoldSettlement() {
 
       {genView && (
         <div className="gs-genbar" role="status">
-          <b>지난 회차 보기</b> — {genView} · 수정은 안 돼요.
+          <b>지난 판 보기</b> — {genView} · 읽기 전용이에요.
           <span className="gs-genbar-r">
-            <button className="gs-btn gs-btn-sm" onClick={askRestoreGen}>
-              현재 장부로 복원
-            </button>
             <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={closeGen}>
               닫기
             </button>
           </span>
         </div>
       )}
+      {/* 상시 위젯 — 로비는 서버에 살아 있고, 메인 어디서든 여기로 돌아옵니다 */}
+      {!readOnly && lobbyOn && !lobbyView && (
+        <div className="gs-lobbywidget" role="status">
+          <em className="gs-live-dot" aria-hidden="true" />
+          <b>
+            로비 {lobbySeats.length}/{lobbyCap} 모임
+          </b>
+          {lobbySeats.length > 1 && (
+            <span className="gs-lw-names">
+              —{" "}
+              {lobbySeats
+                .filter((s) => !auth || s.acct !== auth.id)
+                .map((s) => s.nick)
+                .join(" · ")}
+              이 들어와 있어요
+            </span>
+          )}
+          <span className="gs-lw-r">
+            <button className="gs-btn gs-btn-sm" onClick={() => setLobbyView(true)}>
+              대기실 열기
+            </button>
+            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={departLobby}>
+              출발
+            </button>
+          </span>
+        </div>
+      )}
+      {/* ── 파티원 배너 — 화면 맨 위. 상태(초대·대기·판)에 따라 말이 바뀝니다 ── */}
+      {readOnly && !genView && <div className="gs-guestbar">
+      {/* 내 방송용 주소 — 참여 중이면 화면 맨 위에. 방송에 새지 않게 기본은 가림입니다 */}
+      {readOnly && !genView && auth && auth.obsToken && you && you.st === "ok" && (
+        <div className="gs-slip gs-slip-calm">
+          <span className="gs-slip-urlbox">
+            <span className="gs-caplab">
+              내 방송용 주소 — OBS 브라우저 소스에 넣으면 이 판이 방송에 떠요
+            </span>
+            <span className="gs-urltext">
+              {showObs ? roomApi.obsUrl(auth.obsToken) : "●".repeat(26)}
+            </span>
+          </span>
+          <button
+            className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
+            onClick={() => setShowObs((v) => !v)}
+            aria-label={showObs ? "가리기" : "보기"}
+            title={showObs ? "가리기" : "보기"}
+          >
+            <Eye on={showObs} />
+          </button>
+          <button
+            className="gs-btn gs-btn-sm"
+            onClick={() => copy(roomApi.obsUrl(auth.obsToken), "obsurl")}
+          >
+            {flash === "obsurl" ? "복사했어요" : "복사"}
+          </button>
+        </div>
+      )}
+      {readOnly && !genView && (
+        <div
+          key={roPulse}
+          className={
+            "gs-slip gs-slip-live" +
+            (liveState === "dead" ? " gs-slip-dead" : "") +
+            (guestSeated ? " gs-slip-green" : "") +
+            (roPulse ? " gs-slip-pulse" : "")
+          }
+          role="status"
+        >
+          <span className="gs-slip-msg">
+            {liveState === "dead" ? (
+              "이 주소는 더 이상 갱신되지 않아요. 방장에게 새 초대를 받아 주세요."
+            ) : left ? (
+              "대기실에서 나왔어요."
+            ) : denied === "invite" ? (
+              "초대가 만료됐어요 — 방장에게 새 초대를 받아 주세요."
+            ) : denied ? (
+              "이 방을 볼 권한이 없어요 — 방장에게 초대를 받아 주세요."
+            ) : demoRoom ? (
+              <>
+                <b>읽기 전용 화면</b>이에요 — 방장이 기록하면 <b>실시간으로 바뀌어요</b>.
+                기록을 한 사람에게 맡기면 중복 입력 사고가 없어요.
+              </>
+            ) : !auth ? (
+              <>
+                <b>읽기 전용 화면</b>이에요 — 참여하려면 로그인이 필요해요.
+              </>
+            ) : you && you.st === "req" ? (
+              "참여를 신청했어요 — 방장이 수락하면 시작돼요."
+            ) : guestWaiting ? (
+              <>
+                <b>대기실에 들어왔어요</b> — 방장이 출발하면 시작돼요.
+              </>
+            ) : guestPlaying ? (
+              scribeOn ? (
+                <>
+                  <b>내 줄만</b> 누를 수 있어요 — 칸 클릭 +1회 · 우클릭 −1회. 나머지는 읽기
+                  전용이에요.
+                </>
+              ) : (
+                "방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요."
+              )
+            ) : liveState === "on" ? (
+              <>
+                <b>읽기 전용 화면</b>이에요 — 참여하려면 초대가 필요해요.
+              </>
+            ) : liveState === "empty" ? (
+              "아직 기록이 없어요. 장부가 채워지면 여기 실시간으로 보여요."
+            ) : (
+              "연결하는 중이에요…"
+            )}
+          </span>
+          {/* 비로그인 파티원의 유일한 다음 걸음 — 배너 안에 둡니다 */}
+          {!demoRoom && !auth && (
+            <button
+              className="gs-btn gs-btn-sm gs-slip-act"
+              onClick={() => openAuth("login")}
+            >
+              로그인하고 참여
+            </button>
+          )}
+          {guestWaiting && (
+            <button className="gs-btn gs-btn-sm gs-btn-ghost gs-slip-act" onClick={leaveRoom}>
+              나가기
+            </button>
+          )}
+          {left && joinCode && (
+            <button className="gs-btn gs-btn-sm gs-slip-act" onClick={rejoin}>
+              다시 참여
+            </button>
+          )}
+          {liveState === "on" && !guestWaiting && (
+            <span className="gs-slip-who">
+              {liveName}
+              <em className="gs-live-dot" key={liveTick} aria-hidden="true" />
+              실시간
+            </span>
+          )}
+        </div>
+      )}
+      {/* 자수가 막혔을 때의 한 줄 — 서버가 거절한 이유를 그 자리에서 알려 줍니다 */}
+      {readOnly && confessErr && (
+        <div className="gs-slip" role="status">
+          <span className="gs-slip-msg">{confessErr}</span>
+        </div>
+      )}
+      </div>}
       {/* ── 머리 ─────────────────────────────────────── */}
       <header className="gs-mast">
         <div className="gs-mastrow">
@@ -4214,7 +4717,31 @@ export default function GoldSettlement() {
                   처음부터
                 </button>
                 <span className="gs-tip-body gs-tip-l" role="tooltip">
-                  판을 닫고 새로 시작해요. 지금 판은 <b>지난 회차</b>로 남아요.
+                  판을 닫고 새로 시작해요. 지금 판은 <b>지난 판</b>으로 남아요.
+                </span>
+              </span>
+            )}
+            {/* 파티 모드 — 대기실에 모여서 출발합니다. 로비는 서버에 사는 상태예요.
+                로비 화면이 이미 떠 있으면 [대기실 열기]는 갈 데가 없는 버튼이라 숨깁니다 */}
+            {!readOnly && !inLobby && (
+              <span className="gs-tip">
+                <button
+                  className="gs-btn gs-partybtn"
+                  onClick={() => (lobbyOn ? setLobbyView(true) : startParty())}
+                >
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="5.5" cy="5.2" r="2.2" />
+                      <path d="M1.6 13.2c.5-2.5 2-3.8 3.9-3.8s3.4 1.3 3.9 3.8" />
+                      <circle cx="11.2" cy="5.8" r="1.8" />
+                      <path d="M10.9 9.5c1.7.1 2.9 1.2 3.4 3.2" />
+                    </g>
+                  </svg>
+                  {lobbyOn ? "대기실 열기" : "파티 모드 시작하기"}
+                </button>
+                <span className="gs-tip-body gs-tip-l" role="tooltip">
+                  대기실을 열어 파티원을 모아요. 모인 사람이 <b>다음 판의 줄</b>이 되고, 각자
+                  자기 줄에 <b>자수</b>할 수 있어요.
                 </span>
               </span>
             )}
@@ -4252,7 +4779,57 @@ export default function GoldSettlement() {
       </header>
 
       {/* ── 벌금표 ───────────────────────────────────── */}
-      {showSheet && (
+      {/* ── 로비(대기실) — 다음 판 미리보기. 열려 있는 동안 세 탭을 대신합니다 ── */}
+      {inLobby && (
+        <LobbyScreen
+          seats={lobbySeats}
+          cap={lobbyCap}
+          hostId={auth ? auth.id : ""}
+          hostNick={auth ? auth.nick : ""}
+          cols={relay.lobbyDraft || cols}
+          unit={unit}
+          unitLabel={unitLabel}
+          invite={relay.invite}
+          roomId={relay.room}
+          onCols={(next) => putRelay({ ...relay, lobbyDraft: next })}
+          onCap={putCap}
+          onKick={kickMember}
+          onHandAdd={(nm) => setHandAdd((p) => [...p, nm])}
+          onHandDel={(nm) => setHandAdd((p) => p.filter((x) => x !== nm))}
+          onInvite={newInvite}
+          onDepart={departLobby}
+          onClose={askCloseLobby}
+          onCopy={copy}
+          flash={flash}
+          seq={seq}
+        />
+      )}
+      {/* 파티원이 보는 대기실 — 방장이 출발하면 이 자리가 벌금표로 바뀝니다 */}
+      {guestLobby && (
+        <section className="gs-mail">
+          <div className="gs-card gs-lobbybox">
+            <div className="gs-lb-head">
+              <h2 className="gs-h2 gs-lb-title">대기실</h2>
+              <span className="gs-lb-count">
+                <b>{vlobby.n != null ? vlobby.n : (vlobby.names || []).length}</b>/{vlobby.cap || 8} 모임
+                <em className="gs-live-dot" key={liveTick} aria-hidden="true" />
+                실시간
+              </span>
+            </div>
+            <ul className="gs-lb-list">
+              {(vlobby.names || []).map((p, i) => (
+                <li key={p.n + i} className={you && p.n === you.nick ? "me" : ""}>
+                  {p.host && <span className="gs-lb-tag">방장</span>}
+                  <i className={"gs-lb-dot" + (p.live ? "" : " none")} aria-hidden="true" />
+                  <b>{p.n}</b>
+                  {you && p.n === you.nick && <span className="gs-lb-tag">나</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+      {showSheet && !inLobby && !guestLobby && (
       <section className="gs-mail gs-sheetsec">
         <div className="gs-cardhead">
           <div className="gs-headleft">
@@ -4344,39 +4921,6 @@ export default function GoldSettlement() {
             머리줄(제목·모드)은 상자 밖에 두어 세 탭의 윗부분이 한 줄로 맞습니다 */}
         <div className="gs-card gs-sheetbox">
 
-        {readOnly && !genView && (
-          <div
-            key={roPulse}
-            className={
-              "gs-slip gs-slip-live" +
-              (liveState === "dead" ? " gs-slip-dead" : "") +
-              (roPulse ? " gs-slip-pulse" : "")
-            }
-            role="status"
-          >
-            <span className="gs-slip-msg">
-              {liveState === "dead" ? (
-                "이 주소는 더 이상 갱신되지 않아요. 장부 관리자에게 새 주소를 받아 주세요."
-              ) : liveState === "on" ? (
-                <>
-                  <b>읽기 전용 화면</b>이에요 — 장부 관리자가 기록하면 <b>실시간으로 바뀌어요</b>.
-                  기록을 한 사람에게 맡기면 중복 입력 사고가 없어요.
-                </>
-              ) : liveState === "empty" ? (
-                "아직 기록이 없어요. 장부가 채워지면 여기 실시간으로 보여요."
-              ) : (
-                "연결하는 중이에요…"
-              )}
-            </span>
-            {liveState === "on" && (
-              <span className="gs-slip-who">
-                {liveName}
-                <em className="gs-live-dot" key={liveTick} aria-hidden="true" />
-                실시간
-              </span>
-            )}
-          </div>
-        )}
 
         {privWarn && (
           <div className="gs-slip" role="status">
@@ -4649,7 +5193,9 @@ export default function GoldSettlement() {
                         (open ? "gs-rowopen" : "") +
                         (spin && spin.phase === "pick" ? " gs-pickable" : "") +
                         (spin && spin.phase === "pick" && spin.rowId === row.id ? " gs-pickself" : "") +
-                        (cross && cross.r === row.id ? " gs-litrow" : "")
+                        (cross && cross.r === row.id ? " gs-litrow" : "") +
+                        /* 파티원 화면에서 내 줄 — 이름부터 금색이라 어디를 눌러야 하는지 바로 보입니다 */
+                        (you && you.rowId === row.id && readOnly ? " gs-myrow" : "")
                       }
                       onClick={
                         spin && spin.phase === "pick" ? () => pickPassTarget(row) : undefined
@@ -4721,7 +5267,13 @@ export default function GoldSettlement() {
                                   </span>
                                 )}
                                 <button
-                                  className={"gs-hit" + (n > 0 ? " gs-hit-on" : "")}
+                                  className={
+                                    "gs-hit" +
+                                    (n > 0 ? " gs-hit-on" : "") +
+                                    /* 자수할 수 있는 칸만 금색으로 — 나머지는 읽기 전용입니다 */
+                                    (canConfess(row, c) ? " gs-hit-mine" : "") +
+                                    (confessMode && !canConfess(row, c) ? " gs-hit-far" : "")
+                                  }
                                   onClick={() => pressCell(row, c, 1)}
                                   onContextMenu={(e) => {
                                     e.preventDefault();
@@ -4958,7 +5510,7 @@ export default function GoldSettlement() {
       )}
 
       {/* ── 장부 ─────────────────────────────────────── */}
-      {showLedger && r && (
+      {showLedger && !inLobby && !guestLobby && r && (
         <section className="gs-mail gs-ledgersec">
           {/* 보낼 우편 탭과 같은 뼈대 — 머리줄은 밖에, 내용 상자는 안에.
              탭을 바꿔도 정산 방식·수수료 칸이 같은 자리에 있습니다 */}
@@ -5031,7 +5583,7 @@ export default function GoldSettlement() {
       )}
 
       {/* 탭 화면에서 장부에 보여줄 사람이 아직 없을 때 */}
-      {showLedger && !r && tabbed && (
+      {showLedger && !inLobby && !guestLobby && !r && tabbed && (
         <section className="gs-mail gs-ledgersec">
           <div className="gs-cardhead">
             <div className="gs-headleft">
@@ -5048,7 +5600,7 @@ export default function GoldSettlement() {
       )}
 
       {/* ── 우편 ─────────────────────────────────────── */}
-      {showMail && (
+      {showMail && !inLobby && !guestLobby && (
       <section className="gs-mail">
         <div className="gs-cardhead">
           <div className="gs-headleft">
@@ -5119,25 +5671,46 @@ export default function GoldSettlement() {
       </section>
       )}
 
-      {/* ── 첫 방문: 모드 선택 ─────────────────────────── */}
-      {intro && (
+      {/* ── 첫 방문 관문 — 튜토리얼을 볼지만 묻습니다 ─────────────
+          모드는 여기서 안 묻습니다. 처음 온 사람은 두 모드의 차이를 아직 모르고,
+          카운터로 시작해도 벌금표 위에서 언제든 바꿀 수 있습니다. */}
+      {intro === "first" && (
+        <div className="gs-intro" role="dialog" aria-modal="true" aria-label="처음 오셨나요?">
+          <div className="gs-intro-in gs-ask-in">
+            <h1 className="gs-title">처음 오셨나요?</h1>
+            <p className="gs-intro-lead">
+              벌금을 적으면 누가 누구에게 얼마를 보낼지, 우편 수수료까지 계산해요.
+              <br />
+              예시 파티로 한 바퀴 돌아보면 화면이 금방 익어요.
+            </p>
+            <div className="gs-ask-btns">
+              <button className="gs-btn gs-ask-go" onClick={startTutorial}>
+                튜토리얼 해보기
+              </button>
+              <button className="gs-btn gs-btn-ghost" onClick={() => setIntro(null)}>
+                건너뛰기
+              </button>
+            </div>
+            {/* 예시가 남지 않는다는 말이 있어야 '해봐도 되는 것'이 됩니다 */}
+            <p className="gs-ask-note">예시는 저장되지 않아요. 끝나면 빈 표로 시작해요.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── 모드 안내 — '자세히 보기'로만 엽니다 ─────────────────── */}
+      {intro === "guide" && (
         <div className="gs-intro" role="dialog" aria-modal="true" aria-label="모드 안내">
           <div className="gs-intro-in">
             <div className="gs-intro-top">
               <h1 className="gs-title">모드 안내</h1>
-              {/* 나중에 다시 열어 본 것이면 그냥 닫고 하던 일로 돌아갈 수 있어야 합니다 */}
-              {intro === "guide" && (
-                <button className="gs-btn gs-btn-ghost" onClick={() => setIntro(null)}>
-                  닫기
-                </button>
-              )}
+              <button className="gs-btn gs-btn-ghost" onClick={() => setIntro(null)}>
+                닫기
+              </button>
             </div>
             <p className="gs-intro-lead">
               벌금을 적으면 누가 누구에게 얼마를 보낼지, 우편 수수료까지 계산해요.
               <br />
-              {intro === "guide"
-                ? "그냥 닫아도 지금 모드 그대로예요. 카드를 고르면 그 모드로 바뀌어요."
-                : "벌금을 어떻게 적을지 고르세요. 나중에 언제든 바꿀 수 있어요."}
+              그냥 닫아도 지금 모드 그대로예요. 카드를 고르면 그 모드로 바뀌어요.
             </p>
             <div className="gs-intro-cards">
               <button className="gs-intro-card" onClick={() => pickIntro("simple")}>
@@ -5223,10 +5796,7 @@ export default function GoldSettlement() {
                 className="gs-btn gs-btn-ghost gs-help-replay"
                 onClick={() => {
                   setShowHelp(false);
-                  coachReset("course");
-                  if (partyReg.active !== EXAMPLE_PARTY) openExampleParty();
-                  pickTab("sheet");
-                  setCoach({ kind: "course", step: 0 });
+                  startTutorial();
                 }}
               >
                 화면 안내 다시 보기
@@ -5262,13 +5832,14 @@ export default function GoldSettlement() {
             </li>
             <li>
               <b>어제 판을 다시 보고 싶어요</b>
-              장부는 하나예요 — '처음부터'로 회차를 닫고 새로 시작해요. 지난 회차는 왼쪽 위
-              '지난 회차'에서 보고, 복원할 수도 있어요.
+              장부는 하나예요 — '처음부터'로 판을 닫고 새로 시작해요. 지난 판은 왼쪽 위
+              '지난 판'에서 볼 수 있어요.
             </li>
             <li>
               <b>파티원한테 보여주고 싶어요</b>
-              화면 맨 위 'OBS 공유 설정'에서 주소를 만들면, 그 주소 하나로 방송 화면에 띄우고
-              디스코드로도 공유해요. 파티원 화면은 읽기 전용이에요.
+              '파티 모드 시작하기'로 대기실을 열고 초대 링크를 보내요. 모인 사람이 다음 판의
+              줄이 되고, 각자 자기 줄에만 자수할 수 있어요. 방송에는 화면 맨 위 '오버레이 공유
+              설정'의 <b>내 방송용 주소</b>를 OBS 브라우저 소스에 넣으면 떠요.
             </li>
             <li>
               <b>벌금을 어떻게 나눌지 고르고 싶어요</b>
@@ -5320,6 +5891,7 @@ export default function GoldSettlement() {
                         en.mode === "forward" ? " (지금부터)" : ""
                       }`}
                     {en.kind === "press" && `${en.item || "항목"} ${signedMan(en.delta)}`}
+                    {en.kind === "confess" && `자수 — ${en.item || "항목"} ${signedMan(en.delta)}`}
                     {en.kind === "extra" && `${en.item || "기타"} ${signedMan(en.delta)}`}
                     {en.kind === "extra-del" &&
                       `${en.item || "기타"} 삭제 ${signedMan(en.delta)}`}
@@ -5350,36 +5922,6 @@ export default function GoldSettlement() {
           )}
         </InfoModal>
       )}
-      {false && !readOnly && (
-        <PartyLobby
-          list={partyReg.list}
-          active={partyReg.active}
-          rooms={relay.rooms}
-          onPick={(name) => {
-            setLobby(false);
-            switchParty(name);
-          }}
-          onCreate={(name, size) => {
-            const ok = createParty(name, size);
-            if (ok) setLobby(false);
-            return ok;
-          }}
-          onDelete={(name) => askDeleteParty(name)}
-          onRestore={() => {
-            setLobby(false);
-            setKeyOpen(true);
-          }}
-          onRename={renameParty}
-          onExample={() => {
-            setLobby(false);
-            coachReset("course");
-            openExampleParty();
-            pickTab("sheet");
-            setCoach({ kind: "course", step: 0 });
-          }}
-          onClose={() => setLobby(false)}
-        />
-      )}
       {showSplitHelp && <SplitHelp onClose={() => setShowSplitHelp(false)} />}
       {coach && coach.kind === "course" && (
         <CoachMark
@@ -5389,47 +5931,33 @@ export default function GoldSettlement() {
           step={coach.step + 1}
           total={COURSE_STEPS.length}
           passive
-          onSkip={() => setCoach({ kind: "hint", from: "course" })}
+          onSkip={() => {
+            /* 그만두는 것도 끝난 것입니다 — 예시를 치우고 다시 오는 길만 한 번 짚습니다 */
+            endTutorial();
+            setCoach({ kind: "hint" });
+          }}
           onNext={() => {
             if (coach.step < COURSE_STEPS.length - 1) {
               setCoach({ kind: "course", step: coach.step + 1 });
             } else {
-              /* 졸업 — 파티 목록에 내려 '튜토리얼' 카드를 한 번 짚어줍니다.
-                 졸업 멘트가 권한 다음 행동(새 파티 만들기)도 바로 이 화면에 있습니다 */
-              coachDone("course");
-              setLobby(true);
-              setCoach({ kind: "lobbyHint" });
+              endTutorial();
+              setCoach(null);
             }
           }}
           onClose={() => {
             // 대상이 없을 때(세로 보기 등)는 조용히 마칩니다
-            coachDone("course");
+            endTutorial();
             setCoach(null);
           }}
-        />
-      )}
-      {coach && coach.kind === "lobbyHint" && (
-        <CoachMark
-          sel=".gs-lobby-demo"
-          text="안내를 다시 보고 싶으면 여기를 누르면 돼요."
-          action="알겠어요"
-          onNext={() => setCoach(null)}
-          onClose={() => setCoach(null)}
         />
       )}
       {coach && coach.kind === "hint" && (
         <CoachMark
-          sel=".gs-backrow"
-          text="안내는 파티 목록의 '튜토리얼'에서 언제든 다시 볼 수 있어요."
+          sel=".gs-helpbtn"
+          text="안내는 여기서 언제든 다시 볼 수 있어요."
           action="알겠어요"
-          onNext={() => {
-            coachDone(coach.from);
-            setCoach(null);
-          }}
-          onClose={() => {
-            coachDone(coach.from);
-            setCoach(null);
-          }}
+          onNext={() => setCoach(null)}
+          onClose={() => setCoach(null)}
         />
       )}
       {coach && coach.kind === "obs" && (
@@ -5478,7 +6006,7 @@ export default function GoldSettlement() {
             if (!pre) return;
             setAsk({
               title: "이 프리셋을 불러올까요?",
-              body: nm + " — 지금 판은 지난 회차로 남고, 프리셋 구성으로 새로 시작해요.",
+              body: nm + " — 지금 판은 지난 판으로 남고, 프리셋 구성으로 새로 시작해요.",
               action: "불러오기",
               onYes: () => {
                 clearAll("full", pre, 8);
@@ -5497,7 +6025,6 @@ export default function GoldSettlement() {
       {resetOpen && (
         <ResetModal
           hasLog={log.length > 0}
-          hasRoom={!!activeRoom}
           presets={presets}
           onRun={(kind, presetName, size) => {
             const pre = presets.find((x) => x.name === presetName) || null;
@@ -5514,9 +6041,6 @@ export default function GoldSettlement() {
 
       {keyOpen && (
         <KeyShare
-          relay={relay}
-          putRelay={putRelay}
-          onSeatBundle={async (got) => ({ msg: seatMsg(await seatFromBundle(got)) })}
           onExportFile={exportPartyFile}
           onImportFile={importPartyFile}
           onClose={() => setKeyOpen(false)}
@@ -5526,24 +6050,22 @@ export default function GoldSettlement() {
         <ObsShare
           relay={relay}
           putRelay={putRelay}
+          auth={auth}
+          onOpenAuth={(tab) => openAuth(tab)}
+          onLogout={doLogout}
+          onNick={changeNick}
+          members={members}
+          onKick={kickMember}
+          invite={relay.invite}
+          onInvite={ensureInvite}
           ovCols={simple ? [] : activeCols}
           isOff={(id) => ovShow().itemOff(id)}
           sumOn={ovShow().sum}
           netOn={ovShow().net}
           onOvItem={toggleOvItem}
           onOvKey={toggleOvCol}
-          activeLabel={partyReg.active}
-          snapshot={liveSnapshot}
           onAskReissue={askObsReissue}
           onAskShareOff={askShareOff}
-          onOpenKeys={() => {
-            setObsOpen(false);
-            setKeyOpen(true);
-          }}
-          onOpenLook={() => {
-            setObsOpen(false);
-            setLookOpen(true);
-          }}
           onClose={() => {
             setObsOpen(false);
             if (obsCoachPending.current) {
@@ -5552,6 +6074,43 @@ export default function GoldSettlement() {
             }
           }}
         />
+      )}
+      {authOpen && (
+        <AuthModal
+          tab={authOpen.tab}
+          onDone={(a) => {
+            const after = authOpen.after;
+            setAuthOpen(null);
+            putAuth(a);
+            /* 하려던 일이 있으면 그것부터 — 없을 때만 이어가기를 제안합니다 */
+            if (after) setTimeout(() => after(), 0);
+            else askResume(a);
+          }}
+          onClose={() => setAuthOpen(null)}
+        />
+      )}
+      {/* 출발 후 합류 신청 — 방장 화면 우하단 카드 */}
+      {!readOnly && joinAsk && (
+        <div className="gs-fxcard gs-joincard" role="status">
+          <b>
+            {joinAsk.nick}
+            <span className="gs-join-id">({joinAsk.acct})</span>님이 참여하려 해요
+          </b>
+          <div className="gs-join-acts">
+            <button
+              className="gs-btn gs-btn-sm"
+              onClick={() => approveMember(joinAsk.acct, joinAsk.nick)}
+            >
+              수락
+            </button>
+            <button
+              className="gs-btn gs-btn-sm gs-btn-ghost"
+              onClick={() => denyMember(joinAsk.acct)}
+            >
+              거절
+            </button>
+          </div>
+        </div>
       )}
       {priceAsk && cols.some((c) => c.id === priceAsk) && (
         <PriceModal
@@ -6869,7 +7428,7 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
    쓰기 권한은 이 브라우저에만 있고 어떤 주소에도 실리지 않습니다.
    평소 쓰는 것(켜기·복사)만 겉에 두고, 가끔 쓰는 것은 접어 둡니다. */
 /* 프리셋 — 명단·항목·단가·수수료·입력 단위 묶음. 저장·지우기와 함께 줄에서 바로
-   불러올 수 있습니다(확인 한 번 — 지금 판은 지난 회차로 남습니다). 같은 이름은 덮어써요. */
+   불러올 수 있습니다(확인 한 번 — 지금 판은 지난 판으로 남습니다). 같은 이름은 덮어써요. */
 function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
   const [name, setName] = useState("");
   const [savedTick, setSavedTick] = useState(false);
@@ -6878,7 +7437,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
       <div className="gs-key">
         <p>
           지금 표의 명단·항목·단가·수수료·입력 단위를 프리셋으로 남겨요.
-          {" '불러오기'는 지금 판을 지난 회차로 남기고, 그 구성으로 새로 시작해요."}
+          {" '불러오기'는 지금 판을 지난 판으로 남기고, 그 구성으로 새로 시작해요."}
         </p>
         <div className="gs-obs-acts">
           <input
@@ -6937,9 +7496,9 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
 }
 
 /* 처음부터 — 무엇을 남길지 고르고, 실행 버튼은 하나(C안). 기본 선택이 첫째 갈래라
-   다수 흐름은 열자마자 [새로 시작] 한 번입니다. 어느 쪽이든 지금 판은 지난 회차로 남고,
+   다수 흐름은 열자마자 [새로 시작] 한 번입니다. 어느 쪽이든 지금 판은 지난 판으로 남고,
    프리셋 만들기·관리는 밑줄 문으로 건너갑니다. */
-function ResetModal({ hasLog, hasRoom, presets, onRun, onOpenPresets, onClose }) {
+function ResetModal({ hasLog, presets, onRun, onOpenPresets, onClose }) {
   const [mode, setMode] = useState("keep"); // keep | full | preset
   const [presetName, setPresetName] = useState(presets[0] ? presets[0].name : "");
   const [size, setSize] = useState(8);
@@ -6948,12 +7507,7 @@ function ResetModal({ hasLog, hasRoom, presets, onRun, onOpenPresets, onClose })
   return (
     <InfoModal title="처음부터" onClose={onClose}>
       <div className="gs-key">
-        <p>
-          {hasLog ? "지금 판은 지난 회차로 남고, 새로 시작해요." : "새로 시작해요."}
-          {hasRoom && (
-            <> 지금 방송 주소는 닫혀요 — 새로 시작한 뒤 새 주소를 받아 OBS 에 넣어주세요.</>
-          )}
-        </p>
+        <p>{hasLog ? "지금 판은 지난 판으로 남고, 새로 시작해요." : "새로 시작해요."}</p>
         <div className="gs-reset-opts">
           <div
             className={"gs-reset-opt" + (mode === "keep" ? " on" : "")}
@@ -7058,7 +7612,7 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
   /* 테마 확인용 창 — 늘 예시 방을 씁니다. 내 방은 벌금이 바뀌기 전엔 정지 화면이라
      증감·순위 변동·1위 강조를 볼 수 없어서요. */
   const previewUrl = (lk) =>
-    relayApi.shareUrl(DEMO_ROOM) +
+    roomApi.roomUrl(DEMO_ROOM) +
     "?mode=overlay&fit=1&t=" + lk.t +
     (isPanelLook(lk) ? "&bg=" + (100 - (lk.alpha ?? 25)) : "");
   const openPreview = () => {
@@ -7151,54 +7705,363 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
     </>
   );
 }
-
-/* 편집 권한 넘기기 — 이 브라우저의 열쇠를 다른 기기로 보냅니다.
-   방송 송출과는 상관없는 일이라 헤더에 따로 두었습니다. OBS 설정 맨 밑에 두면
-   정작 브라우저를 못 쓰게 된 뒤에 찾을 사람이 그때 가서 못 찾습니다. */
-function KeyShare({ relay, putRelay, onSeatBundle, onExportFile, onImportFile, onClose }) {
-  const [busy, setBusy] = useState("");
+/* 계정 창 — 로그인과 가입이 한 창에 있습니다. 파티원이 이 창을 처음 보는 자리는
+   초대를 눌러 들어온 대기실이라, 표를 가리지 않게 작은 창으로 띄웁니다.
+   비밀번호는 여기서 선해시되고, 원문은 서버에 도착하지 않습니다. */
+function AuthModal({ tab, onDone, onClose }) {
+  const [mode, setMode] = useState(tab === "register" ? "register" : "login");
+  const [id, setId] = useState("");
+  const [pw, setPw] = useState("");
+  const [nick, setNick] = useState("");
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [copied, setCopied] = useState(""); // "code" | "link"
-  /* 방송 화면에 코드가 새지 않게 — 기본은 가리고, 가린 채로도 복사는 됩니다 */
-  const [revealed, setRevealed] = useState(false);
-  const [claim, setClaim] = useState("");
-  const [note, setNote] = useState("");
-  const fileRef = useRef(null);
-  const rcode = relay.rcode || null;
-  /* 12자를 4자씩 끊어 보여 줍니다 — 옮겨 적기 좋게. 붙여넣을 땐 붙임표를 걷어냅니다 */
-  const fmt = (c) => (c ? c.replace(/(.{4})(?=.)/g, "$1-") : "");
+  const idRef = useRef(null);
+  useEffect(() => {
+    idRef.current && idRef.current.focus();
+  }, []);
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  /* 발급·재발급 — 옛 코드는 서버에서 지웁니다 */
-  const issueRecovery = async () => {
-    setBusy("issue");
+  const okId = /^[A-Za-z0-9]{4,20}$/.test(id.trim());
+  const okNick = [...nick.trim()].length >= 2 && [...nick.trim()].length <= 3;
+  const ready = okId && pw.length > 0 && (mode === "login" || okNick);
+
+  const submit = async () => {
+    if (!ready || busy) return;
+    if (!hasSubtle()) return setErr(SUBTLE_MSG);
+    setBusy(true);
     setErr("");
     try {
-      const { rcode: drop, ...bundle } = relay;
-      const r = await relayApi.recoveryIssue(bundle);
-      if (rcode) relayApi.recoveryRevoke(rcode);
-      putRelay({ ...relay, rcode: r.code });
-      setCopied("");
+      const r =
+        mode === "login"
+          ? await authApi.login(id.trim().toLowerCase(), pw)
+          : await authApi.register(id.trim().toLowerCase(), pw, nick.trim());
+      onDone({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken });
     } catch (e) {
-      setErr(e.message || "실패했어요");
+      setErr(
+        e && e.status === 409
+          ? "이미 있는 아이디예요. 다른 아이디로 해주세요."
+          : e.message || "실패했어요"
+      );
     }
-    setBusy("");
+    setBusy(false);
   };
 
-  /* 링크만 덜렁 보내면 받은 사람이 이게 얼마나 센 코드인지 모르고 다시 퍼뜨립니다 —
-     경고를 붙여서 내보냅니다. */
-  const codeMsg = () =>
-    "[벌금표 복구 코드] 이 링크를 열면 그 기기에서 장부를 그대로 이어받고 기록도 할 수 있어요.\n" +
-    "오래 보관하는 열쇠예요 — 다른 사람에게 함부로 넘기지 마세요.\n" +
-    handoffUrl(rcode);
-  const copyIt = (kind) =>
-    navigator.clipboard
-      .writeText(kind === "link" ? codeMsg() : fmt(rcode))
-      .then(() => {
-        setCopied(kind);
-        setTimeout(() => setCopied(""), 2500);
-      })
-      .catch(() => setErr("복사하지 못했어요"));
+  return (
+    <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="참여하기">
+        <div className="gs-auth-head">
+          <h3>참여하기</h3>
+          <span className="gs-seg gs-seg-sm" role="group" aria-label="로그인 또는 가입">
+            <button className={mode === "login" ? "on" : ""} onClick={() => setMode("login")}>
+              로그인
+            </button>
+            <button className={mode === "register" ? "on" : ""} onClick={() => setMode("register")}>
+              가입
+            </button>
+          </span>
+          <button className="gs-x gs-dialog-x" onClick={onClose} aria-label="닫기">
+            ×
+          </button>
+        </div>
+        {/* 비보안 컨텍스트에는 crypto.subtle 이 없습니다 — 선해시를 못 하니 입구를 닫습니다 */}
+        {!hasSubtle() ? (
+          <p className="gs-auth-warn">{SUBTLE_MSG}</p>
+        ) : (
+        <>
+        <label className="gs-field">
+          아이디
+          <input
+            ref={idRef}
+            className="gs-in gs-in-field"
+            value={id}
+            placeholder="영문·숫자 4~20자"
+            autoComplete="username"
+            onChange={(e) => setId(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+        </label>
+        <label className="gs-field">
+          비밀번호
+          <input
+            className="gs-in gs-in-field"
+            type="password"
+            value={pw}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+        </label>
+        {mode === "register" && (
+          <label className="gs-field">
+            닉네임 <span className="gs-field-hint">(2~3글자 — 벌금판에 이 이름으로 올라요)</span>
+            <input
+              className="gs-in gs-in-field gs-in-nickbig"
+              value={nick}
+              maxLength={3}
+              onChange={(e) => setNick(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+            />
+          </label>
+        )}
+        {mode === "register" && (
+          <p className="gs-auth-warn">
+            비밀번호를 잊으면 되찾을 방법이 없어요.
+            <br />
+            다른 곳에서 쓰는 비밀번호는 쓰지 마세요.
+          </p>
+        )}
+        {err && <p className="gs-obs-err">{err}</p>}
+        <div className="gs-obs-acts gs-acts-end">
+          <button className="gs-btn" onClick={submit} disabled={!ready || busy}>
+            {busy ? "잠시만요…" : mode === "login" ? "로그인하고 참여" : "가입하고 참여"}
+          </button>
+        </div>
+        </>
+        )}
+      </div>
+    </div>
+  );
+}
 
+/* 로비(대기실) — 다음 판 미리보기입니다. 모인 닉네임이 행, 초안 항목·단가가 열이고,
+   출발 전까지 지금 판은 건드리지 않습니다. 로비를 닫으면 초안은 버립니다. */
+function LobbyScreen({
+  seats,
+  cap,
+  hostId,
+  hostNick,
+  cols,
+  unit,
+  unitLabel,
+  invite,
+  roomId,
+  onCols,
+  onCap,
+  onKick,
+  onHandAdd,
+  onHandDel,
+  onInvite,
+  onDepart,
+  onClose,
+  onCopy,
+  flash,
+  seq,
+}) {
+  const [reveal, setReveal] = useState(false);
+  const [adding, setAdding] = useState("");
+  const url = roomId && invite && invite.code ? roomApi.inviteUrl(roomId, invite.code) : "";
+  const left = invite && invite.exp ? Math.max(0, Math.round((invite.exp - Date.now()) / 60000)) : 0;
+  const per = goldOf(unit) || 1;
+  const patch = (id, key, v) => onCols(cols.map((c) => (c.id === id ? { ...c, [key]: v } : c)));
+  const add = () => {
+    const nm = adding.trim();
+    if (!nm) return;
+    onHandAdd(nm);
+    setAdding("");
+  };
+
+  return (
+    <section className="gs-mail">
+      <div className="gs-card gs-lobbybox">
+        <div className="gs-lb-head">
+          <h2 className="gs-h2 gs-lb-title">대기실</h2>
+          <span className="gs-lb-count">
+            <b>{seats.length}</b>/{cap} 모임
+            <em className="gs-live-dot" aria-hidden="true" />
+            실시간
+          </span>
+          <span className="gs-lb-capctl" role="group" aria-label="정원">
+            <span className="gs-caplab">정원</span>
+            <button onClick={() => onCap(cap - 1)} disabled={cap <= 2} aria-label="정원 줄이기">
+              −
+            </button>
+            <b>{cap}</b>
+            <button onClick={() => onCap(cap + 1)} disabled={cap >= 16} aria-label="정원 늘리기">
+              +
+            </button>
+          </span>
+          <button className="gs-btn gs-btn-sm gs-btn-ghost gs-lb-close" onClick={onClose}>
+            로비 닫기
+          </button>
+        </div>
+
+        {/* 초대 링크 — 방송 화면에 새지 않게 기본은 가림입니다 */}
+        <div className="gs-slip gs-slip-calm gs-lb-invite">
+          <span className="gs-slip-urlbox">
+            <span className="gs-caplab">
+              초대 링크{url ? ` · ${left}분 남음` : ""}
+            </span>
+            <span className="gs-urltext">
+              {!url ? "아직 초대가 없어요" : reveal ? url : "●".repeat(26)}
+            </span>
+          </span>
+          {url && (
+            <>
+              <button
+                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
+                onClick={() => setReveal((v) => !v)}
+                aria-label={reveal ? "가리기" : "보기"}
+                title={reveal ? "가리기" : "보기"}
+              >
+                <Eye on={reveal} />
+              </button>
+              <button
+                className="gs-btn gs-btn-sm"
+                onClick={() => onCopy(inviteMsg(hostNick, url), "inv")}
+              >
+                {flash === "inv" ? "복사했어요" : "디코용 복사"}
+              </button>
+            </>
+          )}
+          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onInvite}>
+            {url ? "새로 발급" : "초대 발급"}
+          </button>
+        </div>
+
+        <p className="gs-lb-lead">
+          출발하면 이 구성으로 새 판이 시작돼요. 항목과 단가는 여기서 미리 고칠 수 있어요.
+        </p>
+
+        <div className="gs-scroll">
+          <table className="gs-grid gs-grid-count gs-lb-grid">
+            <thead>
+              <tr>
+                <th className="gs-stick gs-l gs-corner">
+                  <span className="gs-corner-col">항목</span>
+                  <span className="gs-corner-row">이름</span>
+                </th>
+                {cols.map((c) => (
+                  <th key={c.id} className="gs-colh">
+                    <div className="gs-colh-top">
+                      <input
+                        className="gs-in gs-in-col"
+                        style={{ width: `${Math.max(3, (c.name || "항목명").length) + 0.4}em` }}
+                        value={c.name}
+                        placeholder="항목명"
+                        onChange={(e) => patch(c.id, "name", e.target.value)}
+                        aria-label="항목 이름"
+                      />
+                      <button
+                        className="gs-x"
+                        onClick={() => onCols(cols.filter((x) => x.id !== c.id))}
+                        aria-label={`${c.name || "항목"} 열 삭제`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="gs-colh-price">
+                      {isRoulette(c) ? (
+                        <span className="gs-rcbtn">◎ 룰렛 · 나온 숫자 × {man(Math.round(goldOf(c.price)))}</span>
+                      ) : (
+                        <>
+                          <span>1회</span>
+                          <PriceFree
+                            gold={goldOf(c.price)}
+                            per={per}
+                            suffix={unitLabel}
+                            onChange={(g) => patch(c.id, "price", commafy(g))}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </th>
+                ))}
+                <th className="gs-addcolh">
+                  <button
+                    className="gs-addcol"
+                    onClick={() =>
+                      onCols([...cols, { id: "c" + seq.current++, name: "", price: "10,000" }])
+                    }
+                  >
+                    + 항목
+                  </button>
+                </th>
+                <th className="gs-sumh">
+                  <span className="gs-caplab">합계</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {seats.map((s, i) => (
+                <tr key={(s.acct || "h") + i}>
+                  <th className="gs-stick gs-l">
+                    <div className="gs-namecell gs-lb-name">
+                      {s.acct === hostId && <span className="gs-lb-tag">방장</span>}
+                      <i className={"gs-lb-dot" + (s.acct ? "" : " none")} aria-hidden="true" />
+                      <b>{s.nick}</b>
+                      {s.acct !== hostId && (
+                        <button
+                          className="gs-x gs-lb-kick"
+                          onClick={() => (s.acct ? onKick(s.acct) : onHandDel(s.nick))}
+                          aria-label={s.nick + " 내보내기"}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </th>
+                  {cols.map((c) => (
+                    <td key={c.id}>
+                      <div className="gs-hitwrap">
+                        <span className="gs-hit gs-hit-idle" aria-hidden="true">
+                          <span className="gs-hit-ghost">＋</span>
+                        </span>
+                      </div>
+                    </td>
+                  ))}
+                  <td className="gs-addcolcell" />
+                  <td className="gs-sumcell gs-lb-zero">0</td>
+                </tr>
+              ))}
+              <tr>
+                <th className="gs-stick gs-l">
+                  {/* 앱을 안 쓰는 사람도 표에는 올려야 정산이 맞습니다 — 미연결 줄 */}
+                  <div className="gs-namecell gs-lb-add">
+                    <input
+                      className="gs-in gs-in-name"
+                      value={adding}
+                      placeholder="+ 직접 추가"
+                      onChange={(e) => setAdding(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && add()}
+                      onBlur={add}
+                      aria-label="직접 추가할 이름"
+                    />
+                  </div>
+                </th>
+                {cols.map((c) => (
+                  <td key={c.id} />
+                ))}
+                <td className="gs-addcolcell" />
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="gs-lb-foot">
+          <span className="gs-lb-note">
+            지금 판은 <b>지난 판</b>으로 남아요.
+          </span>
+          <button className="gs-btn gs-lb-go" onClick={onDepart}>
+            출발
+          </button>
+        </div>
+        <p className="gs-lb-legend">
+          초록 점 = 앱으로 들어온 사람(자수 가능) · 회색 점 = 방장이 직접 추가(표만)
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* 파일 백업 — 서버 수명과 무관하게 남는 층. 장부 전체를 파일 하나로 내보내고 되살립니다. */
+function KeyShare({ onExportFile, onImportFile, onClose }) {
+  const [note, setNote] = useState("");
+  const fileRef = useRef(null);
   const onFile = (e) => {
     const f = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -7207,117 +8070,13 @@ function KeyShare({ relay, putRelay, onSeatBundle, onExportFile, onImportFile, o
     rd.onload = () => setNote(onImportFile(String(rd.result || "")));
     rd.readAsText(f);
   };
-
-  const takeCode = async () => {
-    /* 링크째 붙여넣는 게 보통입니다 — 코드만 뽑아 씁니다 */
-    const c = codeFromText(claim);
-    if (!c) return;
-    setBusy("claim");
-    setErr("");
-    setNote("");
-    try {
-      const got = await (c.length >= 10 ? relayApi.recoveryClaim(c) : relayApi.handoffClaim(c));
-      const r = await onSeatBundle(got);
-      setClaim("");
-      setNote(r.msg);
-    } catch (e) {
-      setErr(e.message || "실패했어요");
-    }
-    setBusy("");
-  };
-
   return (
-    <InfoModal title={RECOVERY_ON ? "백업 · 복구" : "백업"} onClose={onClose}>
+    <InfoModal title="백업" onClose={onClose}>
       <div className="gs-key">
-        {RECOVERY_ON && (<>
-        <h4 className="gs-key-h">복구 코드</h4>
-        <p>
-          <b>브라우저가 지워져도 장부를 되찾게 해 두는 곳이에요.</b> 코드 하나로
-          표·기록·기록 권한을 다른 기기에서 그대로 불러와요 — 발급해서 안전한 곳에 적어
-          두세요.
-        </p>
-        <div className="gs-obs-acts">
-          {rcode ? (
-            <>
-              <span className="gs-key-code">{revealed ? fmt(rcode) : "••••-••••-••••"}</span>
-              <button
-                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
-                onClick={() => setRevealed((v) => !v)}
-                aria-label={revealed ? "가리기" : "보기"}
-                title={revealed ? "가리기" : "보기"}
-              >
-                {revealed ? (
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
-                    <circle cx="8" cy="8" r="1.9" />
-                    <path d="M3 13 13 3" />
-                  </g>
-                </svg>
-                ) : (
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
-                    <circle cx="8" cy="8" r="1.9" />
-                  </g>
-                </svg>
-                )}
-              </button>
-              <button className="gs-btn gs-btn-sm" onClick={() => copyIt("code")}>
-                {copied === "code" ? "복사했어요" : "복사"}
-              </button>
-              <button
-                className="gs-btn gs-btn-sm gs-btn-ghost"
-                onClick={issueRecovery}
-                disabled={busy === "issue"}
-              >
-                {busy === "issue" ? "만드는 중…" : "새로 발급"}
-              </button>
-            </>
-          ) : (
-            <button className="gs-btn gs-btn-sm" onClick={issueRecovery} disabled={busy === "issue"}>
-              {busy === "issue" ? "만드는 중…" : "복구 코드 발급"}
-            </button>
-          )}
-        </div>
-        <p className="gs-obs-warn">
-          이 코드는 <b>사실상 계정이에요 — 새어 나가지 않게 주의하세요.</b> 새어 나갔다면
-          바로 '새로 발급'하세요. 옛 코드는 그 즉시 못 쓰게 되고, '주소 새로 발급'을 해도
-          같이 끊겨요.
-        </p>
-        <p className="gs-key-foot">
-          파티를 90일 넘게 한 번도 안 열면 서버 보관이 만료돼서 코드로 못 살려요 — 오래 쉴
-          땐 아래 파일 백업을 함께 써 주세요.
-        </p>
-
-        <h4 className="gs-key-h">받기 — 링크나 코드로 이어받기</h4>
-        <div className="gs-obs-acts">
-          <input
-            className="gs-in gs-obs-claim"
-            value={claim}
-            placeholder="받은 링크나 복구 코드 붙여넣기"
-            onChange={(e) => setClaim(e.target.value)}
-            aria-label="받은 링크나 복구 코드"
-          />
-          <button
-            className="gs-btn gs-btn-sm"
-            onClick={takeCode}
-            disabled={busy === "claim" || !codeFromText(claim)}
-          >
-            {busy === "claim" ? "가져오는 중…" : "불러오기"}
-          </button>
-        </div>
-        <p className="gs-key-foot">
-          장부(표·기록)까지 통째로 이어받고, 이 기기에서도 기록할 수 있게 돼요. 링크가
-          깨져서 왔으면 받은 글을 통째로 붙여넣어도 돼요.
-        </p>
-
-        </>)}
-
         <h4 className="gs-key-h">파일 백업</h4>
         <p>
           서버 없이도 남는 백업이에요. 지금 장부 전체(표·기록·설정)를 파일 하나로
-          저장했다가, 언제든 다시 불러와요. 서버 보관(90일)과 무관한 영구 보관이에요.
+          저장했다가, 언제든 다시 불러와요.
         </p>
         <div className="gs-obs-acts">
           <button className="gs-btn gs-btn-sm" onClick={onExportFile}>
@@ -7337,26 +8096,27 @@ function KeyShare({ relay, putRelay, onSeatBundle, onExportFile, onImportFile, o
             onChange={onFile}
           />
         </div>
-
         {note && <p className="gs-key-note">{note}</p>}
-        {err && <p className="gs-obs-err">{err}</p>}
       </div>
     </InfoModal>
   );
 }
 
-function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, activeLabel, snapshot, onAskReissue, onAskShareOff, onOpenKeys, onOpenLook, onClose }) {
-  const room = relay.rooms[activeLabel] || null;
-  const label = activeLabel === DEFAULT_ROOM_LABEL ? "기본" : activeLabel;
-  const [busy, setBusy] = useState("");
+/* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
+   로그인이 없으면 계정부터. 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다. */
+function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members, onKick, invite, onInvite, onAskReissue, onAskShareOff, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
   const [err, setErr] = useState("");
-  const [copied, setCopied] = useState(null); // "url" | "msg"
+  const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
   const [showWhy, setShowWhy] = useState(false);
-  const previewRef = useRef(null);
-  const url = room ? relayApi.shareUrl(room.roomId) : "";
+  const [showObs, setShowObs] = useState(false); // 방송 중 유출 방지 — 기본 가림
+  const [showInv, setShowInv] = useState(false);
+  const [nickDraft, setNickDraft] = useState("");
+  const [busy, setBusy] = useState("");
+  const obsUrl = auth && auth.obsToken ? roomApi.obsUrl(auth.obsToken) : "";
+  const invUrl = relay.room && invite && invite.code ? roomApi.inviteUrl(relay.room, invite.code) : "";
   const srcMode = relay.ovsrc === "split" ? "split" : "one";
-
+  const mask = (s) => "●".repeat(Math.min(30, Math.max(12, (s || "").length)));
 
   useEffect(() => {
     // 가이드 창이 위에 떠 있으면 Esc 는 그쪽 몫입니다 — 한 번에 하나씩 닫힙니다
@@ -7364,14 +8124,6 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, showGuide, showWhy]);
-
-
-  /* 복사물은 단 하나 — 파티원에게 보낼 메시지. 주소는 그 안에 한 줄로 들어 있습니다. */
-  const msg = () =>
-    "[벌금 현황판] " + label + "\n" +
-    url + "\n" +
-    "· OBS 브라우저 소스에 이 주소를 넣으면 오버레이가 떠요\n" +
-    "· 브라우저로 열면 자세한 현황을 볼 수 있어요";
 
   const copy2 = (kind, text) =>
     navigator.clipboard
@@ -7382,41 +8134,26 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
       })
       .catch(() => setErr("복사하지 못했어요"));
 
-  const [freshCode, setFreshCode] = useState(null); // 방금 자동 발급된 복구 코드
-  const [showFresh, setShowFresh] = useState(false); // 방송 중 유출 방지 — 기본 가림
-  const makeRoom = async () => {
-    setBusy("room");
+  const changeNick = async () => {
+    const nm = nickDraft.trim();
+    if (!auth || !nm || nm === auth.nick) return;
+    setBusy("nick");
     setErr("");
     try {
-      const r = await relayApi.createRoom();
-      const next = {
-        ...relay,
-        on: true,
-        rooms: { ...relay.rooms, [activeLabel]: { roomId: r.roomId, key: r.key } },
-      };
-      /* 공유를 처음 켠 순간 = 지킬 것이 생긴 순간 — 복구 코드를 같이 만들어 둡니다 */
-      if (RECOVERY_ON && !relay.rcode) {
-        try {
-          const { rcode: drop, ...bundle } = next;
-          const rc = await relayApi.recoveryIssue(bundle);
-          next.rcode = rc.code;
-          setFreshCode(rc.code);
-        } catch (e2) {
-          /* 코드 발급 실패는 공유를 막지 않습니다 — 백업 창에서 다시 만들 수 있어요 */
-        }
-      }
-      putRelay(next);
-      await relayApi.push(r.roomId, r.key, snapshot()).catch(() => {});
+      await onNick(nm);
+      setNickDraft("");
     } catch (e) {
-      setErr(e.message || "실패했어요");
+      setErr(e.message);
     }
     setBusy("");
   };
 
-
   const guideImg = (k) =>
     (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname) ? "docs/" : "") +
     "obs-guide/obs-guide-" + k + ".png";
+
+  /* 초대 남은 시간 — 30분짜리라 분 단위면 충분합니다 */
+  const invLeft = invite && invite.exp ? Math.max(0, Math.round((invite.exp - Date.now()) / 60000)) : 0;
 
   return (
     <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -7424,7 +8161,7 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
         <div className="gs-obs-head">
           <h3>오버레이 공유 설정</h3>
           <div className="gs-obs-headr">
-            {room && (
+            {auth && (
               <label className="gs-switch">
                 공유 켜기
                 <input
@@ -7447,31 +8184,83 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
             </button>
           </div>
         </div>
-        <p>
-          아래 주소를 <b>OBS 브라우저 소스에 붙여넣으면</b>, 벌금 현황이 방송 화면에
-          실시간으로 떠요.
-          <br />
-          브라우저로 열면 정산 장부와 보낼 우편까지 볼 수 있어요.
-        </p>
-        {/* 링크를 보내기 전에 알아야 할 사실이라 맨 위에 둡니다 — 주소를 복사한 뒤에
-            알려 주면 이미 늦습니다. 이유는 눌러서 봅니다. */}
-        <p className="gs-obs-ro">
-          파티원 화면은 <b>읽기 전용</b>이에요.{" "}
-          <button className="gs-obs-why" onClick={() => setShowWhy(true)}>
-            왜 그런가요?
-          </button>
-        </p>
 
-
-        {!room ? (
+        {!auth ? (
+          /* 계정이 먼저입니다 — 주소도 초대도 계정에 붙어 있습니다 */
           <div className="gs-obs-make">
-            <p>이 명단은 아직 공유 주소가 없어요.</p>
-            <button className="gs-btn" onClick={makeRoom} disabled={busy === "room"}>
-              {busy === "room" ? "만드는 중…" : "이 명단의 주소 만들기"}
-            </button>
+            <p>
+              <b>로그인하면 내 방송용 주소가 생겨요.</b> 그 주소 하나를 OBS 브라우저 소스에
+              넣으면, 지금 들어가 있는 파티의 벌금 현황이 방송 화면에 실시간으로 떠요.
+            </p>
+            <div className="gs-obs-acts">
+              <button className="gs-btn" onClick={() => onOpenAuth("login")}>
+                로그인
+              </button>
+              <button className="gs-btn gs-btn-ghost" onClick={() => onOpenAuth("register")}>
+                가입하기
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="gs-obs-copybox">
+          <>
+            <div className="gs-obs-acct">
+              <span className="gs-caplab">계정</span>
+              <b>{auth.nick}</b>
+              <span className="gs-obs-acctid">({auth.id})</span>
+              <input
+                className="gs-in gs-in-nick"
+                value={nickDraft}
+                placeholder="닉 바꾸기"
+                onChange={(e) => setNickDraft(e.target.value)}
+                aria-label="닉네임 바꾸기"
+              />
+              <button
+                className="gs-btn gs-btn-sm gs-btn-ghost"
+                onClick={changeNick}
+                disabled={busy === "nick" || !nickDraft.trim()}
+              >
+                {busy === "nick" ? "바꾸는 중…" : "바꾸기"}
+              </button>
+              <button className="gs-btn gs-btn-sm gs-btn-ghost gs-obs-logout" onClick={onLogout}>
+                로그아웃
+              </button>
+            </div>
+
+            {/* 내 방송용 주소 — 영구(재발급 전까지), 읽기 전용 */}
+            <h4 className="gs-key-h">내 방송용 주소</h4>
+            <p>
+              OBS 브라우저 소스에 넣으면 이 판이 방송에 떠요. 주소는 계속 같아서, 파티가
+              바뀌어도 다시 넣을 일이 없어요.
+            </p>
+            <div className="gs-obs-boxtop">
+              {srcMode === "one" ? (
+                <span className="gs-obs-urltext">{showObs ? obsUrl : mask(obsUrl)}</span>
+              ) : (
+                <span className="gs-obs-urltext gs-obs-urldim">주소 두 개를 각각 소스로 넣어요</span>
+              )}
+              <button
+                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
+                onClick={() => setShowObs((v) => !v)}
+                aria-label={showObs ? "가리기" : "보기"}
+                title={showObs ? "가리기" : "보기"}
+              >
+                <Eye on={showObs} />
+              </button>
+              <span className="gs-obs-reissue">
+                <button className="gs-btn gs-btn-sm gs-btn-warn2" onClick={onAskReissue}>
+                  주소 새로 발급
+                </button>
+                <span className="gs-tip">
+                  <button className="gs-qm gs-qm-sm" aria-label="주소 새로 발급">
+                    ?
+                  </button>
+                  <span className="gs-tip-body gs-tip-r" role="tooltip">
+                    주소가 새어 나갔을 때 써요. 옛 주소는 바로 못 쓰게 되고, OBS 소스의
+                    주소를 새것으로 바꿔야 해요.
+                  </span>
+                </span>
+              </span>
+            </div>
             {/* 소스 구성 — 모드를 먼저 고르고, 주소는 고른 모드 것만 보여 줍니다 */}
             <div className="gs-obs-srcpick" role="group" aria-label="소스 구성">
               {[
@@ -7502,54 +8291,34 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
                 </button>
               ))}
             </div>
-            <div className="gs-obs-boxtop">
-              {srcMode === "one" ? (
-                <span className="gs-obs-urltext">{url}</span>
-              ) : (
-                <span className="gs-obs-urltext gs-obs-urldim">주소 두 개를 각각 소스로 넣어요</span>
-              )}
-              <span className="gs-obs-reissue">
-                <button className="gs-btn gs-btn-sm gs-btn-warn2" onClick={onAskReissue}>
-                  주소 새로 발급
-                </button>
-                <span className="gs-tip">
-                  <button className="gs-qm gs-qm-sm" aria-label="주소 새로 발급">
-                    ?
-                  </button>
-                  <span className="gs-tip-body gs-tip-r" role="tooltip">
-                    주소가 새어 나갔을 때 써요. 옛 주소는 바로 못 쓰게 되고, OBS와
-                    파티원에게는 새 주소를 다시 보내야 해요.
-                  </span>
-                </span>
-              </span>
-            </div>
             {srcMode === "one" ? (
               <div className="gs-obs-copyrow">
-                <button className="gs-btn" onClick={() => copy2("url", url)}>
+                <button className="gs-btn" onClick={() => copy2("url", obsUrl)}>
                   {copied === "url" ? "복사됐어요 — OBS 소스 URL에 붙여넣으세요" : "OBS용 주소 복사"}
-                </button>
-                <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", msg())}>
-                  {copied === "msg" ? "복사됐어요 — 디스코드에 붙여넣으세요" : "파티원 메시지 복사"}
                 </button>
               </div>
             ) : (
               <>
                 <div className="gs-obs-srcrow">
                   <b>현황판</b>
-                  <span className="gs-obs-urltext">{url + "?type=board"}</span>
+                  <span className="gs-obs-urltext">
+                    {showObs ? obsUrl + "?type=board" : mask(obsUrl)}
+                  </span>
                   <button
                     className="gs-btn gs-btn-sm"
-                    onClick={() => copy2("burl", url + "?type=board")}
+                    onClick={() => copy2("burl", obsUrl + "?type=board")}
                   >
                     {copied === "burl" ? "복사됐어요" : "복사"}
                   </button>
                 </div>
                 <div className="gs-obs-srcrow">
                   <b>룰렛</b>
-                  <span className="gs-obs-urltext">{url + "?type=spin"}</span>
+                  <span className="gs-obs-urltext">
+                    {showObs ? obsUrl + "?type=spin" : mask(obsUrl)}
+                  </span>
                   <button
                     className="gs-btn gs-btn-sm"
-                    onClick={() => copy2("surl", url + "?type=spin")}
+                    onClick={() => copy2("surl", obsUrl + "?type=spin")}
                   >
                     {copied === "surl" ? "복사됐어요" : "복사"}
                   </button>
@@ -7559,73 +8328,72 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
                   소스는 판이 돌 때만 나타나고 평소에는 아무것도 안 보여요. 룰렛 주소를
                   안 넣으면 룰렛 없이 현황판만 나와요.
                 </p>
-                <div className="gs-obs-copyrow">
-                  <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", msg())}>
-                    {copied === "msg" ? "복사됐어요 — 디스코드에 붙여넣으세요" : "파티원 메시지 복사"}
-                  </button>
-                </div>
               </>
             )}
-          </div>
-        )}
 
-        {/* 이어가기·백업 안내 — 기능은 편집 권한 · 백업 창에 모여 있습니다 */}
-        {RECOVERY_ON && (
-        <div className="gs-obs-keysline">
-          <p>
-            다른 환경에서 이어가거나 다른 사람에게 기록을 맡기고 싶으면 <b>복구 코드</b>를
-            발급해서 적어 두세요.
-          </p>
-          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onOpenKeys}>
-            복구 코드·백업 관리
-          </button>
-        </div>
-        )}
-        {RECOVERY_ON && freshCode && (
-          <div className="gs-obs-fresh">
-            <p>
-              <b>복구 코드도 같이 만들어 뒀어요.</b> 브라우저가 지워져도 이 코드만 있으면
-              표·기록·권한을 그대로 되찾아요. 지금 적어 두세요 — 나중에 보려면 헤더의
-              「백업」에서.
-            </p>
-            <div className="gs-obs-acts">
-              <span className="gs-key-code">
-                {showFresh ? freshCode.replace(/(.{4})(?=.)/g, "$1-") : "••••-••••-••••"}
-              </span>
-              <button
-                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
-                onClick={() => setShowFresh((v) => !v)}
-                aria-label={showFresh ? "가리기" : "보기"}
-                title={showFresh ? "가리기" : "보기"}
-              >
-                {showFresh ? (
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
-                    <circle cx="8" cy="8" r="1.9" />
-                    <path d="M3 13 13 3" />
-                  </g>
-                </svg>
-                ) : (
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8Z" />
-                    <circle cx="8" cy="8" r="1.9" />
-                  </g>
-                </svg>
-                )}
+            {/* 초대 — 로비 밖에서도 발급할 수 있습니다 */}
+            <h4 className="gs-key-h">초대 링크</h4>
+            <p className="gs-obs-ro">
+              파티원은 초대로 들어와서 <b>자기 줄만</b> 자수해요.{" "}
+              <button className="gs-obs-why" onClick={() => setShowWhy(true)}>
+                왜 그런가요?
               </button>
-              <button
-                className="gs-btn gs-btn-sm"
-                onClick={() => copy2("rcode", freshCode.replace(/(.{4})(?=.)/g, "$1-"))}
-              >
-                {copied === "rcode" ? "복사했어요" : "복사"}
+            </p>
+            <div className="gs-obs-boxtop">
+              <span className="gs-obs-urltext">
+                {!invUrl
+                  ? "아직 초대가 없어요"
+                  : showInv
+                  ? invUrl
+                  : mask(invUrl)}
+              </span>
+              {invUrl && (
+                <>
+                  <span className="gs-obs-invleft">{invLeft}분 남음</span>
+                  <button
+                    className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
+                    onClick={() => setShowInv((v) => !v)}
+                    aria-label={showInv ? "가리기" : "보기"}
+                    title={showInv ? "가리기" : "보기"}
+                  >
+                    <Eye on={showInv} />
+                  </button>
+                  <button
+                    className="gs-btn gs-btn-sm"
+                    onClick={() => copy2("inv", inviteMsg(auth.nick, invUrl))}
+                  >
+                    {copied === "inv" ? "복사했어요" : "디코용 복사"}
+                  </button>
+                </>
+              )}
+              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onInvite}>
+                {invUrl ? "새로 발급" : "초대 발급"}
               </button>
             </div>
-          </div>
+
+            {/* 명단 — 닉과 아이디를 같이 적습니다. 같은 닉이 둘이어도 누구인지 갈립니다 */}
+            <h4 className="gs-key-h">파티원</h4>
+            {members.length === 0 ? (
+              <p>아직 아무도 없어요. 초대 링크를 보내면 여기 쌓여요.</p>
+            ) : (
+              <ul className="gs-memlist">
+                {members.map((m) => (
+                  <li key={m.acct}>
+                    <b>{m.nick}</b>
+                    <span className="gs-mem-id">({m.acct})</span>
+                    {m.st === "req" && <span className="gs-mem-req">신청 중</span>}
+                    <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => onKick(m.acct)}>
+                      내보내기
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
+
         {/* 생김새도 여기서 — 주소와 생김새가 한 창에 있어야 한 번에 끝납니다.
-            주소가 없어도 보입니다. 미리보기가 예시 방을 쓰므로 방이 필요 없고,
+            로그인이 없어도 보입니다. 미리보기가 예시 방을 쓰므로 계정이 필요 없고,
             방송 나가기 전에 미리 꾸며 두는 게 오히려 자연스러운 순서입니다. */}
         <LookBody
           relay={relay}
@@ -7641,15 +8409,15 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
         {err && <p className="gs-obs-err">{err}</p>}
       </div>
       {showWhy && (
-        <InfoModal title="왜 파티원은 수정할 수 없나요?" onClose={() => setShowWhy(false)}>
+        <InfoModal title="왜 파티원은 남의 줄을 못 고치나요?" onClose={() => setShowWhy(false)}>
           <p>
-            벌금 기록은 이 브라우저(장부 관리자)에서만 되고, 파티원 화면은 읽기 전용이에요.
-            한 사람이 기록해야 중복 입력 사고가 없기 때문이에요.
+            벌금 기록은 방장 브라우저에서만 되고, 파티원은 자기 줄의 보통 항목만 눌러요.
+            한 사람이 장부를 쥐고 있어야 중복 입력 사고가 없기 때문이에요.
           </p>
           <p>
-            여러 명이 동시에 고칠 수 있으면, 같은 벌금을 두 사람이 각각 넣거나 한쪽이 방금 고친
-            숫자를 다른 쪽이 덮어쓰는 일이 생겨요. 정산이 끝난 뒤에는 어느 쪽이 맞는지 확인할
-            방법도 없고요.
+            여러 명이 동시에 남의 줄을 고칠 수 있으면, 같은 벌금을 두 사람이 각각 넣거나 한쪽이
+            방금 고친 숫자를 다른 쪽이 덮어쓰는 일이 생겨요. 정산이 끝난 뒤에는 어느 쪽이 맞는지
+            확인할 방법도 없고요.
           </p>
           <p>
             대신 파티원은 벌금표·정산 장부·보낼 우편을 전부 볼 수 있어요. 자기가 얼마 냈고
@@ -7684,213 +8452,6 @@ function ObsShare({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
           </p>
         </InfoModal>
       )}
-    </div>
-  );
-}
-
-/* 파티 — 제목 왼쪽 드롭다운. 누르면 그 파티의 장부로 통째로 바뀝니다 */
-function PartyMenu({ list, active, onPick, onCreate, onClose }) {
-  const [label, setLabel] = useState("");
-  const [size, setSize] = useState(8); // 파티 인원 — 만들고 나서도 인원 추가·삭제로 조절됩니다
-  const boxRef = useRef(null);
-  useEffect(() => {
-    const onDown = (e) => {
-      if (boxRef.current && !boxRef.current.parentElement.contains(e.target)) onClose();
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-  const add = () => {
-    if (!label.trim()) return;
-    onCreate(label, size);
-    setLabel("");
-  };
-  return (
-    <div className="gs-crewmenu gs-partymenu" ref={boxRef} role="dialog" aria-label="파티">
-      {list.map((x) => (
-        <div className="gs-crewrow" key={x.name}>
-          <button
-            className={"gs-crewload" + (x.name === active ? " gs-party-on" : "")}
-            onClick={() => onPick(x.name)}
-          >
-            {x.name}
-            {x.name === EXAMPLE_PARTY && <i className="gs-ex-badge">예시</i>}
-            {x.name === active && <em>지금</em>}
-          </button>
-        </div>
-      ))}
-      <div className="gs-crewsave">
-        <div className="gs-seg gs-seg-sm" role="group" aria-label="인원">
-          {[4, 8].map((v) => (
-            <button key={v} className={size === v ? "on" : ""} onClick={() => setSize(v)}>
-              {v}인
-            </button>
-          ))}
-        </div>
-        <input
-          className="gs-in"
-          value={label}
-          placeholder="새 파티 이름"
-          onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          aria-label="새 파티 이름"
-        />
-        <button className="gs-btn gs-btn-sm" onClick={add} disabled={!label.trim()}>
-          추가
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* 파티 로비 — 루트 화면. 파티 하나 = 장부 하나 = 공유 주소 하나가 한눈에 보입니다.
-   삭제는 여기서만 됩니다. 마지막 하나는 못 지웁니다. */
-function PartyLobby({ list, active, rooms, onPick, onCreate, onDelete, onRename, onExample, onRestore, onClose }) {
-  const [label, setLabel] = useState("");
-  const [size, setSize] = useState(8);
-  const [editing, setEditing] = useState(null); // 이름 바꾸는 중인 파티
-  const [editVal, setEditVal] = useState("");
-  const commitRename = (old) => {
-    if (onRename(old, editVal)) setEditing(null);
-  };
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  const add = () => {
-    if (!label.trim()) return;
-    if (onCreate(label, size)) setLabel("");
-  };
-  /* 카드 요약 — 이름이 채워진 줄만 세고, 합계는 정산과 같은 식으로 뽑습니다 */
-  const cardInfo = (name) => {
-    const slot = loadPartySlot(name);
-    if (!slot) return { cnt: 0, total: 0 };
-    return {
-      cnt: migrateRows(slot.rows).length,
-      total: slotGold(slot),
-    };
-  };
-  return (
-    <div className="gs-lobby" role="dialog" aria-modal="true" aria-label="파티 목록">
-      <div className="gs-lobby-in">
-        <button className="gs-backrow" onClick={onClose}>
-          <i aria-hidden="true">‹</i> 돌아가기
-        </button>
-        <h1 className="gs-title">파티 목록</h1>
-        <p className="gs-lobby-lead">
-          파티마다 표와 기록, 공유 주소가 따로 있어요. 바꿔도 하던 장부는 그대로 남아요.
-        </p>
-        <div className="gs-lobby-list">
-          {list.map((x) => {
-            const info = cardInfo(x.name);
-            return (
-              <div className={"gs-lobby-card" + (x.name === active ? " on" : "")} key={x.name}>
-                {editing === x.name ? (
-                  <div className="gs-lobby-editrow">
-                    <input
-                      className="gs-in"
-                      value={editVal}
-                      autoFocus
-                      onChange={(e) => setEditVal(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitRename(x.name);
-                        if (e.key === "Escape") setEditing(null);
-                      }}
-                      aria-label="파티 이름 바꾸기"
-                    />
-                    <button className="gs-btn gs-btn-sm" onClick={() => commitRename(x.name)}>
-                      저장
-                    </button>
-                    <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => setEditing(null)}>
-                      취소
-                    </button>
-                  </div>
-                ) : (
-                  <button className="gs-lobby-open" onClick={() => onPick(x.name)}>
-                    <span className="gs-lobby-name">
-                      <b>{x.name}</b>
-                      {x.name === EXAMPLE_PARTY && <em>예시</em>}
-                      {x.name === active && <em className="gs-lobby-now">지금 열려 있어요</em>}
-                    </span>
-                    <span className="gs-lobby-meta">
-                      {info.cnt === 0 ? "아직 비어 있어요" : `${info.cnt}명 · 벌금 ${man(info.total)}`}
-                      {rooms[x.name] && <em className="gs-lobby-share">· 공유 주소 있음</em>}
-                    </span>
-                  </button>
-                )}
-                {editing !== x.name && (
-                  <button
-                    className="gs-x gs-lobby-edit"
-                    onClick={() => {
-                      setEditing(x.name);
-                      setEditVal(x.name);
-                    }}
-                    aria-label={`${x.name} 이름 바꾸기`}
-                  >
-                    ✎
-                  </button>
-                )}
-                {editing !== x.name && list.length > 1 && (
-                  <button
-                    className="gs-x"
-                    onClick={() => onDelete(x.name)}
-                    aria-label={`${x.name} 삭제`}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div className="gs-lobby-add">
-          <div className="gs-seg gs-seg-sm" role="group" aria-label="인원">
-            {[4, 8].map((v) => (
-              <button key={v} className={size === v ? "on" : ""} onClick={() => setSize(v)}>
-                {v}인
-              </button>
-            ))}
-          </div>
-          <input
-            className="gs-in"
-            value={label}
-            placeholder="새 파티 이름"
-            onChange={(e) => setLabel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && add()}
-            aria-label="새 파티 이름"
-          />
-          <button className="gs-btn gs-btn-sm" onClick={add} disabled={!label.trim()}>
-            추가
-          </button>
-        </div>
-        {/* 새 기기에서 들어오는 입구 — 복원은 가진 쪽이 아니라 받는 쪽 일입니다 */}
-        <button className="gs-lobby-demo" onClick={onRestore}>
-          <span className="gs-lobby-name">
-            <b>↧ 불러오기</b>
-          </span>
-          <span className="gs-lobby-meta">
-            복구 코드·편집 권한 링크·백업 파일로 파티를 이어받아요.
-          </span>
-        </button>
-        <button className="gs-lobby-demo" onClick={onExample}>
-          <span className="gs-lobby-name">
-            <b>튜토리얼</b>
-          </span>
-          <span className="gs-lobby-meta">
-            화면 안내를 처음부터 다시 봐요. 예시 파티 '현자들'에서 진행돼요.
-          </span>
-        </button>
-      </div>
     </div>
   );
 }
@@ -8384,8 +8945,10 @@ const COURSE_STEPS = [
   { sel: ".gs-tab-mail", text: "보낼 우편 탭도 눌러 보세요 — 누가 누구에게 얼마를 보낼지 나와 있어요." },
   { sel: ".gs-obsbtn", text: "이 현황을 방송 화면에 실시간으로 띄우려면 여기예요.", action: "다음" },
   {
-    sel: ".gs-party-dd",
-    text: "여기까지예요 — 이제 새 파티를 만들어 시작해 보세요.",
+    /* 마지막은 다시 오는 길을 알려 줍니다 — 예시가 사라지고 빈 표가 되는 순간이라,
+       "방금 그건 어디 갔지"와 "다시 보려면"이 같이 나와야 합니다 */
+    sel: ".gs-helpbtn",
+    text: "여기까지예요 — 안내는 여기서 다시 볼 수 있어요. 이제 빈 표로 시작해요.",
     action: "알겠어요",
   },
 ];
@@ -8393,23 +8956,59 @@ const COURSE_STEPS = [
 /* passive: 말풍선 밖 조작을 막지 않습니다 — 해보기 코스처럼 '직접 눌러야' 진행되는 단계용 */
 function CoachMark({ sel, text, action, step, total, passive, onNext, onSkip, onClose }) {
   const [box, setBox] = useState(null);
+  const doneRef = useRef(onClose);
+  doneRef.current = onClose;
   useEffect(() => {
-    const measure = () => {
+    setBox(null);
+    const first = document.querySelector(sel);
+    /* 대상이 화면 밖에 있으면 테두리도 말풍선도 안 보이는 채로 안내가 도는 셈이 됩니다 */
+    if (first) first.scrollIntoView({ block: "center", inline: "nearest" });
+    let raf = 0;
+    let miss = 0;
+    let last = "";
+    /* 한 번 재고, 계속 따라다닐지를 돌려줍니다 */
+    const look = () => {
       const el = document.querySelector(sel);
-      if (!el) return onClose();
+      if (!el) {
+        /* 탭이 바뀌는 찰나처럼 잠깐 없을 수 있습니다. 바로 접으면 그 한 순간에
+           안내가 통째로 끝나고, 코스는 본 것으로 기록됩니다. 한 박자 기다립니다. */
+        if (++miss > 60) {
+          doneRef.current();
+          return false;
+        }
+        return true;
+      }
+      miss = 0;
       const r = el.getBoundingClientRect();
-      setBox({ x: r.left, y: r.top, w: r.width, h: r.height });
+      /* 칸을 누르면 숫자가 바뀌며 열 너비가 움직입니다 — 창 크기와 스크롤만 봐서는
+         테두리가 어긋난 채 남습니다. 값이 달라졌을 때만 다시 그립니다. */
+      const key = r.left + "," + r.top + "," + r.width + "," + r.height;
+      if (key !== last) {
+        last = key;
+        setBox({ x: r.left, y: r.top, w: r.width, h: r.height });
+      }
+      return true;
     };
-    measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
+    /* 첫 자리는 그 자리에서 잽니다. 프레임 콜백은 탭이 뒤로 가면 멈추는데,
+       그때 안내가 뜨면 말풍선이 영영 안 나옵니다. 따라다니기만 프레임에 맡깁니다. */
+    look();
+    const loop = () => {
+      if (look()) raf = requestAnimationFrame(loop);
     };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
   }, [sel]);
   if (!box) return null;
-  const left = Math.max(10, Math.min(box.x - 8, window.innerWidth - 320));
+  const W = 300;
+  const GAP = 14;
+  const left = Math.max(10, Math.min(box.x - 8, window.innerWidth - W - 10));
+  /* 아래로만 나오면 화면 끝에 붙은 대상에서 말풍선이 잘립니다. 아래가 좁고 위가 더
+     넓으면 뒤집습니다. bottom 으로 붙여 두면 말풍선 높이를 몰라도 됩니다. */
+  const below = window.innerHeight - (box.y + box.h) - GAP;
+  const up = below < 150 && box.y > below;
+  const place = up
+    ? { left, bottom: window.innerHeight - box.y + GAP }
+    : { left, top: box.y + box.h + GAP };
   return (
     <div
       className={"gs-coach" + (passive ? " gs-coach-pass" : "")}
@@ -8419,7 +9018,7 @@ function CoachMark({ sel, text, action, step, total, passive, onNext, onSkip, on
         className="gs-coach-ring"
         style={{ left: box.x - 5, top: box.y - 5, width: box.w + 10, height: box.h + 10 }}
       />
-      <div className="gs-coach-bubble" style={{ left, top: box.y + box.h + 14 }}>
+      <div className={"gs-coach-bubble" + (up ? " up" : "")} style={place}>
         <span
           className="gs-coach-tail"
           style={{ left: Math.max(14, box.x + box.w / 2 - left - 6) }}
@@ -8833,7 +9432,7 @@ const CSS = `
 .gs-presetbtn svg{opacity:.85; flex:none}
 /* 왼쪽 끝 버튼의 툴팁은 화면 밖으로 안 나가게 왼끝 정렬 */
 .gs-tip-body.gs-tip-l{left:0; transform:none}
-/* 지난 회차 드롭다운 — 마스트 왼쪽의 조용한 자리 */
+/* 지난 판 드롭다운 — 마스트 왼쪽의 조용한 자리 */
 .gs-gensdd{position:relative}
 .gs-gensbtn{font:inherit; font-size:12.5px; color:var(--ink-2); background:none; cursor:pointer;
   border:1px solid rgba(var(--ink-rgb),.25); border-radius:7px; padding:6px 11px;
@@ -8922,6 +9521,11 @@ const CSS = `
     repeating-linear-gradient(4deg, rgba(var(--tex-rgb),.03) 0 1px, transparent 1px 7px);
   padding:42px 20px 60px}
 .gs-intro-in{max-width:780px; margin:0 auto}
+/* 첫 방문 관문 — 묻는 게 하나뿐이라 카드 격자 없이 좁게, 눈높이에 씁니다 */
+.gs-ask-in{max-width:560px; margin:0 auto; padding-top:min(12vh,110px)}
+.gs-ask-btns{display:flex; flex-wrap:wrap; gap:10px; margin-top:26px}
+.gs-ask-go{font-size:15px; padding:12px 22px}
+.gs-ask-note{margin:16px 0 0; font-size:12px; color:var(--ink-2)}
 .gs-intro-lead{margin:16px 0 24px; font-size:14px; line-height:1.85; color:var(--ink-body)}
 .gs-intro-cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px}
 .gs-intro-card{font:inherit; text-align:left; cursor:pointer; background:var(--paper);
@@ -9478,6 +10082,9 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   border-radius:2px; padding:13px 15px; box-shadow:0 14px 34px rgba(var(--shadow-rgb),.4)}
 .gs-coach-tail{position:absolute; top:-7px; width:12px; height:12px; background:var(--paper);
   border-left:1px solid var(--gold); border-top:1px solid var(--gold); transform:rotate(45deg)}
+/* 위로 뒤집힌 말풍선 — 꼬리도 반대쪽 두 변을 씁니다 */
+.gs-coach-bubble.up .gs-coach-tail{top:auto; bottom:-7px; border-left:0; border-top:0;
+  border-right:1px solid var(--gold); border-bottom:1px solid var(--gold)}
 .gs-coach-bubble p{margin:0 0 10px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
 /* 코스 단계는 화면 조작을 막지 않습니다 — 말풍선·건너뛰기만 만질 수 있게 */
 .gs-coach-pass{pointer-events:none}
@@ -9583,7 +10190,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-fold{display:block; font:inherit; font-size:12px; color:var(--ink-2);
   background:transparent; border:0; cursor:pointer; padding:8px 2px 2px; text-align:left}
 .gs-fold:hover{color:var(--ink)}
-/* 백업 창의 지난 회차 줄 */
+/* 지난 판 줄 */
 .gs-genrow{display:flex; align-items:center; gap:9px; background:rgba(var(--ink-rgb),.05);
   border:1px solid rgba(var(--ink-rgb),.2); border-radius:7px; padding:8px 11px;
   margin-top:7px; font-size:12.5px}
@@ -9596,7 +10203,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-genlock.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
 .gs-reset-preset{margin-top:10px; padding-top:8px;
   border-top:1px dashed rgba(var(--ink-rgb),.18)}
-/* 지난 회차 보기 배너 — 화면 맨 위에 상시 */
+/* 지난 판 보기 배너 — 화면 맨 위에 상시 */
 .gs-genbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   margin:10px auto 0; max-width:var(--gs-w, 1080px); padding:9px 14px;
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:8px;
@@ -10442,4 +11049,122 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-vs tr:first-child{opacity:.72}
 
 @media (prefers-reduced-motion:reduce){ .gs-env{animation:none} }
+
+/* ================= 계정·로비 =================
+   방송 가독성이 기준입니다 — 핵심 글자는 크게, 세로는 아낍니다. */
+
+/* 파티 모드 — '처음부터' 옆의 유일한 강조 버튼 */
+.gs-partybtn{border-color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.3);
+  display:inline-flex; align-items:center; gap:7px}
+.gs-partybtn:hover{box-shadow:0 0 0 2px rgba(var(--gold-rgb),.5)}
+
+/* 상시 위젯 — 로비가 열려 있는 동안 메인 상단. 숫자가 차오르는 것이 주인공입니다 */
+.gs-lobbywidget{max-width:1080px; margin:0 auto 12px; display:flex; align-items:center;
+  gap:10px; flex-wrap:wrap; padding:9px 14px; border:1px solid rgba(var(--gold-rgb),.5);
+  background:rgba(var(--gold-rgb),.08); border-radius:3px; font-size:13px}
+.gs-lobbywidget > b{font-size:14.5px; font-weight:700; color:var(--ink)}
+.gs-lobbywidget .gs-live-dot{margin-left:0}
+.gs-lw-names{color:var(--ink-2); font-size:12.5px}
+.gs-lw-r{margin-left:auto; display:flex; gap:8px}
+
+/* 파티원 배너 묶음 — 표 위, 본문과 같은 열 */
+.gs-guestbar{max-width:1080px; margin:0 auto}
+.gs-guestbar .gs-slip{margin-bottom:10px}
+.gs-slip-calm{border-left-color:var(--gold); background:rgba(var(--gold-rgb),.08)}
+.gs-slip-calm .gs-slip-msg,.gs-slip-green .gs-slip-msg{color:var(--ink-body)}
+.gs-slip-green{border-left-color:#6fbf73; background:rgba(111,191,115,.1)}
+.gs-slip-act{margin-left:auto}
+.gs-slip-urlbox{flex:1; min-width:220px; display:flex; flex-direction:column; gap:3px}
+.gs-urltext{font-family:var(--mono); font-size:12.5px; color:var(--ink-body);
+  word-break:break-all; letter-spacing:.02em}
+
+/* 지난 판 드롭다운 — 목록은 보기·삭제만 */
+.gs-gens-h{margin:0 0 2px; font-family:'Gowun Batang',serif; font-size:15px; font-weight:700}
+.gs-gens-lead{margin:0 0 4px; font-size:11.5px; line-height:1.75; color:var(--ink-2)}
+
+/* 파티원 화면 — 내 줄만 금색, 나머지는 한 톤 물러납니다 */
+.gs-myrow .gs-in-name{color:var(--gold); font-weight:700}
+.gs-hit-mine{border-style:solid; border-color:var(--gold);
+  box-shadow:0 0 0 1px rgba(var(--gold-rgb),.35); cursor:pointer}
+.gs-hit-mine .gs-hit-ghost{color:var(--gold)}
+.gs-hit-mine:hover{background:rgba(var(--gold-rgb),.12); border-color:var(--gold)}
+.gs-hit-far{opacity:.55; cursor:default}
+.gs-hit-far:hover{background:var(--cell); border-color:rgba(var(--kraftdk-rgb),.85)}
+.gs-hit-far:active{transform:none}
+
+/* 대기실 — 방장(표 편집)과 파티원(명단)이 같은 상자를 씁니다 */
+.gs-lobbybox{padding-top:16px}
+.gs-lb-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:10px}
+.gs-lb-title{margin:0}
+.gs-lb-count{font-size:12.5px; color:var(--ink-2); display:inline-flex; align-items:center}
+.gs-lb-count b{font-size:15px; color:var(--ink)}
+.gs-lb-capctl{display:inline-flex; align-items:center; gap:6px; font-size:12.5px}
+.gs-lb-capctl button{font:inherit; font-size:13px; width:22px; height:22px; line-height:1;
+  border:1px solid rgba(var(--ink-rgb),.3); background:transparent; color:var(--ink);
+  border-radius:3px; cursor:pointer}
+.gs-lb-capctl button:disabled{opacity:.35; cursor:default}
+.gs-lb-capctl b{min-width:2ch; text-align:center; font-family:var(--mono); font-size:14px}
+.gs-lb-close{margin-left:auto}
+.gs-lb-invite{margin-bottom:12px}
+.gs-lb-lead{margin:0 0 10px; font-size:12.5px; line-height:1.75; color:var(--ink-body)}
+.gs-lb-name{display:flex; align-items:center; gap:7px; justify-content:flex-end}
+.gs-lb-name b{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px}
+.gs-lb-tag{font-size:10px; letter-spacing:.08em; padding:2px 6px; border-radius:99px;
+  background:var(--chip-bg); color:var(--chip-fg); flex:none}
+.gs-lb-dot{width:7px; height:7px; border-radius:50%; background:#6fbf73; flex:none}
+.gs-lb-dot.none{background:rgba(var(--ink-rgb),.3)}
+.gs-lb-kick{opacity:0; font-size:15px}
+tr:hover .gs-lb-kick{opacity:.55}
+.gs-lb-kick:hover{opacity:1}
+.gs-lb-zero{color:var(--ink-2)}
+.gs-lb-add .gs-in-name{font-size:12.5px; color:var(--ink-2)}
+.gs-lb-foot{display:flex; align-items:center; gap:12px; margin-top:16px}
+.gs-lb-note{font-size:12.5px; color:var(--ink-2)}
+.gs-lb-note b{color:var(--ink); font-weight:600}
+.gs-lb-go{margin-left:auto; font-size:15px; padding:11px 28px; font-weight:600}
+.gs-lb-legend{margin:10px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-hit-idle{cursor:default}
+/* 파티원이 보는 대기실 — 표가 아니라 이름 목록입니다 */
+.gs-lb-list{list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:8px}
+.gs-lb-list li{display:inline-flex; align-items:center; gap:7px; padding:8px 13px;
+  border:1px solid rgba(var(--ink-rgb),.2); background:rgba(var(--ink-rgb),.05);
+  border-radius:99px; font-size:13px}
+.gs-lb-list li b{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px}
+.gs-lb-list li.me{border-color:rgba(var(--gold-rgb),.7)}
+.gs-lb-list li.me b{color:var(--gold)}
+
+/* 합류 신청 카드 — 방장 화면 우하단. 벌금 카드와 같은 자리·같은 껍데기 */
+.gs-joincard{pointer-events:auto; max-width:320px}
+.gs-join-id{font-weight:400; color:var(--ink-2); font-size:12.5px}
+.gs-join-acts{display:flex; gap:8px; margin-top:10px}
+
+/* 계정 창 */
+.gs-auth-head{display:flex; align-items:center; gap:10px}
+.gs-auth-head h3{margin-right:auto}
+.gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
+  color:var(--ink-2)}
+.gs-field-hint{letter-spacing:0; font-size:11px}
+.gs-in-field{display:block; width:100%; margin-top:5px; font-size:14px;
+  border:1px solid rgba(var(--ink-rgb),.28); border-radius:3px; padding:8px 10px;
+  background:rgba(var(--ink-rgb),.04)}
+.gs-in-nickbig{width:110px; font-family:'Gowun Batang',serif; font-weight:700; font-size:16px}
+.gs-auth-warn{margin:12px 0 0; color:var(--red); font-size:11.5px; line-height:1.75}
+
+/* 공유 설정 창의 계정 줄·명단 */
+.gs-obs-acct{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
+  padding:9px 12px; border:1px solid rgba(var(--ink-rgb),.18);
+  background:rgba(var(--ink-rgb),.04); font-size:12.5px}
+.gs-obs-acct > b{font-family:'Gowun Batang',serif; font-size:16px}
+.gs-obs-acctid{color:var(--ink-2); font-size:11.5px}
+.gs-in-nick{width:88px; border:1px solid rgba(var(--ink-rgb),.28); border-radius:3px;
+  padding:5px 8px; font-size:12.5px}
+.gs-obs-logout{margin-left:auto}
+.gs-obs-invleft{font-size:11.5px; color:var(--ink-2); white-space:nowrap}
+.gs-memlist{list-style:none; margin:8px 0 0; padding:0}
+.gs-memlist li{display:flex; align-items:center; gap:8px; padding:7px 11px; font-size:12.5px;
+  border:1px solid rgba(var(--ink-rgb),.18); border-radius:5px; margin-top:6px}
+.gs-memlist li b{font-family:'Gowun Batang',serif; font-size:15px}
+.gs-mem-id{color:var(--ink-2); font-size:11.5px}
+.gs-mem-req{font-size:10.5px; letter-spacing:.08em; color:var(--gold)}
+.gs-memlist li .gs-btn{margin-left:auto}
 `;
