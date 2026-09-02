@@ -1681,6 +1681,7 @@ export default function GoldSettlement() {
   const [burst, setBurst] = useState([]);
   const [burstKey, setBurstKey] = useState(0); // 시간 막대를 다시 채우는 열쇠
   const [burstHold, setBurstHold] = useState(false); // 올려 둔 동안은 시계가 멉니다
+  const [burstNow, setBurstNow] = useState(0); // 초를 세는 눈금. 멈춘 동안은 안 움직입니다
   const notePress = (id) => {
     setBurst((prev) => {
       const next = [...prev, id];
@@ -1706,6 +1707,15 @@ export default function GoldSettlement() {
     if (!burst.length || burstHold) return;
     const t = setTimeout(() => setBurst([]), BURST_MS);
     return () => clearTimeout(t);
+  }, [burst, burstHold, burstKey]);
+
+  /* 남은 초와 '몇 초 전'을 같은 눈금에서 읽습니다 — 두 시계가 따로 돌면 어긋나 보입니다 */
+  useEffect(() => {
+    if (!burst.length) return;
+    setBurstNow(Date.now());
+    if (burstHold) return;
+    const t = setInterval(() => setBurstNow(Date.now()), 1000);
+    return () => clearInterval(t);
   }, [burst, burstHold, burstKey]);
 
   /* 코스 진행 — 해당 조작이 실제로 일어났을 때만 다음으로 */
@@ -6399,6 +6409,10 @@ export default function GoldSettlement() {
           <ul className="gs-press-rows">
             {burstRows.map((e) => (
               <li key={e.id}>
+                {/* 왼쪽 눈금 — 위에서 아래로 시간이 흐릅니다. 방금 것과 아까 것이 한눈에 갈립니다 */}
+                <span className="gs-press-ago">
+                  {Math.max(0, Math.floor((burstNow - e.t) / 1000))}초 전
+                </span>
                 <b>{e.name}</b>
                 <i>{e.item}</i>
                 <u className={e.delta < 0 ? "dn" : undefined}>
@@ -11270,7 +11284,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 @media (prefers-reduced-motion:reduce){ .gs-fxcard{animation:none} }
 /* 방금 누른 것 — 장부 결로. 줄 사이는 점선, 숫자는 고정폭.
    취소는 올린 줄에만 나타나서 평소에는 읽기만 하는 카드입니다. */
-.gs-press{position:fixed; right:18px; bottom:18px; z-index:45; width:326px;
+.gs-press{position:fixed; right:18px; bottom:18px; z-index:45; width:360px;
   background:var(--paper-2); border:1px solid var(--kraft-dk); border-radius:4px;
   box-shadow:0 10px 30px rgba(var(--shadow-rgb),.45); overflow:hidden;
   animation:gs-press-in .16s ease-out}
@@ -11282,12 +11296,16 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-press:hover .gs-press-bar{animation-play-state:paused}
 .gs-press-head{padding:9px 14px 8px; font-size:13px; color:var(--ink-2);
   border-bottom:1px solid rgba(var(--ink-rgb),.1)}
+.gs-press-head{display:flex; align-items:baseline; gap:5px}
 .gs-press-head b{color:var(--ink); font-weight:600; font-family:var(--mono); font-size:13.5px}
 .gs-press-rows{list-style:none; margin:0; padding:0}
 .gs-press-rows li{display:flex; align-items:center; gap:9px; padding:9px 14px; min-height:38px}
 .gs-press-rows li + li{border-top:1px dotted rgba(var(--ink-rgb),.13)}
 .gs-press-rows b{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px; color:var(--ink)}
-.gs-press-rows i{font-style:normal; font-size:13px; color:var(--ink-2)}
+.gs-press-rows i{font-style:normal; font-size:14.5px; color:var(--ink-body)}
+/* 왼쪽 눈금 — 자릿수가 늘어도 이름이 안 밀리게 폭을 잡아 둡니다 */
+.gs-press-ago{flex:none; min-width:52px; text-align:right; font-family:var(--mono);
+  font-size:12px; color:var(--ink-2); opacity:.8; white-space:nowrap}
 .gs-press-rows u{text-decoration:none; margin-left:auto; font-family:var(--mono);
   font-size:15px; color:var(--red)}
 .gs-press-rows u.dn{color:var(--blue)}
@@ -11302,7 +11320,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   .gs-press{animation:none}
   .gs-press-bar{animation:none; transform:scaleX(1)}
 }
-@media (max-width:640px){ .gs-press{right:10px; bottom:10px; width:min(326px,calc(100vw - 20px))} }
+@media (max-width:640px){ .gs-press{right:10px; bottom:10px; width:min(360px,calc(100vw - 20px))} }
 .gs-toast{position:fixed; left:50%; bottom:max(18px,4vh); transform:translateX(-50%);
   z-index:70; max-width:min(560px,92vw); padding:12px 18px; border-radius:6px;
   background:var(--paper,#2a2320); color:var(--ink); font-size:13.5px; line-height:1.65;
