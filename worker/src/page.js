@@ -341,6 +341,17 @@ export const PAGE_HTML = `<!doctype html>
     text-shadow:0 1px 3px rgba(0,0,0,.9)}
   html[data-notice="1"] .ov-notice{display:block}
 
+  /* /o/ 를 브라우저로 열었을 때의 한 줄 — 판별이 틀려 방송에 새더라도 이 한 줄이면 되게
+     작고 낮은 채도로, 판 위에 얹기만 합니다 (§4.4). vw 가 아니라 px 이라 소스가 커져도
+     같이 커지지 않습니다.
+     색은 판의 테마를 안 따릅니다 — 이 줄이 앉는 자리는 판이 아니라 그 바깥(방송에서는
+     게임 화면, 브라우저에서는 빈 바탕)이라, 어느 바탕에서도 읽히게 옅은 칩을 깔았습니다 */
+  .ov-hint{position:fixed; left:0; right:0; bottom:0; z-index:9; pointer-events:none;
+    text-align:center; padding:6px 10px}
+  .ov-hint b{display:inline-block; font-weight:400; font-size:12px; line-height:1.5;
+    padding:3px 10px; border-radius:99px;
+    background:rgba(16,13,10,.5); color:rgba(240,235,225,.62)}
+
   /* 대기실 — 아직 판이 없으니 이름만 한 줄로 잇습니다. 표와 같은 판(.ov) 안에 앉습니다.
      제목은 .ov-name-t 를 안 씁니다 — 거기 붙은 음수 여백(순위·변동 열을 넘어가는 장치)이
      열 없는 대기실에서는 제목을 판 밖으로 밀어냅니다 */
@@ -374,7 +385,11 @@ export const PAGE_HTML = `<!doctype html>
      못 잡는 프로그램은 주소 뒤 ?mode=overlay 로 수동 강제합니다. */
   var ua = navigator.userAgent || "";
   var inCast = !!window.obsstudio || ua.indexOf(" OBS/") >= 0 || ua.indexOf("XSplitBroadcaster/") >= 0;
-  var inOBS = forced === "overlay" || (forced !== "page" && inCast);
+  /* /o/ 는 판별하지 않습니다 (§4.4). 방송 프로그램은 종류가 많고(프리즘·vMix·트위치
+     스튜디오…), 판별에 실패하면 방송에 앱 화면이 통째로 뜹니다. 이 주소의 임무는 하나
+     (방송 소스)이므로 그것을 무조건 실행하고, ?mode=page 만 예외로 둡니다.
+     /r/ 의 두 얼굴(브라우저→앱, 방송→오버레이)은 그대로입니다. */
+  var inOBS = forced === "overlay" || (forced !== "page" && (!!OTOK || inCast));
 
   /* 브라우저로 열었으면 앱의 읽기 전용 화면으로 넘깁니다 (예시도 같습니다).
      오버레이만 보고 싶으면 주소 뒤에 ?mode=overlay 를 붙이면 됩니다. */
@@ -396,19 +411,41 @@ export const PAGE_HTML = `<!doctype html>
   /* 기본은 어디서든 읽히는 어두운 판. 주소에 직접 적은 테마가 있으면 그쪽이 우선 */
   var urlTheme = q.get("t");
   var urlBg = q.get("bg");
+  var urlS = q.get("s");
   root.dataset.t = urlTheme || "dark";
   var bg = parseInt(urlBg, 10);
   if (!isNaN(bg)) root.style.setProperty("--bg", Math.min(100, Math.max(0, bg)) / 100);
+  var s = parseInt(urlS, 10);
+  if (!isNaN(s)) document.body.style.fontSize = Math.min(300, Math.max(50, s)) + "%";
 
-  /* 장부 관리자가 고른 테마가 상태에 실려 옵니다 — OBS 소스 URL을 안 바꿔도 즉시 갈아입습니다 */
-  var applyLook = function (lk) {
-    if (!lk || urlTheme) return;
-    root.dataset.t = typeof lk.t === "string" ? lk.t : "dark";
+  /* 외형이 오는 곳은 셋입니다: 주소 파라미터(t/bg/s) > 계정 외형(resolve.look) > 판의 look.
+     계정 외형은 "OBS는 한 번만 넣는다"를 지키려고 서버에 둔 값이라(§4.4), 방장이 고른
+     판의 look 보다 셉니다 — 오버레이 주소 하나가 사람 하나의 것이라서요. */
+  var acctLook = null;
+  var applyLook = function (lk, fromAcct) {
+    if (!lk || typeof lk !== "object") return;
+    if (fromAcct) acctLook = lk;
+    else if (acctLook) return;
+    if (!urlTheme) root.dataset.t = typeof lk.t === "string" ? lk.t : "dark";
     if (urlBg == null && lk.bg != null)
       root.style.setProperty("--bg", Math.min(100, Math.max(0, lk.bg)) / 100);
+    if (urlS == null && lk.s != null) {
+      var ls = parseInt(lk.s, 10);
+      if (!isNaN(ls)) document.body.style.fontSize = Math.min(300, Math.max(50, ls)) + "%";
+    }
   };
-  var s = parseInt(q.get("s"), 10);
-  if (!isNaN(s)) document.body.style.fontSize = Math.min(300, Math.max(50, s)) + "%";
+
+  /* 브라우저로 열렸다고 판단될 때만 한 줄 얹습니다 — 판별을 거꾸로 쓴 자리입니다.
+     틀려서 방송에 새더라도 새는 것은 이 한 줄뿐입니다 (실패의 대가를 뒤집는 게 요점).
+     미리보기 창(?fit=1)은 앱이 그림을 확인하라고 여는 자리라 빼 둡니다. */
+  if (OTOK && !inCast && !isPreview) {
+    var hint = document.createElement("div");
+    hint.className = "ov-hint";
+    var hintText = document.createElement("b");
+    hintText.textContent = "이 주소는 방송 프로그램에 넣는 주소예요.";
+    hint.appendChild(hintText);
+    document.body.appendChild(hint);
+  }
 
   var app = document.getElementById("app");
   var board = null;   // [{n,g,c}] — 앱이 계산해서 보내줍니다
@@ -1569,9 +1606,13 @@ export const PAGE_HTML = `<!doctype html>
   var fitPreview = fitBoard;
 
   /* 방송 중이 아님이 확인될 때만 알립니다. 판별 실패는 침묵(안전한 쪽) */
-  var NOTICE = OTOK
+  /* 옛 주소 안내 — 방에 방장이 없다는 답(denied gone)을 받았을 때만 (§4.4).
+     초대가 없어서 막힌 사람에게는 "새 주소를 받아라"가 오답이라 문구를 가릅니다 */
+  var NOTICE_GONE = "주소 체계가 바뀌었어요. 앱에서 새 주소를 받아 넣어주세요.";
+  var NOTICE_HOME = OTOK
     ? "지금 들어가 있는 파티가 없어요. 초대를 받아 참여하면 다시 보여요."
     : "이 주소만으로는 판을 볼 수 없어요. 자수 화면의 '내 방송용 주소'를 넣어주세요.";
+  var NOTICE = NOTICE_HOME;
   var maybeNotice = function () {
     if (!dead || !window.obsstudio || typeof window.obsstudio.getStatus !== "function") return;
     try {
@@ -1608,6 +1649,8 @@ export const PAGE_HTML = `<!doctype html>
         if (m.kind === "denied") {
           dead = true; board = null; lobby = null; spin = null; play = null;
           next = null; fxQ = []; fxCard = null; clearTimeout(fxTimer);
+          /* 방장이 없는 방 = 계정 이전의 옛 주소입니다. 초대가 없어서 막힌 것과 답이 달라요 */
+          NOTICE = m.why === "gone" ? NOTICE_GONE : NOTICE_HOME;
         } else if (m.kind === "you") {
           /* 명단에서 빠졌습니다(내보내기·나가기). 이미 붙어 있는 줄은 서버가 안 끊으므로
              여기서 떼고 다시 물어봅니다 — 자격이 없으면 그 답이 denied 로 와서 침묵합니다 */
@@ -1685,6 +1728,8 @@ export const PAGE_HTML = `<!doctype html>
       .then(function (r) { if (!r.ok) throw new Error("no room"); return r.json(); })
       .then(function (d) {
         if (!d || !d.roomId) throw new Error("no room");
+        /* 이 계정이 저장해 둔 외형 — 주소를 안 고치고도 다음 접속부터 갈아입습니다 */
+        if (d.look) applyLook(d.look, true);
         CUR = d.roomId; dead = false; wait = 1000; connect();
       })
       .catch(function () { dead = true; render(); setTimeout(boot, 60000); });

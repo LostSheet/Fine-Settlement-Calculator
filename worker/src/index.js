@@ -12,6 +12,11 @@ const ID6 = CH + "{6}";
 const TOK20 = CH + "{20}";
 const rid = (n) =>
   Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => ALPHABET[b % ALPHABET.length]).join("");
+/* 익명 계정의 아이디 — 사람이 고를 리 없는 20자입니다. 저장 경로는 가입 계정과 같아서
+   (계정 하나 = u:<id>) 인증 통로가 갈라지지 않습니다 (§3-11) */
+const LOW = "abcdefghijklmnopqrstuvwxyz0123456789";
+const anonId = () =>
+  "a" + Array.from(crypto.getRandomValues(new Uint8Array(19)), (b) => LOW[b % LOW.length]).join("");
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -34,9 +39,15 @@ const ACCT_SCAN_MS = 7 * 86400 * 1000;
 
 /* 상태 크기 상한 — 표에 더해 기록(최근 200건)까지 실립니다. 남용 방지용 */
 const MAX_STATE_BYTES = 128 * 1024;
+/* 계정부에 오는 본문은 전부 작습니다 — 외형(4KB)이 제일 큽니다 */
+const MAX_AUTH_BYTES = 32 * 1024;
+const LOOK_MAX_BYTES = 4 * 1024;
 const CONFESS_PER_MIN = 20;
 const LOGIN_FAILS = 30;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+/* 계정 만들기(가입·익명) 한 창 상한 — 익명이 가입보다 헐거운 구멍이 되지 않게 같이 셉니다 */
+const REG_PER_WINDOW = 200;
+const ANON_NICK = "방장";
 
 const RE_ID = /^[a-z0-9]{4,20}$/;
 const RE_NICK = /^[가-힣a-zA-Z0-9]{2,3}$/;
@@ -200,6 +211,7 @@ export class Accounts {
     let b = {};
     if (req.method === "POST") {
       const raw = await req.text();
+      if (raw.length > MAX_AUTH_BYTES) return json({ error: "too big" }, 413);
       if (raw) {
         try {
           b = JSON.parse(raw);
@@ -216,6 +228,7 @@ export class Accounts {
       const pw = String(b.pw || "").toLowerCase();
       if (!RE_ID.test(id) || !RE_NICK.test(nick) || !RE_PW.test(pw))
         return json({ error: "bad input" }, 400);
+      if (!(await this.regGuard(req, now))) return json({ error: "slow down" }, 429);
       if (await S.get("u:" + id)) return json({ error: "taken" }, 409);
       const salt = crypto.getRandomValues(new Uint8Array(16));
       const obsToken = await this.freeToken();
@@ -238,6 +251,92 @@ export class Accounts {
       });
       await this.arm();
       return json({ id, nick, token, obsToken });
+    }
+
+    /* 가입 없이 주소 받기 (§3-11) — 앱이 부르면 서버가 무작위 아이디·비밀번호로 계정 하나를
+       만들어 세션만 돌려줍니다. 사용자는 가입 화면을 본 적이 없고, 서버 쪽에서는 그냥 계정
+       하나라 인증 경로가 하나로 유지됩니다. 비밀번호는 여기서 만들고 어디에도 안 알려 줍니다 —
+       이 계정으로 다시 로그인할 일은 없고, 정식 계정이 되는 길은 /upgrade 하나뿐입니다. */
+    if (p === "/api/auth/anon" && req.method === "POST") {
+      if (!(await this.regGuard(req, now))) return json({ error: "slow down" }, 429);
+      const id = await this.freeId();
+      if (!id) return json({ error: "could not allocate account" }, 503);
+      const pw = hex(crypto.getRandomValues(new Uint8Array(32)));
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const obsToken = await this.freeToken();
+      const token = rid(32);
+      const u = {
+        id,
+        nick: ANON_NICK,
+        salt: hex(salt),
+        ph: await derive(salt, pw),
+        created: now,
+        seen: now,
+        obsToken,
+        cur: null,
+        room: null,
+        anon: true,
+      };
+      await S.put({
+        ["u:" + id]: u,
+        ["t:" + obsToken]: id,
+        ["s:" + token]: { id, exp: now + SESSION_MS },
+      });
+      await this.arm();
+      return json({ id, nick: ANON_NICK, token, obsToken });
+    }
+
+    /* 익명 계정에 아이디·비밀번호·닉네임을 붙입니다 (§3-11).
+       새 계정을 만드는 게 아니라 같은 계정에 덧씌웁니다 — 방·방송용 주소·멤버십·세션이
+       그대로 남는 것이 이 기능의 존재 이유입니다("가입했더니 OBS를 다시 세팅").
+       계정의 저장 열쇠가 아이디라, 아이디를 갈면서 그 열쇠를 가리키던 것들을 같이 옮깁니다. */
+    if (p === "/api/auth/upgrade" && req.method === "POST") {
+      const u = await this.session(req, now);
+      if (!u) return json({ error: "unauthorized" }, 401);
+      const id = String(b.id || "").toLowerCase();
+      const nick = String(b.nick || "").trim();
+      const pw = String(b.pw || "").toLowerCase();
+      if (!RE_ID.test(id) || !RE_NICK.test(nick) || !RE_PW.test(pw))
+        return json({ error: "bad input" }, 400);
+      if (!u.anon) return json({ error: "not anon" }, 409);
+      const old = u.id;
+      if (id !== old && (await S.get("u:" + id))) return json({ error: "taken" }, 409);
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const next = { ...u, id, nick, salt: hex(salt), ph: await derive(salt, pw), seen: now };
+      delete next.anon;
+      const puts = { ["u:" + id]: next };
+      if (u.obsToken) puts["t:" + u.obsToken] = id;
+      if (u.room) puts["rm:" + u.room] = id;
+      await S.put(puts);
+      /* 세션은 계정 이름을 들고 있습니다 — 지금 켜 둔 기기가 튕기지 않게 갈아 끼웁니다.
+         한 번에 넣을 수 있는 열쇠 수가 정해져 있어서 나눠 씁니다 */
+      let batch = {};
+      let n = 0;
+      for (const [k, v] of await S.list({ prefix: "s:" })) {
+        if (!v || v.id !== old) continue;
+        batch[k] = { id, exp: v.exp };
+        if (++n === 100) {
+          await S.put(batch);
+          batch = {};
+          n = 0;
+        }
+      }
+      if (n) await S.put(batch);
+      if (id !== old) await S.delete(["u:" + old, "lg:" + old]);
+      // 방장 자리와 명단의 이름표도 같이 옮깁니다 — 안 옮기면 제 방을 잃습니다
+      const rooms = [u.room, u.cur].filter((x, i, a) => x && a.indexOf(x) === i);
+      for (const rm of rooms) {
+        try {
+          await this.env.ROOM.get(this.env.ROOM.idFromName(rm)).fetch("https://do/acct-renamed", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ from: old, to: id, nick }),
+          });
+        } catch (e) {
+          /* 방이 없어졌어도 계정은 이미 정식입니다 */
+        }
+      }
+      return json({ id, nick });
     }
 
     if (p === "/api/auth/login" && req.method === "POST") {
@@ -269,7 +368,18 @@ export class Accounts {
     if (p === "/api/auth/me" && req.method === "GET") {
       const u = await this.session(req, now);
       if (!u) return json({ error: "unauthorized" }, 401);
-      return json({ id: u.id, nick: u.nick, obsToken: u.obsToken, cur: u.cur || null, seen: u.seen });
+      /* anon 은 앱이 [파티 모드 시작하기]에서 아이디·비밀번호를 받을지 가리는 데 씁니다 (§3-11).
+         look 은 새 기기에서 로그인했을 때 제 오버레이 외형을 되찾는 자리입니다 */
+      const out = {
+        id: u.id,
+        nick: u.nick,
+        obsToken: u.obsToken,
+        cur: u.cur || null,
+        seen: u.seen,
+        anon: !!u.anon,
+      };
+      if (u.look) out.look = u.look;
+      return json(out);
     }
 
     // 닉을 바꾸면 지금 있는 방의 서기가 줄 이름을 따라 바꿔 줍니다
@@ -306,6 +416,23 @@ export class Accounts {
       return json({ obsToken: next });
     }
 
+    /* 오버레이 외형은 계정마다 따로입니다 (§4.1). 주소 파라미터가 아니라 서버에 두는 이유는
+       "OBS는 한 번만 넣는다"를 지키기 위해서입니다 — 외형을 바꿔도 소스 주소는 그대로입니다.
+       서버는 look 을 해석하지 않고 그대로 실어 나릅니다 */
+    if (p === "/api/auth/look" && req.method === "POST") {
+      const u = await this.session(req, now);
+      if (!u) return json({ error: "unauthorized" }, 401);
+      const look = b.look === undefined || b.look === null ? null : b.look;
+      if (look !== null && (typeof look !== "object" || Array.isArray(look)))
+        return json({ error: "bad look" }, 400);
+      if (look && new TextEncoder().encode(JSON.stringify(look)).length > LOOK_MAX_BYTES)
+        return json({ error: "too big" }, 413);
+      if (look) u.look = look;
+      else delete u.look;
+      await S.put("u:" + u.id, u);
+      return json({ ok: true });
+    }
+
     // 방송용 주소가 가리키는 방 — 지금 들어가 있는 방입니다. 조회도 활동으로 칩니다
     const res = p.match(new RegExp(`^/api/o/(${TOK20})/resolve$`));
     if (res && req.method === "GET") {
@@ -314,7 +441,8 @@ export class Accounts {
       if (!u || !u.cur) return json({ error: "not found" }, 404);
       u.seen = now;
       await S.put("u:" + id, u);
-      return json({ roomId: u.cur });
+      // 외형이 저장돼 있으면 같이 보냅니다 — 오버레이가 주소를 안 고치고 갈아입습니다
+      return u.look ? json({ roomId: u.cur, look: u.look }) : json({ roomId: u.cur });
     }
 
     /* ---- 내부: 메인 fetch 전용 ---- */
@@ -384,6 +512,26 @@ export class Accounts {
     return rid(20);
   }
 
+  // 익명 계정의 빈 아이디 — 겹칠 일은 없지만 그래도 한 번 봅니다
+  async freeId() {
+    for (let i = 0; i < 8; i++) {
+      const c = anonId();
+      if (!(await this.ctx.storage.get("u:" + c))) return c;
+    }
+    return null;
+  }
+
+  /* 계정 만들기 상한 — 가입과 익명이 같은 통을 씁니다 (§4.1).
+     사람 하나가 방송용 주소를 몇 개 받는 건 정상이라 넉넉하게 두고, 퍼 나르기만 막습니다 */
+  async regGuard(req, now) {
+    const k = "rg:" + (req.headers.get("cf-connecting-ip") || "local");
+    let g = await this.ctx.storage.get(k);
+    if (!g || g.until <= now) g = { n: 0, until: now + LOGIN_WINDOW_MS };
+    g.n++;
+    await this.ctx.storage.put(k, g);
+    return g.n <= REG_PER_WINDOW;
+  }
+
   // Bearer 하나로 세션을 풀고 활동 시각을 밀어 둡니다
   async session(req, now) {
     const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i);
@@ -408,6 +556,11 @@ export class Accounts {
   async alarm() {
     const now = Date.now();
     const S = this.ctx.storage;
+    // 지난 창의 계정 만들기 기록은 걷어냅니다 — 안 지우면 주소마다 하나씩 쌓입니다
+    const stale = [];
+    for (const [k, g] of await S.list({ prefix: "rg:" }))
+      if (!g || (g.until || 0) <= now) stale.push(k);
+    if (stale.length) await S.delete(stale);
     const users = await S.list({ prefix: "u:" });
     const dead = [];
     for (const [k, u] of users) if (now - (u.seen || 0) >= ACCT_IDLE_MS) dead.push([k, u]);
@@ -502,6 +655,16 @@ export class Room {
       return !!a && a.k === "scribe";
     });
   }
+  // 그 계정의 뷰어 소켓을 끊습니다. 보낸 메시지는 닫기 전에 나갑니다
+  dropAcct(acct) {
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = tagOf(ws);
+      if (!a || a.k !== "v" || a.acct !== acct) continue;
+      try {
+        ws.close(1000, "removed");
+      } catch (e) {}
+    }
+  }
   scribeOn(except) {
     return this.ctx.getWebSockets().some((ws) => {
       if (ws === except) return false;
@@ -555,6 +718,33 @@ export class Room {
         this.toAcct(acct, { kind: "you", you: youOf(m) });
       }
       this.toScribe({ kind: "nick", acct, nick });
+      return json({ ok: true });
+    }
+
+    /* 익명 계정이 정식이 됐습니다 (Accounts /upgrade → 방).
+       계정의 이름이 바뀌었을 뿐 같은 사람이라, 방장 자리도 명단의 한 줄도 그 자리에 둡니다 */
+    if (path === "/acct-renamed") {
+      const { from, to, nick } = await req.json().catch(() => ({}));
+      if (typeof from !== "string" || typeof to !== "string" || !from || !to)
+        return json({ error: "bad json" }, 400);
+      if ((await S.get("owner")) === from) {
+        await S.put("owner", to);
+        if (typeof nick === "string" && nick) await S.put("ownerNick", nick);
+      }
+      const mm = await S.get("m:" + from);
+      if (mm) {
+        if (typeof nick === "string" && nick) mm.nick = nick;
+        await S.put("m:" + to, mm);
+        await S.delete("m:" + from);
+      }
+      // 붙어 있는 소켓의 이름표도 갈아 끼웁니다 — 안 그러면 you 통지가 옛 이름으로 갑니다
+      for (const ws of this.ctx.getWebSockets()) {
+        const a = tagOf(ws);
+        if (!a || a.acct !== from) continue;
+        try {
+          ws.serializeAttachment({ ...a, acct: to });
+        } catch (e) {}
+      }
       return json({ ok: true });
     }
 
@@ -693,6 +883,9 @@ export class Room {
       if (b.action === "remove") {
         await S.delete("m:" + acct);
         this.toAcct(acct, { kind: "you", you: null });
+        /* 통지 뒤에 그 사람의 뷰어 소켓을 닫습니다 (§4.2) — 안 닫으면 브라우저가 끊김을
+           알아챌 때까지 2~3초 동안 못 보는 판이 화면에 남습니다 */
+        this.dropAcct(acct);
         return json({ ok: true });
       }
       return json({ error: "bad action" }, 400);
@@ -789,6 +982,11 @@ export class Room {
       if (!before) this.bcast({ kind: "presence", scribeOn: true }, (ws) => ws !== server);
       return new Response(null, { status: 101, webSocket: client });
     }
+
+    /* 방장이 없는 방 = 만들어진 적 없는 방이거나 계정 이전의 방입니다 (§4.4).
+       옛 주소가 아직 OBS 에 꽂혀 있는 사람이 있어서, 초대가 없어서 막힌 것과 구분해 줍니다 —
+       그 사람에게 맞는 답은 "새 주소를 받아 넣어라" 하나뿐입니다 */
+    if (!owner) return this.deny(client, server, "gone");
 
     let you = null;
     let ok = false;

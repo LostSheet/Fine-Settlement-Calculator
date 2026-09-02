@@ -124,6 +124,35 @@ const open = (path) =>
     setTimeout(() => rej(new Error("WS 접속 시간 초과: " + path)), 8000);
   });
 
+/* 서버가 닫기 프레임을 보냈는지 — 받은 순간 readyState 가 CLOSING(2) 이 됩니다.
+   여기까지가 서버 몫이고, 브라우저는 이걸 받은 즉시 그 판을 못 믿을 것으로 압니다 */
+const waitClosing = (box, ms = 3000) =>
+  new Promise((ok, no) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (box.closed || box.ws.readyState >= 2) return ok(Date.now() - t0);
+      if (Date.now() - t0 > ms) return no(new Error("서버가 " + ms + "ms 안에 안 닫음"));
+      setTimeout(tick, 25);
+    };
+    tick();
+  });
+
+/* 손잡이가 실제로 놓일 때까지 — 로컬 wrangler 는 닫기 악수를 마치는 데 10초쯤 걸립니다
+   (워커가 늦게 닫는 게 아니라 로컬 런타임이 TCP 를 늦게 놓습니다) */
+const waitClosed = (box, ms = 4000) =>
+  new Promise((ok, no) => {
+    if (box.closed) return ok(true);
+    const t = setTimeout(() => no(new Error("소켓이 " + ms + "ms 안에 안 닫힘")), ms);
+    box.ws.addEventListener(
+      "close",
+      () => {
+        clearTimeout(t);
+        ok(true);
+      },
+      { once: true }
+    );
+  });
+
 /* ---------------- 시나리오 ---------------- */
 
 const S = Date.now().toString(36).slice(-6); // 다시 돌려도 안 겹치게
@@ -488,6 +517,30 @@ const main = async () => {
     expect(!list.find((x) => x.acct === D.id), "명단에 아직 남아 있음");
     await vD.close();
   });
+  /* A8 — 통지만 하고 소켓을 열어 두면, 브라우저가 끊김을 알아챌 때까지 2~3초 동안
+     못 보는 판이 화면에 남습니다 (§4.2) */
+  await step("member remove: 통지 뒤 그 계정의 뷰어 소켓을 닫음", async () => {
+    const j = await api("POST", "/api/r/" + room + "/join", { token: D.token, body: { j: invite } });
+    eq(j.status, 200, "다시 신청");
+    await scribe.want((x) => x.kind === "join");
+    await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: D.id, action: "approve" },
+    });
+    const v = await open("/api/r/" + room + "/live?s=" + D.token);
+    await v.want((m) => m.kind === "hello");
+    const r = await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: D.id, action: "remove" },
+    });
+    eq(r.status, 200, "status");
+    const m = await v.want((x) => x.kind === "you");
+    eq(m.you, null, "you 통지가 먼저");
+    const ms = await waitClosing(v, 3000); // 서버가 닫기 프레임을 보낸 시각
+    expect(ms < 3000, "닫기까지 " + ms + "ms");
+    await waitClosed(v, 20000); // 손잡이가 실제로 놓일 때까지
+    expect(v.closed, "소켓이 안 닫힘");
+  });
 
   /* ---- 자수 ---- */
   head("자수 — 서기로 전달");
@@ -639,6 +692,200 @@ const main = async () => {
   await vB.close();
   await vJ.close();
 
+  /* ---- 가입 없이 주소 받기 (§3-11) ---- */
+  head("가입 없이 주소 받기(anon)");
+  const N = {}; // 익명으로 시작해서 정식이 되는 계정 하나
+  await step("anon: 본문 없이 계정 하나 — 닉 기본값 방장", async () => {
+    const r = await api("POST", "/api/auth/anon", { body: {} });
+    eq(r.status, 200, "status");
+    expect(/^[a-z0-9]{4,20}$/.test(r.data.id), "익명 id 형식: " + r.data.id);
+    eq(r.data.nick, "방장", "nick");
+    expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{32}$/.test(r.data.token), "세션 토큰 32자");
+    expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{20}$/.test(r.data.obsToken), "OBS 토큰 20자");
+    N.id = r.data.id;
+    N.token = r.data.token;
+    N.obsToken = r.data.obsToken;
+  });
+  await step("anon: me 로 확인 — 그 세션이 그 계정", async () => {
+    const r = await api("GET", "/api/auth/me", { token: N.token });
+    eq(r.status, 200, "status");
+    eq(r.data.id, N.id, "id");
+    eq(r.data.nick, "방장", "nick");
+    eq(r.data.obsToken, N.obsToken, "obsToken");
+    eq(r.data.cur, null, "아직 들어간 방 없음");
+    eq(r.data.anon, true, "익명 표시 — 앱이 파티 모드에서 이걸 보고 아이디를 받습니다");
+    eq((await api("GET", "/api/auth/me", { token: A.token })).data.anon, false, "가입 계정은 false");
+  });
+  await step("anon: 그 세션으로 my/room·invite 가 그대로 됨", async () => {
+    const r = await api("POST", "/api/my/room", { token: N.token });
+    eq(r.status, 200, "status");
+    expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{6}$/.test(r.data.roomId), "방 주소 6자");
+    N.room = r.data.roomId;
+    const iv = await api("POST", "/api/r/" + N.room + "/invite", { token: N.token });
+    eq(iv.status, 200, "invite status");
+    expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(iv.data.invite.code), "코드 8자");
+  });
+  await step("anon: 방송용 주소가 자기 방을 가리킴", async () => {
+    const r = await api("GET", "/api/o/" + N.obsToken + "/resolve");
+    eq(r.status, 200, "status");
+    eq(r.data.roomId, N.room, "roomId");
+  });
+
+  /* ---- 계정별 오버레이 외형 (§4.1) ---- */
+  head("계정별 오버레이 외형(look)");
+  await step("look: 저장하면 resolve 응답에 실려 나옴", async () => {
+    const r = await api("POST", "/api/auth/look", {
+      token: N.token,
+      body: { look: { t: "light", bg: 70, s: 120 } },
+    });
+    eq(r.status, 200, "status");
+    const res = await api("GET", "/api/o/" + N.obsToken + "/resolve");
+    eq(res.status, 200, "resolve status");
+    eq(res.data.roomId, N.room, "roomId");
+    eq(res.data.look.t, "light", "look.t");
+    eq(res.data.look.bg, 70, "look.bg");
+    eq(res.data.look.s, 120, "look.s");
+  });
+  await step("look: 4KB 넘으면 413 (옛 외형은 그대로)", async () => {
+    const r = await api("POST", "/api/auth/look", {
+      token: N.token,
+      body: { look: { pad: "x".repeat(5000) } },
+    });
+    eq(r.status, 413, "status");
+    const res = await api("GET", "/api/o/" + N.obsToken + "/resolve");
+    eq(res.data.look.t, "light", "막힌 뒤에도 옛 외형");
+  });
+  await step("look: 로그인 없으면 401", async () => {
+    eq(
+      (await api("POST", "/api/auth/look", { body: { look: { t: "dark" } } })).status,
+      401,
+      "status"
+    );
+  });
+  await step("look: null 이면 지워지고 resolve 에서 빠짐", async () => {
+    eq(
+      (await api("POST", "/api/auth/look", { token: N.token, body: { look: null } })).status,
+      200,
+      "status"
+    );
+    const res = await api("GET", "/api/o/" + N.obsToken + "/resolve");
+    eq(res.data.look, undefined, "look 이 남아 있음");
+    // 다시 세워 둡니다 — 아래 upgrade 가 외형까지 그대로 남는지 봅니다
+    await api("POST", "/api/auth/look", { token: N.token, body: { look: { t: "clear" } } });
+  });
+
+  /* ---- 정식 계정으로 전환 (§3-11) ---- */
+  head("정식 계정으로 전환(upgrade)");
+  const U = { id: acct("grow"), nick: "두유" };
+  await step("upgrade: 로그인 없으면 401", async () => {
+    const r = await api("POST", "/api/auth/upgrade", {
+      body: { id: U.id, pw: "a".repeat(64), nick: U.nick },
+    });
+    eq(r.status, 401, "status");
+  });
+  await step("upgrade: 형식 위반(닉 4자·id 3자·pw 원문) → 400", async () => {
+    const pw = await prehash(U.id, PW);
+    eq(
+      (await api("POST", "/api/auth/upgrade", { token: N.token, body: { id: U.id, pw, nick: "네글자닉" } }))
+        .status,
+      400,
+      "닉 4자"
+    );
+    eq(
+      (await api("POST", "/api/auth/upgrade", { token: N.token, body: { id: "ab", pw, nick: U.nick } }))
+        .status,
+      400,
+      "id 2자"
+    );
+    eq(
+      (await api("POST", "/api/auth/upgrade", {
+        token: N.token,
+        body: { id: U.id, pw: "hunter2", nick: U.nick },
+      })).status,
+      400,
+      "선해시 아닌 pw"
+    );
+  });
+  await step("upgrade: 이미 쓰는 아이디면 409", async () => {
+    const r = await api("POST", "/api/auth/upgrade", {
+      token: N.token,
+      body: { id: A.id, pw: await prehash(A.id, PW), nick: U.nick },
+    });
+    eq(r.status, 409, "status");
+    eq(r.data.error, "taken", "error");
+  });
+  await step("upgrade: 방·방송용 주소·세션·외형이 그대로 (주소가 안 바뀜)", async () => {
+    U.pw = await prehash(U.id, PW);
+    const r = await api("POST", "/api/auth/upgrade", {
+      token: N.token,
+      body: { id: U.id, pw: U.pw, nick: U.nick },
+    });
+    eq(r.status, 200, "status");
+    eq(r.data.id, U.id, "id");
+    eq(r.data.nick, U.nick, "nick");
+    // 켜 둔 기기가 튕기면 안 됩니다 — 익명일 때 받은 세션이 그대로 살아 있어야 합니다
+    const me = await api("GET", "/api/auth/me", { token: N.token });
+    eq(me.status, 200, "me status");
+    eq(me.data.id, U.id, "me.id");
+    eq(me.data.nick, U.nick, "me.nick");
+    eq(me.data.obsToken, N.obsToken, "obsToken 유지");
+    eq(me.data.anon, false, "이제 정식 계정");
+    eq(me.data.look.t, "clear", "me 에도 외형이 따라옴");
+    const rm = await api("POST", "/api/my/room", { token: N.token });
+    eq(rm.data.roomId, N.room, "roomId 유지");
+    const res = await api("GET", "/api/o/" + N.obsToken + "/resolve");
+    eq(res.data.roomId, N.room, "resolve roomId 유지");
+    eq(res.data.look.t, "clear", "외형 유지");
+  });
+  await step("upgrade: 새 아이디·비밀번호로 로그인됨", async () => {
+    const r = await api("POST", "/api/auth/login", { body: { id: U.id, pw: U.pw } });
+    eq(r.status, 200, "status");
+    eq(r.data.nick, U.nick, "nick");
+    eq(r.data.obsToken, N.obsToken, "obsToken");
+    U.token = r.data.token;
+  });
+  await step("upgrade: 방장 자리도 새 아이디로 옮겨감", async () => {
+    // 옮기지 않았으면 제 방에서 403 이 납니다
+    eq(
+      (await api("POST", "/api/r/" + N.room + "/invite", { token: U.token })).status,
+      200,
+      "새 세션으로 초대 발급"
+    );
+    eq(
+      (await api("PUT", "/api/r/" + N.room + "/state", {
+        token: U.token,
+        body: { state: { board: [] } },
+      })).status,
+      200,
+      "새 세션으로 state 푸시"
+    );
+  });
+  await step("upgrade: 이미 정식 계정이면 409", async () => {
+    const id2 = acct("agan");
+    const r = await api("POST", "/api/auth/upgrade", {
+      token: U.token,
+      body: { id: id2, pw: await prehash(id2, PW), nick: "세번" },
+    });
+    eq(r.status, 409, "status");
+    eq(r.data.error, "not anon", "error");
+  });
+
+  /* ---- 옛 주소 (§4.4) ---- */
+  head("옛 주소 안내(gone)");
+  await step("WS: 방장이 없는 방(옛 주소) → denied gone", async () => {
+    const bad = await open("/api/r/ZZZZZZ/live");
+    const m = await bad.want((x) => x.kind === "denied");
+    eq(m.why, "gone", "why");
+    await bad.close();
+    expect(bad.closed, "소켓이 안 닫힘");
+  });
+  await step("WS: 초대가 없어서 막힌 방은 gone 이 아니라 invite", async () => {
+    const bad = await open("/api/r/" + room + "/live?j=ZZZZZZZZ");
+    const m = await bad.want((x) => x.kind === "denied");
+    eq(m.why, "invite", "why");
+    await bad.close();
+  });
+
   /* ---- 페이지 (§6.3) ---- */
   head("페이지");
   const pageOf = async (path) => {
@@ -674,6 +921,25 @@ const main = async () => {
       p.html.indexOf("지금 들어가 있는 파티가 없어요. 초대를 받아 참여하면 다시 보여요.") > 0,
       "/o/ 침묵 예외 문구가 없음"
     );
+  });
+  await step("/o/ — 판별 없이 오버레이 + 브라우저일 때만 한 줄 (§4.4)", async () => {
+    const p = await pageOf("/o/" + A.obsToken);
+    // OTOK 이 있으면 판별을 건너뜁니다 (?mode=page 만 예외)
+    expect(p.html.indexOf("!!OTOK || inCast") > 0, "/o/ 무조건 오버레이 분기가 없음");
+    expect(p.html.indexOf('forced !== "page"') > 0, "?mode=page 예외가 없음");
+    expect(
+      p.html.indexOf("이 주소는 방송 프로그램에 넣는 주소예요.") > 0,
+      "브라우저로 열었을 때의 한 줄이 없음"
+    );
+    expect(p.html.indexOf("ov-hint") > 0, "한 줄을 얹을 자리가 없음");
+  });
+  await step("페이지: 옛 주소 안내 문구 (§8)", async () => {
+    const p = await pageOf("/r/" + room);
+    expect(
+      p.html.indexOf("주소 체계가 바뀌었어요. 앱에서 새 주소를 받아 넣어주세요.") > 0,
+      "옛 주소 안내 문구가 없음"
+    );
+    expect(p.html.indexOf('m.why === "gone"') > 0, "gone 분기가 없음");
   });
   await step("데모(/r/CAFE22)는 그대로", async () => {
     const p = await pageOf("/r/CAFE22");
