@@ -351,6 +351,10 @@ export const PAGE_HTML = `<!doctype html>
   .ov-hint b{display:inline-block; font-weight:400; font-size:12px; line-height:1.5;
     padding:3px 10px; border-radius:99px;
     background:rgba(16,13,10,.5); color:rgba(240,235,225,.62)}
+  /* 그 줄 안의 문 — 읽기 화면을 없애면 가입 없이 쓰는 사람이 정산 장부·보낼 우편을
+     못 보게 되므로, 브라우저로 열린 이 자리에 길을 남깁니다 (§8) */
+  .ov-hint a{pointer-events:auto; margin-left:8px; color:rgba(240,235,225,.9);
+    text-decoration:underline; text-underline-offset:2px}
 
   /* 대기실 — 아직 판이 없으니 이름만 한 줄로 잇습니다. 표와 같은 판(.ov) 안에 앉습니다.
      제목은 .ov-name-t 를 안 씁니다 — 거기 붙은 음수 여백(순위·변동 열을 넘어가는 장치)이
@@ -443,6 +447,11 @@ export const PAGE_HTML = `<!doctype html>
     hint.className = "ov-hint";
     var hintText = document.createElement("b");
     hintText.textContent = "이 주소는 방송 프로그램에 넣는 주소예요.";
+    /* 누를 수 있는 문 하나 — ?mode=page 로 다시 열면 앱의 읽기 화면으로 넘어갑니다 */
+    var hintGo = document.createElement("a");
+    hintGo.textContent = "현황판으로 보기";
+    hintGo.href = location.pathname + "?mode=page" + location.hash;
+    hintText.appendChild(hintGo);
     hint.appendChild(hintText);
     document.body.appendChild(hint);
   }

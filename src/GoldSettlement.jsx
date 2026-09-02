@@ -943,6 +943,19 @@ const authApi = {
   me: (token) => callApi("/api/auth/me", { token }),
   nick: (token, nick) => callApi("/api/auth/nick", { method: "POST", body: { nick }, token }),
   obsReissue: (token) => callApi("/api/auth/obs-reissue", { method: "POST", body: {}, token }),
+  /* 가입 없이 주소 받기 — 서버가 무작위 아이디·비밀번호로 계정 하나를 만들어 줍니다.
+     비밀번호는 서버에서 만들고 알려 주지 않습니다. 정식 계정이 되는 길은 upgrade 하나입니다 */
+  anon: () => callApi("/api/auth/anon", { method: "POST", body: {} }),
+  /* 익명 계정에 아이디·비밀번호·닉네임을 붙입니다. 같은 계정에 덧씌우는 것이라
+     세션·방송용 주소·방·멤버십이 전부 그대로입니다 — 다시 로그인하지 않습니다 */
+  upgrade: async (token, id, pw, nick) =>
+    callApi("/api/auth/upgrade", {
+      method: "POST",
+      body: { id, pw: await preHash(id, pw), nick },
+      token,
+    }),
+  /* 오버레이 외형은 계정마다 따로입니다 — 저장해 두면 OBS 주소를 안 고쳐도 다음 접속부터 반영됩니다 */
+  look: (token, look) => callApi("/api/auth/look", { method: "POST", body: { look }, token }),
   /* 내 방송용 주소가 지금 어느 방을 비추는지 — OBS 조회도 활동으로 칩니다 */
   resolveObs: (t) => callApi("/api/o/" + encodeURIComponent(t) + "/resolve"),
 };
@@ -2051,7 +2064,6 @@ export default function GoldSettlement() {
   /* ================= OBS 중계 ================= */
   const [relay, setRelay] = useState(loadRelay);
   const [obsOpen, setObsOpen] = useState(false);
-  const [keyOpen, setKeyOpen] = useState(false);
 
   /* ---- 파티: 파티 하나 = 장부 하나 = 공유 주소 하나 ---- */
   const [partyReg, setPartyReg] = useState(
@@ -2067,6 +2079,8 @@ export default function GoldSettlement() {
   const [auth, setAuth] = useState(loadAuth);
   /* 계정 창 — {tab, after, ctx}. after 는 로그인이 끝난 뒤 이어서 할 일입니다 */
   const [authOpen, setAuthOpen] = useState(null);
+  /* 익명 계정에 아이디·비밀번호를 붙이는 창 — {after}. 같은 계정에 덧씌우므로 주소는 안 바뀝니다 */
+  const [upOpen, setUpOpen] = useState(null);
   const [acctOpen, setAcctOpen] = useState(false); // 헤더 계정 드롭다운
   const [lobbyView, setLobbyView] = useState(false); // 로비 화면을 보고 있는지
   const [lobbyOn, setLobbyOn] = useState(false); // 서버 로비가 열려 있는지
@@ -2074,6 +2088,7 @@ export default function GoldSettlement() {
   const [members, setMembers] = useState([]); // [{acct,nick,rowId,st,t}]
   const [handAdd, setHandAdd] = useState([]); // 방장이 손으로 넣은 미연결 줄 (닉만)
   const [joinAsk, setJoinAsk] = useState(null); // 출발 후 합류 신청 카드 {acct,nick}
+  const hostRow = useRef(null); // 출발할 때 방장에게 준 줄 — 1행을 남에게 넘기지 않으려고 기억합니다
   const [scribeLive, setScribeLive] = useState(false); // 서기 소켓이 붙어 있는지
   /* --- 파티원 쪽 --- */
   const [you, setYou] = useState(null); // {nick, rowId, st} — 이 방에서의 나
@@ -2200,50 +2215,13 @@ export default function GoldSettlement() {
       undoSnap: null,
     };
   };
-  /* ---------- 파일 백업 — 서버 수명과 무관하게 남는 층 ---------- */
-  const exportPartyFile = () => {
-    const data = { app: "gold-settlement", v: 1, name: partyReg.active, ledger: currentLedger() };
-    const d = new Date();
-    const stamp =
-      d.getFullYear() +
-      "-" +
-      String(d.getMonth() + 1).padStart(2, "0") +
-      "-" +
-      String(d.getDate()).padStart(2, "0");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
-    a.download = ("벌금표-" + stamp + ".json").replace(/[\\/:*?"<>|]/g, "-");
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  };
-  const importPartyFile = (text) => {
-    let data = null;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      return "파일을 읽지 못했어요 — 벌금표에서 내보낸 파일이 맞는지 확인해 주세요.";
-    }
-    const led = data && data.ledger;
-    if (!led || !Array.isArray(led.cols) || !Array.isArray(led.rows))
-      return "파일을 읽지 못했어요 — 벌금표에서 내보낸 파일이 맞는지 확인해 주세요.";
-    /* 교대 — 지금 장부는 지난 판으로 닫히고, 불러온 것이 현재(이름은 늘 '기본')가 됩니다 */
-    const old = partyReg.active;
-    const oldLed = currentLedger();
-    let list = foldIntoGens(oldLed, partyReg.list);
-    list = list.filter((x) => x.name !== old);
-    savePartySlot(DEFAULT_ROOM_LABEL, { ...led, rows: migrateRows(led.rows), undoSnap: null });
-    if (old !== DEFAULT_ROOM_LABEL) dropPartySlot(old);
-    putPartyReg({
-      list: [...list, { name: DEFAULT_ROOM_LABEL, t: Date.now() }],
-      active: DEFAULT_ROOM_LABEL,
-    });
-    applyLedger(loadPartySlot(DEFAULT_ROOM_LABEL) || blankPartyLedger());
-    return "백업 파일을 현재 장부로 불러왔어요 — 이전 장부는 지난 판으로 남았어요.";
-  };
   const putRelay = (next) => {
     setRelay(next);
     saveRelay(next);
   };
+  /* 서버에서 돌아온 값을 얹는 자리는 낡은 클로저 안이라, 늘 최신 relay 를 봅니다 */
+  const relayRef = useRef(relay);
+  relayRef.current = relay;
   /* 열 켜고 끄기는 연달아 누를 수 있어서, 늘 최신 값에서 뒤집습니다.
      { ...relay } 를 쓰면 같은 틱의 앞 토글이 덮여 사라집니다. */
   /* 합계·순액 — 둘 다 켬이 기본이라 false 만 적어 둡니다 */
@@ -2356,6 +2334,32 @@ export default function GoldSettlement() {
      헤더에서 스스로 연 창은 말할 이유가 없어서 비워 둡니다. */
   const openAuth = (tab, after, ctx) =>
     setAuthOpen({ tab: tab || "login", after: after || null, ctx: ctx || null });
+  /* 가입 없이 주소 받기 — 익명 계정을 조용히 만들고 주소를 바로 보여 줍니다 (§3-11).
+     방까지 같이 팝니다. 방이 없으면 그 주소는 비출 판이 없어서, 받자마자 검은 화면이 됩니다 —
+     "주소 받기"를 누른 사람이 바라는 것은 주소 문자열이 아니라 방송에 뜨는 판입니다. */
+  const getAnonAddr = async () => {
+    const r = await authApi.anon();
+    const a = { id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: true };
+    putAuth(a);
+    const room = await roomApi.myRoom(a.token);
+    putRelay({
+      ...relayRef.current,
+      room: room.roomId,
+      invite:
+        room.invite && room.invite.code
+          ? { code: room.invite.code, exp: room.invite.exp }
+          : relayRef.current.invite,
+      on: true,
+    });
+  };
+  /* 익명 계정에 진짜 아이디·비밀번호·닉네임을 붙입니다. 세션도 방송용 주소도 그대로라
+     다시 로그인하지 않습니다 — 저장해 둔 계정의 id·nick 만 갈아 끼웁니다 (§3-11) */
+  const doUpgrade = async (id, pw, nick) => {
+    const a = authRef.current;
+    if (!a) return;
+    const r = await authApi.upgrade(a.token, id, pw, nick);
+    putAuth({ ...a, id: r.id || id, nick: r.nick || nick, anon: false });
+  };
   const doLogout = () => {
     if (auth) authApi.logout(auth.token).catch(() => {});
     putAuth(null);
@@ -2373,7 +2377,20 @@ export default function GoldSettlement() {
       .me(auth.token)
       .then((m) => {
         if (gone || !m || !m.id) return;
-        putAuth({ ...auth, id: m.id, nick: m.nick || auth.nick, obsToken: m.obsToken || auth.obsToken });
+        putAuth({
+          ...auth,
+          id: m.id,
+          nick: m.nick || auth.nick,
+          obsToken: m.obsToken || auth.obsToken,
+          anon: !!m.anon,
+        });
+        /* 오버레이 외형은 계정에 저장돼 있습니다 — 새 기기에서 로그인해도 제 외형으로 돌아옵니다.
+           저장해 둔 것이 없으면 이 브라우저 값을 그대로 두고, 아래 저장 효과가 올려 줍니다 */
+        if (m.look && typeof m.look === "object" && typeof m.look.t === "string") {
+          const lk = lookIn(m.look);
+          lookSent.current = JSON.stringify(m.look);
+          if (!sameLook(lk, relayRef.current.look)) putRelay({ ...relayRef.current, look: lk });
+        }
       })
       .catch((e) => {
         /* 세션이 죽었을 때만 지웁니다 — 네트워크 사고로 로그아웃되면 안 됩니다 */
@@ -2384,15 +2401,41 @@ export default function GoldSettlement() {
     };
   }, [auth && auth.token]);
 
+  /* 고른 외형을 계정에 저장합니다 (§4.1). 판 투명도를 연달아 누를 수 있어서 600ms 미룹니다 —
+     누를 때마다 보내면 마지막 값만 쓸모 있는 요청을 여러 번 던지게 됩니다 */
+  const lookSent = useRef(null);
+  const lookTimer = useRef(null);
+  useEffect(() => {
+    if (!auth) return;
+    const body = JSON.stringify(lookOut());
+    if (lookSent.current === body) return;
+    clearTimeout(lookTimer.current);
+    lookTimer.current = setTimeout(() => {
+      lookSent.current = body;
+      authApi.look(auth.token, JSON.parse(body)).catch(() => {
+        /* 못 올려도 이 브라우저의 외형은 그대로입니다 — 다음 변경 때 다시 시도합니다 */
+        lookSent.current = null;
+      });
+    }, 600);
+    return () => clearTimeout(lookTimer.current);
+  }, [auth && auth.token, relay.look]);
+
   /* ================= 로비 (방장) ================= */
   /* 대기실 한 줄 = 앱으로 들어온 사람(초록 점) 또는 방장이 손으로 넣은 사람(회색 점) */
   const lobbySeats = useMemo(() => {
     const live = members
-      .filter((m) => m.st === "ok")
+      .filter((m) => m.st === "ok" && !(auth && m.acct === auth.id))
       .map((m) => ({ acct: m.acct, nick: m.nick, rowId: m.rowId || null }));
-    /* 방장은 늘 첫 자리 — 서버 명단에 아직 안 올라와 있어도 자기 자리는 보여야 합니다 */
-    if (auth && !live.some((x) => x.acct === auth.id))
-      live.unshift({ acct: auth.id, nick: auth.nick, rowId: null });
+    /* 방장은 늘 첫 자리입니다 (§3-6). 대기실에서도 첫 줄이고, 출발한 판에서도 1행이라
+       명단에 방장이 섞여 들어와도 여기서 한 번 앞으로 빼 둡니다 */
+    if (auth) {
+      const mine = members.find((m) => m.acct === auth.id && m.st === "ok");
+      live.unshift({
+        acct: auth.id,
+        nick: (mine && mine.nick) || auth.nick,
+        rowId: (mine && mine.rowId) || null,
+      });
+    }
     return [...live, ...handAdd.map((n) => ({ acct: null, nick: n, rowId: null }))];
   }, [members, handAdd, auth]);
   /* 출발 후 합류 신청 — 방장이 수락/거절을 고릅니다 */
@@ -2423,6 +2466,9 @@ export default function GoldSettlement() {
         loginVerb: "로그인하고 시작",
         joinVerb: "가입하고 시작",
       });
+    /* 익명 계정은 아이디·비밀번호가 없어서 파티원이 자기 줄을 못 찾습니다 —
+       여기서 한 번 받고, 붙인 뒤에 하려던 일을 이어서 합니다 (§3-11) */
+    if (a.anon) return setUpOpen({ after: startParty });
     try {
       const r = await roomApi.myRoom(a.token);
       const roomId = r.roomId;
@@ -2552,6 +2598,8 @@ export default function GoldSettlement() {
       if (s.acct) bindings[s.acct] = id;
       return { id, name: s.nick, counts: {}, extras: [] };
     });
+    /* lobbySeats 의 첫 자리가 방장입니다 — 그 줄을 기억해 두었다가 수락 때 지킵니다 */
+    hostRow.current = nRows.length ? nRows[0].id : null;
     snapHold.current = true;
     setCols(nCols);
     setRows(nRows);
@@ -2608,7 +2656,10 @@ export default function GoldSettlement() {
       return;
     }
     const taken = new Set(members.filter((m) => m.rowId).map((m) => m.rowId));
-    const free = rows.find((x) => (x.name || "").trim() === nick && !taken.has(x.id));
+    /* 방장 줄은 방장 것입니다 — 같은 닉으로 들어온 사람이 1행을 가져가면 안 됩니다 (§3-6) */
+    const free = rows.find(
+      (x) => (x.name || "").trim() === nick && !taken.has(x.id) && x.id !== hostRow.current
+    );
     let rowId = free ? free.id : null;
     if (!rowId) {
       rowId = "r" + seq.current++;
@@ -3275,6 +3326,10 @@ export default function GoldSettlement() {
      자수를 받으므로, 끊긴 것을 자기 화면에서 알아야 고칠 수 있습니다. */
   const hostChip = !readOnly && !!auth && !!relay.room && (relay.on || lobbyOn);
   const guestChip = readOnly && !genView && !demoRoom && guestPlaying;
+  /* 공유 설정 창은 파티원도 엽니다 — 자기 방송용 주소·소스 나누기·외형은 각자 고르는 것이고,
+     계정마다 주소가 하나씩이라 파티원도 자기 것을 챙길 자리가 있어야 합니다.
+     지난 판 보기(genView)는 방장이 제 옛 판을 들추는 자리라 방장 화면 그대로입니다. */
+  const shareGuest = readOnly && !genView && !!auth;
   const roomCount = rows.length; // 인원 수는 판의 줄 수로 셉니다
   const roomTitle = guestChip ? (ownerNick || "방장") + "네 파티" : "내 파티";
   const roomLive = guestChip ? scribeOn : scribeLive;
@@ -4332,7 +4387,6 @@ export default function GoldSettlement() {
     if (!genView) savePartySlot(partyReg.active, currentLedger());
     applyLedger(slot);
     setGenView(name);
-    setKeyOpen(false);
   };
   const closeGen = () => {
     applyLedger(loadPartySlot(partyReg.active) || blankPartyLedger());
@@ -4693,11 +4747,31 @@ export default function GoldSettlement() {
                       <div className="gs-acctpanel" role="menu">
                         <p className="gs-acct-who">
                           <b>{auth.nick}</b>
-                          <span>{auth.id}</span>
+                          <span>{auth.anon ? "아이디 없음" : auth.id}</span>
                         </p>
-                        <p className="gs-acct-note">
-                          닉네임은 벌금판에 올라가는 이름이에요. 오버레이 공유 설정에서 바꿔요.
-                        </p>
+                        {/* 익명 계정은 아이디·비밀번호가 없어서 이 브라우저에서만 쓸 수 있습니다.
+                            정식으로 올리는 길을 여기에도 하나 둡니다 (§3-11) */}
+                        {auth.anon ? (
+                          <>
+                            <p className="gs-acct-note">
+                              가입 없이 받은 주소예요. 아이디를 정하면 다른 컴퓨터에서도 같은
+                              주소를 쓰고, 파티원을 모을 수 있어요.
+                            </p>
+                            <button
+                              className="gs-btn gs-btn-sm"
+                              onClick={() => {
+                                setAcctOpen(false);
+                                setUpOpen({ after: null });
+                              }}
+                            >
+                              아이디 정하기
+                            </button>
+                          </>
+                        ) : (
+                          <p className="gs-acct-note">
+                            닉네임은 벌금판에 올라가는 이름이에요. 오버레이 공유 설정에서 바꿔요.
+                          </p>
+                        )}
                         <button
                           className="gs-btn gs-btn-sm gs-btn-ghost"
                           onClick={() => {
@@ -4732,10 +4806,10 @@ export default function GoldSettlement() {
                 )}
             </div>
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
-            {!readOnly && (
+            {(!readOnly || shareGuest) && (
               <span className="gs-tip">
                 <button
-                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (relay.on ? " on" : "")}
+                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (!shareGuest && relay.on ? " on" : "")}
                   onClick={() => {
                     courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
                     setObsOpen(true);
@@ -4754,44 +4828,33 @@ export default function GoldSettlement() {
                   {/* 가운데점은 이름의 일부처럼 읽혀서, 상태는 세로선으로 갈라 둡니다.
                       방이 없을 때도 보여 줍니다 — "지금 방송에 나가고 있나"는 항상 답이
                       있어야 하는 물음이라, 빈칸이 곧 "안 나감"이라고 읽히길 기대하면 안 됩니다.
-                      다만 시작도 안 한 것을 '중단'이라 하면 그건 그것대로 거짓이라 말을 나눕니다. */}
-                  <i className="gs-obsbtn-div" aria-hidden="true" />
-                  <span className="gs-obsbtn-st">
-                    {!myRoom ? "꺼짐" : relay.on ? "공유 중" : "중단"}
-                  </span>
-                  <em className={myRoom && relay.on ? "" : "off"} aria-hidden="true">●</em>
+                      다만 시작도 안 한 것을 '중단'이라 하면 그건 그것대로 거짓이라 말을 나눕니다.
+                      파티원에게는 켜고 끌 토글이 없어서 상태 칸도 뜻이 없습니다 — 이름만 둡니다. */}
+                  {!shareGuest && (
+                    <>
+                      <i className="gs-obsbtn-div" aria-hidden="true" />
+                      <span className="gs-obsbtn-st">
+                        {!myRoom ? "꺼짐" : relay.on ? "공유 중" : "중단"}
+                      </span>
+                      <em className={myRoom && relay.on ? "" : "off"} aria-hidden="true">●</em>
+                    </>
+                  )}
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를 OBS 브라우저
-                  소스에 넣으면 돼요.
+                  {shareGuest ? (
+                    <>
+                      <b>내 방송용 주소</b>와 오버레이 외형을 여기서 챙겨요. 주소는 사람마다
+                      하나씩이에요.
+                    </>
+                  ) : (
+                    <>
+                      벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를 OBS 브라우저
+                      소스에 넣으면 돼요.
+                    </>
+                  )}
                 </span>
               </span>
             )}
-            {/* 백업 — 장부를 파일로 남기고 되살리는 곳 */}
-            {!readOnly && (
-              <span className="gs-tip">
-                <button className="gs-btn gs-btn-ghost gs-keybtn" onClick={() => setKeyOpen(true)}>
-                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                    <g
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M2.2 5h11.6M3 5v7.6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5M2.8 5l.9-2.2a1 1 0 0 1 .9-.6h6.8a1 1 0 0 1 .9.6L13.2 5" />
-                      <path d="M8 7.4v4M6.3 9.8 8 11.4l1.7-1.6" />
-                    </g>
-                  </svg>
-                  백업
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  {/* 지난 판은 헤더 드롭다운에 있습니다 — 여기 있다고 하면 헛걸음합니다 */}
-                  <b>파일 백업</b> — 장부를 파일로 남기고 되살리는 곳이에요.
-                </span>
-              </span>
-            )}
-
             {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
             <span className="gs-viewseg">
               <span className="gs-tip">
@@ -6522,13 +6585,6 @@ export default function GoldSettlement() {
         />
       )}
 
-      {keyOpen && (
-        <KeyShare
-          onExportFile={exportPartyFile}
-          onImportFile={importPartyFile}
-          onClose={() => setKeyOpen(false)}
-        />
-      )}
       {obsOpen && (
         <ObsShare
           relay={relay}
@@ -6543,6 +6599,9 @@ export default function GoldSettlement() {
           }
           onLogout={doLogout}
           onNick={changeNick}
+          onAnon={getAnonAddr}
+          onUpgrade={() => setUpOpen({ after: null })}
+          guest={shareGuest}
           members={members}
           onKick={kickMember}
           invite={relay.invite}
@@ -6577,6 +6636,19 @@ export default function GoldSettlement() {
             else askResume(a);
           }}
           onClose={() => setAuthOpen(null)}
+        />
+      )}
+      {/* 익명 계정에 아이디·비밀번호를 붙이는 창 — 같은 계정이라 주소도 세션도 그대로입니다 */}
+      {upOpen && (
+        <UpgradeModal
+          nick={auth ? auth.nick : ""}
+          onRun={doUpgrade}
+          onDone={() => {
+            const after = upOpen.after;
+            setUpOpen(null);
+            if (after) setTimeout(() => after(), 0);
+          }}
+          onClose={() => setUpOpen(null)}
         />
       )}
       {/* 출발 후 합류 신청 — 방장 화면 우하단 카드 */}
@@ -8393,6 +8465,118 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
   );
 }
 
+/* 익명 계정에 아이디·비밀번호·닉네임을 붙이는 창 (§3-11).
+   가입이 아니라 덧씌우기입니다 — 세션·방송용 주소·방·멤버십이 그대로라 다시 로그인하지 않습니다.
+   그래서 "가입했더니 OBS를 다시 세팅해야 함"이 생기지 않습니다. */
+function UpgradeModal({ nick: nick0, onRun, onDone, onClose }) {
+  const [id, setId] = useState("");
+  const [pw, setPw] = useState("");
+  const [nick, setNick] = useState(nick0 && [...nick0].length <= 3 ? nick0 : "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const idRef = useRef(null);
+  useEffect(() => {
+    idRef.current && idRef.current.focus();
+  }, []);
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const okId = /^[A-Za-z0-9]{4,20}$/.test(id.trim());
+  const okNick = [...nick.trim()].length >= 2 && [...nick.trim()].length <= 3;
+  const ready = okId && pw.length > 0 && okNick;
+
+  const submit = async () => {
+    if (!ready || busy) return;
+    if (!hasSubtle()) return setErr(SUBTLE_MSG);
+    setBusy(true);
+    setErr("");
+    try {
+      await onRun(id.trim().toLowerCase(), pw, nick.trim());
+      onDone();
+      return;
+    } catch (e) {
+      /* 409 는 둘입니다 — 아이디가 이미 있거나(taken), 이미 정식 계정이거나(not anon) */
+      setErr(
+        e && e.status === 409
+          ? e.code === "not anon"
+            ? "이미 아이디가 있는 계정이에요. 창을 닫고 다시 눌러 주세요."
+            : "이미 있는 아이디예요. 다른 아이디로 해주세요."
+          : (e && e.message) || "실패했어요"
+      );
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="아이디 정하기">
+        <div className="gs-auth-head">
+          <h3>아이디 정하기</h3>
+          <button className="gs-x gs-dialog-x" onClick={onClose} aria-label="닫기">
+            ×
+          </button>
+        </div>
+        {!hasSubtle() ? (
+          <p className="gs-auth-warn">{SUBTLE_MSG}</p>
+        ) : (
+          <>
+            <p className="gs-auth-why">
+              파티원을 모으려면 아이디와 비밀번호를 정해야 해요. 지금 쓰는 방송용 주소는
+              그대로예요.
+            </p>
+            <label className="gs-field">
+              아이디
+              <input
+                ref={idRef}
+                className="gs-in gs-in-field"
+                value={id}
+                placeholder="영문·숫자 4~20자"
+                autoComplete="username"
+                onChange={(e) => setId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
+            </label>
+            <label className="gs-field">
+              비밀번호
+              <input
+                className="gs-in gs-in-field"
+                type="password"
+                value={pw}
+                autoComplete="new-password"
+                onChange={(e) => setPw(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
+            </label>
+            <label className="gs-field">
+              닉네임 <span className="gs-field-hint">(2~3글자 — 벌금판에 이 이름으로 올라요)</span>
+              <input
+                className="gs-in gs-in-field gs-in-nickbig"
+                value={nick}
+                maxLength={3}
+                onChange={(e) => setNick(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
+            </label>
+            <p className="gs-auth-warn">
+              비밀번호를 잊으면 되찾을 방법이 없어요.
+              <br />
+              다른 곳에서 쓰는 비밀번호는 쓰지 마세요.
+            </p>
+            <p className="gs-auth-note">1년 넘게 한 번도 안 쓰면 계정이 지워질 수 있어요.</p>
+            {err && <p className="gs-obs-err">{err}</p>}
+            <button className="gs-btn gs-authgo" onClick={submit} disabled={!ready || busy}>
+              {busy ? "잠시만요…" : "정하기"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* 로비(대기실) — 다음 판 미리보기입니다. 모인 닉네임이 행, 초안 항목·단가가 열이고,
    출발 전까지 지금 판은 건드리지 않습니다. 로비를 닫으면 초안은 버립니다. */
 function LobbyScreen({
@@ -8624,56 +8808,14 @@ function LobbyScreen({
   );
 }
 
-/* 파일 백업 — 서버 수명과 무관하게 남는 층. 장부 전체를 파일 하나로 내보내고 되살립니다. */
-function KeyShare({ onExportFile, onImportFile, onClose }) {
-  const [note, setNote] = useState("");
-  const fileRef = useRef(null);
-  const onFile = (e) => {
-    const f = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!f) return;
-    const rd = new FileReader();
-    rd.onload = () => setNote(onImportFile(String(rd.result || "")));
-    rd.readAsText(f);
-  };
-  return (
-    <InfoModal title="백업" onClose={onClose}>
-      <div className="gs-key">
-        <h4 className="gs-key-h">파일 백업</h4>
-        <p>
-          서버 없이도 남는 백업이에요. 지금 장부 전체(표·기록·설정)를 파일 하나로
-          저장했다가, 언제든 다시 불러와요.
-        </p>
-        <div className="gs-obs-acts">
-          <button className="gs-btn gs-btn-sm" onClick={onExportFile}>
-            파일로 내보내기
-          </button>
-          <button
-            className="gs-btn gs-btn-sm gs-btn-ghost"
-            onClick={() => fileRef.current && fileRef.current.click()}
-          >
-            파일 가져오기
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            style={{ display: "none" }}
-            onChange={onFile}
-          />
-        </div>
-        {note && <p className="gs-key-note">{note}</p>}
-      </div>
-    </InfoModal>
-  );
-}
-
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
-   로그인이 없으면 계정부터. 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members, onKick, invite, onInvite, onAskReissue, onAskShareOff, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
+   로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
+   guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
+function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon, onUpgrade, guest, members, onKick, invite, onInvite, onAskReissue, onAskShareOff, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [showGain, setShowGain] = useState(false); // 로그인하면 어떤 게 좋나요?
   const [showWhy, setShowWhy] = useState(false);
   const [showObs, setShowObs] = useState(false); // 방송 중 유출 방지 — 기본 가림
   const [showInv, setShowInv] = useState(false);
@@ -8686,10 +8828,10 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
 
   useEffect(() => {
     // 가이드 창이 위에 떠 있으면 Esc 는 그쪽 몫입니다 — 한 번에 하나씩 닫힙니다
-    const onKey = (e) => e.key === "Escape" && !showGuide && !showWhy && onClose();
+    const onKey = (e) => e.key === "Escape" && !showGuide && !showWhy && !showGain && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, showGuide, showWhy]);
+  }, [onClose, showGuide, showWhy, showGain]);
 
   const copy2 = (kind, text) =>
     navigator.clipboard
@@ -8718,6 +8860,23 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
     (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname) ? "docs/" : "") +
     "obs-guide/obs-guide-" + k + ".png";
 
+  /* 넣기 전에 방송에 뜰 그림을 봅니다. ?fit=1 은 페이지가 미리보기 창임을 아는 표시라,
+     브라우저로 열었을 때 붙는 한 줄도 여기서는 빠집니다 */
+  const openObsPreview = () => {
+    if (!obsUrl) return;
+    const one = srcMode === "split" ? obsUrl + "?type=board&fit=1" : obsUrl + "?fit=1";
+    if (!window.open(one, "gsObsPreview", "width=560,height=640"))
+      setErr("브라우저가 팝업을 막았어요. 팝업을 허용하고 다시 눌러 주세요.");
+  };
+  /* 파티원에게 보낼 메시지 — 나눈 소스를 골랐으면 주소를 두 줄 담습니다 (§5.2).
+     받는 사람은 앱 화면을 안 거치니 ?type=board·?type=spin 을 스스로 붙일 수 없어서요 */
+  const partyMsg = () =>
+    srcMode === "split"
+      ? "OBS 브라우저 소스에 이 주소들을 넣으면 벌금 현황이 방송에 떠요.\n" +
+        "현황판 " + obsUrl + "?type=board\n" +
+        "룰렛 " + obsUrl + "?type=spin"
+      : "OBS 브라우저 소스에 이 주소를 넣으면 벌금 현황이 방송에 떠요.\n" + obsUrl;
+
   /* 초대 남은 시간 — 30분짜리라 분 단위면 충분합니다 */
   const invLeft = invite && invite.exp ? Math.max(0, Math.round((invite.exp - Date.now()) / 60000)) : 0;
 
@@ -8727,7 +8886,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
         <div className="gs-obs-head">
           <h3>오버레이 공유 설정</h3>
           <div className="gs-obs-headr">
-            {auth && (
+            {/* 공유 켜기는 방장 것입니다 — 파티원 화면은 방장이 민 판을 비추기만 해서
+                여기 토글을 두면 아무 데도 안 닿는 스위치가 됩니다 */}
+            {auth && !guest && (
               <label className="gs-switch">
                 공유 켜기
                 <input
@@ -8745,6 +8906,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
             <button className="gs-obs-guideopen" onClick={() => setShowGuide(true)}>
               <i aria-hidden="true">?</i> OBS에 넣는 방법
             </button>
+            <button className="gs-obs-guideopen" onClick={() => setShowGain(true)}>
+              <i aria-hidden="true">?</i> 로그인하면 어떤 게 좋나요?
+            </button>
             <button className="gs-x gs-dialog-x" onClick={onClose} aria-label="닫기">
               ×
             </button>
@@ -8752,22 +8916,44 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
         </div>
 
         {!auth ? (
-          /* 계정이 먼저입니다 — 방송용 주소와 초대 링크는 계정마다 하나씩입니다.
-             고를 것을 두 개 놓으면 "나는 어느 쪽인가"를 또 묻는 셈이라, 여기도
-             주 버튼 하나만 두고 이미 계정이 있는 사람은 밑줄 문으로 보냅니다. */
+          /* 문은 하나입니다 (§5.2). 어느 쪽으로 가든 결과는 "내 링크"인데 입구를 둘로 나누면
+             "나는 어느 쪽인가"를 또 묻는 셈이라, 주소는 마찰 없이 주고 계정은 그 아래에서
+             이득을 설명해 권합니다. */
           <div className="gs-obs-make">
             <p>
-              <b>방송용 주소를 받으려면 계정이 필요해요.</b> 계정을 만들면 내 주소가 하나
-              생기고, 그 주소를 OBS 브라우저 소스에 넣으면 지금 들어가 있는 파티의 벌금
-              현황이 방송 화면에 실시간으로 떠요.
+              <b>주소 하나를 OBS 브라우저 소스에 넣으면</b> 지금 이 브라우저의 벌금 현황이
+              방송 화면에 실시간으로 떠요.
             </p>
             <div className="gs-obs-acts">
-              <button className="gs-btn" onClick={() => onOpenAuth("register")}>
-                계정 만들기
+              <button
+                className="gs-btn gs-authgo"
+                disabled={busy === "anon"}
+                onClick={async () => {
+                  setBusy("anon");
+                  setErr("");
+                  try {
+                    await onAnon();
+                  } catch (e) {
+                    setErr((e && e.message) || "실패했어요");
+                  }
+                  setBusy("");
+                }}
+              >
+                {busy === "anon" ? "잠시만요…" : "내 방송용 주소 받기"}
               </button>
-              <button className="gs-swaplink" onClick={() => onOpenAuth("login")}>
-                이미 계정이 있어요
-              </button>
+            </div>
+            <p className="gs-obs-makenote">이 브라우저에 저장돼요.</p>
+            <div className="gs-obs-makeacct">
+              <p>계정을 만들면 다른 컴퓨터에서도 같은 주소를 쓰고, 파티원이 자기 벌금을 직접 셀 수 있어요.</p>
+              <div className="gs-obs-acts">
+                <button className="gs-btn gs-btn-sm" onClick={() => onOpenAuth("register")}>
+                  계정 만들기
+                </button>
+                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => onOpenAuth("login")}>
+                  로그인
+                </button>
+              </div>
+              <p className="gs-obs-makenote">나중에 계정을 만들면 이 주소를 그대로 옮겨요</p>
             </div>
           </div>
         ) : (
@@ -8775,7 +8961,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
             <div className="gs-obs-acct">
               <span className="gs-caplab">계정</span>
               <b>{auth.nick}</b>
-              <span className="gs-obs-acctid">({auth.id})</span>
+              <span className="gs-obs-acctid">({auth.anon ? "아이디 없음" : auth.id})</span>
               <input
                 className="gs-in gs-in-nick"
                 value={nickDraft}
@@ -8790,6 +8976,12 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
               >
                 {busy === "nick" ? "바꾸는 중…" : "바꾸기"}
               </button>
+              {/* 익명 계정에서 정식으로 올라가는 길 — 주소는 안 바뀝니다 (§3-11) */}
+              {auth.anon && (
+                <button className="gs-btn gs-btn-sm" onClick={onUpgrade}>
+                  아이디 정하기
+                </button>
+              )}
               <button className="gs-btn gs-btn-sm gs-btn-ghost gs-obs-logout" onClick={onLogout}>
                 로그아웃
               </button>
@@ -8798,8 +8990,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
             {/* 내 방송용 주소 — 영구(재발급 전까지), 읽기 전용 */}
             <h4 className="gs-key-h">내 방송용 주소</h4>
             <p>
-              OBS 브라우저 소스에 넣으면 이 판이 방송에 떠요. 주소는 계속 같아서, 파티가
-              바뀌어도 다시 넣을 일이 없어요.
+              OBS·XSplit·프리즘 등 어떤 방송 프로그램이든, 브라우저 소스에 이 주소를 넣으면
+              돼요. 주소는 계속 같아서, 파티가 바뀌어도 다시 넣을 일이 없어요.
             </p>
             <div className="gs-obs-boxtop">
               {srcMode === "one" ? (
@@ -8814,6 +9006,10 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
                 title={showObs ? "가리기" : "보기"}
               >
                 <Eye on={showObs} />
+              </button>
+              {/* 넣기 전에 방송에 뜰 그림을 봅니다 — 이미 있는 ?fit=1 장치를 그대로 씁니다 */}
+              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={openObsPreview}>
+                미리보기
               </button>
               <span className="gs-obs-reissue">
                 <button className="gs-btn gs-btn-sm gs-btn-warn2" onClick={onAskReissue}>
@@ -8865,6 +9061,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
                 <button className="gs-btn" onClick={() => copy2("url", obsUrl)}>
                   {copied === "url" ? "복사됐어요 — OBS 소스 URL에 붙여넣으세요" : "OBS용 주소 복사"}
                 </button>
+                <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", partyMsg())}>
+                  {copied === "msg" ? "복사했어요" : "파티원에게 보낼 메시지 복사"}
+                </button>
               </div>
             ) : (
               <>
@@ -8892,6 +9091,11 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
                     {copied === "surl" ? "복사됐어요" : "복사"}
                   </button>
                 </div>
+                <div className="gs-obs-copyrow">
+                  <button className="gs-btn gs-btn-ghost" onClick={() => copy2("msg", partyMsg())}>
+                    {copied === "msg" ? "복사했어요" : "파티원에게 보낼 메시지 복사"}
+                  </button>
+                </div>
                 <p className="gs-obs-srcnote">
                   현황판 소스는 구석에 작게, 룰렛 소스는 화면 전체로 크게 잡아요. 룰렛
                   소스는 판이 돌 때만 나타나고 평소에는 아무것도 안 보여요. 룰렛 주소를
@@ -8900,6 +9104,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
               </>
             )}
 
+            {/* 초대·명단은 방장 것입니다 — 파티원에게는 낼 초대도, 뺄 사람도 없습니다 */}
+            {!guest && (
+              <>
             {/* 초대 — 로비 밖에서도 발급할 수 있습니다 */}
             <h4 className="gs-key-h">초대 링크</h4>
             <p className="gs-obs-ro">
@@ -8957,6 +9164,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
                   </li>
                 ))}
               </ul>
+            )}
+              </>
             )}
           </>
         )}
@@ -9021,7 +9230,107 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, members
           </p>
         </InfoModal>
       )}
+      {showGain && <GainGuide onClose={() => setShowGain(false)} />}
     </div>
+  );
+}
+
+/* [로그인하면 어떤 게 좋나요?] — 두 칸 비교와 '한 번만 / 팟마다' 두 장.
+   '옛 방식·새 방식'이라 부르지 않습니다 — 옛 방식이 있었다는 걸 알 필요가 없습니다. */
+function GainGuide({ onClose }) {
+  return (
+    <InfoModal title="로그인하면 어떤 게 좋나요?" onClose={onClose} wide>
+      <p className="gs-gain-lead">
+        벌금을 세고 정산하는 데는 계정이 필요 없어요. 계정은 <b>방송에 띄우는 방식</b>을
+        바꿔요.
+      </p>
+      <div className="gs-gain-cols">
+        <div className="gs-gain-col">
+          <h4>가입 없이</h4>
+          <p className="gs-gain-sub">주소 하나를 만들어 나눠 씁니다</p>
+          <div className="gs-gain-art" aria-hidden="true">
+            <span className="gs-gain-src">주소 하나</span>
+            <span className="gs-gain-arrow">→</span>
+            <span className="gs-gain-outs">
+              <i>방장 OBS</i>
+              <i>파티원 OBS</i>
+              <i>파티원 OBS</i>
+            </span>
+          </div>
+          <ul className="gs-gain-list">
+            <li className="yes">
+              링크를 받은 사람은 <b>누구나</b> 자기 방송에 띄울 수 있어요
+            </li>
+            <li className="no">파티원은 보기만 해요 — 자기 벌금을 직접 못 세요</li>
+            <li className="no">브라우저를 지우면 주소가 사라져요</li>
+            <li className="no">
+              방장이 바뀌면 <b>전원이</b> 새 주소를 다시 받아야 해요
+            </li>
+          </ul>
+        </div>
+        <div className="gs-gain-col">
+          <h4>계정을 만들면</h4>
+          <p className="gs-gain-sub">사람마다 자기 주소를 하나씩 가집니다</p>
+          <div className="gs-gain-art" aria-hidden="true">
+            <span className="gs-gain-outs">
+              <i>냥슬 주소</i>
+              <i>가루 주소</i>
+              <i>이다 주소</i>
+            </span>
+            <span className="gs-gain-arrow">→</span>
+            <span className="gs-gain-outs">
+              <i>냥슬 OBS</i>
+              <i>가루 OBS</i>
+              <i>이다 OBS</i>
+            </span>
+          </div>
+          <ul className="gs-gain-list">
+            <li className="yes">
+              OBS에 <b>한 번만</b> 넣으면 돼요 — 주소가 안 바뀌어요
+            </li>
+            <li className="yes">
+              파티원이 <b>자기 줄만</b> 눌러서 자수할 수 있어요
+            </li>
+            <li className="yes">다른 컴퓨터에서도 로그인만 하면 같은 주소예요</li>
+            <li className="yes">파티에서 빠지면 그 사람 화면은 저절로 비워져요</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4 className="gs-gain-h">한 번만 하는 일과, 팟마다 하는 일</h4>
+      <div className="gs-gain-cols">
+        <div className="gs-gain-col">
+          <span className="gs-gain-tag">처음 한 번</span>
+          <p className="gs-gain-sub">내 주소를 OBS에 넣기</p>
+          <div className="gs-gain-art" aria-hidden="true">
+            <span className="gs-gain-src">내 방송용 주소</span>
+            <span className="gs-gain-arrow">→</span>
+            <span className="gs-gain-src">OBS 브라우저 소스</span>
+          </div>
+          <p className="gs-gain-note">
+            넣고 나면 다시 안 건드려요. 방송을 안 하면 이 단계는 건너뛰어도 돼요.
+          </p>
+        </div>
+        <div className="gs-gain-col">
+          <span className="gs-gain-tag">팟마다</span>
+          <p className="gs-gain-sub">초대 링크 누르고 [참여]</p>
+          <div className="gs-gain-art" aria-hidden="true">
+            <span className="gs-gain-src">초대 링크</span>
+            <span className="gs-gain-arrow">→</span>
+            <span className="gs-gain-src">참여</span>
+            <span className="gs-gain-arrow">→</span>
+            <span className="gs-gain-src">아까 그 주소에 이번 파티가 뜸</span>
+          </div>
+          <p className="gs-gain-note">
+            주소를 다시 넣을 필요가 없어요. 들어간 파티가 그 주소에 저절로 나타나요.
+          </p>
+        </div>
+      </div>
+      <p className="gs-gain-foot">
+        파티원이 할 일은 초대 링크를 누르는 것뿐이에요. OBS를 안 써도 벌금은 세어지고
+        자수도 돼요.
+      </p>
+    </InfoModal>
   );
 }
 
@@ -9694,6 +10003,11 @@ const LOOK_PRESETS = [
 ];
 const LOOK_OPEN = 2; // 처음부터 보이는 개수
 const isPanelLook = (lk) => !!lk && (lk.t === "dark" || lk.t === "light");
+/* 서버가 읽는 키는 t·bg·s 셋뿐입니다 — 앱이 쓰는 alpha(판 투명도)와 bg 는 서로 뒤집힌 값입니다 */
+const lookIn = (srv) => {
+  const a = srv && srv.bg != null ? 100 - Math.round(srv.bg) : 25;
+  return { t: srv.t, alpha: [0, 25, 50, 75, 100].includes(a) ? a : 25 };
+};
 const sameLook = (a, b) =>
   !!a && !!b && a.t === b.t && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
 
@@ -10648,8 +10962,12 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-obs-label{font-size:11.5px; color:var(--ink-2)}
 .gs-obs-room b{font-size:15px}
 .gs-obs-on{margin-left:auto; font-size:11.5px; color:var(--ink-2)}
-.gs-obs-make{margin-top:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
-.gs-obs-make p{margin:0; font-size:12.5px; color:var(--ink-2)}
+.gs-obs-make{margin-top:14px}
+.gs-obs-make p{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.8}
+.gs-obs-makenote{margin-top:8px !important; font-size:11.5px !important}
+/* 주소는 위에서 마찰 없이 주고, 계정 권유는 선 아래에서 이득만 말합니다 */
+.gs-obs-makeacct{margin-top:18px; padding-top:14px;
+  border-top:1px dotted rgba(var(--ink-rgb),.28)}
 .gs-obs-url{display:flex; gap:8px; margin-top:14px}
 .gs-obs-url input{flex:1; min-width:0; font-size:12px; font-family:var(--mono); padding:9px 10px;
   border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px;
@@ -10791,21 +11109,42 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-obs-guide li{margin-bottom:14px}
 .gs-obs-guide img{display:block; max-width:100%; max-height:280px; width:auto; margin-top:7px;
   border-radius:4px; border:1px solid rgba(var(--ink-rgb),.25)}
+/* 로그인하면 어떤 게 좋나요? — 두 칸을 나란히 놓고 같은 자리에서 비교합니다 */
+.gs-gain-lead{margin:0 0 16px; font-size:13px; color:var(--ink-body); line-height:1.8}
+.gs-gain-cols{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media (max-width:680px){.gs-gain-cols{grid-template-columns:1fr}}
+.gs-gain-col{border:1px solid rgba(var(--ink-rgb),.2); border-radius:4px; padding:14px;
+  background:rgba(var(--lift-rgb),.28)}
+.gs-gain-col h4{margin:0; font-size:14px; color:var(--ink); font-weight:700}
+.gs-gain-tag{display:inline-block; font-size:10.5px; letter-spacing:.1em; color:var(--ink-2);
+  border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px; padding:2px 7px}
+.gs-gain-sub{margin:7px 0 0; font-size:12px; color:var(--ink-2)}
+.gs-gain-art{display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;
+  margin:12px 0; padding:12px 8px; border-radius:3px; background:rgba(var(--ink-rgb),.05)}
+.gs-gain-src{font-size:11px; color:var(--ink-body); border:1px solid rgba(var(--ink-rgb),.28);
+  border-radius:2px; padding:4px 8px; background:var(--paper); text-align:center}
+.gs-gain-outs{display:flex; flex-direction:column; gap:4px}
+.gs-gain-outs i{font-style:normal; font-size:10.5px; color:var(--ink-2);
+  border:1px solid rgba(var(--ink-rgb),.22); border-radius:2px; padding:3px 7px; background:var(--paper)}
+.gs-gain-arrow{color:var(--ink-2); font-size:13px}
+.gs-gain-list{margin:0; padding:0; list-style:none; font-size:12px; color:var(--ink-body);
+  line-height:1.7; display:flex; flex-direction:column; gap:7px}
+.gs-gain-list li{padding-left:18px; position:relative}
+.gs-gain-list li::before{position:absolute; left:0; top:0}
+.gs-gain-list li.yes::before{content:"✓"; color:var(--gold)}
+.gs-gain-list li.no::before{content:"—"; color:var(--ink-2)}
+.gs-dialog h4.gs-gain-h{margin:24px 0 12px; font-size:14px; color:var(--ink); font-weight:700}
+.gs-gain-note{margin:10px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-gain-foot{margin:20px 0 0; padding-top:14px; font-size:12.5px; color:var(--ink-body);
+  line-height:1.8; border-top:1px dotted rgba(var(--ink-rgb),.28)}
 /* 편집 권한 창 — OBS 설정에서 쓰던 줄 모양을 그대로 씁니다 */
 .gs-key p{margin:0 0 8px; font-size:12.5px; color:var(--ink-2); line-height:1.8}
 .gs-key-foot{margin-top:16px !important; padding-top:12px; font-size:11.5px !important;
   border-top:1px dotted rgba(var(--ink-rgb),.25)}
-.gs-keybtn{display:inline-flex; align-items:center; gap:7px}
-.gs-keybtn svg{flex:0 0 auto; opacity:.8}
-.gs-keybtn:hover svg{opacity:1}
 .gs-obs-warn{color:var(--red) !important; opacity:.9}
-/* 권한 · 백업 창 — 세 단(코드·받기·파일) 제목과 코드 상자 */
+/* 공유 설정 창의 단 제목 */
 .gs-key-h{margin:18px 0 6px; font-size:13.5px; color:var(--ink)}
 .gs-key h4.gs-key-h:first-child{margin-top:0}
-.gs-key-code{font-family:Consolas,monospace; font-size:15px; letter-spacing:.08em;
-  color:var(--gold); background:rgba(var(--ink-rgb),.07);
-  border:1px solid rgba(var(--gold-rgb),.55); border-radius:5px; padding:5px 10px}
-.gs-key-note{margin:10px 0 0; font-size:12.5px; color:var(--ink-body)}
 /* 문장 안에 버튼을 끼우면 줄바꿈에 따라 "두세요."만 남고 그 옆에 버튼이 붙어
    답답해 보입니다. 버튼은 제 줄에 세웁니다 */
 .gs-obs-keysline{margin:16px 0 0}
@@ -11824,10 +12163,10 @@ tr:hover .gs-lb-kick{opacity:.55}
 .gs-authswap{margin:14px 0 0; padding-top:13px; text-align:center; font-size:12.5px;
   color:var(--ink-2); border-top:1px solid rgba(var(--ink-rgb),.16)}
 /* 반대편으로 가는 문 — 경고가 아니라 안내라서 빨강을 안 씁니다 */
-.gs-authswap button,.gs-swaplink{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
+.gs-authswap button{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
   background:none; border:0; cursor:pointer; padding:0;
   text-decoration:underline; text-underline-offset:3px}
-.gs-authswap button:hover,.gs-swaplink:hover{color:var(--ink)}
+.gs-authswap button:hover{color:var(--ink)}
 .gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
   color:var(--ink-2)}
 .gs-field-hint{letter-spacing:0; font-size:11px}
