@@ -6149,7 +6149,7 @@ export default function GoldSettlement() {
           onOpenAuth={(tab) =>
             openAuth(tab, null, {
               title: "계정",
-              why: "방송용 주소와 초대 링크는 계정에 붙어요. 로그인하면 이 브라우저가 바뀌어도 같은 주소를 계속 써요.",
+              why: "방송용 주소와 초대 링크는 계정마다 하나씩이에요. 로그인만 하면 다른 브라우저에서도 같은 주소를 써요.",
               loginVerb: "로그인",
               joinVerb: "가입하기",
             })
