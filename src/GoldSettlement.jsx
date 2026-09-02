@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, Fragment } from "react";
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, Fragment } from "react";
 
 /* ==================================================================
    벌금 정산 · 최소 송금 계산기
@@ -82,7 +82,7 @@ const DEFAULT_ROWS_SIMPLE = DEFAULT_PEOPLE.map(([name, c1, c2, c3], i) => ({
 function demoLog(now) {
   const at = typeof now === "number" ? now : Date.now();
   const PRICE = { c1: 10000, c2: 30000, c3: 100000 };
-  const ITEM = { c1: "잡힘", c2: "죽음", c3: "" };
+  const ITEM = { c1: "잡힘", c2: "죽음", c3: "암살" };
   /* 매번 같은 기록이 나오도록 고정 씨앗을 씁니다 */
   let seed = 20250822;
   const rnd = (k) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % k);
@@ -2017,8 +2017,9 @@ export default function GoldSettlement() {
      로비는 화면이 아니라 서버에 사는 상태입니다. 방장이 화면을 떠나도 유지되고,
      메인 상단의 상시 위젯으로 언제든 돌아옵니다. */
   const [auth, setAuth] = useState(loadAuth);
-  /* 계정 창 — {tab, after}. after 는 로그인이 끝난 뒤 이어서 할 일입니다 */
+  /* 계정 창 — {tab, after, ctx}. after 는 로그인이 끝난 뒤 이어서 할 일입니다 */
   const [authOpen, setAuthOpen] = useState(null);
+  const [acctOpen, setAcctOpen] = useState(false); // 헤더 계정 드롭다운
   const [lobbyView, setLobbyView] = useState(false); // 로비 화면을 보고 있는지
   const [lobbyOn, setLobbyOn] = useState(false); // 서버 로비가 열려 있는지
   const [lobbyCap, setLobbyCap] = useState(8); // 정원 2~16
@@ -2041,6 +2042,16 @@ export default function GoldSettlement() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [gensOpen]);
+  /* 계정 드롭다운도 같은 규칙 — 바깥을 누르면 닫힙니다 */
+  useEffect(() => {
+    if (!acctOpen) return;
+    const onDown = (e) => {
+      if (e.target.closest && e.target.closest(".gs-acctdd")) return;
+      setAcctOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [acctOpen]);
   const [presets, setPresets] = useState(loadPresets);
   const savePresetNow = (name) => {
     const nm = (name || "").trim();
@@ -2208,7 +2219,11 @@ export default function GoldSettlement() {
     applyLedger({
       mode: "items", // 예시는 카운터로 엽니다 — 코스 1·2걸음이 칸 누르기입니다
       unit: "10000", // 예시 금액은 만G 기준으로 짜여 있습니다
-      cols: DEFAULT_COLS,
+      cols: [
+        { id: "c1", name: "잡힘", price: "10,000" },
+        { id: "c2", name: "죽음", price: "30,000" },
+        { id: "c3", name: "암살", price: "100,000" },
+      ],
       rows: DEFAULT_ROWS,
       log: demoLog(),
       feePercent: "5",
@@ -2274,8 +2289,11 @@ export default function GoldSettlement() {
     setAuth(v);
     saveAuth(v);
   };
-  /* 로그인이 필요한 자리에서 부릅니다 — 끝나면 하려던 일을 이어서 합니다 */
-  const openAuth = (tab, after) => setAuthOpen({ tab: tab || "login", after: after || null });
+  /* 로그인이 필요한 자리에서 부릅니다 — 끝나면 하려던 일을 이어서 합니다.
+     ctx 는 "왜 지금 계정을 묻는지"입니다. 끼어든 창은 이유를 말해야 하고,
+     헤더에서 스스로 연 창은 말할 이유가 없어서 비워 둡니다. */
+  const openAuth = (tab, after, ctx) =>
+    setAuthOpen({ tab: tab || "login", after: after || null, ctx: ctx || null });
   const doLogout = () => {
     if (auth) authApi.logout(auth.token).catch(() => {});
     putAuth(null);
@@ -2336,7 +2354,13 @@ export default function GoldSettlement() {
   const startParty = async () => {
     if (readOnly) return;
     const a = authRef.current;
-    if (!a) return openAuth("login", startParty);
+    if (!a)
+      return openAuth("login", startParty, {
+        title: "파티 모드",
+        why: "파티원을 모으려면 계정이 필요해요. 닉네임이 벌금판에 올라가는 내 이름이에요.",
+        loginVerb: "로그인하고 시작",
+        joinVerb: "가입하고 시작",
+      });
     try {
       const r = await roomApi.myRoom(a.token);
       const roomId = r.roomId;
@@ -4397,6 +4421,71 @@ export default function GoldSettlement() {
             </div>
           )}
           <div className="gs-sysbar-r">
+            {/* 계정 — 로그인은 눌러서 찾아가는 것이지, 하려던 일에 걸려 나오는 것이 아닙니다.
+                로그인한 뒤에는 닉네임이 곧 벌금판의 내 이름이라, 여기 떠 있는 것이 정보입니다. */}
+            {!readOnly && (
+              <div className="gs-acctdd">
+                {auth ? (
+                  <>
+                    <button
+                      className={"gs-gensbtn gs-acctbtn" + (acctOpen ? " on" : "")}
+                      onClick={() => setAcctOpen((v) => !v)}
+                      aria-expanded={acctOpen}
+                      aria-haspopup="menu"
+                      /* 닉네임이 <b> 안에 있어서 이름이 '▾' 로만 읽히는 곳이 있습니다 */
+                      aria-label={auth.nick + " — 계정"}
+                    >
+                      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                        <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="8" cy="5.4" r="2.6" />
+                          <path d="M2.9 13.6c.6-3 2.5-4.6 5.1-4.6s4.5 1.6 5.1 4.6" />
+                        </g>
+                      </svg>
+                      <b>{auth.nick}</b> ▾
+                    </button>
+                    {acctOpen && (
+                      <div className="gs-acctpanel" role="menu">
+                        <p className="gs-acct-who">
+                          <b>{auth.nick}</b>
+                          <span>{auth.id}</span>
+                        </p>
+                        <p className="gs-acct-note">
+                          닉네임은 벌금판에 올라가는 이름이에요. 오버레이 공유 설정에서 바꿔요.
+                        </p>
+                        <button
+                          className="gs-btn gs-btn-sm gs-btn-ghost"
+                          onClick={() => {
+                            setAcctOpen(false);
+                            doLogout();
+                          }}
+                        >
+                          로그아웃
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="gs-tip">
+                    <button
+                      className="gs-gensbtn gs-acctbtn"
+                      onClick={() => openAuth("login")}
+                    >
+                      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                        <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="8" cy="5.4" r="2.6" />
+                          <path d="M2.9 13.6c.6-3 2.5-4.6 5.1-4.6s4.5 1.6 5.1 4.6" />
+                        </g>
+                      </svg>
+                      로그인
+                    </button>
+                    <span className="gs-tip-body gs-tip-r" role="tooltip">
+                      벌금을 세는 데는 계정이 필요 없어요. <b>파티원을 모으거나 방송용 주소를
+                      받을 때만</b> 써요.
+                    </span>
+                  </span>
+                )}
+              </div>
+            )}
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
             {!readOnly && (
               <span className="gs-tip">
@@ -4650,7 +4739,14 @@ export default function GoldSettlement() {
           {!demoRoom && !auth && (
             <button
               className="gs-btn gs-btn-sm gs-slip-act"
-              onClick={() => openAuth("login")}
+              onClick={() =>
+                openAuth("login", null, {
+                  title: "참여하기",
+                  why: "이 파티에 참여하려면 계정이 필요해요. 닉네임이 벌금판에 올라가는 내 이름이에요.",
+                  loginVerb: "로그인하고 참여",
+                  joinVerb: "가입하고 참여",
+                })
+              }
             >
               로그인하고 참여
             </button>
@@ -4722,13 +4818,12 @@ export default function GoldSettlement() {
               </span>
             )}
             {/* 파티 모드 — 대기실에 모여서 출발합니다. 로비는 서버에 사는 상태예요.
-                로비 화면이 이미 떠 있으면 [대기실 열기]는 갈 데가 없는 버튼이라 숨깁니다 */}
-            {!readOnly && !inLobby && (
+                로비가 열려 있는 동안은 위쪽 상시 위젯이 [대기실 열기]와 [출발]을 들고
+                있어서, 여기 같은 버튼을 또 두면 나란히 둘이 됩니다. 여는 버튼은 하나면
+                충분하니 그때는 위젯에 양보합니다. */}
+            {!readOnly && !inLobby && !lobbyOn && (
               <span className="gs-tip">
-                <button
-                  className="gs-btn gs-partybtn"
-                  onClick={() => (lobbyOn ? setLobbyView(true) : startParty())}
-                >
+                <button className="gs-btn gs-partybtn" onClick={startParty}>
                   <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
                     <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="5.5" cy="5.2" r="2.2" />
@@ -4737,7 +4832,7 @@ export default function GoldSettlement() {
                       <path d="M10.9 9.5c1.7.1 2.9 1.2 3.4 3.2" />
                     </g>
                   </svg>
-                  {lobbyOn ? "대기실 열기" : "파티 모드 시작하기"}
+                  파티 모드 시작하기
                 </button>
                 <span className="gs-tip-body gs-tip-l" role="tooltip">
                   대기실을 열어 파티원을 모아요. 모인 사람이 <b>다음 판의 줄</b>이 되고, 각자
@@ -4767,7 +4862,10 @@ export default function GoldSettlement() {
                         <em>{r.transfers.length}통</em>
                       )}
                     </button>
-                    <span className="gs-tip-body" role="tooltip">
+                    <span
+                      className={"gs-tip-body" + (t.k === "mail" ? " gs-tip-r" : "")}
+                      role="tooltip"
+                    >
                       {t.tip}
                     </span>
                   </span>
@@ -5679,9 +5777,9 @@ export default function GoldSettlement() {
           <div className="gs-intro-in gs-ask-in">
             <h1 className="gs-title">처음 오셨나요?</h1>
             <p className="gs-intro-lead">
-              벌금을 적으면 누가 누구에게 얼마를 보낼지, 우편 수수료까지 계산해요.
+              벌금 카운팅과 정산을 도와주는 앱이에요.
               <br />
-              예시 파티로 한 바퀴 돌아보면 화면이 금방 익어요.
+              예시 파티에서 직접 눌러 보면서 사용법을 알아볼 수 있어요.
             </p>
             <div className="gs-ask-btns">
               <button className="gs-btn gs-ask-go" onClick={startTutorial}>
@@ -5799,7 +5897,7 @@ export default function GoldSettlement() {
                   startTutorial();
                 }}
               >
-                화면 안내 다시 보기
+                튜토리얼 다시보기
               </button>
             )
           }
@@ -5930,12 +6028,8 @@ export default function GoldSettlement() {
           action={COURSE_STEPS[coach.step].action}
           step={coach.step + 1}
           total={COURSE_STEPS.length}
-          passive
-          onSkip={() => {
-            /* 그만두는 것도 끝난 것입니다 — 예시를 치우고 다시 오는 길만 한 번 짚습니다 */
-            endTutorial();
-            setCoach({ kind: "hint" });
-          }}
+          block
+          lock={COURSE_STEPS[coach.step].lock}
           onNext={() => {
             if (coach.step < COURSE_STEPS.length - 1) {
               setCoach({ kind: "course", step: coach.step + 1 });
@@ -5945,9 +6039,10 @@ export default function GoldSettlement() {
             }
           }}
           onClose={() => {
-            // 대상이 없을 때(세로 보기 등)는 조용히 마칩니다
+            /* X·Esc, 그리고 대상이 사라졌을 때. 그만두는 것도 끝난 것이라 예시를 치웁니다.
+               마지막 걸음은 다시 오는 길을 이미 말했으니 그대로 닫습니다. */
             endTutorial();
-            setCoach(null);
+            setCoach(coach.step >= COURSE_STEPS.length - 1 ? null : { kind: "hint" });
           }}
         />
       )}
@@ -6051,7 +6146,14 @@ export default function GoldSettlement() {
           relay={relay}
           putRelay={putRelay}
           auth={auth}
-          onOpenAuth={(tab) => openAuth(tab)}
+          onOpenAuth={(tab) =>
+            openAuth(tab, null, {
+              title: "계정",
+              why: "방송용 주소와 초대 링크는 계정에 붙어요. 로그인하면 이 브라우저가 바뀌어도 같은 주소를 계속 써요.",
+              loginVerb: "로그인",
+              joinVerb: "가입하기",
+            })
+          }
           onLogout={doLogout}
           onNick={changeNick}
           members={members}
@@ -6078,6 +6180,7 @@ export default function GoldSettlement() {
       {authOpen && (
         <AuthModal
           tab={authOpen.tab}
+          ctx={authOpen.ctx}
           onDone={(a) => {
             const after = authOpen.after;
             setAuthOpen(null);
@@ -7708,7 +7811,9 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
 /* 계정 창 — 로그인과 가입이 한 창에 있습니다. 파티원이 이 창을 처음 보는 자리는
    초대를 눌러 들어온 대기실이라, 표를 가리지 않게 작은 창으로 띄웁니다.
    비밀번호는 여기서 선해시되고, 원문은 서버에 도착하지 않습니다. */
-function AuthModal({ tab, onDone, onClose }) {
+/* 계정 창. ctx 가 있으면 끼어든 것이라 "왜 묻는지"와 "누르면 무엇이 이어지는지"를
+   밝힙니다. 없으면 헤더에서 스스로 연 것이라 제목과 버튼만 담백하게 둡니다. */
+function AuthModal({ tab, ctx, onDone, onClose }) {
   const [mode, setMode] = useState(tab === "register" ? "register" : "login");
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
@@ -7752,9 +7857,9 @@ function AuthModal({ tab, onDone, onClose }) {
 
   return (
     <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="참여하기">
+      <div className="gs-dialog" role="dialog" aria-modal="true" aria-label={(ctx && ctx.title) || "계정"}>
         <div className="gs-auth-head">
-          <h3>참여하기</h3>
+          <h3>{(ctx && ctx.title) || "계정"}</h3>
           <span className="gs-seg gs-seg-sm" role="group" aria-label="로그인 또는 가입">
             <button className={mode === "login" ? "on" : ""} onClick={() => setMode("login")}>
               로그인
@@ -7772,6 +7877,7 @@ function AuthModal({ tab, onDone, onClose }) {
           <p className="gs-auth-warn">{SUBTLE_MSG}</p>
         ) : (
         <>
+        {ctx && ctx.why && <p className="gs-auth-why">{ctx.why}</p>}
         <label className="gs-field">
           아이디
           <input
@@ -7808,16 +7914,24 @@ function AuthModal({ tab, onDone, onClose }) {
           </label>
         )}
         {mode === "register" && (
-          <p className="gs-auth-warn">
-            비밀번호를 잊으면 되찾을 방법이 없어요.
-            <br />
-            다른 곳에서 쓰는 비밀번호는 쓰지 마세요.
-          </p>
+          <>
+            <p className="gs-auth-warn">
+              비밀번호를 잊으면 되찾을 방법이 없어요.
+              <br />
+              다른 곳에서 쓰는 비밀번호는 쓰지 마세요.
+            </p>
+            {/* 지울 때 알려 줄 방법이 없습니다(이메일을 안 받아서) — 그래서 미리 적습니다 */}
+            <p className="gs-auth-note">1년 넘게 한 번도 안 쓰면 계정이 지워질 수 있어요.</p>
+          </>
         )}
         {err && <p className="gs-obs-err">{err}</p>}
         <div className="gs-obs-acts gs-acts-end">
           <button className="gs-btn" onClick={submit} disabled={!ready || busy}>
-            {busy ? "잠시만요…" : mode === "login" ? "로그인하고 참여" : "가입하고 참여"}
+            {busy
+              ? "잠시만요…"
+              : mode === "login"
+              ? (ctx && ctx.loginVerb) || "로그인"
+              : (ctx && ctx.joinVerb) || "가입하기"}
           </button>
         </div>
         </>
@@ -8926,7 +9040,9 @@ function MouseIcon({ side }) {
    일반 파티에서는 어떤 안내도 자동으로 뜨지 않습니다. */
 const COURSE_STEPS = [
   {
-    sel: ".gs-hit",
+    /* 표 전체가 대상입니다 — 아무 칸이나 눌러도 넘어가니, 밝혀 두는 곳도 표 전체여야
+       문구와 맞습니다. 칸 하나만 밝히면 그 칸만 되는 줄 압니다. */
+    sel: ".gs-grid-count",
     text: (
       <>
         아무 칸이나 <MouseIcon side="left" /> 눌러 보세요 — 1회가 쌓여요.
@@ -8934,7 +9050,7 @@ const COURSE_STEPS = [
     ),
   },
   {
-    sel: ".gs-hit",
+    sel: ".gs-grid-count",
     text: (
       <>
         이번엔 <MouseIcon side="right" /> 우클릭 — 1회가 빠져요.
@@ -8943,26 +9059,75 @@ const COURSE_STEPS = [
   },
   { sel: ".gs-tab-ledger", text: "정산 장부 탭을 눌러 보세요 — 방금 누른 게 정산돼 있어요." },
   { sel: ".gs-tab-mail", text: "보낼 우편 탭도 눌러 보세요 — 누가 누구에게 얼마를 보낼지 나와 있어요." },
-  { sel: ".gs-obsbtn", text: "이 현황을 방송 화면에 실시간으로 띄우려면 여기예요.", action: "다음" },
+  {
+    /* 여기는 자리를 알려 주는 걸음이라 누를 필요가 없습니다. 열리면 설정 창이 안내
+       위로 올라와 가리므로, 대상까지 잠그고 말풍선의 [다음]으로만 넘어갑니다. */
+    sel: ".gs-obsbtn",
+    text: "이 현황을 방송 화면에 실시간으로 띄우려면 여기예요.",
+    action: "다음",
+    lock: true,
+  },
   {
     /* 마지막은 다시 오는 길을 알려 줍니다 — 예시가 사라지고 빈 표가 되는 순간이라,
        "방금 그건 어디 갔지"와 "다시 보려면"이 같이 나와야 합니다 */
     sel: ".gs-helpbtn",
     text: "여기까지예요 — 안내는 여기서 다시 볼 수 있어요. 이제 빈 표로 시작해요.",
     action: "알겠어요",
+    lock: true,
   },
 ];
 
-/* passive: 말풍선 밖 조작을 막지 않습니다 — 해보기 코스처럼 '직접 눌러야' 진행되는 단계용 */
-function CoachMark({ sel, text, action, step, total, passive, onNext, onSkip, onClose }) {
+/* block: 대상 말고는 못 누르게 막고 나머지를 어둡게 덮습니다.
+   lock: 대상까지 막습니다 — 말풍선의 버튼으로만 넘어가는 걸음용. */
+function CoachMark({ sel, text, action, step, total, block, lock, onNext, onClose }) {
   const [box, setBox] = useState(null);
+  /* 그린 뒤에 실제 높이를 재서 다시 앉힙니다 — 어림값으로 두면 걸음마다 틈이 달라집니다 */
+  const bubRef = useRef(null);
+  const [bh, setBh] = useState(0);
   const doneRef = useRef(onClose);
   doneRef.current = onClose;
+
+  /* 안내 중에는 대상 밖이 안 눌립니다. 화면 위에 판을 덮는 대신 문서에서 가로채는데,
+     그래야 대상이 표처럼 크거나 여러 개여도 구멍을 뚫을 필요가 없습니다.
+     스크롤은 막지 않습니다 — 표가 화면보다 길면 내려서 봐야 합니다. */
+  useEffect(() => {
+    if (!block) return;
+    const ok = (t) => {
+      if (!t || !t.closest) return false;
+      if (t.closest(".gs-coach")) return true; // 말풍선과 그 버튼은 늘 열려 있습니다
+      return !lock && !!t.closest(sel);
+    };
+    const stop = (e) => {
+      if (ok(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const kinds = ["mousedown", "mouseup", "click", "dblclick", "contextmenu"];
+    kinds.forEach((k) => document.addEventListener(k, stop, true));
+    return () => kinds.forEach((k) => document.removeEventListener(k, stop, true));
+  }, [block, lock, sel]);
+
+  useLayoutEffect(() => {
+    const el = bubRef.current;
+    if (el && el.offsetHeight && el.offsetHeight !== bh) setBh(el.offsetHeight);
+  });
+
+  /* Esc 도 X 와 같습니다 — 갇힌 느낌이 들지 않게 나가는 길을 둘 둡니다 */
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") doneRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     setBox(null);
+    setBh(0);
     const first = document.querySelector(sel);
-    /* 대상이 화면 밖에 있으면 테두리도 말풍선도 안 보이는 채로 안내가 도는 셈이 됩니다 */
-    if (first) first.scrollIntoView({ block: "center", inline: "nearest" });
+    /* 화면 밖이면 테두리도 말풍선도 안 보이는 채로 안내가 돕니다. nearest 라서
+       표처럼 화면보다 큰 대상은 이미 보이는 대로 두고 건드리지 않습니다. */
+    if (first) first.scrollIntoView({ block: "nearest", inline: "nearest" });
     let raf = 0;
     let miss = 0;
     let last = "";
@@ -9000,30 +9165,49 @@ function CoachMark({ sel, text, action, step, total, passive, onNext, onSkip, on
   }, [sel]);
   if (!box) return null;
   const W = 300;
+  const H = bh || 120; // 첫 그림만 어림값, 그다음부터는 잰 높이입니다
   const GAP = 14;
-  const left = Math.max(10, Math.min(box.x - 8, window.innerWidth - W - 10));
-  /* 아래로만 나오면 화면 끝에 붙은 대상에서 말풍선이 잘립니다. 아래가 좁고 위가 더
-     넓으면 뒤집습니다. bottom 으로 붙여 두면 말풍선 높이를 몰라도 됩니다. */
-  const below = window.innerHeight - (box.y + box.h) - GAP;
-  const up = below < 150 && box.y > below;
-  const place = up
-    ? { left, bottom: window.innerHeight - box.y + GAP }
-    : { left, top: box.y + box.h + GAP };
+  /* 대상이 말풍선보다 넓으면 가운데에 맞춥니다 — 표처럼 넓은 것에 왼쪽 끝을 맞추면
+     꼬리가 저 멀리 한쪽 끝을 가리켜 어디를 말하는지 알 수 없습니다. */
+  const wide = box.w > W;
+  const wantLeft = wide ? box.x + box.w / 2 - W / 2 : box.x - 8;
+  const left = Math.max(10, Math.min(wantLeft, window.innerWidth - W - 10));
+  /* 아래가 좁으면 위로 뒤집습니다. 잰 높이를 쓰니 어느 쪽이든 대상에서 딱 GAP 만큼
+     떨어집니다. 위아래 어디에도 자리가 없을 때만 화면 안으로 가둡니다 —
+     그때는 어두운 판 위에 얹히는데, 잘려서 안 보이는 것보다 낫습니다. */
+  const below = box.y + box.h + GAP;
+  const above = box.y - GAP - H;
+  const up = below + H > window.innerHeight - 10 && above >= 10;
+  const want = up ? above : below;
+  const top = Math.max(10, Math.min(want, window.innerHeight - H - 10));
+  /* 자리를 옮겼으면 꼬리는 대상을 안 가리킵니다 — 엉뚱한 데를 찌르느니 뗍니다 */
+  const tail = top === want;
   return (
-    <div
-      className={"gs-coach" + (passive ? " gs-coach-pass" : "")}
-      onMouseDown={(e) => !passive && e.target === e.currentTarget && onClose()}
+    <div className={"gs-coach" + (block ? " gs-coach-pass" : "")}
+      onMouseDown={(e) => !block && e.target === e.currentTarget && onClose()}
     >
+      {/* 대상만 남기고 덮습니다 — 어두운 곳은 눌러도 안 되는 곳입니다 */}
+      {block && (
+        <div
+          className="gs-coach-hole"
+          style={{ left: box.x - 6, top: box.y - 6, width: box.w + 12, height: box.h + 12 }}
+        />
+      )}
       <div
         className="gs-coach-ring"
         style={{ left: box.x - 5, top: box.y - 5, width: box.w + 10, height: box.h + 10 }}
       />
-      <div className={"gs-coach-bubble" + (up ? " up" : "")} style={place}>
-        <span
-          className="gs-coach-tail"
-          style={{ left: Math.max(14, box.x + box.w / 2 - left - 6) }}
-          aria-hidden="true"
-        />
+      <div ref={bubRef} className={"gs-coach-bubble" + (up ? " up" : "")} style={{ left, top }}>
+        {tail && (
+          <span
+            className="gs-coach-tail"
+            style={{ left: Math.max(14, Math.min(W - 26, box.x + box.w / 2 - left - 6)) }}
+            aria-hidden="true"
+          />
+        )}
+        <button className="gs-coach-x" onClick={onClose} aria-label="안내 끄기">
+          ✕
+        </button>
         <p>{text}</p>
         <div className="gs-coach-btns">
           {action && (
@@ -9035,11 +9219,6 @@ function CoachMark({ sel, text, action, step, total, passive, onNext, onSkip, on
             <em className="gs-coach-step" aria-hidden="true">
               {step}/{total}
             </em>
-          )}
-          {onSkip && (
-            <button className="gs-coach-skip" onClick={onSkip}>
-              다음에 보기
-            </button>
           )}
         </div>
       </div>
@@ -10085,19 +10264,23 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 위로 뒤집힌 말풍선 — 꼬리도 반대쪽 두 변을 씁니다 */
 .gs-coach-bubble.up .gs-coach-tail{top:auto; bottom:-7px; border-left:0; border-top:0;
   border-right:1px solid var(--gold); border-bottom:1px solid var(--gold)}
-.gs-coach-bubble p{margin:0 0 10px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-/* 코스 단계는 화면 조작을 막지 않습니다 — 말풍선·건너뛰기만 만질 수 있게 */
+.gs-coach-bubble p{margin:0 22px 10px 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+/* 막는 일은 문서에서 가로채 하고, 이 층은 그리기만 합니다 */
 .gs-coach-pass{pointer-events:none}
 .gs-coach-pass .gs-coach-bubble{pointer-events:auto}
+/* 대상만 남기고 덮는 그림자 — 어두운 곳은 눌러도 안 되는 곳입니다 */
+.gs-coach-hole{position:fixed; border-radius:5px; pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.58)}
+/* 나가는 문 — 시선이 가 있는 말풍선 안에 둡니다 */
+.gs-coach-x{position:absolute; top:7px; right:7px; width:24px; height:24px;
+  display:grid; place-items:center; border:0; background:transparent; color:var(--ink-2);
+  font-size:14px; line-height:1; border-radius:4px; cursor:pointer; padding:0}
+.gs-coach-x:hover{background:rgba(var(--ink-rgb),.1); color:var(--ink)}
 /* 카운터는 버튼 줄 오른쪽 끝 — 진행 표시이자, 다음과 건너뛰기를 양 끝으로 벌리는 칸막이 */
 .gs-coach-step{margin-left:auto; font-style:normal; font-size:10.5px;
   color:var(--ink-2); font-family:var(--mono)}
 .gs-coach-btns{display:flex; align-items:center; gap:14px}
-.gs-coach-btns .gs-coach-skip:first-child, .gs-coach-btns .gs-coach-step:first-child{margin-left:auto}
-.gs-coach-skip{border:0; background:transparent; font:inherit; font-size:11.5px;
-  color:var(--ink-2); cursor:pointer; text-decoration:underline; text-underline-offset:3px;
-  padding:2px 0}
-.gs-coach-skip:hover{color:var(--ink)}
+.gs-coach-btns .gs-coach-step:first-child{margin-left:auto}
 /* 오버레이 테마 — 사선 배경(밝은/어두운 화면 반반) 위에 실제 조합을 미리 보여줍니다 */
 .gs-obs-ro{margin-top:12px; font-size:12.5px; color:var(--ink-2)}
 .gs-obs-ro b{color:var(--ink)}
@@ -11149,6 +11332,24 @@ tr:hover .gs-lb-kick{opacity:.55}
   background:rgba(var(--ink-rgb),.04)}
 .gs-in-nickbig{width:110px; font-family:'Gowun Batang',serif; font-weight:700; font-size:16px}
 .gs-auth-warn{margin:12px 0 0; color:var(--red); font-size:11.5px; line-height:1.75}
+/* 만료 안내는 경고가 아니라 사실이라, 빨강을 안 씁니다 */
+.gs-auth-note{margin:6px 0 0; color:var(--ink-2); font-size:11.5px; line-height:1.75}
+/* 끼어든 창이 스스로를 변명하는 줄 — 입력칸 위에 한 번만 */
+.gs-auth-why{margin:10px 0 2px; font-size:12.5px; line-height:1.8; color:var(--ink-body);
+  border-left:2px solid rgba(var(--gold-rgb),.6); background:rgba(var(--gold-rgb),.07);
+  padding:8px 11px}
+
+/* 계정 칩 — 헤더 오른쪽. 지난 판 드롭다운과 같은 몸을 씁니다 */
+.gs-acctdd{position:relative}
+.gs-acctbtn svg{flex:none; opacity:.75}
+.gs-acctbtn b{font-family:'Gowun Batang',serif; font-size:13.5px}
+.gs-acctpanel{position:absolute; top:calc(100% + 7px); right:0; z-index:30; width:220px;
+  background:var(--paper); border:1px solid var(--kraft-dk); border-radius:8px; padding:12px 13px;
+  box-shadow:0 14px 34px rgba(var(--shadow-rgb),.34)}
+.gs-acct-who{margin:0; display:flex; align-items:baseline; gap:8px}
+.gs-acct-who b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
+.gs-acct-who span{font-family:var(--mono); font-size:11.5px; color:var(--ink-2)}
+.gs-acct-note{margin:7px 0 10px; font-size:11.5px; line-height:1.7; color:var(--ink-2)}
 
 /* 공유 설정 창의 계정 줄·명단 */
 .gs-obs-acct{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
