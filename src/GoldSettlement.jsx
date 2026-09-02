@@ -7956,8 +7956,13 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
         {/* 이 창이 왜 떴는지. 헤더에서 스스로 연 사람은 이유를 모르니, 계정이
             어디 쓰이는지와 "벌금 세는 데는 필요 없다"를 대신 적어 둡니다 */}
         <p className="gs-auth-why">
-          {(ctx && ctx.why) ||
-            "계정은 파티 모드와 내 방송용 주소에 써요. 벌금을 세고 정산하는 데는 계정이 필요 없어요."}
+          {(ctx && ctx.why) || (
+            <>
+              계정은 <b>파티 모드</b>와 <b>내 방송용 주소</b>에 써요.
+              <br />
+              벌금을 세고 정산하는 데는 계정이 필요 없어요.
+            </>
+          )}
         </p>
         <label className="gs-field">
           아이디
