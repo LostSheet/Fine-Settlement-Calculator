@@ -31,7 +31,7 @@ const json = (data, status = 200) =>
 
 /* 수명 (§1) */
 const SESSION_MS = 90 * 86400 * 1000;
-const INVITE_MS = 30 * 60 * 1000;
+const INVITE_MS = 10 * 60 * 1000;
 const LOBBY_MS = 6 * 3600 * 1000;
 const STATE_IDLE_MS = 90 * 86400 * 1000; // 판만 지웁니다 — 방·멤버십은 남습니다
 const ACCT_IDLE_MS = 365 * 86400 * 1000;

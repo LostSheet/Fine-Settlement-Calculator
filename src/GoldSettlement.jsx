@@ -8880,7 +8880,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onLogout, onNick, onAnon,
         "룰렛 " + obsUrl + "?type=spin"
       : "OBS 브라우저 소스에 이 주소를 넣으면 벌금 현황이 방송에 떠요.\n" + obsUrl;
 
-  /* 초대 남은 시간 — 30분짜리라 분 단위면 충분합니다 */
+  /* 초대 남은 시간 — 10분짜리라 분 단위면 충분합니다 */
   const invLeft = invite && invite.exp ? Math.max(0, Math.round((invite.exp - Date.now()) / 60000)) : 0;
   /* 화면에 죽은 링크를 띄우지 않습니다 — 창을 열었는데 만료돼 있으면 그때 새로 냅니다.
      복사는 복사만 하고 새로 발급은 눌러야 한다는 규칙을 지키면서, "0분 남음" 같은

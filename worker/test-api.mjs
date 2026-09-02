@@ -276,12 +276,12 @@ const main = async () => {
   await step("my/room: 로그인 없으면 401", async () => {
     eq((await api("POST", "/api/my/room")).status, 401, "status");
   });
-  await step("invite: 30분짜리 8자 코드", async () => {
+  await step("invite: 10분짜리 8자 코드", async () => {
     const r = await api("POST", "/api/r/" + room + "/invite", { token: A.token });
     eq(r.status, 200, "status");
     expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(r.data.invite.code), "코드 8자: " + r.data.invite.code);
     const left = r.data.invite.exp - Date.now();
-    expect(Math.abs(left - 30 * 60 * 1000) < 60000, "만료가 30분이 아님: " + left);
+    expect(Math.abs(left - 10 * 60 * 1000) < 60000, "만료가 10분이 아님: " + left);
     invite = r.data.invite.code;
   });
   await step("invite: 방장 아니면 403", async () => {
