@@ -2304,7 +2304,6 @@ export default function GoldSettlement() {
   const [meCur, setMeCur] = useState(null); // 서버가 아는 "지금 들어가 있는 방"
   const [invSent, setInvSent] = useState({}); // 쏜 시각 {acct: t} — 1분 지나면 원래대로
   const [mateSheet, setMateSheet] = useState(null); // 함께한 사람 시트 {id, nick, room}
-  const [invSeat, setInvSeat] = useState(null); // 초대할 자리 고르기 {id, nick}
   const [invHide, setInvHide] = useState({}); // 거절한 초대는 이 화면에서 지웁니다
   /* 서버 로비가 "모으는 중"인지 — 이 동안만 뷰어·오버레이가 대기실을 그립니다 (§4.3).
      로비 자체는 홈이라 늘 있습니다 (§1) */
@@ -3360,11 +3359,23 @@ export default function GoldSettlement() {
     },
     join: (m) => {
       if (!m || !m.acct) return refreshMembers();
-      if (m.st === "req") setJoinAsk({ acct: m.acct, nick: m.nick || m.acct });
-      /* 지목 초대를 받아들인 사람입니다 — 서버 명단이 이미 ok 라 방장이 수락할 것이 없습니다.
-         자리와, 판이 살아 있으면 그 자리의 줄까지 여기서 맞춥니다 (§3.3) */
-      else if (m.st === "ok" && m.seat)
-        seatMember(m.acct, m.nick || m.acct, m.seat, { local: true });
+      if (m.st === "req") {
+        setJoinAsk({ acct: m.acct, nick: m.nick || m.acct, inv: !!m.inv });
+        /* 내가 부른 사람이 자리가 없어 문 앞에 섰습니다 (§3.3) — 신청 칸에 줄이 서긴
+           하지만, 방장의 눈은 보통 명단이나 항목에 가 있어서 한 번은 말해 줘야 합니다 */
+        if (m.inv)
+          say((m.nick || m.acct) + "님이 초대를 받고 왔는데 자리가 없어요 — 인원 수를 늘리면 앉아요.");
+      } else if (m.st === "ok") {
+        /* 지목 초대를 받아들인 사람입니다 — 서버 명단이 이미 ok 라 방장이 수락할 것이
+           없습니다. 자리와, 판이 살아 있으면 그 자리의 줄까지 여기서 맞춥니다 (§3.3).
+           초대에 적힌 자리가 오는 사이 남에게 넘어갔을 수 있습니다 — 자리 지정은
+           편의였지 약속이 아니라, 그럴 땐 다른 빈 칸으로 보냅니다. 그대로 앉히면
+           한 줄에 두 사람이 겹칩니다 */
+        const taken =
+          m.seat && seats.some((s) => s.id === m.seat && s.acct && s.acct !== m.acct);
+        const id = m.seat && !taken ? m.seat : autoSeatFor(m.acct, m.nick || m.acct);
+        if (id) seatMember(m.acct, m.nick || m.acct, id, { local: true });
+      }
       refreshMembers();
     },
     lobby: (lb) => {
@@ -4078,35 +4089,26 @@ export default function GoldSettlement() {
   }, [invSent]);
   /* 지목 초대를 쏩니다 — 함께한 사람에게만 갑니다. 자리는 여기서 정해져 넘어가고,
      받은 사람이 수락하면 방장 수락 없이 그 자리에 앉습니다 (§3.3) */
-  const sendInvite = async (id, nick, seatId) => {
+  const sendInvite = async (id, nick, sid) => {
     if (!auth) return;
-    setInvSeat(null);
-    let sid = seatId;
-    /* '새 자리에'는 아직 없는 자리입니다 — 여기서 만들어 두고 그 자리로 부릅니다.
-       수락은 방장을 거치지 않으니, 앉을 곳이 그 전에 있어야 합니다 (§3.3) */
-    if (sid === "new") {
-      sid = "r" + seq.current++;
-      putSeats((prev) => [
-        ...prev,
-        { id: sid, name: nick || "", acct: null, mem: id, named: false },
-      ]);
-    }
     try {
       await authApi.invite(auth.token, id, sid);
       setInvSent((prev) => ({ ...prev, [id]: Date.now() }));
       say((nick || id) + "님에게 초대를 보냈어요 — 1분 안에 수락하면 바로 앉아요.");
     } catch (e) {
-      if (seatId === "new") putSeats((prev) => prev.filter((s) => s.id !== sid));
       say(e && e.status === 429 ? "초대를 너무 자주 보냈어요. 잠깐 뒤에 다시 해주세요." : e.message);
     }
   };
-  /* 자리는 지목할 때 정합니다 — 이름이 맞는 빈 자리가 하나면 그리로, 아니면 방장이 고릅니다.
-     이미 앉아 있는 사람을 다시 부르는 것은 알림이라, 자리를 새로 묻지 않고 그 자리로 부릅니다 */
+  /* 자리는 지목할 때 정합니다 — 명단은 인원 수만큼의 칸이라 앱이 빈 칸을 고릅니다 (§3.2).
+     이미 앉아 있는 사람을 다시 부르는 것은 알림이라, 자리를 새로 묻지 않고 그 자리로 부릅니다.
+     빈 칸이 하나도 없으면 부르지 않습니다 — 불러 봐야 문 앞에 세우는 것이고, 방장은
+     지금 그 명단을 보고 있으니 [수락]이 막힐 때와 같은 말로 알립니다 */
   const inviteMate = (m) => {
     const mine = seats.find((s) => s.acct === m.id);
     const id = mine ? mine.id : autoSeatFor(m.id, m.nick || m.id);
     if (id) return sendInvite(m.id, m.nick, id);
-    setInvSeat({ id: m.id, nick: m.nick || m.id });
+    setMateSheet(null);
+    say("명단이 가득 찼어요. 이름 적힌 칸을 비우거나 인원 수를 늘리면 부를 수 있어요.");
   };
   /* 노크 — 문 앞에 서는 것이라 취소·거절 전까지 유지됩니다 (§3.3).
      서고 나면 그 방으로 들어갑니다: 대기 배너와 [신청 취소]가 거기 있고,
@@ -4127,14 +4129,19 @@ export default function GoldSettlement() {
   const takeInvite = async (iv, leaveFirst) => {
     if (!auth) return;
     if (leaveFirst && liveRoom) await roomApi.leave(auth.token, liveRoom).catch(() => {});
+    let r;
     try {
-      await roomApi.joinInvited(auth.token, iv.room);
+      r = await roomApi.joinInvited(auth.token, iv.room);
     } catch (e) {
       setInvites((prev) => prev.filter((x) => x.from !== iv.from));
       say("초대 시간이 지났어요. 다시 초대해 달라고 해주세요.");
       return;
     }
     enterRoom(iv.room);
+    /* 부를 때는 자리가 있었는데 오는 사이 찼습니다 — 튕기지 않고 문 앞에 섰습니다 (§3.3).
+       아무 말이 없으면 "수락했는데 왜 안 앉지"가 되므로 그 자리에서 알립니다 */
+    if (r && r.st === "req")
+      say("자리가 다 차서 문 앞에서 기다려요 — 방장이 자리를 만들면 들어가요.");
   };
   const acceptInvite = (iv) => {
     /* 이미 딴 파티에 있으면 수락은 곧 옮기는 것입니다 — 한 번 물어봅니다 (§8) */
@@ -8105,7 +8112,11 @@ export default function GoldSettlement() {
           <b>신청이 왔어요</b>
           <span className="gs-join-sub">
             {pending[pending.length - 1].nick || pending[pending.length - 1].acct}
-            <span className="gs-join-id">({pending[pending.length - 1].acct})</span>님이 참여하려 해요
+            {/* 아이디는 앞 두 글자만 — 이 카드도 방송 화면 위에 뜹니다 (§3.1) */}
+            <span className="gs-join-id">
+              ({pending[pending.length - 1].acct.slice(0, 2) + "····"})
+            </span>
+            님이 참여하려 해요
             {pending.length > 1 && <span className="gs-join-more">외 {pending.length - 1}명</span>}
           </span>
           <div className="gs-join-acts">
@@ -8145,16 +8156,6 @@ export default function GoldSettlement() {
           }}
           onKnock={knockMate}
           onClose={() => setMateSheet(null)}
-        />
-      )}
-      {/* 지목할 자리 고르기 — 이름이 맞는 빈 자리가 없거나 애매할 때만 묻습니다 (§3.2) */}
-      {invSeat && (
-        <SeatPick
-          title="어느 자리로 부를까요?"
-          nick={invSeat.nick}
-          seats={seats}
-          onPick={(id) => sendInvite(invSeat.id, invSeat.nick, id)}
-          onClose={() => setInvSeat(null)}
         />
       )}
       {priceAsk && cols.some((c) => c.id === priceAsk) && (
@@ -9966,6 +9967,9 @@ function ReqRow({ req, ghost, onDeny, onApprove }) {
       <b>{req.nick || req.acct}</b>
       {/* 아이디는 여기서도 앞 두 글자만 — 이 화면도 통째로 방송에 잡힙니다 (§3.1) */}
       <span className="gs-lbreq-id">({req.acct.slice(0, 2) + "····"})</span>
+      {/* 내가 부른 사람인데 오는 사이 자리가 없어 내려앉았습니다 (§3.3) — 그냥 신청과
+          갈라 말해야 방장이 "인원 수를 늘려야겠구나"로 바로 잇습니다 */}
+      {req.inv && <span className="gs-lbreq-why">초대받고 왔는데 자리가 없었어요</span>}
       <span className="gs-lbreq-r">
         <button className="gs-swaplink gs-swaplink-mute" onClick={() => onDeny(req.acct)}>
           거절
@@ -13954,6 +13958,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbreq:last-child{margin-bottom:0}
 .gs-lbreq > b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
 .gs-lbreq-id{font-family:var(--mono); font-size:11px; color:var(--ink-2)}
+/* 내려앉은 까닭 한 줄 — 금색이라 "고칠 것이 있다"가 읽힙니다 (§3.3) */
+.gs-lbreq-why{font-size:11.5px; color:var(--gold); flex:0 1 auto; min-width:0}
 .gs-lbreq-r{margin-left:auto; display:flex; align-items:center; gap:9px; flex:none}
 /* 주소는 제 줄을 쓰고, 남은 시간과 버튼이 아랫줄에서 오른쪽 끝으로 몰립니다 (§9-1) —
    한 줄에 다 세우면 폭이 다른 버튼이 들쭉날쭉 접힙니다 */

@@ -893,7 +893,16 @@ export class Room {
   async members() {
     const out = [];
     for (const [k, v] of await this.ctx.storage.list({ prefix: "m:" }))
-      out.push({ acct: k.slice(2), nick: v.nick, rowId: v.rowId || null, st: v.st, t: v.t });
+      /* inv — 지목 초대를 받고 왔는데 자리가 없어 내려앉은 신청입니다 (§3.3).
+         방장의 신청 칸이 "그냥 신청"과 갈라 말해야 해서 목록에도 실어 보냅니다 */
+      out.push({
+        acct: k.slice(2),
+        nick: v.nick,
+        rowId: v.rowId || null,
+        st: v.st,
+        t: v.t,
+        inv: !!v.inv,
+      });
     return out;
   }
 
@@ -1167,6 +1176,8 @@ export class Room {
         }
         m.st = "ok";
         m.t = now;
+        /* 앉았으니 "자리가 없어 내려앉은 신청" 표시는 걷습니다 */
+        delete m.inv;
         if (typeof b.rowId === "string" && b.rowId) m.rowId = b.rowId;
         await S.put("m:" + acct, m);
         /* st:"ok" 가 되는 순간이 파티 하나 규칙이 걸리는 자리입니다 (§3.3) */
@@ -1245,14 +1256,32 @@ export class Room {
           room: req.headers.get("x-room") || "",
         });
         if (!iv || !iv.ok) return json({ error: "invite" }, 403);
-        const m = { nick: me.nick, rowId: iv.seat || null, st: "ok", t: now };
+        /* 초대는 자리를 잡아 두지 않습니다 — 예약하면 여럿을 부른 순간 방이 잠기고,
+           1분짜리 초대가 그동안 자리를 죽입니다. 그래서 문 앞에서 다시 셉니다.
+           그 사이 자리가 없어졌으면 튕기지 않고 **신청으로 내려앉힙니다** (§3.3):
+           방장이 콕 집어 부른 사람이라 조용히 돌려보내면 방장은 "왜 안 오지",
+           받은 사람은 "왜 안 되지"가 됩니다. 내려앉히면 방장 신청 칸에 뜨고,
+           인원 수를 늘려 [수락]하면 그대로 들어옵니다 */
+        const lobby = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
+        let full = false;
+        if (lobby.open) {
+          const seated = (await this.members()).filter((x) => x.st === "ok").length + 1;
+          full = seated >= lobby.cap;
+        }
+        const m = full
+          ? { nick: me.nick, rowId: null, st: "req", t: now, inv: 1 }
+          : { nick: me.nick, rowId: iv.seat || null, st: "ok", t: now };
         await S.put("m:" + me.id, m);
-        /* 지목 초대 수락도 st:"ok" 가 되는 순간입니다 — 딴 파티에 있었으면 여기서 옮겨집니다 */
-        await this.claimSeat(me.id, req);
-        await this.arm();
-        await this.toAccounts("/mated", { a: owner, b: me.id });
-        this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "ok", seat: iv.seat || null });
-        return json({ ok: true, st: "ok", you: youOf(m), seat: iv.seat || null });
+        if (!full) {
+          /* 지목 초대 수락도 st:"ok" 가 되는 순간입니다 — 딴 파티에 있었으면 여기서 옮겨집니다 */
+          await this.claimSeat(me.id, req);
+          await this.arm();
+          /* 관계는 앉았을 때 생깁니다 — 내려앉은 사람은 방장이 수락하는 순간에 생깁니다 */
+          await this.toAccounts("/mated", { a: owner, b: me.id });
+        }
+        /* inv:1 — 방장 앱이 "그냥 신청"과 "내가 부른 사람인데 자리가 없었다"를 가릅니다 */
+        this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: m.st, seat: m.rowId, inv: 1 });
+        return json({ ok: true, st: m.st, you: youOf(m), seat: m.rowId, full });
       }
       const code = String(b.j || "").toUpperCase();
       /* (b) 노크 — 문 앞에 서는 것이라 취소·거절 전까지 유지됩니다 (§3.3) */

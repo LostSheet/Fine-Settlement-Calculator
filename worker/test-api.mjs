@@ -1231,6 +1231,70 @@ const main = async () => {
     expect(!(me.data.invites || []).some((x) => x.from === P.id), "초대가 남아 있음");
   });
 
+  /* ---- 초대는 자리를 예약하지 않는다 — 문 앞에서 다시 센다 (§3.3) ----
+     부를 때는 자리가 있었는데 오는 사이 찼으면 튕기지 않고 신청으로 내려앉힌다.
+     방장이 콕 집어 부른 사람이라 조용히 돌려보내면 양쪽 다 왜 안 됐는지 모른다 */
+  await step("가득 참 준비: 자리를 비우고 정원 1로 로비를 연다", async () => {
+    eq(
+      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
+      200,
+      "leave"
+    );
+    /* 정원 1 = 방장 한 자리 — 남은 빈 칸이 없다 */
+    eq(
+      (await api("POST", "/api/r/" + pRoom + "/lobby", { token: P.token, body: { open: true, cap: 1 } }))
+        .status,
+      200,
+      "lobby"
+    );
+  });
+  await step("수락: 그 사이 자리가 차면 신청으로 내려앉는다 (튕기지 않음)", async () => {
+    const s = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id, seat: "r7" } });
+    pInv++;
+    eq(s.status, 200, "초대 발송");
+    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: { inv: 1 } });
+    eq(r.status, 200, "튕기지 않고 200");
+    eq(r.data.st, "req", "st");
+    eq(r.data.full, true, "full");
+    eq(r.data.you.rowId, null, "자리는 아직 없음");
+  });
+  await step("수락: 서기에 inv 표시가 붙은 신청으로 통지된다", async () => {
+    const j = await pScribe.want((x) => x.kind === "join");
+    eq(j.st, "req", "st");
+    eq(j.inv, 1, "inv 표시");
+  });
+  await step("members: 내려앉은 신청은 inv 로 갈라 보인다", async () => {
+    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
+    const q = list.find((x) => x.acct === Q.id);
+    eq(q.st, "req", "st");
+    eq(q.inv, true, "inv");
+  });
+  await step("내려앉은 사람에겐 자리가 아직 없다", async () => {
+    /* 관계는 여기서 볼 수 없다 — 지목 초대는 애초에 함께한 사람에게만 가므로
+       P·Q 는 이미 관계가 있다. 볼 수 있는 것은 자리를 안 잡았다는 것 하나다 */
+    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
+    eq(list.find((x) => x.acct === Q.id).rowId, null, "rowId");
+  });
+  await step("인원 수를 늘려 수락하면 그대로 들어오고 inv 표시가 걷힌다", async () => {
+    await api("POST", "/api/r/" + pRoom + "/lobby", { token: P.token, body: { open: true, cap: 4 } });
+    const r = await api("POST", "/api/r/" + pRoom + "/member", {
+      token: P.token,
+      body: { acct: Q.id, action: "approve", rowId: "r7" },
+    });
+    eq(r.status, 200, "status");
+    eq(r.data.member.st, "ok", "st");
+    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
+    eq(list.find((x) => x.acct === Q.id).inv, false, "inv 가 안 걷힘");
+  });
+  await step("가득 참 정리: 로비를 닫는다", async () => {
+    eq(
+      (await api("POST", "/api/r/" + pRoom + "/lobby", { token: P.token, body: { open: false } }))
+        .status,
+      200,
+      "lobby"
+    );
+  });
+
   await step("노크 준비: 나갔다 다시 문 앞에 선다", async () => {
     eq(
       (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
