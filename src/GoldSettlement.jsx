@@ -357,6 +357,10 @@ const isFillName = (s) => /^\((이름(입력|없음)|모험가)\d+\)$/.test(s ||
    "이름 없음" 이 여럿이면 우편에서 누구한테 보내야 할지 알 수가 없습니다. */
 const ANON = (i) => "모험가" + (i + 1);
 const seatName = (row, i) => ((row && row.name) || "").trim() || ANON(i);
+/* 판 기록에 적을 파티원 — 손으로 적은 이름만 남깁니다. 자리 채우는 기본 이름은
+   누구인지 말해 주지 않아서 목록만 길어집니다 */
+const realNames = (rws) =>
+  (rws || []).map((r) => ((r && r.name) || "").trim()).filter((n) => n && !isFillName(n));
 const noFine = (x) =>
   !(x.extras || []).length && Object.values(x.counts || {}).every((v) => !num(v));
 /* 옛 규칙에서는 "(이름입력n) + 벌금 0" 행이 정산 인원에서 빠졌습니다. 그 행을 남긴 채
@@ -744,6 +748,25 @@ const partyLedgerOf = (st) => ({
   undoSnap: st.undoSnap || null,
 });
 
+/* 파티원이 마지막으로 받은 판 — 정산은 판이 끝난 뒤에 하는데, 방장이 공유를 끄거나
+   내보내면 그 순간 화면이 비어서 자기가 얼마 보내는지 못 보게 됩니다. 받을 때마다
+   여기에 담아 두고, 연결이 끊기면 이것을 '끝난 판'으로 계속 보여 줍니다. */
+const LAST_LIVE_KEY = "goldSettlement.lastlive";
+function loadLastLive() {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = JSON.parse(window.localStorage.getItem(LAST_LIVE_KEY) || "null");
+    if (v && v.room && v.full && Array.isArray(v.full.rows) && Array.isArray(v.full.cols)) return v;
+  } catch (e) {}
+  return null;
+}
+function saveLastLive(v) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LAST_LIVE_KEY, JSON.stringify(v));
+  } catch (e) {}
+}
+
 function loadPartyReg() {
   if (typeof window === "undefined") return null;
   try {
@@ -1128,6 +1151,25 @@ const fmtSpan = (from, to) => {
     String(x.getHours()).padStart(2, "0") + ":" + String(x.getMinutes()).padStart(2, "0");
   return d(f) + " " + hm(f) + " ~ " + (d(f) === d(t) ? "" : d(t) + " ") + hm(t);
 };
+/* 판 기록의 날짜 — 목록은 짧게(9/3 밤), 신분증 띠는 길게(9월 3일 22:10 ~ 4일 01:40).
+   날짜보다 시간대가 기억에 남아서 목록에는 시간대 말을 붙입니다 */
+const AT_WORD = (h) => (h < 6 ? "새벽" : h < 11 ? "아침" : h < 17 ? "낮" : h < 21 ? "저녁" : "밤");
+const fmtWhenShort = (from) => {
+  if (!from) return "";
+  const f = new Date(from);
+  return f.getMonth() + 1 + "/" + f.getDate() + " " + AT_WORD(f.getHours());
+};
+const fmtWhenLong = (from, to) => {
+  if (!from) return "";
+  const f = new Date(from);
+  const t = new Date(to || from);
+  const hm = (x) =>
+    String(x.getHours()).padStart(2, "0") + ":" + String(x.getMinutes()).padStart(2, "0");
+  const head = f.getMonth() + 1 + "월 " + f.getDate() + "일 " + hm(f);
+  if (f.getMonth() === t.getMonth() && f.getDate() === t.getDate()) return head + " ~ " + hm(t);
+  if (f.getMonth() === t.getMonth()) return head + " ~ " + t.getDate() + "일 " + hm(t);
+  return head + " ~ " + (t.getMonth() + 1) + "월 " + t.getDate() + "일 " + hm(t);
+};
 /* 이주 판정 — 기록·벌금·직접 적은 이름 중 하나라도 있으면 남깁니다 */
 const slotWorthKeeping = (slot) =>
   !!slot &&
@@ -1508,12 +1550,17 @@ export default function GoldSettlement() {
       window.history.replaceState(null, "", pathname + search + (rest ? "#" + rest : ""));
     }
     if ((liveRoom && !own) || obsToken) {
+      /* 같은 방의 마지막 판이 담겨 있으면 그것으로 앉힙니다 — 새로고침했다고
+         정산이 사라지면 안 됩니다. 연결이 살아 있으면 곧 새 판이 덮어씁니다. */
+      const kept = liveRoom ? loadLastLive() : null;
+      const seed = kept && kept.room === liveRoom ? kept.full : null;
       boot.current = {
-        cols: DEFAULT_COLS,
-        rows: [],
-        feePercent: "5",
-        mode: "items",
-        unit: "10000",
+        cols: (seed && seed.cols) || DEFAULT_COLS,
+        rows: (seed && migrateRows(seed.rows)) || [],
+        feePercent: (seed && seed.feePercent) || "5",
+        mode: (seed && seed.mode) || "items",
+        unit: (seed && seed.unit) || "10000",
+        splitMode: seed && seed.splitMode === "solo" ? "solo" : "pot",
         seq: 1000,
         view: "tabs",
         tab: "sheet",
@@ -1522,6 +1569,9 @@ export default function GoldSettlement() {
         liveRoom: liveRoom || null,
         joinCode: readJoinCode(),
         obsToken,
+        /* 판 기록은 이 브라우저의 것이라 뷰어도 자기 기록을 그대로 봅니다.
+           목록만 읽고 이주(활성 판 승격)는 하지 않습니다 — 뷰어에게는 활성 판이 없습니다 */
+        partyReg: loadPartyReg() || { list: [{ name: DEFAULT_ROOM_LABEL, t: 0 }], active: DEFAULT_ROOM_LABEL },
       };
     }
   }
@@ -2095,6 +2145,15 @@ export default function GoldSettlement() {
   const [scribeOn, setScribeOn] = useState(true); // 방장 앱이 켜져 있는지
   const [denied, setDenied] = useState(null); // "invite" | "member"
   const [confessErr, setConfessErr] = useState("");
+  /* 끝난 판 — 방장이 공유를 껐거나, 판이 새로 시작됐거나, 내가 빠졌습니다.
+     화면을 비우지 않고 마지막으로 받은 판을 그대로 보여 줍니다(정산은 판이 끝난 뒤에 하니까). */
+  const [ended, setEnded] = useState(false);
+  /* 마지막으로 받은 판 — {full, host, mems, me, from, to}. 화면 갱신과 무관해 ref 입니다 */
+  const lastLive = useRef(null);
+  const liveBack = useRef(null); // 뷰어가 판 기록을 열었을 때 돌아올 자리
+  const archiveRef = useRef(null); // 판 기록에 넣는 함수 (최신 값을 보게)
+  const genViewRef = useRef(null);
+  genViewRef.current = genView;
   /* 방 이름 기본값이 '벌금 현황판'이라 어느 방인지 알 수 없습니다 — 방장 닉으로 부릅니다 */
   const [ownerNick, setOwnerNick] = useState("");
   const [roomOpen, setRoomOpen] = useState(false); // 머리줄 방 표시 칩의 패널
@@ -2187,15 +2246,17 @@ export default function GoldSettlement() {
     );
     setOpenRow(null);
     setBurst([]); // 앞 판에서 누른 것이 새 표 위에 남으면 안 됩니다
-    clearHash();
+    /* 뷰어의 주소에는 방이 적혀 있습니다 — 지우면 새로고침할 때 파티로 못 돌아옵니다 */
+    if (!viewer) clearHash();
   };
   /* ---------- 지난 판 이름 짓기 ---------- */
-  const uniquePartyName = (base) => {
+  const uniquePartyName = (base, list) => {
+    const l = list || partyReg.list;
     const root = (base || "").trim() || "불러온 파티";
-    if (!partyReg.list.some((x) => x.name === root)) return root;
+    if (!l.some((x) => x.name === root)) return root;
     for (let i = 2; i < 99; i++) {
       const c = root + " (" + i + ")";
-      if (!partyReg.list.some((x) => x.name === c)) return c;
+      if (!l.some((x) => x.name === c)) return c;
     }
     return root + " " + Date.now();
   };
@@ -2552,7 +2613,7 @@ export default function GoldSettlement() {
       const led = ledgerFromSnapshot(got && got.state);
       if (!led || !led.rows.length) return;
       setAsk({
-        title: "지난 판 이어가기",
+        title: "저장된 판 이어가기",
         body: "서버에 저장된 판이 있어요. 지금 화면은 손대지 않은 빈 판이라, 그 판을 그대로 앉힐 수 있어요.",
         action: "이어가기",
         onYes: () => {
@@ -3047,13 +3108,23 @@ export default function GoldSettlement() {
       say(e.message);
     }
   };
-  /* 끄기는 방송에 바로 티가 나는 일이라 한 번 물어봅니다. 켜기는 그냥 켜집니다. */
-  const shareOff = () =>
+  /* 끄기는 방송에 바로 티가 나는 일이라 한 번 물어봅니다. 켜기는 그냥 켜집니다.
+     끄기 전에 마지막 한 장을 '끝났어요' 표시(end)와 함께 보냅니다 — 안 보내면 파티원은
+     방장이 잠깐 자리를 비운 줄 알고, 판이 끝났다는 것을 알 길이 없습니다. */
+  const shareOff = () => {
+    clearTimeout(pushTimer.current);
+    if (auth && relay.room)
+      roomApi
+        .putState(auth.token, relay.room, { ...liveSnapshot(), end: 1 })
+        .catch(() => {
+          /* 못 보내도 이 브라우저의 장부는 그대로입니다 */
+        });
     setRelay((prev) => {
       const next = { ...prev, on: false };
       saveRelay(next);
       return next;
     });
+  };
   const askShareOff = () =>
     setAsk({
       title: "공유를 끌까요?",
@@ -3159,7 +3230,8 @@ export default function GoldSettlement() {
 
   /* 재생이 끝나면 미뤄 둔 표를 반영합니다 */
   useEffect(() => {
-    if (vplay || !vpend.current) return;
+    /* 판 기록을 열어 둔 동안은 그 판이 화면입니다 — 들어온 표로 덮으면 안 됩니다 */
+    if (vplay || genView || !vpend.current) return;
     const st = vpend.current;
     vpend.current = null;
     setCols(st.full.cols || DEFAULT_COLS);
@@ -3169,7 +3241,71 @@ export default function GoldSettlement() {
     setSplitMode(st.full.splitMode === "solo" ? "solo" : "pot");
     setLiveName(st.name || "");
     setLiveTick((t) => t + 1);
-  }, [!vplay]);
+  }, [!vplay, genView]);
+
+  /* ---------- 파티원: 마지막으로 받은 판을 담아 둡니다 ----------
+     정산은 판이 끝난 뒤에 합니다 — 그 순간 화면이 비면 자기가 얼마 보내는지 못 봅니다.
+     받을 때마다 판 전체와 신분증(방장 닉·파티원 전부·기간)을 함께 담습니다. */
+  const persistTimer = useRef(null);
+  const keepRound = (st) => {
+    const f = (st && st.full) || {};
+    if (!Array.isArray(f.rows) || !Array.isArray(f.cols)) return null;
+    const rws = f.rows;
+    const ids = rws.map((r) => r.id);
+    const ts = (Array.isArray(f.log) ? f.log : []).map((e) => e.t).filter(Boolean);
+    const prev = lastLive.current;
+    /* 줄 id 가 하나도 안 겹치면 판이 갈린 것입니다 — 출발·처음부터가 줄을 전부 새로
+       만들기 때문입니다(수락으로 한 줄 느는 것과 갈립니다). 옛 판은 판 기록에 남깁니다. */
+    if (
+      prev &&
+      prev.room === liveRoom &&
+      prev.ids.length &&
+      ids.length &&
+      !ids.some((id) => prev.ids.indexOf(id) >= 0)
+    ) {
+      if (archiveRef.current) archiveRef.current(prev);
+    }
+    const mine = you && you.rowId ? rws.find((r) => r.id === you.rowId) : null;
+    const next = {
+      room: liveRoom,
+      ids,
+      host: ownerNick || (prev && prev.room === liveRoom ? prev.host : "") || "",
+      me: mine ? seatName(mine, rws.indexOf(mine)) : (you && you.nick) || (auth && auth.nick) || "",
+      mems: realNames(rws),
+      from: ts.length ? Math.min.apply(null, ts) : 0,
+      to: ts.length ? Math.max.apply(null, ts) : 0,
+      full: {
+        mode: f.mode || "items",
+        cols: f.cols,
+        rows: rws,
+        feePercent: f.feePercent || "5",
+        unit: f.unit || "10000",
+        splitMode: f.splitMode === "solo" ? "solo" : "pot",
+        log: Array.isArray(f.log) ? f.log : [],
+        memoFreeze: f.memoFreeze || null,
+      },
+      t: Date.now(),
+    };
+    lastLive.current = next;
+    /* 판이 밀려 올 때마다 저장하면 손이 걸립니다 — 잠깐 모았다 한 번 씁니다 */
+    clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => saveLastLive(lastLive.current), 1200);
+    return next;
+  };
+  const keepRef = useRef(null);
+  keepRef.current = keepRound;
+  /* 판이 끝났습니다 — 화면은 그대로 두고 자수만 거둡니다. 그리고 판 기록에 넣습니다 */
+  const finishRound = () => {
+    const kept = lastLive.current;
+    if (!kept || !kept.full || kept.room !== liveRoom) return;
+    clearTimeout(persistTimer.current);
+    saveLastLive(kept);
+    if (archiveRef.current) archiveRef.current(kept);
+    setVlobby(null);
+    setEnded(true);
+  };
+  const finishRef = useRef(null);
+  finishRef.current = finishRound;
 
   /* ================= 파티원 =================
      #o=TOKEN 은 방을 모른 채 들어옵니다 — resolve 로 지금 들어가 있는 방을 찾습니다.
@@ -3269,7 +3405,8 @@ export default function GoldSettlement() {
   const demoRoom = liveRoom === DEMO_ROOM;
   const guestLobby = readOnly && !genView && !!vlobby;
   const guestWaiting = !!you && you.st === "ok" && !!vlobby;
-  const guestPlaying = !!you && you.st === "ok" && !vlobby;
+  /* 끝난 판에는 자수가 없습니다 — 더 셀 것이 없어서요. 표 세 장은 그대로 봅니다 */
+  const guestPlaying = !!you && you.st === "ok" && !vlobby && !ended && !genView;
   const guestSeated = guestWaiting;
   /* 자수할 줄이 실제로 있을 때만 나머지 칸을 물러나게 합니다 */
   const confessMode = guestPlaying && !!you.rowId;
@@ -3288,7 +3425,7 @@ export default function GoldSettlement() {
   /* ---------- 자수 탭 ----------
      파티원에게만 있는 탭이고, 그 사람의 기본 화면입니다. 자격이 사라지면(내보내짐·대기실로
      되돌아감) 그릴 것이 없으니 벌금표로 돌려놓습니다 — 빈 화면이 남지 않게 여기서 셉니다. */
-  const tabNow = tab === "confess" && !guestPlaying ? "sheet" : tab;
+  const tabNow = tab === "confess" && !guestPlaying ? (ended ? "ledger" : "sheet") : tab;
   const showConfess = tabNow === "confess";
   const showSheet = !tabbed || tabNow === "sheet";
   const showLedger = !tabbed || tabNow === "ledger";
@@ -3300,6 +3437,12 @@ export default function GoldSettlement() {
     if (!guestPlaying && wasPlaying.current && tab === "confess") setTab("sheet");
     wasPlaying.current = guestPlaying;
   }, [guestPlaying]);
+  /* 판이 끝나면 정산 장부부터 — 끝난 뒤에 볼 것은 자기가 얼마 보내는지입니다 */
+  const wasEnded = useRef(false);
+  useEffect(() => {
+    if (ended && !wasEnded.current) setTab("ledger");
+    wasEnded.current = ended;
+  }, [ended]);
   /* 30초 복귀 — 다른 탭에서 아무 조작이 없으면 자수 화면으로 돌아옵니다.
      어떤 조작에나 타이머가 처음으로 돌아가서, 읽는 중에는 끌려가지 않습니다. */
   useEffect(() => {
@@ -3377,10 +3520,16 @@ export default function GoldSettlement() {
           x && x.sp.sid === sp.sid ? { ...x, sp } : { sp, i: 0, rolling: true, over: false }
         );
       }
+      /* 받은 판을 담아 둡니다 — 판이 갈렸으면 여기서 옛 판이 판 기록으로 넘어갑니다 */
+      keepRef.current(st);
       /* 돌고 있는 중이면 표는 나중에 — 바늘이 멈추기 전에 숫자가 먼저 바뀌면
-         파티원 화면에서도 답이 새어 나갑니다 */
-      if (vplayRef.current) vpend.current = st;
+         파티원 화면에서도 답이 새어 나갑니다.
+         판 기록을 열어 둔 동안도 미뤄 둡니다 — 그 판이 지금 화면이니까요 */
+      if (vplayRef.current || genViewRef.current) vpend.current = st;
       else { vpend.current = null; paint(st); }
+      /* 방장이 공유를 끄면서 보낸 마지막 장 — 파티원에게는 판이 끝난 것입니다 */
+      if (st.end) finishRef.current();
+      else setEnded(false);
     };
     const connect = () => {
       if (stop) return;
@@ -3399,7 +3548,11 @@ export default function GoldSettlement() {
         if (ev.data === "pong") return;
         try {
           const m = JSON.parse(ev.data);
-          if (m.kind === "dead") setLiveState("dead");
+          if (m.kind === "dead") {
+            setLiveState("dead");
+            /* 방이 사라져도 마지막 판은 남깁니다 — 정산은 아직 안 끝났을 수 있습니다 */
+            finishRef.current();
+          }
           else if (m.kind === "hello") {
             setDenied(null);
             setYou(m.you || null);
@@ -3427,11 +3580,16 @@ export default function GoldSettlement() {
             }
             setDenied(m.why || "member");
             setYou(null);
-            /* 볼 자격이 없어졌으면 판도 같이 거둡니다 — 내보내진 뒤에도 마지막으로 받은
-               표가 남아 있으면, 못 보는 판을 계속 보여 주는 셈입니다 */
-            setRows([]);
-            setVlobby(null);
-            setLiveState("empty");
+            /* 마지막으로 받은 판이 있으면 화면을 비우지 않습니다 — 내보내진 순간이
+               보통 정산하는 순간입니다. 자수만 사라지고 벌금표·정산 장부·보낼 우편은
+               그대로 봅니다. 받은 적이 없으면(초대만 만료된 사람) 보여 줄 판도 없습니다. */
+            if (lastLive.current && lastLive.current.room === liveRoom) {
+              finishRef.current();
+            } else {
+              setRows([]);
+              setVlobby(null);
+              setLiveState("empty");
+            }
             stop = true;
             try {
               ws.close();
@@ -4309,64 +4467,95 @@ export default function GoldSettlement() {
   // 실제로 쓰기 시작할 때. 인원·숫자는 비우고 항목은 기본값으로 되돌립니다.
   /* 한 판 끝나고 같은 멤버로 또 한 판 — 이름과 항목은 두고 숫자만 비웁니다.
      손 안 댄 예시라면 남의 명단이니 이름까지 치웁니다. 행은 여덟 줄로 맞춥니다. */
-  /* ---------- 지난 판 — 출발·처음부터 사이의 한 세션 ----------
-     로컬 전용입니다. 읽기 조회만 있고, 잠금·복원·서버 보관은 없앴습니다. */
+  /* ---------- 판 기록 — 출발·처음부터·파티 종료 사이의 한 판 ----------
+     로컬 전용입니다. 읽기 조회만 있고, 잠금·복원·서버 보관은 없앴습니다.
+     줄마다 판의 신분증(출처·이름·기간·총액·파티원 전부)을 함께 담습니다. */
   const GEN_KEEP = 20; // 최근 20판, 넘치면 오래된 것부터
+  const GEN_LOCAL_TITLE = "내가 센 판";
   const genEntries = () => partyReg.list.filter((x) => x.gen);
+  /* 옛 항목에는 신분증이 없습니다 — 없는 채로 들어오니 로컬·파티원 없음으로 채웁니다.
+     파티원은 저장된 장부의 줄 이름에서 되살립니다(옛 판도 누구랑 했는지는 남아 있습니다) */
   const gensList = () =>
     genEntries()
       .slice()
       .sort((a, b) => (b.t || 0) - (a.t || 0))
       .map((g) => {
-        if (g.gold != null && g.n != null) return g;
-        const slot = loadPartySlot(g.name);
+        const need = g.gold == null || g.n == null || !Array.isArray(g.mems);
+        const slot = need ? loadPartySlot(g.name) : null;
         return {
           ...g,
+          src: g.src === "party" ? "party" : "local",
+          title: g.title || (g.host ? g.host + "네 파티" : GEN_LOCAL_TITLE),
+          host: g.host || "",
+          me: g.me || "",
+          mems: Array.isArray(g.mems) ? g.mems : realNames((slot && slot.rows) || []),
           gold: g.gold != null ? g.gold : slotGold(slot),
           n: g.n != null ? g.n : ((slot && slot.rows) || []).length,
         };
       });
-  const askDropGen = (nm) =>
+  const askDropGen = (g) =>
     setAsk({
-      title: "이 지난 판을 지울까요?",
-      body: nm + " — 로컬 보관에서 지워져요. 파일로 남긴 게 없으면 되돌릴 수 없어요.",
+      title: "이 기록을 지울까요?",
+      body: (g.title || g.name) + " — 이 브라우저에서 지워져요. 되돌릴 수 없어요.",
       action: "지우기",
       onYes: () => {
-        if (genView === nm) closeGen();
-        dropPartySlot(nm);
+        if (genView === g.name) closeGen();
+        dropPartySlot(g.name);
         putPartyReg({
           ...partyReg,
-          list: partyReg.list.filter((x) => x.name !== nm),
+          list: partyReg.list.filter((x) => x.name !== g.name),
         });
       },
     });
-  /* 지금 장부를 「지난 판」으로 닫습니다. 기록이 없으면 남길 것도 없습니다.
+  /* 방장 쪽 신분증 — 파티원이 한 명이라도 붙어 있었으면 그 판은 파티입니다 */
+  const hostRoundMeta = () => {
+    const party = !!auth && members.some((m) => m.st === "ok" && m.acct !== auth.id);
+    const nick = (auth && auth.nick) || "";
+    return {
+      src: party ? "party" : "local",
+      title: party ? nick + "네 파티" : GEN_LOCAL_TITLE,
+      host: party ? nick : "",
+      me: party ? nick : "",
+      mems: realNames(rows),
+      round: party && relay.room ? relay.room + "/" + ((rows[0] && rows[0].id) || "") : "",
+    };
+  };
+  /* 지금 장부를 판 기록으로 닫습니다. 기록이 없으면 남길 것도 없습니다.
      넘치는 옛 판은 목록·저장소에서 걷어냅니다. */
   const closeRound = () => {
     const before = partyReg.list;
-    const list = foldIntoGens(currentLedger(), before);
+    const list = foldIntoGens(currentLedger(), before, hostRoundMeta());
     if (list === before) return null;
     putPartyReg({ list, active: partyReg.active });
     return true;
   };
-  /* 장부 하나를 지난 판으로 밀어 넣습니다 — 목록을 받아 갱신된 목록을 돌려줍니다 */
-  const foldIntoGens = (led, list) => {
+  /* 장부 하나를 판 기록으로 밀어 넣습니다 — 목록을 받아 갱신된 목록을 돌려줍니다.
+     같은 판(round)이 이미 있으면 그 줄을 갱신합니다 — 끝났다 이어진 판이 둘로 남지 않게 */
+  const foldIntoGens = (led, list, meta) => {
     const ts = ((led && led.log) || []).map((e) => e.t).filter(Boolean);
     if (!ts.length) return list;
-    const label = uniquePartyName(fmtSpan(Math.min(...ts), Math.max(...ts)));
+    const info = meta || {};
+    const from = Math.min.apply(null, ts);
+    const to = Math.max.apply(null, ts);
+    const old = info.round ? list.find((x) => x.gen && x.round === info.round) : null;
+    const label = old ? old.name : uniquePartyName(fmtSpan(from, to), list);
     savePartySlot(label, led);
-    let out = [
-      ...list,
-      {
-        name: label,
-        t: Date.now(),
-        gen: true,
-        from: Math.min(...ts),
-        to: Math.max(...ts),
-        gold: slotGold(led),
-        n: ((led && led.rows) || []).length,
-      },
-    ];
+    const entry = {
+      name: label,
+      t: Date.now(),
+      gen: true,
+      from,
+      to,
+      gold: slotGold(led),
+      n: ((led && led.rows) || []).length,
+      src: info.src === "party" ? "party" : "local",
+      title: info.title || GEN_LOCAL_TITLE,
+      host: info.host || "",
+      me: info.me || "",
+      mems: Array.isArray(info.mems) ? info.mems : realNames((led && led.rows) || []),
+      round: info.round || "",
+    };
+    let out = old ? list.map((x) => (x.name === old.name ? entry : x)) : [...list, entry];
     const loose = out.filter((x) => x.gen);
     if (loose.length > GEN_KEEP) {
       const drop = loose
@@ -4379,19 +4568,108 @@ export default function GoldSettlement() {
     }
     return out;
   };
+  /* 파티원이 받은 판을 그대로 판 기록에 넣습니다 — 서버는 건드리지 않습니다 */
+  const genArchive = (kept) => {
+    if (!kept || !kept.full) return;
+    const f = kept.full;
+    const led = {
+      mode: f.mode || "items",
+      unit: f.unit || "10000",
+      cols: f.cols || [],
+      rows: migrateRows(f.rows || []),
+      log: f.log || [],
+      feePercent: f.feePercent || "5",
+      splitMode: f.splitMode === "solo" ? "solo" : "pot",
+      memoFreeze: f.memoFreeze || null,
+      undoSnap: null,
+    };
+    const before = partyReg.list;
+    const list = foldIntoGens(led, before, {
+      src: "party",
+      title: (kept.host || "방장") + "네 파티",
+      host: kept.host || "",
+      me: kept.me || "",
+      mems: kept.mems || [],
+      round: kept.room + "/" + ((kept.ids && kept.ids[0]) || ""),
+    });
+    if (list === before) return;
+    putPartyReg({ list, active: partyReg.active });
+  };
+  archiveRef.current = genArchive;
   const openGen = (name) => {
     const slot = loadPartySlot(name);
     if (!slot) return;
-    /* 이미 보기 중이면 활성 장부는 처음 열 때 떠 놨습니다 — 다시 저장하면
+    /* 이미 보기 중이면 돌아올 자리는 처음 열 때 떠 놨습니다 — 다시 떠 두면
        보고 있던 판 내용으로 덮어써 버립니다 */
-    if (!genView) savePartySlot(partyReg.active, currentLedger());
+    if (!genView) {
+      /* 뷰어는 남의 판을 비추는 중이라 이 브라우저에 저장하면 내 장부를 덮어씁니다 */
+      if (viewer) liveBack.current = currentLedger();
+      else savePartySlot(partyReg.active, currentLedger());
+    }
     applyLedger(slot);
     setGenView(name);
   };
+  /* [지금 판으로] — 뷰어는 보고 있던 판으로, 방장은 자기 장부로 돌아옵니다 */
   const closeGen = () => {
-    applyLedger(loadPartySlot(partyReg.active) || blankPartyLedger());
+    if (viewer) applyLedger(liveBack.current || blankPartyLedger());
+    else applyLedger(loadPartySlot(partyReg.active) || blankPartyLedger());
     setGenView(null);
+    /* 끝난 판으로 돌아가면 볼 것은 정산 장부입니다 (applyLedger 는 벌금표로 엽니다) */
+    if (ended) setTab("ledger");
   };
+  /* [닫기] — 끝난 파티 화면을 접고 이 브라우저의 내 장부로 갑니다.
+     뷰어인지는 부트에서 정해지므로 주소에서 방을 떼고 다시 엽니다 */
+  const leaveEnded = () => {
+    if (typeof window === "undefined") return;
+    saveLastLive(null);
+    const { pathname, search } = window.location;
+    window.history.replaceState(null, "", pathname + search);
+    window.location.reload();
+  };
+  /* ---------- 판의 신분증 띠 ----------
+     판 전체에 걸리는 정보라 카드(탭 내용) 안이 아니라 탭 위에 둡니다. 끝난 판·기록에서는
+     마스트 왼쪽 버튼들이 어차피 쓸모없으니 그 자리를 이 띠가 씁니다. */
+  const idBand = (() => {
+    if (genView) {
+      const g = partyReg.list.find((x) => x.gen && x.name === genView) || null;
+      const need = !g || g.gold == null || !Array.isArray(g.mems);
+      const slot = need ? loadPartySlot(genView) : null;
+      return {
+        src: g && g.src === "party" ? "party" : "local",
+        title: (g && g.title) || GEN_LOCAL_TITLE,
+        when: g ? fmtWhenLong(g.from || g.t, g.to || g.t) : genView,
+        gold: g && g.gold != null ? g.gold : slotGold(slot),
+        host: (g && g.host) || "",
+        me: (g && g.me) || "",
+        mems: g && Array.isArray(g.mems) ? g.mems : realNames((slot && slot.rows) || []),
+        msg: (
+          <>
+            <b>판 기록</b>을 보는 중이에요 — 여기서는 못 고쳐요.
+          </>
+        ),
+        act: { label: "지금 판으로", ghost: false, on: closeGen },
+      };
+    }
+    if (ended) {
+      const k = lastLive.current || {};
+      return {
+        src: "party",
+        title: (k.host || ownerNick || "방장") + "네 파티",
+        when: fmtWhenLong(k.from, k.to),
+        gold: slotGold(currentLedger()),
+        host: k.host || ownerNick || "",
+        me: k.me || (auth && auth.nick) || "",
+        mems: Array.isArray(k.mems) && k.mems.length ? k.mems : realNames(rows),
+        msg: (
+          <>
+            <b>끝났어요.</b> 정산 결과는 계속 볼 수 있고, 판 기록에도 남았어요.
+          </>
+        ),
+        act: { label: "닫기", ghost: true, on: leaveEnded },
+      };
+    }
+    return null;
+  })();
   /* 초기화 — keep: 이름·항목 남기고 비우기 / full: 전부 비우기(프리셋 시작 가능) */
   const clearAll = (kind, preset, size) => {
     if (readOnly) return;
@@ -4670,8 +4948,9 @@ export default function GoldSettlement() {
               )}
             </div>
           )}
-          {/* 지난 판 — 전역(장부 이력)이라 헤더 왼쪽, 앱 이름 옆입니다 */}
-          {!viewer && (
+          {/* 판 기록 — 전역(장부 이력)이라 헤더 왼쪽, 앱 이름 옆입니다.
+              파티원의 판도 여기 남으므로 뷰어에게도 기록이 있으면 보입니다 */}
+          {(!viewer || genEntries().length > 0) && (
             <div className="gs-gensdd">
               <button
                 className={"gs-gensbtn" + (gensOpen ? " on" : "")}
@@ -4679,40 +4958,62 @@ export default function GoldSettlement() {
                 aria-expanded={gensOpen}
                 aria-haspopup="menu"
               >
-                지난 판{genEntries().length > 0 && <b>{genEntries().length}</b>} ▾
+                판 기록{genEntries().length > 0 && <b>{genEntries().length}</b>} ▾
               </button>
               {gensOpen && (
                 <div className="gs-genspanel" role="menu">
-                  <h4 className="gs-gens-h">지난 판</h4>
+                  <h4 className="gs-gens-h">판 기록</h4>
                   <p className="gs-gens-lead">
-                    출발하거나 처음부터를 누르면 그때 판이 여기 남아요. 보기는 읽기 전용 — 최근
-                    20판까지요.
+                    끝난 판이 여기 남아요. 보기만 할 수 있고, 최근 20판까지 남습니다.
                   </p>
+                  {gensList().length === 0 && (
+                    <p className="gs-gens-empty">아직 끝난 판이 없어요.</p>
+                  )}
                   {gensList().map((g) => (
-                    <div className="gs-genrow" key={g.name}>
-                      <b>{g.name}</b>
-                      <span className="gs-genrow-meta">
-                        {g.n ? g.n + "명 · " : ""}
-                        {man(g.gold || 0)}
+                    <div className="gs-hisrow" key={g.name}>
+                      <span className={"gs-idsrc" + (g.src === "party" ? "" : " gs-idsrc-local")}>
+                        {g.src === "party" ? "파티" : "로컬"}
                       </span>
-                      <span className="gs-genrow-r">
-                        <button
-                          className="gs-btn gs-btn-sm gs-btn-ghost"
-                          onClick={() => {
-                            setGensOpen(false);
-                            openGen(g.name);
-                          }}
-                        >
-                          보기
-                        </button>
-                        <button
-                          className="gs-x"
-                          onClick={() => askDropGen(g.name)}
-                          aria-label={g.name + " 지우기"}
-                        >
-                          ×
-                        </button>
-                      </span>
+                      <button
+                        className="gs-hisbody"
+                        onClick={() => {
+                          setGensOpen(false);
+                          openGen(g.name);
+                        }}
+                      >
+                        <span className="gs-hist1">
+                          <b>{g.title}</b>
+                          <span>{fmtWhenShort(g.from || g.t)}</span>
+                        </span>
+                        {/* 파티원 전부 — "외 4명"으로 줄이지 않습니다 */}
+                        {g.mems.length > 0 && (
+                          <span className="gs-idmems">
+                            {g.mems.map((n, i) => (
+                              <span
+                                key={n + "@" + i}
+                                className={
+                                  "gs-idmem" +
+                                  (g.host && n === g.host
+                                    ? " gs-idmem-host"
+                                    : g.me && n === g.me
+                                    ? " gs-idmem-me"
+                                    : "")
+                                }
+                              >
+                                {n}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </button>
+                      <span className="gs-hisgold">{man(g.gold || 0)}</span>
+                      <button
+                        className="gs-x"
+                        onClick={() => askDropGen(g)}
+                        aria-label={g.title + " 기록 지우기"}
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -4923,16 +5224,6 @@ export default function GoldSettlement() {
         </div>
       </div>
 
-      {genView && (
-        <div className="gs-genbar" role="status">
-          <b>지난 판 보기</b> — {genView} · 읽기 전용이에요.
-          <span className="gs-genbar-r">
-            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={closeGen}>
-              닫기
-            </button>
-          </span>
-        </div>
-      )}
       {/* 상시 위젯 — 로비는 서버에 살아 있고, 메인 어디서든 여기로 돌아옵니다 */}
       {!readOnly && lobbyOn && !lobbyView && (
         <div className="gs-lobbywidget" role="status">
@@ -4960,8 +5251,9 @@ export default function GoldSettlement() {
           </span>
         </div>
       )}
-      {/* ── 파티원 배너 — 화면 맨 위. 상태(초대·대기·판)에 따라 말이 바뀝니다 ── */}
-      {readOnly && !genView && <div className="gs-guestbar">
+      {/* ── 파티원 배너 — 화면 맨 위. 상태(초대·대기·판)에 따라 말이 바뀝니다.
+             끝난 판·판 기록에서는 탭 위의 신분증 띠가 이 자리를 대신합니다 ── */}
+      {readOnly && !genView && !ended && <div className="gs-guestbar">
       {/* 내 방송용 주소 — 참여 중이면 화면 맨 위에. 방송에 새지 않게 기본은 가림입니다 */}
       {readOnly && !genView && auth && auth.obsToken && you && you.st === "ok" && (
         <div className="gs-slip gs-slip-calm">
@@ -5083,6 +5375,48 @@ export default function GoldSettlement() {
       </div>}
       {/* ── 머리 ─────────────────────────────────────── */}
       <header className="gs-mast">
+        {/* 판의 신분증 — 탭 위, 마스트 왼쪽 버튼들이 있던 자리입니다 */}
+        {idBand && (
+          <div className="gs-idbar" role="status">
+            <div className="gs-idbar-t">
+              <span className={"gs-idsrc" + (idBand.src === "party" ? "" : " gs-idsrc-local")}>
+                {idBand.src === "party" ? "파티" : "로컬"}
+              </span>
+              <h4 className="gs-idname">{idBand.title}</h4>
+              {idBand.when && <span className="gs-idwhen">{idBand.when}</span>}
+              <span className="gs-idmsg">{idBand.msg}</span>
+              <span className="gs-idbar-r">
+                <span className="gs-idtot">{man(idBand.gold || 0)}</span>
+                <button
+                  className={"gs-btn gs-btn-sm" + (idBand.act.ghost ? " gs-btn-ghost" : "")}
+                  onClick={idBand.act.on}
+                >
+                  {idBand.act.label}
+                </button>
+              </span>
+            </div>
+            {/* 파티원은 줄이지 않습니다 — 날짜는 잘 잊어도 누구랑 했는지는 기억합니다 */}
+            {idBand.mems.length > 0 && (
+              <div className="gs-idmems">
+                {idBand.mems.map((n, i) => (
+                  <span
+                    key={n + "@" + i}
+                    className={
+                      "gs-idmem" +
+                      (idBand.host && n === idBand.host
+                        ? " gs-idmem-host"
+                        : idBand.me && n === idBand.me
+                        ? " gs-idmem-me"
+                        : "")
+                    }
+                  >
+                    {n}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="gs-mastrow">
           {/* 판을 만드는 문들 — 탭 줄 왼쪽: 프리셋(구성 보관)과 처음부터(판 닫고 새로) */}
           <div className="gs-mastleft">
@@ -5117,7 +5451,7 @@ export default function GoldSettlement() {
                   처음부터
                 </button>
                 <span className="gs-tip-body gs-tip-l" role="tooltip">
-                  판을 닫고 새로 시작해요. 지금 판은 <b>지난 판</b>으로 남아요.
+                  판을 닫고 새로 시작해요. 지금 판은 <b>판 기록</b>으로 남아요.
                 </span>
               </span>
             )}
@@ -6381,8 +6715,8 @@ export default function GoldSettlement() {
             </li>
             <li>
               <b>어제 판을 다시 보고 싶어요</b>
-              장부는 하나예요 — '처음부터'로 판을 닫고 새로 시작해요. 지난 판은 왼쪽 위
-              '지난 판'에서 볼 수 있어요.
+              장부는 하나예요 — '처음부터'로 판을 닫고 새로 시작해요. 끝난 판은 왼쪽 위
+              '판 기록'에서 볼 수 있어요.
             </li>
             <li>
               <b>파티원한테 보여주고 싶어요</b>
@@ -6552,7 +6886,7 @@ export default function GoldSettlement() {
             if (!pre) return;
             setAsk({
               title: "이 프리셋을 불러올까요?",
-              body: nm + " — 지금 판은 지난 판으로 남고, 프리셋 구성으로 새로 시작해요.",
+              body: nm + " — 지금 판은 판 기록으로 남고, 프리셋 구성으로 새로 시작해요.",
               action: "불러오기",
               onYes: () => {
                 clearAll("full", pre, 8);
@@ -8047,7 +8381,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
       <div className="gs-key">
         <p>
           지금 표의 명단·항목·단가·수수료·입력 단위를 프리셋으로 남겨요.
-          {" '불러오기'는 지금 판을 지난 판으로 남기고, 그 구성으로 새로 시작해요."}
+          {" '불러오기'는 지금 판을 판 기록으로 남기고, 그 구성으로 새로 시작해요."}
         </p>
         <div className="gs-obs-acts">
           <input
@@ -8117,7 +8451,7 @@ function ResetModal({ hasLog, presets, onRun, onOpenPresets, onClose }) {
   return (
     <InfoModal title="처음부터" onClose={onClose}>
       <div className="gs-key">
-        <p>{hasLog ? "지금 판은 지난 판으로 남고, 새로 시작해요." : "새로 시작해요."}</p>
+        <p>{hasLog ? "지금 판은 판 기록으로 남고, 새로 시작해요." : "새로 시작해요."}</p>
         <div className="gs-reset-opts">
           <div
             className={"gs-reset-opt" + (mode === "keep" ? " on" : "")}
@@ -10381,7 +10715,7 @@ const CSS = `
   --kraft-rgb:196,168,120; --kraftdk-rgb:162,134,90;
   --cell:rgba(255,255,255,.25); --cell-on:rgba(255,255,255,.5); --cell-hover:rgba(255,255,255,.6);
   --tex-rgb:90,60,20;      /* 종이결 무늬 */
-  --shadow-rgb:60,40,15; --red-rgb:156,43,34; --gold-rgb:138,100,21;
+  --shadow-rgb:60,40,15; --red-rgb:156,43,34; --gold-rgb:138,100,21; --blue-rgb:35,72,107;
   --mono:'Cutive Mono',monospace;
   font-family:'IBM Plex Sans KR',system-ui,sans-serif;
   color:var(--ink); background:var(--kraft);
@@ -10408,7 +10742,7 @@ const CSS = `
   /* 밤에도 '센 칸'은 떠 보이게 — 어둡게 누르면 빈 칸과 구별이 흐려집니다 */
   --cell:rgba(255,255,255,.04); --cell-on:rgba(255,255,255,.1); --cell-hover:rgba(255,255,255,.14);
   --tex-rgb:0,0,0;
-  --shadow-rgb:0,0,0; --red-rgb:224,119,107; --gold-rgb:220,174,94;
+  --shadow-rgb:0,0,0; --red-rgb:224,119,107; --gold-rgb:220,174,94; --blue-rgb:141,183,226;
 }
 .gs *{box-sizing:border-box}
 .gs p{text-wrap:pretty}
@@ -10447,7 +10781,7 @@ const CSS = `
   display:inline-flex; align-items:center; gap:6px}
 .gs-gensbtn:hover,.gs-gensbtn.on{color:var(--ink); border-color:var(--kraft-dk)}
 .gs-gensbtn b{font-weight:700; color:var(--ink)}
-.gs-genspanel{position:absolute; left:0; top:calc(100% + 6px); z-index:30; width:min(400px,92vw);
+.gs-genspanel{position:absolute; left:0; top:calc(100% + 6px); z-index:30; width:min(470px,92vw);
   background:var(--paper); border:1px solid var(--kraft-dk); border-radius:10px;
   padding:10px 12px; box-shadow:0 10px 26px rgba(0,0,0,.28)}
 .gs-gens-empty{margin:2px; font-size:12px; color:var(--ink-2); line-height:1.65}
@@ -11257,13 +11591,45 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-genlock.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
 .gs-reset-preset{margin-top:10px; padding-top:8px;
   border-top:1px dashed rgba(var(--ink-rgb),.18)}
-/* 지난 판 보기 배너 — 화면 맨 위에 상시 */
-.gs-genbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-  margin:10px auto 0; max-width:var(--gs-w, 1080px); padding:9px 14px;
-  border:1px solid rgba(var(--gold-rgb),.55); border-radius:8px;
-  background:rgba(var(--gold-rgb),.08); font-size:13px; color:var(--ink-body)}
-.gs-genbar b{color:var(--ink)}
-.gs-genbar-r{margin-left:auto; display:flex; gap:6px}
+/* 판의 신분증 띠 — 탭 위. 끝난 판·판 기록에서 마스트 왼쪽 버튼들의 자리를 씁니다 */
+.gs-idbar{border-left:3px solid var(--gold); background:rgba(var(--gold-rgb),.07);
+  border-top:1px solid rgba(var(--gold-rgb),.24); border-right:1px solid rgba(var(--gold-rgb),.24);
+  border-bottom:1px solid rgba(var(--gold-rgb),.24);
+  border-radius:0 7px 7px 0; padding:11px 14px; margin-bottom:12px}
+.gs-idbar-t{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.gs-idname{margin:0; font-family:'Gowun Batang',serif; font-size:17px; font-weight:700;
+  color:var(--ink)}
+.gs-idwhen{font-size:11.5px; color:var(--ink-2)}
+.gs-idmsg{font-size:12.5px; color:var(--ink-body)}
+.gs-idmsg b{color:var(--ink)}
+.gs-idbar-r{margin-left:auto; display:flex; align-items:center; gap:10px}
+.gs-idtot{font-family:var(--mono); font-size:18px; color:var(--gold)}
+/* 출처 배지 — 파티는 금색, 로컬은 잉크 */
+.gs-idsrc{flex:none; align-self:center; font-size:10px; letter-spacing:.1em;
+  padding:3px 8px; border-radius:11px; border:1px solid rgba(var(--gold-rgb),.55);
+  color:var(--gold); background:rgba(var(--gold-rgb),.1); white-space:nowrap}
+.gs-idsrc-local{border-color:rgba(var(--ink-rgb),.32); color:var(--ink-2);
+  background:rgba(var(--ink-rgb),.06)}
+/* 파티원 칩 — 방장은 금색, 나는 파랑. 전부 적습니다 */
+.gs-idmems{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
+.gs-idmem{font-size:11.5px; padding:3px 8px; border-radius:11px;
+  background:rgba(var(--ink-rgb),.07); border:1px solid rgba(var(--ink-rgb),.16);
+  color:var(--ink-body)}
+.gs-idmem-host{border-color:rgba(var(--gold-rgb),.5); color:var(--gold)}
+.gs-idmem-me{border-color:rgba(var(--blue-rgb),.5); color:var(--blue)}
+/* 판 기록 목록의 한 줄 — 배지·이름·날짜·파티원 전부·총액·[×] */
+.gs-hisrow{display:flex; align-items:flex-start; gap:10px; padding:10px 11px; margin-top:8px;
+  border-radius:7px; background:rgba(var(--ink-rgb),.05);
+  border:1px solid rgba(var(--ink-rgb),.18)}
+.gs-hisbody{flex:1; min-width:0; font:inherit; text-align:left; background:none; border:0;
+  padding:0; cursor:pointer; color:inherit; display:block}
+.gs-hisbody:hover .gs-hist1 b{text-decoration:underline; text-underline-offset:3px}
+.gs-hist1{display:flex; align-items:baseline; gap:7px}
+.gs-hist1 b{font-family:'Gowun Batang',serif; font-weight:700; font-size:14.5px; color:var(--ink)}
+.gs-hist1 span{font-size:11px; color:var(--ink-2)}
+.gs-hisrow .gs-idmems{margin-top:7px}
+.gs-hisrow .gs-idmem{font-size:11px; padding:2px 7px}
+.gs-hisgold{font-family:var(--mono); font-size:14px; color:var(--gold); flex:none}
 /* 방 생성 직후 복구 코드 안내 */
 .gs-obs-fresh{margin-top:12px; padding:10px 12px; border:1px dashed rgba(var(--gold-rgb),.5);
   border-radius:6px; background:rgba(var(--gold-rgb),.06)}
