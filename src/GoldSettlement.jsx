@@ -10232,7 +10232,11 @@ function LobbyScreen({
                     />
                     {/* 아이디는 닉네임 바로 오른쪽에 붙습니다 (§3.1) — 줄 오른쪽 끝에
                         떨어져 있으면 어느 이름의 것인지 눈이 건너가야 합니다 */}
-                    {s.acct && <span className="gs-lbrow-id">{s.acct}</span>}
+                    {s.acct && (
+                      <span className="gs-lbrow-id" title={s.acct}>
+                        {s.acct.slice(0, 2) + "····"}
+                      </span>
+                    )}
                     {has && (
                       <button
                         className="gs-lbslot-x"
@@ -10255,7 +10259,7 @@ function LobbyScreen({
             <div className="gs-lbrosterfoot">
               {named <= 1 && (
                 <p className="gs-lbrosterhint">
-                  이름을 직접 쳐도 되고, [8인]으로 채워도 되고, 오른쪽 파티원 모으기로 불러도 돼요.
+                  오른쪽 파티원 모으기로 부르면 자리에 앉아요. 이름을 직접 치거나 [8인]으로 채워도 돼요.
                 </p>
               )}
               {/* 채운 버튼이 아니라 밑줄 문입니다 — 이 화면의 채운 버튼은 [시작] 하나입니다 (§9-2) */}
@@ -13874,6 +13878,11 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbrow-in{flex:0 1 8.5em; min-width:3em; border:0; background:transparent; color:var(--ink);
   font-family:'Gowun Batang',serif; font-weight:700; font-size:17px; padding:2px 0}
 .gs-lbrow-in::placeholder{color:rgba(var(--ink-rgb),.3); font-weight:400}
+/* 이름 칸은 내용만큼만 — 아이디가 닉 바로 옆에 붙게. field-sizing 이 없는 브라우저는
+   위의 고정폭으로 물러납니다 */
+@supports (field-sizing: content){
+  .gs-lbrow-in{field-sizing:content; flex:0 1 auto; width:auto; min-width:2.5em; max-width:13em}
+}
 .gs-lbrow-in:focus{outline:0}
 /* 계정이 붙은 자리는 이름 옆에 파란 아이디 — 자리의 참고 정보입니다 (§3.2) */
 .gs-lbrow-id{font-family:var(--mono); font-size:10.5px; color:var(--blue); flex:none}
