@@ -123,7 +123,7 @@ export default {
 
     // 방 API
     const api = p.match(
-      new RegExp(`^/api/r/(${ID6})/(state|read|invite|lobby|members|member|join|leave|confess)$`)
+      new RegExp(`^/api/r/(${ID6})/(state|read|invite|lobby|members|member|join|leave|confess|end)$`)
     );
     if (api) {
       const me = await verify(env, bearer(req));
@@ -665,6 +665,21 @@ export class Room {
       } catch (e) {}
     }
   }
+  /* 파티를 통째로 해산합니다. 파티 = 오늘의 모임이고 판은 그 안의 한 게임이라,
+     새 파티를 꾸리거나 파티를 끝내면 옛 파티원은 이 방에서 빠져야 합니다.
+     안 그러면 사흘 전 파티원의 /o/ 에 사흘 뒤 파티의 판이 계속 뜹니다 —
+     이 설계를 시작한 이유가 그 관음을 막는 것이었습니다.
+     통지 뒤 소켓을 닫는 것은 member remove 와 같은 이유입니다 (§4.2). */
+  async clearMembers() {
+    const list = await this.members();
+    for (const m of list) {
+      await this.ctx.storage.delete("m:" + m.acct);
+      this.toAcct(m.acct, { kind: "you", you: null });
+      this.dropAcct(m.acct);
+    }
+    return list.length;
+  }
+
   scribeOn(except) {
     return this.ctx.getWebSockets().some((ws) => {
       if (ws === except) return false;
@@ -854,12 +869,25 @@ export class Room {
         cap = c;
       }
       const open = !!b.open;
+      /* 로비를 새로 여는 순간 이전 파티가 끝납니다 — 새로 꾸리는 행위가 곧 이전 것의
+         종료라, 방장이 [파티 끝내기]를 잊어도 옛 파티원이 새 판을 보지 못합니다.
+         대기실은 방장만 앉은 빈 자리에서 시작합니다.
+         이미 열려 있는 로비의 정원만 바꾸는 호출(open:true 재호출)에서는 안 지웁니다. */
+      const cleared = open && !cur.open ? await this.clearMembers() : 0;
       // 열려 있던 로비를 다시 열어도 6시간 시계는 처음 열린 때부터입니다
       const lobby = { open, cap, since: open ? (cur.open && cur.since ? cur.since : now) : 0 };
       await S.put("lobby", lobby);
       await this.arm();
       this.bcast({ kind: "lobby", lobby });
-      return json({ lobby });
+      return json({ lobby, cleared });
+    }
+
+    /* [파티 끝내기] — 파티원 전부 해제. 파티원은 마지막으로 받은 판(정산 결과)을
+       계속 보지만(§5.4), 그 뒤로는 아무것도 못 봅니다 */
+    if (path === "/end" && req.method === "POST") {
+      if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
+      const cleared = await this.clearMembers();
+      return json({ ok: true, cleared });
     }
 
     if (path === "/members" && req.method === "GET") {
@@ -874,6 +902,17 @@ export class Room {
       const m = await S.get("m:" + acct);
       if (!m) return json({ error: "no member" }, 404);
       if (b.action === "approve") {
+        /* 정원은 여기서 셉니다 (§4.2). 문 앞에서 미리 막으면 방장이 신청을 보지도 못한 채
+           거절되고, 자리를 하나 비운 뒤에도 그 사람은 다시 눌러야 합니다.
+           방장이 대기실 첫 자리를 차지하므로 +1 합니다 (§3-2).
+           로비가 닫힌 뒤(출발 후) 합류에는 정원이 없습니다 — 대기실 정원이지 파티 정원이 아닙니다 */
+        if (m.st !== "ok") {
+          const lobby = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
+          if (lobby.open) {
+            const seated = (await this.members()).filter((x) => x.st === "ok").length + 1;
+            if (seated >= lobby.cap) return json({ error: "full" }, 409);
+          }
+        }
         m.st = "ok";
         m.t = now;
         await S.put("m:" + acct, m);
@@ -891,7 +930,8 @@ export class Room {
       return json({ error: "bad action" }, 400);
     }
 
-    // 초대로 들어오기 — 로비가 열려 있으면 수락 없이 바로 자리에 앉습니다
+    /* 초대로 들어오기 — 언제나 신청입니다 (§3-4). 초대 링크는 디코에도 방송 화면에도
+       새므로, 낯선 사람이 자리를 먼저 차지한 뒤 빼내는 것보다 문 앞에서 기다리는 것이 맞습니다 */
     if (path === "/join" && req.method === "POST") {
       if (!me) return json({ error: "unauthorized" }, 401);
       const owner = await S.get("owner");
@@ -908,14 +948,7 @@ export class Room {
       const inv = await S.get("invite");
       const code = String(b.j || "").toUpperCase();
       if (!inv || !code || code !== inv.code || inv.exp < now) return json({ error: "invite" }, 403);
-      const lobby = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
-      let st = "req";
-      if (lobby.open) {
-        // 방장이 대기실 첫 자리를 차지합니다 (§3-2) — 정원에 같이 셉니다
-        const seated = (await this.members()).filter((x) => x.st === "ok").length + 1;
-        if (seated >= lobby.cap) return json({ error: "full" }, 409);
-        st = "ok";
-      }
+      const st = "req";
       const m = { nick: me.nick, rowId: null, st, t: now };
       await S.put("m:" + me.id, m);
       this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st });

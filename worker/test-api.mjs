@@ -322,24 +322,42 @@ const main = async () => {
     const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: old } });
     eq(r.status, 403, "status");
   });
-  await step("join: 로비 열림 → 수락 없이 st ok", async () => {
+  /* 로비가 열려 있어도 자동 입장은 없습니다 (§3-4) — 언제나 신청이고, 방장이 수락합니다 */
+  await step("join: 로비가 열려 있어도 st req (승인제)", async () => {
     const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: invite } });
     eq(r.status, 200, "status");
-    eq(r.data.st, "ok", "st");
+    eq(r.data.st, "req", "st");
     eq(r.data.you.nick, B.nick, "you.nick");
     eq(r.data.you.rowId, null, "아직 줄 없음");
   });
-  await step("join: 정원 차면 409", async () => {
+  await step("member approve: 수락하면 자리에 앉음(st ok)", async () => {
+    const r = await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: B.id, action: "approve" },
+    });
+    eq(r.status, 200, "status");
+    eq(r.data.member.st, "ok", "st");
+  });
+  await step("join: 정원이 차 있으면 신청은 되고 수락에서 409", async () => {
     await reg(C);
-    const r = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    eq(j.status, 200, "신청 자체는 됨");
+    eq(j.data.st, "req", "st");
+    const r = await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: C.id, action: "approve" },
+    });
     eq(r.status, 409, "status");
     eq(r.data.error, "full", "error");
   });
-  await step("join: 정원을 늘리면 다시 들어옴", async () => {
+  await step("join: 정원을 늘리면 수락됨", async () => {
     await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: true, cap: 8 } });
-    const r = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    const r = await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: C.id, action: "approve" },
+    });
     eq(r.status, 200, "status");
-    eq(r.data.st, "ok", "st");
+    eq(r.data.member.st, "ok", "st");
   });
   await step("join: 이미 멤버면 현 상태를 그대로 돌려줌", async () => {
     const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: "ZZZZZZZZ" } });
@@ -477,7 +495,7 @@ const main = async () => {
 
   /* ---- 출발 후 합류 ---- */
   head("출발 후 합류 — 신청과 수락");
-  await step("join: 로비가 닫혀 있으면 st req (신청)", async () => {
+  await step("join: 출발 후(로비 닫힘)에도 st req (신청)", async () => {
     await reg(D);
     const r = await api("POST", "/api/r/" + room + "/join", { token: D.token, body: { j: invite } });
     eq(r.status, 200, "status");
@@ -691,6 +709,79 @@ const main = async () => {
 
   await vB.close();
   await vJ.close();
+
+  /* ---- 파티 수명 ----
+     파티는 오늘의 모임이고 판은 그 안의 한 게임입니다. 새 파티를 꾸리거나 파티를 끝내면
+     옛 파티원은 이 방에서 빠져야 합니다 — 안 그러면 옛 파티원의 /o/ 에 다음 파티가 뜹니다 */
+  head("파티 수명 — 로비 열기·파티 끝내기가 파티원을 해제");
+  await step("end: 방장 아니면 403", async () => {
+    eq((await api("POST", "/api/r/" + room + "/end", { token: C.token })).status, 403, "status");
+  });
+  await step("end: 파티원 전부 해제 + you=null 통지 + 소켓 닫힘", async () => {
+    // C 는 아직 이 방의 멤버입니다 (앞 단계에서 수락됨)
+    const before = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    expect(before.some((x) => x.acct === C.id), "C 가 멤버가 아님");
+    const vC = await open("/api/r/" + room + "/live?s=" + C.token);
+    await vC.want((m) => m.kind === "hello");
+    const r = await api("POST", "/api/r/" + room + "/end", { token: A.token });
+    eq(r.status, 200, "status");
+    expect(r.data.cleared >= 1, "해제 인원: " + r.data.cleared);
+    const y = await vC.want((x) => x.kind === "you");
+    eq(y.you, null, "you 통지가 먼저");
+    await waitClosed(vC, 20000);
+    expect(vC.closed, "소켓이 안 닫힘");
+    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    eq(after.length, 0, "명단이 안 비었음");
+  });
+  await step("end 후: 옛 파티원이 다시 붙으면 denied(member)", async () => {
+    const bad = await open("/api/r/" + room + "/live?s=" + C.token);
+    const m = await bad.want((x) => x.kind === "denied");
+    eq(m.why, "member", "why");
+    await bad.close();
+  });
+  await step("lobby 열기: 닫힘→열림이면 옛 파티원을 해제하고 빈 대기실로", async () => {
+    // 새 파티원 하나를 앉혀 두고, 로비를 새로 열어 해제되는지 봅니다
+    await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: C.id, action: "approve" },
+    });
+    const vC = await open("/api/r/" + room + "/live?s=" + C.token);
+    await vC.want((m) => m.kind === "hello");
+    const r = await api("POST", "/api/r/" + room + "/lobby", {
+      token: A.token,
+      body: { open: true, cap: 8 },
+    });
+    eq(r.status, 200, "status");
+    eq(r.data.cleared, 1, "해제 인원");
+    const y = await vC.want((x) => x.kind === "you");
+    eq(y.you, null, "you 통지");
+    await waitClosed(vC, 20000);
+    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    eq(after.length, 0, "대기실이 빈 자리로 시작하지 않음");
+  });
+  await step("lobby: 이미 열린 로비의 정원만 바꿀 때는 해제하지 않음", async () => {
+    await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: C.id, action: "approve" },
+    });
+    const r = await api("POST", "/api/r/" + room + "/lobby", {
+      token: A.token,
+      body: { open: true, cap: 10 },
+    });
+    eq(r.status, 200, "status");
+    eq(r.data.cleared, 0, "정원만 바꿨는데 해제됨");
+    eq(r.data.lobby.cap, 10, "cap");
+    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    eq(after.length, 1, "명단이 유지되지 않음");
+  });
+  await step("lobby 닫기 → 파티원은 그대로 (판을 몇 번 돌리든 재팟은 유지)", async () => {
+    const r = await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: false } });
+    eq(r.status, 200, "status");
+    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    eq(after.length, 1, "로비를 닫았다고 파티원이 사라짐");
+  });
 
   /* ---- 가입 없이 주소 받기 (§3-11) ---- */
   head("가입 없이 주소 받기(anon)");
