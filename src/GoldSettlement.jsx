@@ -758,7 +758,14 @@ const RELAY_KEY = "goldSettlement.relay";
 const PARTY_REG_KEY = "goldSettlement.parties";
 const partySlotKey = (name) => "goldSettlement.p." + name;
 /* 파티 장부에 들어가는 필드 — 이 목록이 곧 "파티마다 따로"의 정의입니다 */
+/* 판 이름 기본값 (§8) — 로비에서 고쳐 그 판의 이름이 되고, 결과지·판 기록에 남습니다.
+   찾는 열쇠가 시각뿐이면 "9/3 20:26 ~ 20:27" 스무 줄에서 어느 것이 그 판인지 못 찾습니다 */
+const defaultRoundName = (t) => {
+  const d = t ? new Date(t) : new Date();
+  return d.getMonth() + 1 + "월 " + d.getDate() + "일 벌금 파티";
+};
 const partyLedgerOf = (st) => ({
+  rname: (st.rname || "").trim(),
   mode: st.mode,
   unit: st.unit,
   cols: st.cols,
@@ -1316,6 +1323,8 @@ function loadSaved() {
          진행 중인 판으로 승격합니다 — 세던 판이 로비로 강등되는 일은 없어야 합니다 */
       roundLive: s.roundLive !== false,
       roundId: typeof s.roundId === "string" ? s.roundId : "",
+      /* 판 이름 — 리로드해도 그 판의 이름이 그대로여야 정산 끝내기 때 제 이름으로 남습니다 */
+      roundName: typeof s.roundName === "string" ? s.roundName : "",
       roundPaused: !!s.roundPaused,
       seats: Array.isArray(s.seats) ? s.seats.map(seatIn).filter(Boolean) : null,
     };
@@ -2272,6 +2281,9 @@ export default function GoldSettlement() {
      이름만 채운 로비입니다. 판은 [시작]으로만 생기고, 판이 없으면 홈은 로비입니다. */
   const [roundLive, setRoundLive] = useState(!!boot.current.roundLive);
   const [roundId, setRoundId] = useState(boot.current.roundId || "");
+  /* 판 이름 (§3.1) — 로비 히어로에서 눌러 고치고, [시작] 때 그 판의 이름이 됩니다.
+     결과지·판 기록에 이 이름으로 남고, 판을 닫으면 다시 그날 기본값으로 돌아갑니다 */
+  const [roundName, setRoundName] = useState(boot.current.roundName || defaultRoundName());
   /* 얼어 있는 판 — {why:"host"|"idle"}. 서버가 원본이고, 이 브라우저에도 적어 둡니다
      (로그인 전에도 로비에 중단된 판 카드가 서야 해서요) */
   const [paused, setPaused] = useState(boot.current.roundPaused ? { why: "host" } : null);
@@ -2393,7 +2405,7 @@ export default function GoldSettlement() {
     savePartyReg(reg);
   };
   const currentLedger = () =>
-    partyLedgerOf({ mode, unit, cols, rows, log, feePercent, splitMode, memoFreeze, undoSnap });
+    partyLedgerOf({ rname: roundName, mode, unit, cols, rows, log, feePercent, splitMode, memoFreeze, undoSnap });
   /* 새 파티는 카운터 모드로 시작합니다 (사용자 결정) — 들어가서 바꿀 수 있습니다 */
   const blankPartyLedger = (size = 8) => ({
     mode: "items",
@@ -2415,6 +2427,8 @@ export default function GoldSettlement() {
   const applyLedger = (slot) => {
     snapHold.current = true;
     setTab("sheet"); // 파티에 들어가면 기록 화면(벌금표)부터 — 이전 탭을 끌고 가지 않습니다
+    /* 이름도 판의 일부입니다 — 지난 판을 열거나 서버 판을 앉힐 때 그 판의 이름으로 */
+    setRoundName(slot.rname || defaultRoundName());
     if (slot.mode && slot.mode !== mode) setMode(slot.mode);
     /* 메모장 숫자는 단위 기준 값이라, 단위가 함께 돌아와야 금액이 안 틀어집니다 */
     if (slot.unit && slot.unit !== unit) setUnit(slot.unit);
@@ -2558,8 +2572,9 @@ export default function GoldSettlement() {
     // 뷰어는 남의 장부를 비추는 중이라, 이 브라우저에 저장하면 내 장부를 덮어씁니다
     if (readOnly) return;
     markSeen();
-    savePartySlot(partyReg.active, partyLedgerOf({ mode, unit, cols, rows, log, feePercent, splitMode, memoFreeze, undoSnap }));
+    savePartySlot(partyReg.active, partyLedgerOf({ rname: roundName, mode, unit, cols, rows, log, feePercent, splitMode, memoFreeze, undoSnap }));
     saveState({
+      roundName,
       cols,
       rows,
       feePercent,
@@ -2578,7 +2593,7 @@ export default function GoldSettlement() {
       roundPaused: !!paused,
       seats,
     });
-  }, [cols, rows, feePercent, splitMode, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro, tutorial, readOnly, partyReg.active, roundLive, roundId, paused, seats]);
+  }, [cols, rows, feePercent, splitMode, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro, tutorial, readOnly, partyReg.active, roundLive, roundId, paused, seats, roundName]);
 
   /* 방장으로서 밀어 올릴 수 있는 상태인지 — 로그인 + 내 방 */
   const canPush = !readOnly && !!auth && !!relay.room;
@@ -3077,9 +3092,10 @@ export default function GoldSettlement() {
       ? seats
       : [{ ...newSeat((auth && auth.nick) || ""), acct: auth ? auth.id : null, mem: auth ? auth.id : null }];
     if (!seats.length) putSeats(list);
-    /* 지금 판이 살아 있었으면 결과지로 보냅니다 — 로비에서 [시작]을 누르는 길은
-       판이 없을 때뿐이지만, 되돌아온 판이 남아 있을 수 있어서 한 번 닫습니다 */
-    if (roundLive) closeRound();
+    /* 앞 판을 결과지로 보냅니다. **얼어 있는 판도 포함입니다** — 중단된 판은 로비에
+       있으므로 roundLive 가 거짓이라, 이 조건이 roundLive 뿐이면 [시작]이 그 판을
+       기록에 남기지 않고 덮어써서 통째로 잃습니다(실제로 그랬습니다) */
+    if (roundLive || paused) closeRound();
     const cCols = (nCols && nCols.length ? nCols : cols).map((c) => ({ ...c }));
     const nRows = rowsFromSeats(list);
     const gid = newRoundId();
@@ -3743,6 +3759,8 @@ export default function GoldSettlement() {
     setRoundLive(false);
     setRoundId("");
     setPaused(null);
+    /* 이름은 그 판과 함께 기록으로 갔습니다 — 다음 판은 다시 그날 기본값입니다 (§3.1) */
+    setRoundName(defaultRoundName());
     setTab("sheet");
     /* 모으는 중이었으면 접습니다 — 정산이 끝난 판은 오버레이와 파티원 화면에 그대로
        남아야 하는데(§3.4), 대기실을 계속 알리면 그 자리를 대기실이 덮어씁니다.
@@ -3758,19 +3776,9 @@ export default function GoldSettlement() {
     });
   /* [중단] — 아무것도 지우지 않고 얼립니다. 사람·셈·연결 그대로이고 [이어가기]로 돌아옵니다.
      방장 화면은 홈(로비)으로 물러나고, 거기 중단된 판 카드가 섭니다 (§3.1) */
-  const pauseRound = async () => {
-    if (!auth || !relay.room) return;
-    clearTimeout(pushTimer.current);
-    setPaused({ why: "host" });
-    setRoundLive(false);
-    try {
-      await roomApi.pause(auth.token, relay.room);
-    } catch (e) {
-      setPaused(null);
-      setRoundLive(true);
-      say(e.message);
-    }
-  };
+  /* 손으로 얼리는 [중단]은 폐지했습니다 (§3.4) — 브라우저를 닫아도 판은 살아 있고,
+     파티원에게 가는 말도 '방장이 자리를 비웠어요'와 사실상 같았습니다. 얼리는 일은
+     무활동 24시간 자동 중단이 맡고, 이 앱이 하는 일은 [이어가기]로 되돌리는 것뿐입니다. */
   /* [이어가기] — 표시를 내리고, 파티원에게는 `판이 시작됐어요.` 카드가 갑니다(잡아채지 않음) */
   const resumeRound = async () => {
     if (!auth || !relay.room) return;
@@ -5403,6 +5411,7 @@ export default function GoldSettlement() {
         return {
           ...g,
           src: g.src === "party" ? "party" : "local",
+          rname: g.rname || (slot && slot.rname) || "",
           title: genBadge(g),
           host: g.host || "",
           me: g.me || "",
@@ -5465,6 +5474,9 @@ export default function GoldSettlement() {
     savePartySlot(label, led);
     const entry = {
       name: label,
+      /* 보이는 이름은 방장이 지은 판 이름입니다 (§3.1). name 은 저장 열쇠라 시각 그대로
+         두고(겹치면 안 됩니다), 화면에는 이것을 씁니다 — 없으면 옛 기록이라 name 으로 */
+      rname: (led && led.rname) || "",
       t: Date.now(),
       gen: true,
       from,
@@ -6520,10 +6532,12 @@ export default function GoldSettlement() {
               </nav>
             )}
             {/* 수명 동사는 상태가 바뀌어도 같은 자리입니다 (§3.4) — 로비에서 [시작]이 앉는
-                우상단 모서리를 판에서는 이 둘이 씁니다. 탭을 왼쪽 끝으로 보내지 않고
-                탭 오른쪽에 이어 붙여, 높이·모서리·글자를 탭에 맞춥니다.
+                우상단 모서리를 판에서는 [정산 끝내기]가 씁니다. 탭을 왼쪽 끝으로 보내지
+                않고 탭 오른쪽에 이어 붙이되, 탭은 아래 카드로 이어지는 서류철이라 선에
+                닿고 이건 버튼이라 선에서 떠 있습니다 — 머리를 탭과 맞추고 발치를 띄웁니다.
                 파티원 화면에는 뜨지 않습니다.
-                둘 중 더 자주 누르는 것이 [중단]이라 그쪽이 오른쪽 끝입니다 */}
+                [중단]은 폐지했습니다: 브라우저를 닫아도 판은 살아 있고, 얼리는 일은
+                무활동 24시간 자동 중단이 맡습니다 */}
             {!readOnly && (
               <div className="gs-mastverbs">
                 <span className="gs-tip">
@@ -6534,19 +6548,6 @@ export default function GoldSettlement() {
                     결과지를 <b>판 기록</b>에 남기고 판을 닫아요.
                   </span>
                 </span>
-                {/* 얼리는 것은 방에 붙은 판만 할 수 있습니다 — 혼자 판은 영구라 얼릴 이유도
-                    없습니다 (§3.4) */}
-                {auth && relay.room && (
-                  <span className="gs-tip">
-                    <button className="gs-btn gs-btn-ghost gs-lifebtn" onClick={pauseRound}>
-                      중단
-                    </button>
-                    <span className="gs-tip-body gs-tip-r" role="tooltip">
-                      아무것도 지우지 않고 잠깐 멈춰요. 로비의 <b>[이어가기]</b>로 그대로
-                      돌아와요.
-                    </span>
-                  </span>
-                )}
               </div>
             )}
           </div>
@@ -6684,6 +6685,8 @@ export default function GoldSettlement() {
           onApprove={approveMember}
           onDeny={denyMember}
           onRoulette={setRouletteCfg}
+          roundName={roundName}
+          onRoundName={setRoundName}
           onInvite={newInvite}
           onStart={() => startRound(cols)}
           onPresets={() => setPresetOpen(true)}
@@ -10132,6 +10135,8 @@ function LobbyScreen({
   onApprove,
   onDeny,
   onRoulette,
+  roundName,
+  onRoundName,
   onInvite,
   onStart,
   onPresets,
@@ -10208,11 +10213,23 @@ function LobbyScreen({
           [시작]은 이 줄의 오른쪽 끝, 무대 우상단 모서리입니다 (§3.1) — 판 화면의
           [정산 끝내기]·[중단]과 같은 좌표라, 상태가 바뀌어도 수명 동사는 같은 자리입니다 */}
       <div className="gs-lbtop">
-        <p className="gs-lb-lead">
-          {named > 1
-            ? "시작하면 이 사람들로 새 판이 열려요. 지금 판은 판 기록에 남아요."
-            : "혼자서도 시작할 수 있어요."}
-        </p>
+        {/* 히어로 (§3.1) — 여기가 어디인지(제목)와 무엇을 시작하는지(판 이름)입니다.
+            옛 리드 한 줄("시작하면 이 사람들로… 지금 판은 판 기록에 남아요")은 폐기했습니다:
+            로비에 있다는 것은 판이 이미 닫혔다는 뜻이라 뒷문장이 참이 되는 순간이 없었고,
+            앞문장은 [시작]이라는 버튼 이름이 이미 하는 말이었습니다 */}
+        <div className="gs-lbhero">
+          <h2 className="gs-lbhero-h">파티 로비</h2>
+          {/* 판 이름 — 눌러서 고칩니다. 이 이름으로 결과지·판 기록에 남습니다 */}
+          <input
+            className="gs-lbhero-name"
+            value={roundName}
+            placeholder={defaultRoundName()}
+            maxLength={24}
+            onChange={(e) => onRoundName(e.target.value)}
+            onBlur={(e) => !e.target.value.trim() && onRoundName(defaultRoundName())}
+            aria-label="판 이름"
+          />
+        </div>
         {/* 판 기록 — 아이콘 하나와 개수입니다 (§3.1). 지난 판은 가끔 들추는 것이지 늘
             보는 것이 아니라, 로비에서 줄 하나를 통째로 내주지 않습니다.
             기록이 없으면 아이콘도 없습니다 */}
@@ -10621,9 +10638,13 @@ function GenList({ gens, onOpen, onDrop }) {
             {g.title}
           </span>
           <button className="gs-hisbody" onClick={() => onOpen(g.name)}>
+            {/* 방장이 지은 판 이름이 첫 줄입니다 (§3.1) — 찾는 열쇠가 시각뿐이면
+                비슷한 시각 스무 줄에서 어느 것이 그 판인지 못 찾습니다.
+                이름이 없는 옛 기록은 예전처럼 시각이 첫 줄입니다 */}
             <span className="gs-hist1">
-              <b>{fmtWhenShort(g.from || g.t)}</b>
+              <b>{g.rname || fmtWhenShort(g.from || g.t)}</b>
               <span>{g.n}명</span>
+              {g.rname && <span>{fmtWhenShort(g.from || g.t)}</span>}
             </span>
             {/* 파티원 전부 — "외 4명"으로 줄이지 않습니다 */}
             {g.mems.length > 0 && (
@@ -12140,7 +12161,13 @@ const CSS = `
 /* 수명 동사 — 무대 우상단 모서리. 로비 [시작]과 같은 좌표라, 판이 열려도 닫혀도
    손이 가는 자리가 안 바뀝니다 (§3.1·§3.4). 둘 다 유령 버튼입니다.
    탭과 같은 바닥선에 서야 나란히 선 것으로 읽힙니다 */
-.gs-mastverbs{display:flex; align-items:flex-end; gap:8px; margin-bottom:7px}
+/* 판의 수명 동사는 탭 줄 오른쪽 끝에 섭니다 (§3.4). 탭은 아래 카드로 이어지는
+   서류철이라 구분선에 닿는 것이 맞지만 이건 버튼이라 닿으면 안 됩니다 — 모서리가
+   둥근 상자가 선에 얹히면 얹힌 것도 뜬 것도 아닌 모양이 됩니다.
+   그래서 **머리는 탭과 같은 선에 맞추고 발치만 띄웁니다**: 탭보다 6px 낮게 만들고
+   그만큼 올려서, 위로는 한 줄로 읽히고 아래로는 선과 떨어집니다 */
+.gs-mastverbs{display:flex; align-items:flex-end; gap:8px; margin-bottom:6px}
+.gs-mastverbs .gs-lifebtn{padding-top:5px; padding-bottom:5px}
 .gs-presetbtn{display:inline-flex; align-items:center; gap:6px}
 .gs-presetbtn svg{opacity:.85; flex:none}
 /* 왼쪽 끝 버튼의 툴팁은 화면 밖으로 안 나가게 왼끝 정렬 */
@@ -12219,10 +12246,11 @@ const CSS = `
 .gs-btn-ghost{background:transparent; color:var(--ink)}
 .gs-btn-ghost:hover{background:rgba(var(--ink-rgb),.08)}
 .gs-btn-sm{padding:6px 11px; font-size:12px}
-/* 수명 동사 한 벌 — 로비 [시작]과 판 [정산 끝내기]·[중단]이 같은 룩입니다 (§3.4).
-   높이·모서리·글자 크기를 탭에 맞췄습니다(안 열린 탭과 같은 39px). 두 화면이
-   우상단 모서리를 나눠 쓰므로, 화면이 바뀌어도 같은 크기의 것이 같은 자리에 섭니다.
-   다른 것은 채움뿐입니다 — [시작]은 금색 주 동작, 판의 둘은 유령입니다 (§9-2) */
+/* 수명 동사 한 벌 — 로비 [시작]과 판 [정산 끝내기]가 같은 룩입니다 (§3.4).
+   글꼴·모서리·자간이 한 벌이라, 화면이 바뀌어도 같은 것이 같은 우상단 모서리에 섭니다.
+   다른 것은 채움뿐입니다 — [시작]은 그 화면의 주 동작이라 금색이고, 판의 것은 유령입니다:
+   벌금표에서 할 일은 칸을 세는 것이지 판을 닫는 것이 아니라, 닫는 문이 가장 큰 소리를
+   내면 안 됩니다 (§9-2) */
 .gs-lifebtn{font-size:14px; font-weight:600; letter-spacing:.08em; padding:8px 20px;
   border-radius:7px}
 .gs-btn-danger{background:var(--red); border-color:var(--red); color:var(--paper)}
@@ -13923,9 +13951,21 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   background:radial-gradient(120% 70% at 50% 0%, rgba(var(--gold-rgb),.09), transparent 62%)}
 /* 머리 한 줄 — 왼쪽이 이 화면에서 일어나는 일, 오른쪽 끝이 [시작]입니다 (§3.1·§9-1).
    폭은 판 화면과 같은 무대라, [시작]과 [정산 끝내기]·[중단]이 같은 모서리에 섭니다 */
-.gs-lbtop{max-width:var(--stage); margin:0 auto 13px; display:flex; align-items:center;
+.gs-lbtop{max-width:var(--stage); margin:0 auto 13px; display:flex; align-items:flex-end;
   gap:14px; min-height:38px}
-.gs-lb-lead{flex:1 1 auto; min-width:0; margin:0; font-size:12.5px; color:var(--ink-2)}
+/* 히어로 (§3.1) — 여기가 어디인지 위에, 무엇을 시작하는지 아래에.
+   제목은 작고 조용하게, 판 이름이 이 화면에서 가장 큰 글자입니다 */
+.gs-lbhero{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px}
+.gs-lbhero-h{margin:0; font-size:11px; letter-spacing:.12em; font-weight:600;
+  color:var(--ink-2); text-transform:none}
+/* 판 이름 — 눌러서 고칩니다. 칸처럼 안 보이다가 마우스를 올리면 고칠 수 있다는 것이
+   드러납니다: 늘 테두리가 있으면 로비에 입력칸이 둘(이름·명단)이 되어 시끄럽습니다 */
+.gs-lbhero-name{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:21px;
+  color:var(--ink); background:transparent; border:1px solid transparent; border-radius:6px;
+  padding:2px 7px; margin-left:-8px; width:100%; max-width:19em; text-overflow:ellipsis}
+.gs-lbhero-name::placeholder{color:rgba(var(--ink-rgb),.35); font-weight:400}
+.gs-lbhero-name:hover{border-color:rgba(var(--ink-rgb),.22)}
+.gs-lbhero-name:focus{outline:0; border-color:var(--gold); background:rgba(var(--ink-rgb),.05)}
 /* 2열 벤토 (§3.1). 왼쪽이 명단·항목, 오른쪽이 모으기입니다 — 첫 할 일이 읽기
    시작점에 있어야 합니다. 왼쪽을 조금 넓게 두어 이름 줄이 먼저 접히지 않게 합니다 */
 .gs-bento{display:grid; grid-template-columns:minmax(0,1.18fr) minmax(0,1fr); gap:15px;
