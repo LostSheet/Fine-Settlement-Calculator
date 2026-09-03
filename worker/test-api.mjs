@@ -298,12 +298,18 @@ const main = async () => {
     eq(r.data.lobby.cap, 2, "cap");
     expect(r.data.lobby.since > 0, "since 가 비었음");
   });
-  await step("lobby: 정원 범위(2~16) 밖 → 400", async () => {
+  await step("lobby: 정원 범위(1~16) 밖 → 400", async () => {
     eq(
       (await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: true, cap: 17 } }))
         .status,
       400,
-      "status"
+      "17"
+    );
+    eq(
+      (await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: true, cap: 0 } }))
+        .status,
+      400,
+      "0"
     );
   });
 
@@ -523,6 +529,64 @@ const main = async () => {
     const m = await vD.want((x) => x.kind === "you");
     eq(m.you.st, "ok", "you.st");
   });
+  /* ---- 판 도중 자리 고르기 (§3.2·§4.2 /seat) ----
+     방장은 자리 없이 수락만 하고, 어느 줄이 자기인지는 들어온 본인이 고릅니다.
+     계정 붙은 줄(a:1)은 못 고르고, 한 번 고르면 잠깁니다 */
+  head("판 도중 자리 고르기 — 본인이 고르고, 고르면 잠긴다");
+  await step("seat 준비: 빈 줄(a:0)과 잠긴 줄(a:1)이 있는 판", async () => {
+    const state = {
+      board: [
+        { n: A.nick, g: 0 },
+        { n: B.nick, g: 10000 },
+        { n: C.nick, g: 0 },
+        { n: "(모험가4)", g: 5000 },
+      ],
+      cols: [{ t: "지각", r: 0 }],
+      rows2: [
+        { rowId: "r0", n: A.nick, a: 1 },
+        { rowId: "r1", n: B.nick, a: 1 },
+        { rowId: "r2", n: C.nick, a: 1 },
+        { rowId: "r3", n: "(모험가4)", a: 0 },
+      ],
+      full: { log: [] },
+    };
+    eq(
+      (await api("PUT", "/api/r/" + room + "/state", { token: A.token, body: { state } })).status,
+      200,
+      "status"
+    );
+  });
+  await step("seat: 계정 붙은 줄(a:1) → 409 taken", async () => {
+    const r = await api("POST", "/api/r/" + room + "/seat", { token: D.token, body: { rowId: "r0" } });
+    eq(r.status, 409, "status");
+    eq(r.data.error, "taken", "error");
+  });
+  await step("seat: 판에 없는 줄 → 400", async () => {
+    const r = await api("POST", "/api/r/" + room + "/seat", { token: D.token, body: { rowId: "zzz" } });
+    eq(r.status, 400, "status");
+    eq(r.data.error, "bad row", "error");
+  });
+  await step("seat: 빈 줄을 고르면 앉고, 서기에 seat 통지", async () => {
+    const r = await api("POST", "/api/r/" + room + "/seat", { token: D.token, body: { rowId: "r3" } });
+    eq(r.status, 200, "status");
+    eq(r.data.you.rowId, "r3", "you.rowId");
+    const m = await scribe.want((x) => x.kind === "seat");
+    eq(m.acct, D.id, "acct");
+    eq(m.rowId, "r3", "rowId");
+  });
+  await step("seat: 한 번 고르면 잠김 — 다시 고르면 409 seated", async () => {
+    const r = await api("POST", "/api/r/" + room + "/seat", { token: D.token, body: { rowId: "r2" } });
+    eq(r.status, 409, "status");
+    eq(r.data.error, "seated", "error");
+  });
+  await step("seat: 로그인 없으면 401", async () => {
+    eq(
+      (await api("POST", "/api/r/" + room + "/seat", { body: { rowId: "r3" } })).status,
+      401,
+      "status"
+    );
+  });
+
   await step("member remove: 당사자 소켓에 you=null", async () => {
     const r = await api("POST", "/api/r/" + room + "/member", {
       token: A.token,

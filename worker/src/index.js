@@ -135,7 +135,7 @@ export default {
     // 방 API
     const api = p.match(
       new RegExp(
-        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|join|leave|confess|pause|resume|end)$`
+        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end)$`
       )
     );
     if (api) {
@@ -1105,7 +1105,8 @@ export class Room {
       let cap = cur.cap || 8;
       if (b.cap != null) {
         const c = Math.round(Number(b.cap));
-        if (!(c >= 2 && c <= 16)) return json({ error: "bad cap" }, 400);
+        /* 1도 됩니다 — 혼자 한 줄 판. 인원 수 = 명단 칸 수라 아래로는 앱이 막습니다 (§3.1) */
+        if (!(c >= 1 && c <= 16)) return json({ error: "bad cap" }, 400);
         cap = c;
       }
       const open = !!b.open;
@@ -1189,6 +1190,32 @@ export class Room {
         return json({ ok: true });
       }
       return json({ error: "bad action" }, 400);
+    }
+
+    /* 판 도중 합류자의 자리 고르기 (§3.2·§4.2) — 방장이 자리 없이 수락한(rowId 없는)
+       멤버가 자기 줄을 고릅니다. 계정이 이미 붙은 줄은 못 고르고, 한 번 고르면
+       잠깁니다 — 바꾸는 길은 방장의 [자리 바꾸기](bindings)뿐입니다. 벌금이 붙은
+       줄을 누가 이어받는지는 사람이 정해야 해서, 서버는 선택을 지키기만 합니다 */
+    if (path === "/seat" && req.method === "POST") {
+      if (!me) return json({ error: "unauthorized" }, 401);
+      const m = await S.get("m:" + me.id);
+      if (!m || m.st !== "ok") return json({ error: "forbidden" }, 403);
+      if (m.rowId) return json({ error: "seated" }, 409);
+      const rowId = typeof b.rowId === "string" ? b.rowId : "";
+      if (!rowId) return json({ error: "bad row" }, 400);
+      /* 줄이 실제로 있고 비어 있는지는 방장이 민 상태가 압니다 — 방장 줄(a:1)도
+         멤버 목록에는 없어서, 상태의 표시가 문지기입니다 */
+      const st = await S.get("state");
+      const r2 = st && Array.isArray(st.rows2) ? st.rows2.find((x) => x.rowId === rowId) : null;
+      if (st && Array.isArray(st.rows2) && !r2) return json({ error: "bad row" }, 400);
+      if (r2 && r2.a) return json({ error: "taken" }, 409);
+      const taken = (await this.members()).some((x) => x.st === "ok" && x.rowId === rowId);
+      if (taken) return json({ error: "taken" }, 409);
+      m.rowId = rowId;
+      m.t = now;
+      await S.put("m:" + me.id, m);
+      this.toScribe({ kind: "seat", acct: me.id, nick: me.nick, rowId });
+      return json({ ok: true, you: youOf(m) });
     }
 
     /* 들어오는 길 셋 (§3.3·§4.2 라운드 B).
