@@ -1306,7 +1306,7 @@ function loadSaved() {
 
 /* 자리 = { 이름, 붙은 계정(빈 값 가능), 기억된 아이디 } (§3.2).
    자리 id 가 곧 판의 줄 id 입니다 — 연결이 판의 행이 아니라 자리에 살아서,
-   '처음부터'로 판이 갈려도(줄 내용만 새로 만들어도) 연결이 안 끊어집니다.
+   판이 갈려도(줄 내용만 새로 만들어도) 연결이 안 끊어집니다.
    named 는 방장이 이름을 손댔는지입니다 — 손댄 이름은 파티원 닉 변경이 못 건드립니다 */
 const seatIn = (s) => {
   if (!s || typeof s.id !== "string" || !s.id) return null;
@@ -2245,8 +2245,7 @@ export default function GoldSettlement() {
   const [partyReg, setPartyReg] = useState(
     boot.current.partyReg || { list: [{ name: "기본", t: 0 }], active: "기본" }
   );
-  const [resetOpen, setResetOpen] = useState(false); // 처음부터 창
-  const [presetOpen, setPresetOpen] = useState(false); // 프리셋 창
+  const [presetOpen, setPresetOpen] = useState(false); // 프리셋 창(로비 항목 카드에서 엽니다)
   const [gensOpen, setGensOpen] = useState(false); // 지난 판 드롭다운
 
   /* ---------- 로비(홈)와 자리 ----------
@@ -2368,12 +2367,14 @@ export default function GoldSettlement() {
   const savePresetNow = (name) => {
     const nm = (name || "").trim();
     if (!nm) return false;
+    /* 로비에서는 지금 명단이 자리이고, 판에서는 줄입니다 — 판이 닫힌 뒤에도 줄이 남아
+       있어서, 로비에서 고친 이름이 아니라 지난 판의 이름을 담는 일이 없게 갈라 씁니다 */
     const entry = {
       name: nm,
       cols,
       unit,
       feePercent,
-      names: rows.map((r) => r.name),
+      names: (inLobby ? seats : rows).map((x) => x.name),
     };
     const next = [...presets.filter((x) => x.name !== nm), entry];
     setPresets(next);
@@ -2755,7 +2756,7 @@ export default function GoldSettlement() {
 
   /* ================= 자리 (§3.2) =================
      자리 = { 이름, 붙은 계정, 기억된 아이디 }. 연결이 판의 행이 아니라 자리에 살아서
-     '처음부터'로 판이 갈려도 연결이 안 끊어집니다. 닉네임 매칭 재연결은 폐기했습니다. */
+     판이 갈려도 연결이 안 끊어집니다. 닉네임 매칭 재연결은 폐기했습니다. */
   const putSeats = (next) => setSeats(typeof next === "function" ? next : () => next);
   const seatName2 = (s, i) => (s && (s.name || "").trim()) || ANON(i);
   /* 자리 하나 = 판의 줄 하나. 줄 id 가 자리 id 그대로라 판이 갈려도 자격이 따라옵니다 */
@@ -3785,7 +3786,7 @@ export default function GoldSettlement() {
     const gid = typeof st.roundId === "string" ? st.roundId : "";
     const ts = (Array.isArray(f.log) ? f.log : []).map((e) => e.t).filter(Boolean);
     const prev = lastLive.current;
-    /* 판이 갈렸는지는 roundId 가 말합니다 — 줄 id 는 자리 id 라 '처음부터'로도 안 바뀝니다.
+    /* 판이 갈렸는지는 roundId 가 말합니다 — 줄 id 는 자리 id 라 새 판에서도 안 바뀝니다.
        (roundId 를 안 싣는 옛 방장 앱이면 예전처럼 줄 id 가 통째로 바뀐 것으로 봅니다) */
     const split = gid
       ? !!prev && !!prev.gid && prev.gid !== gid
@@ -5220,7 +5221,7 @@ export default function GoldSettlement() {
   // 실제로 쓰기 시작할 때. 인원·숫자는 비우고 항목은 기본값으로 되돌립니다.
   /* 한 판 끝나고 같은 멤버로 또 한 판 — 이름과 항목은 두고 숫자만 비웁니다.
      손 안 댄 예시라면 남의 명단이니 이름까지 치웁니다. 행은 여덟 줄로 맞춥니다. */
-  /* ---------- 판 기록 — 출발·처음부터·파티 종료 사이의 한 판 ----------
+  /* ---------- 판 기록 — [시작]과 [정산 끝내기] 사이의 한 판 ----------
      로컬 전용입니다. 읽기 조회만 있고, 잠금·복원·서버 보관은 없앴습니다.
      줄마다 판의 신분증(출처·이름·기간·총액·파티원 전부)을 함께 담습니다. */
   const GEN_KEEP = 20; // 최근 20판, 넘치면 오래된 것부터
@@ -5440,58 +5441,22 @@ export default function GoldSettlement() {
     }
     return null;
   })();
-  /* [처음부터] — 지금 판을 결과지로 보내고 **같은 자리로** 새 판을 엽니다 (§3.4).
-     자리 id 가 곧 줄 id 라, 판이 갈려도 계정↔자리 연결은 그대로입니다.
-     keep: 이름·항목 남기고 숫자만 / full: 전부 비우고(프리셋 시작 가능) */
-  const clearAll = (kind, preset, size) => {
-    if (readOnly) return;
-    /* 방·초대·멤버십은 건드리지 않습니다 — 계정에 붙어 있어서 판을 비운다고 끊길 이유가 없습니다 */
-    closeRound();
-    const full = kind === "full" || isPristine(rows);
-    takeSnap(
-      "처음부터",
-      full ? "전부 비우고 새로 시작했어요." : "이름과 항목은 그대로 두고 숫자만 비웠어요."
-    );
-    if (full) {
-      const pc = preset && Array.isArray(preset.cols) ? preset.cols : DEFAULT_COLS;
-      setCols(pc);
-      if (preset && preset.unit) setUnit(preset.unit);
-      if (preset && preset.feePercent) setFeePercent(preset.feePercent);
-    }
-    /* 전부 비우기는 명단까지 새로 짜므로 자리도 새로 만듭니다. 이름만 두는 쪽은
-       자리를 그대로 씁니다 — 줄이 곧 인원이라 여기서 늘리면 정산 인원이 바뀝니다 */
-    const nSeats = full
-      ? Array.from(
-          {
-            length:
-              preset && Array.isArray(preset.names) && preset.names.length
-                ? preset.names.length
-                : size === 4
-                ? 4
-                : 8,
-          },
-          (_, i) => ({
-            id: "r" + seq.current++,
-            name:
-              preset && Array.isArray(preset.names) && preset.names[i] ? preset.names[i] : "",
-            /* 전부 비우면 자리도 새것입니다 — 붙어 있던 사람은 첫 자리(방장)만 남고,
-               나머지는 [수락 ▾]·[자리 바꾸기]로 다시 앉힙니다 */
-            acct: null,
-            mem: null,
-            named: !!(preset && Array.isArray(preset.names) && preset.names[i]),
-          })
-        )
-      : seats.length
-      ? seats
-      : seatsFromRows(rows);
-    putSeats(nSeats);
-    setRows(rowsFromSeats(nSeats));
-    setOpenRow(null);
-    setLog([]);
-    setMemoFreeze(null);
-    setRoundId(newRoundId());
-    setRoundLive(true);
-    clearHash();
+  /* [프리셋] 불러오기 — 로비에서만 엽니다 (§3.4). 판을 닫는 일이 아니라 로비의 항목과
+     자리를 갈아끼우는 일이라, 결과지도 확인창도 없습니다. 판을 닫고 새로 여는 길은
+     [정산 끝내기] → [시작] 하나뿐입니다 */
+  const loadPreset = (pre) => {
+    if (readOnly || !pre) return;
+    const pc = Array.isArray(pre.cols) && pre.cols.length ? pre.cols : DEFAULT_COLS;
+    setCols(pc.map((c) => ({ ...c })));
+    if (pre.unit) setUnit(pre.unit);
+    if (pre.feePercent) setFeePercent(pre.feePercent);
+    const names = (Array.isArray(pre.names) ? pre.names : []).filter((n) => (n || "").trim());
+    if (!names.length) return;
+    /* 이미 앉아 있는 사람은 두고, 이름만 있는 자리를 프리셋 이름으로 새로 세웁니다 —
+       프리셋이 사람을 내보내면 안 됩니다 (§3.2: 연결은 자리에 삽니다) */
+    const kept = seats.filter((s) => s.acct);
+    const room = Math.max(0, lobbyCap - kept.length);
+    putSeats([...kept, ...names.slice(0, room).map((n) => newSeat(n))]);
   };
   /* [전부 비우기] — 판은 그대로 두고 숫자만 리셋합니다. 결과지에 무영향이고,
      장부 로그에 `비움` 한 줄이 남습니다 (§3.4). 파티원의 "방금 바뀐" 카드에도 뜹니다 */
@@ -5557,17 +5522,6 @@ export default function GoldSettlement() {
       body: `${G(goldOf(ex.amount))} · ${ex.reason || "사유 없음"}`,
       tone: "danger",
       onYes: () => delExtra(row.id, ex.id),
-    });
-  const askClearAll = () =>
-    setAsk({
-      title: "처음부터 다시 할까요?",
-      body:
-        (tutorial ? "여기는 튜토리얼 예시라 저장되지 않아요. " : "") +
-        (isPristine(rows)
-          ? "예시 데이터를 치우고 빈 표로 시작해요."
-          : "이름과 항목·단가는 그대로 두고, 숫자와 기록만 비워요."),
-      action: "비우기",
-      onYes: clearAll,
     });
 
   /* 복사 */
@@ -5762,7 +5716,8 @@ export default function GoldSettlement() {
                       </div>
                     </>
                   ) : (
-                    /* 파티 서랍 — 신청·함께한 사람·처음 오는 사람·파티원·[중단]·[정산 끝내기].
+                    /* 파티 서랍 — 신청·함께한 사람·처음 오는 사람·파티원. 판의 수명 동사는
+                       화면 우상단에 있고 여기서는 사람만 다룹니다 (§3.4).
                        앞의 셋은 로비 모으기 열과 같은 구성·같은 순서입니다 (§3.1) — 판이 시작돼
                        표면이 이 서랍으로 이사해도 사람이 지도를 다시 익히지 않게 하는 조건입니다.
                        신청 목록이 여기 있어야, 우하단 카드를 놓쳐도 수락할 자리가 남습니다 */
@@ -5883,30 +5838,9 @@ export default function GoldSettlement() {
                           </ul>
                         )}
                       </div>
-                      {/* 판의 동사 둘 — [중단]은 얼리고, [정산 끝내기]는 결과지를 남기고 닫습니다.
-                          사람 교체는 내보내기·초대로 이 서랍 안에서 합니다 ([새로 모으기] 폐기) */}
-                      <div className="gs-room-foot">
-                        {auth && relay.room && (
-                          <button
-                            className="gs-swaplink"
-                            onClick={() => {
-                              setRoomOpen(false);
-                              pauseRound();
-                            }}
-                          >
-                            중단
-                          </button>
-                        )}
-                        <button
-                          className="gs-btn gs-btn-sm gs-room-end"
-                          onClick={() => {
-                            setRoomOpen(false);
-                            askEndRound();
-                          }}
-                        >
-                          정산 끝내기
-                        </button>
-                      </div>
+                      {/* 판의 수명 동사([중단]·[정산 끝내기])는 화면 우상단 모서리에 있습니다
+                          (§3.4) — 같은 동사가 두 자리에 있으면 어느 쪽이 진짜인지 헷갈립니다.
+                          이 서랍은 사람 이야기만 합니다 */}
                     </>
                   )}
                 </div>
@@ -6442,20 +6376,10 @@ export default function GoldSettlement() {
           </div>
         )}
         <div className="gs-mastrow">
-          {/* 탭 줄 왼쪽에는 [처음부터] 하나만 남습니다 — 매 판 쓰는 버튼이라 판에 제일
-              가까운 자리가 맞습니다. [프리셋]은 '처음부터' 창 안에 같은 선택지가 있어 뺐고,
+          {/* 탭 줄 왼쪽에는 [전부 비우기] 하나만 남습니다 (§3.4) — 판을 닫는 동사는
+              우상단 모서리로 갔고, [처음부터]는 폐지했습니다(문이 둘이면 하나는 못 찾습니다).
               [파티 모드 시작하기]는 머리줄 파티 칩이 됐습니다(문과 상태가 한 자리). */}
           <div className="gs-mastleft">
-            {!readOnly && (
-              <span className="gs-tip">
-                <button className="gs-btn gs-btn-ghost gs-btn-warn" onClick={() => setResetOpen(true)}>
-                  처음부터
-                </button>
-                <span className="gs-tip-body gs-tip-l" role="tooltip">
-                  판을 닫고 새로 시작해요. 지금 판은 <b>판 기록</b>으로 남아요.
-                </span>
-              </span>
-            )}
             {/* 숫자만 리셋 — 판은 그대로이고 결과지에도 영향이 없습니다 (§3.4) */}
             {!readOnly && (
               <span className="gs-tip">
@@ -6468,8 +6392,6 @@ export default function GoldSettlement() {
                 </span>
               </span>
             )}
-            {/* [정산 끝내기]는 파티 서랍 안에 [중단]과 나란히 있습니다 — 판을 닫는 두 동사가
-                한자리에 있어야 무엇을 고르는지가 보입니다. 칩은 판이 있는 동안 늘 떠 있습니다 */}
           </div>
           <div className="gs-mastside">
             {tabbed && (
@@ -6513,6 +6435,34 @@ export default function GoldSettlement() {
               </nav>
             )}
           </div>
+          {/* 수명 동사는 상태가 바뀌어도 같은 자리입니다 (§3.4) — 로비에서 [시작]이 앉는
+              우상단 모서리를 판에서는 이 둘이 씁니다. 파티원 화면에는 뜨지 않습니다.
+              둘 중 더 자주 누르는 것이 [중단]이라 그쪽이 오른쪽 끝입니다 */}
+          {!readOnly && (
+            <div className="gs-mastverbs">
+              <span className="gs-tip">
+                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={askEndRound}>
+                  정산 끝내기
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  결과지를 <b>판 기록</b>에 남기고 판을 닫아요. 파티원은 그대로 있어요.
+                </span>
+              </span>
+              {/* 얼리는 것은 방에 붙은 판만 할 수 있습니다 — 혼자 판은 영구라 얼릴 이유도
+                  없습니다 (§3.4) */}
+              {auth && relay.room && (
+                <span className="gs-tip">
+                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={pauseRound}>
+                    중단
+                  </button>
+                  <span className="gs-tip-body gs-tip-r" role="tooltip">
+                    아무것도 지우지 않고 잠깐 멈춰요. 로비의 <b>[이어가기]</b>로 그대로
+                    돌아와요.
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </header>
       )}
@@ -6629,6 +6579,7 @@ export default function GoldSettlement() {
           autoSeatFor={autoSeatFor}
           onInvite={newInvite}
           onStart={() => startRound(cols)}
+          onPresets={() => setPresetOpen(true)}
           onCopy={copy}
           mates={mates}
           invSent={invSent}
@@ -7740,7 +7691,7 @@ export default function GoldSettlement() {
             <li>
               <b>잘못 눌렀어요</b>
               칸을 우클릭하면 1회가 빠져요. 기록에서 어떤 줄이든 취소할 수 있고, 인원·항목을
-              지웠거나 '처음부터'를 눌렀다면 ↩ 되돌리기가 잠깐 떠 있어요.
+              지웠거나 '전부 비우기'를 눌렀다면 ↩ 되돌리기가 잠깐 떠 있어요.
             </li>
             <li>
               <b>숫자를 직접 고치고 싶어요</b>
@@ -7759,12 +7710,13 @@ export default function GoldSettlement() {
             </li>
             <li>
               <b>같은 멤버로 한 판 더 해요</b>
-              '처음부터 → 새로 시작'을 누르면 이름과 항목은 두고 숫자·기록만 비워요.
+              오른쪽 위 '정산 끝내기'로 판을 닫으면 같은 사람들이 로비에 그대로 있어요.
+              거기서 '시작'을 누르면 새 판이에요. 숫자만 비우려면 '전부 비우기'예요.
             </li>
             <li>
               <b>어제 판을 다시 보고 싶어요</b>
-              장부는 하나예요 — '처음부터'로 판을 닫고 새로 시작해요. 끝난 판은 왼쪽 위
-              '판 기록'에서 볼 수 있어요.
+              장부는 하나예요 — '정산 끝내기'로 판을 닫으면 결과지가 남아요. 끝난 판은
+              왼쪽 위 '판 기록'에서 볼 수 있어요.
             </li>
             <li>
               <b>파티원한테 보여주고 싶어요</b>
@@ -7943,15 +7895,8 @@ export default function GoldSettlement() {
           onLoad={(nm) => {
             const pre = presets.find((x) => x.name === nm);
             if (!pre) return;
-            setAsk({
-              title: "이 프리셋을 불러올까요?",
-              body: nm + " — 지금 판은 판 기록으로 남고, 프리셋 구성으로 새로 시작해요.",
-              action: "불러오기",
-              onYes: () => {
-                clearAll("full", pre, 8);
-                setPresetOpen(false);
-              },
-            });
+            loadPreset(pre);
+            setPresetOpen(false);
           }}
           onDelete={(nm) => {
             const next = presets.filter((x) => x.name !== nm);
@@ -7959,24 +7904,6 @@ export default function GoldSettlement() {
             savePresets(next);
           }}
           onClose={() => setPresetOpen(false)}
-        />
-      )}
-      {resetOpen && (
-        <ResetModal
-          hasLog={log.length > 0}
-          presets={presets}
-          /* 파티원이 보고 있으면 확인창이 그 수를 말합니다 (§8) */
-          mates={members.filter((m) => m.st === "ok").length}
-          onRun={(kind, presetName, size) => {
-            const pre = presets.find((x) => x.name === presetName) || null;
-            clearAll(kind, pre, size);
-            setResetOpen(false);
-          }}
-          onOpenPresets={() => {
-            setResetOpen(false);
-            setPresetOpen(true);
-          }}
-          onClose={() => setResetOpen(false)}
         />
       )}
       {/* [수락 ▾] 가 애매할 때 — 방장이 자리를 지정합니다 (§3.2) */}
@@ -9505,8 +9432,8 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
 /* OBS로 공유 — 방은 명단마다 하나이고, 주소는 재발급 전까지 영구입니다.
    쓰기 권한은 이 브라우저에만 있고 어떤 주소에도 실리지 않습니다.
    평소 쓰는 것(켜기·복사)만 겉에 두고, 가끔 쓰는 것은 접어 둡니다. */
-/* 프리셋 — 명단·항목·단가·수수료·입력 단위 묶음. 저장·지우기와 함께 줄에서 바로
-   불러올 수 있습니다(확인 한 번 — 지금 판은 지난 판으로 남습니다). 같은 이름은 덮어써요. */
+/* 프리셋 — 명단·항목·단가·수수료·입력 단위 묶음. 로비의 항목 카드에서 엽니다 (§3.4).
+   불러오기는 로비의 항목과 자리를 바꿀 뿐이라 판을 닫지 않습니다. 같은 이름은 덮어써요. */
 function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
   const [name, setName] = useState("");
   const [savedTick, setSavedTick] = useState(false);
@@ -9514,8 +9441,8 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
     <InfoModal title="프리셋" onClose={onClose}>
       <div className="gs-key">
         <p>
-          지금 표의 명단·항목·단가·수수료·입력 단위를 프리셋으로 남겨요.
-          {" '불러오기'는 지금 판을 판 기록으로 남기고, 그 구성으로 새로 시작해요."}
+          지금 명단·항목·단가·수수료·입력 단위를 프리셋으로 남겨요.
+          {" '불러오기'를 누르면 로비의 항목과 자리가 그 구성으로 바뀌어요."}
         </p>
         <div className="gs-obs-acts">
           <input
@@ -9566,120 +9493,6 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
         <div className="gs-obs-acts" style={{ marginTop: 12 }}>
           <button className="gs-btn gs-btn-sm" onClick={onClose}>
             닫기
-          </button>
-        </div>
-      </div>
-    </InfoModal>
-  );
-}
-
-/* 처음부터 — 무엇을 남길지 고르고, 실행 버튼은 하나(C안). 기본 선택이 첫째 갈래라
-   다수 흐름은 열자마자 [새로 시작] 한 번입니다. 어느 쪽이든 지금 판은 지난 판으로 남고,
-   프리셋 만들기·관리는 밑줄 문으로 건너갑니다. */
-function ResetModal({ hasLog, presets, mates, onRun, onOpenPresets, onClose }) {
-  const [mode, setMode] = useState("keep"); // keep | full | preset
-  const [presetName, setPresetName] = useState(presets[0] ? presets[0].name : "");
-  const [size, setSize] = useState(8);
-  const run = () =>
-    onRun(mode === "keep" ? "keep" : "full", mode === "preset" ? presetName : "", size);
-  return (
-    <InfoModal title="처음부터" onClose={onClose}>
-      <div className="gs-key">
-        <p>{hasLog ? "지금 판은 판 기록으로 남고, 새로 시작해요." : "새로 시작해요."}</p>
-        {/* 보고 있는 사람이 있으면 몇 명인지 말합니다 — 같은 사람들로 새 판이 열립니다 (§8) */}
-        {mates > 0 && (
-          <p className="gs-key-note">
-            파티원 {mates}명이 보고 있어요 — 같은 사람들로 새 판이 열려요.
-          </p>
-        )}
-        <div className="gs-reset-opts">
-          <div
-            className={"gs-reset-opt" + (mode === "keep" ? " on" : "")}
-            onClick={() => setMode("keep")}
-          >
-            <input
-              type="radio"
-              name="gs-reset-mode"
-              checked={mode === "keep"}
-              onChange={() => setMode("keep")}
-              aria-label="이름·항목은 그대로"
-            />
-            <b>이름·항목은 그대로</b> — 숫자·기록만 비워요
-          </div>
-          <div
-            className={"gs-reset-opt" + (mode === "full" ? " on" : "")}
-            onClick={() => setMode("full")}
-          >
-            <input
-              type="radio"
-              name="gs-reset-mode"
-              checked={mode === "full"}
-              onChange={() => setMode("full")}
-              aria-label="전부 비우고"
-            />
-            <b>전부 비우고</b>
-            <span className="gs-seg gs-seg-sm" role="group" aria-label="인원">
-              <button
-                className={size === 4 ? "on" : ""}
-                disabled={mode !== "full"}
-                onClick={() => setSize(4)}
-              >
-                4인
-              </button>
-              <button
-                className={size === 8 ? "on" : ""}
-                disabled={mode !== "full"}
-                onClick={() => setSize(8)}
-              >
-                8인
-              </button>
-            </span>
-          </div>
-          {presets.length > 0 ? (
-            <div
-              className={"gs-reset-opt" + (mode === "preset" ? " on" : "")}
-              onClick={() => setMode("preset")}
-            >
-              <input
-                type="radio"
-                name="gs-reset-mode"
-                checked={mode === "preset"}
-                onChange={() => setMode("preset")}
-                aria-label="프리셋으로"
-              />
-              <b>프리셋으로</b>
-              <select
-                className="gs-rc-kind"
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                aria-label="불러올 프리셋"
-              >
-                {presets.map((x) => (
-                  <option key={x.name} value={x.name}>
-                    {x.name}
-                  </option>
-                ))}
-              </select>
-              <button className="gs-reset-manage" onClick={onOpenPresets}>
-                프리셋 관리
-              </button>
-            </div>
-          ) : (
-            <div className="gs-reset-opt off">
-              <input type="radio" disabled aria-label="프리셋으로 (아직 없음)" />
-              <b>프리셋으로</b> — 아직 없어요
-              <button className="gs-reset-manage" onClick={onOpenPresets}>
-                프리셋 만들기
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="gs-obs-acts gs-acts-end">
-          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onClose}>
-            취소
-          </button>
-          <button className="gs-btn" onClick={run}>
-            새로 시작
           </button>
         </div>
       </div>
@@ -10256,6 +10069,7 @@ function LobbyScreen({
   autoSeatFor,
   onInvite,
   onStart,
+  onPresets,
   onCopy,
   mates,
   invSent,
@@ -10318,12 +10132,20 @@ function LobbyScreen({
       )}
 
       {/* 이 화면에서 일어나는 일 한 줄 (§8). 제목은 두지 않습니다 — 홈이 곧 로비라
-          "여기가 어디인가"를 글자로 말할 이유가 없습니다 */}
-      <p className="gs-lb-lead">
-        {seats.length > 1
-          ? "시작하면 이 사람들로 새 판이 열려요. 지금 판은 판 기록에 남아요."
-          : "혼자서도 시작할 수 있어요."}
-      </p>
+          "여기가 어디인가"를 글자로 말할 이유가 없습니다.
+          [시작]은 이 줄의 오른쪽 끝, 무대 우상단 모서리입니다 (§3.1) — 판 화면의
+          [정산 끝내기]·[중단]과 같은 좌표라, 상태가 바뀌어도 수명 동사는 같은 자리입니다 */}
+      <div className="gs-lbtop">
+        <p className="gs-lb-lead">
+          {seats.length > 1
+            ? "시작하면 이 사람들로 새 판이 열려요. 지금 판은 판 기록에 남아요."
+            : "혼자서도 시작할 수 있어요."}
+        </p>
+        {/* 이 화면의 유일한 채운 금색 버튼입니다. 이름이 하나도 없으면 흐립니다 */}
+        <button className="gs-btn gs-lbstart" onClick={onStart} disabled={named === 0}>
+          시작
+        </button>
+      </div>
 
       <div className="gs-bento">
         {/* ── 왼쪽 = 파티원 모으기 (상설) ─────────────────────────
@@ -10435,17 +10257,13 @@ function LobbyScreen({
         <div className="gs-bento-r">
           {/* ── 오른쪽 위 = 명단 ─────────────────────────────────
               번호 + 인라인 입력이고, 계정이 붙은 자리는 이름 옆에 파란 아이디가 섭니다.
-              [시작]은 카드 우측 상단 모서리에 고정입니다 (§3.1) */}
+              머리는 `명단 · n/8`만 말합니다 — [시작]은 무대 우상단으로 갔습니다 (§3.1) */}
           <div className="gs-lbcard gs-lbroster">
             <h4 className="gs-lbcard-h">
               명단
               <span className="gs-lbroster-n">
                 {named} / {cap}
               </span>
-              {/* 이 화면의 유일한 채운 버튼 — 머리줄 흐름에 앉혀서 카드 테두리와 안 겹칩니다 */}
-              <button className="gs-btn gs-lbstart" onClick={onStart} disabled={named === 0}>
-                시작
-              </button>
             </h4>
             <div className="gs-lbrows">
               {rows.map((s, i) => {
@@ -10520,6 +10338,11 @@ function LobbyScreen({
                     onClick={() => onCols([...cols, { id: "c" + seq.current++, name: "", price: "10,000" }])}
                   >
                     + 항목
+                  </button>
+                  {/* 프리셋 — 자주 쓰는 구성을 통째로 갈아끼우는 문입니다 (§3.4).
+                      판을 닫는 일이 아니라 로비의 명단·항목이 바뀔 뿐이라 여기 발치에 섭니다 */}
+                  <button className="gs-swaplink gs-lbpreset" onClick={onPresets}>
+                    프리셋
                   </button>
                 </div>
               </div>
@@ -11966,6 +11789,9 @@ const CSS = `
   --tex-rgb:90,60,20;      /* 종이결 무늬 */
   --shadow-rgb:60,40,15; --red-rgb:156,43,34; --gold-rgb:138,100,21; --blue-rgb:35,72,107;
   --mono:'Cutive Mono',monospace;
+  /* 무대 폭 — 시스템 줄·마스트·카드·로비가 전부 이 한 줄을 씁니다. 수명 동사
+     ([시작]과 [정산 끝내기]·[중단])가 같은 우상단 모서리에 서는 조건입니다 (§3.4) */
+  --stage:1080px;
   font-family:'IBM Plex Sans KR',system-ui,sans-serif;
   color:var(--ink); background:var(--kraft);
   background-image:
@@ -12000,7 +11826,7 @@ const CSS = `
    포커스된 칸을 항상 맨 앞으로 올려 테두리가 네 면 다 보이게 합니다. */
 .gs .gs-in:focus{position:relative; z-index:5}
 .gs-stick:focus-within{z-index:6}
-.gs-mast,.gs-card,.gs-mail{max-width:1080px; margin-left:auto; margin-right:auto}
+.gs-mast,.gs-card,.gs-mail{max-width:var(--stage); margin-left:auto; margin-right:auto}
 
 /* 머리 — 방송 화면에선 세로가 금이라 낮게 갑니다 */
 .gs-mast{margin-bottom:14px}
@@ -12016,9 +11842,13 @@ const CSS = `
   gap:10px 14px; flex-wrap:wrap}
 .gs-tabbed .gs-mastrow::after{content:''; position:absolute; left:0; right:0; bottom:0;
   height:1px; background:var(--kraft-dk)}
-.gs-mastside{display:flex; align-items:flex-end; gap:12px; margin-left:auto}
+/* 탭은 왼쪽입니다 (§3.4) — 비운 오른쪽 끝을 수명 동사가 씁니다 */
+.gs-mastside{display:flex; align-items:flex-end; gap:12px}
 /* 제목 아래 모드 — 화면에서 가장 먼저 읽혀야 하는 상태라 크게, 아이콘까지 붙입니다 */
 .gs-mastleft{display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding-bottom:9px}
+/* 수명 동사 — 무대 우상단 모서리. 로비 [시작]과 같은 좌표라, 판이 열려도 닫혀도
+   손이 가는 자리가 안 바뀝니다 (§3.1·§3.4). 둘 다 유령 버튼입니다 */
+.gs-mastverbs{display:flex; align-items:center; gap:8px; margin-left:auto; padding-bottom:9px}
 .gs-presetbtn{display:inline-flex; align-items:center; gap:6px}
 .gs-presetbtn svg{opacity:.85; flex:none}
 /* 왼쪽 끝 버튼의 툴팁은 화면 밖으로 안 나가게 왼끝 정렬 */
@@ -12809,20 +12639,6 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
    답답해 보입니다. 버튼은 제 줄에 세웁니다 */
 .gs-obs-keysline{margin:16px 0 0}
 .gs-obs-keysline p{margin:0 0 11px; font-size:12.5px; color:var(--ink-2); line-height:1.75}
-/* 처음부터 — 무엇을 남길지 고르는 라디오 줄, 실행은 버튼 하나(C안) */
-.gs-reset-opts{display:flex; flex-direction:column; gap:12px; margin:15px 0 2px}
-.gs-reset-opt{display:flex; align-items:center; gap:9px; flex-wrap:wrap; cursor:pointer;
-  font-size:12.5px; color:var(--ink-2); line-height:1.6}
-.gs-reset-opt input{accent-color:var(--ink); margin:0; flex:none}
-.gs-reset-opt b{font-weight:600; color:var(--ink-body)}
-.gs-reset-opt.on{color:var(--ink)}
-.gs-reset-opt.on b{color:var(--ink)}
-.gs-reset-opt.off{cursor:default; opacity:.62}
-.gs-reset-opt .gs-seg button:disabled{opacity:.45; cursor:default}
-.gs-reset-manage{border:0; background:transparent; font:inherit; font-size:12px;
-  color:var(--ink-2); cursor:pointer; text-decoration:underline; text-underline-offset:3px;
-  padding:1px 0}
-.gs-reset-manage:hover{color:var(--ink)}
 .gs-acts-end{justify-content:flex-end; margin-top:16px}
 .gs-fold{display:block; font:inherit; font-size:12px; color:var(--ink-2);
   background:transparent; border:0; cursor:pointer; padding:8px 2px 2px; text-align:left}
@@ -12838,8 +12654,6 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   background:transparent; color:var(--ink-2); border-radius:99px; padding:2px 9px;
   cursor:pointer}
 .gs-genlock.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
-.gs-reset-preset{margin-top:10px; padding-top:8px;
-  border-top:1px dashed rgba(var(--ink-rgb),.18)}
 /* 판의 신분증 띠 — 탭 위. 끝난 판·판 기록에서 마스트 왼쪽 버튼들의 자리를 씁니다 */
 .gs-idbar{border-left:3px solid var(--gold); background:rgba(var(--gold-rgb),.07);
   border-top:1px solid rgba(var(--gold-rgb),.24); border-right:1px solid rgba(var(--gold-rgb),.24);
@@ -12967,7 +12781,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
    안쪽 내용은 .gs-mast 와 같은 폭 규격이라 본문 오른쪽 끝과 열이 맞습니다 */
 .gs-sysbar{margin:-20px -20px 18px; padding:7px 20px;
   background:rgba(var(--ink-rgb),.05); border-bottom:1px solid rgba(var(--ink-rgb),.14)}
-.gs-sysbar-in{max-width:1080px; margin:0 auto; display:flex; align-items:center; gap:12px}
+.gs-sysbar-in{max-width:var(--stage); margin:0 auto; display:flex; align-items:center; gap:12px}
 .gs-sysbar-r{display:flex; align-items:center; gap:10px; margin-left:auto}
 /* 줄 안 컨트롤은 전부 32px 한 높이·같은 좌우 여백으로. 칩마다 높이와 여백이 다르면
    같은 줄에 선 것들이 저마다 다른 물건처럼 보입니다 */
@@ -13809,11 +13623,15 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
       벌금표와 갈라 두어야 "지금 무슨 화면인가"를 글자로 안 읽어도 압니다 ── */
 .gs-lobbyscr{margin:-20px -20px 0; padding:26px 20px 28px; min-height:calc(100vh - 104px);
   background:radial-gradient(120% 70% at 50% 0%, rgba(var(--gold-rgb),.09), transparent 62%)}
-.gs-lb-lead{max-width:1150px; margin:0 auto 13px; font-size:12.5px; color:var(--ink-2)}
-/* 무대 ~1150px, 2열 벤토 (§3.1). 왼쪽이 모으기, 오른쪽이 명단·항목입니다 —
+/* 머리 한 줄 — 왼쪽이 이 화면에서 일어나는 일, 오른쪽 끝이 [시작]입니다 (§3.1·§9-1).
+   폭은 판 화면과 같은 무대라, [시작]과 [정산 끝내기]·[중단]이 같은 모서리에 섭니다 */
+.gs-lbtop{max-width:var(--stage); margin:0 auto 13px; display:flex; align-items:center;
+  gap:14px; min-height:38px}
+.gs-lb-lead{flex:1 1 auto; min-width:0; margin:0; font-size:12.5px; color:var(--ink-2)}
+/* 2열 벤토 (§3.1). 왼쪽이 모으기, 오른쪽이 명단·항목입니다 —
    오른쪽을 조금 넓게 두어 이름 줄이 먼저 접히지 않게 합니다 */
 .gs-bento{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.18fr); gap:15px;
-  align-items:start; max-width:1150px; margin:0 auto}
+  align-items:start; max-width:var(--stage); margin:0 auto}
 .gs-bento-r{display:flex; flex-direction:column; gap:15px; min-width:0}
 @media (max-width:900px){ .gs-bento{grid-template-columns:1fr} }
 .gs-lbcard{border:1px solid rgba(var(--ink-rgb),.2); border-radius:9px; background:var(--paper);
@@ -13882,9 +13700,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbslot-x{border:0; background:transparent; cursor:pointer; flex:none;
   color:rgba(var(--ink-rgb),.34); font-size:15px; line-height:1; padding:2px 5px; border-radius:4px}
 .gs-lbslot-x:hover{color:var(--red); background:rgba(var(--red-rgb),.1)}
-/* 이 화면에서 할 일은 하나입니다 — 채운 금색 하나가 명단 카드의 모서리에 붙어 있어서
-   "이름을 적는 곳"과 "시작하는 곳"이 한 눈에 들어옵니다 (§3.1) */
-.gs-lbstart{margin-left:12px; font-size:14px; font-weight:600;
+/* 이 화면에서 할 일은 하나입니다 — 무대 우상단 모서리의 채운 금색 하나 (§3.1) */
+.gs-lbstart{flex:none; margin-left:auto; font-size:14px; font-weight:600;
   letter-spacing:.1em; padding:9px 26px; background:var(--gold); border-color:var(--gold);
   color:#241f19}
 .gs-lbstart:hover:not(:disabled){background:var(--gold); filter:brightness(1.07)}
@@ -13897,15 +13714,17 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   color:var(--ink-2); flex:none}
 .gs-lbcolfoot{display:flex; align-items:center; gap:12px; margin-top:6px}
 .gs-lbcolfoot .gs-btn{margin-left:auto}
+/* 프리셋 — 발치의 조용한 문입니다. 오른쪽 끝이라 항목 줄을 읽는 눈을 안 건드립니다 */
+.gs-lbpreset{margin-left:auto}
 /* 중단된 판 카드 — 벤토 위입니다. 잃은 것이 없다는 것을 수와 총액이 말합니다 */
-.gs-lbresume{max-width:1150px; margin:0 auto 13px; display:flex; align-items:center; gap:12px;
+.gs-lbresume{max-width:var(--stage); margin:0 auto 13px; display:flex; align-items:center; gap:12px;
   padding:12px 15px; border-radius:9px; border:1px solid rgba(var(--gold-rgb),.5);
   background:rgba(var(--gold-rgb),.09); flex-wrap:wrap}
 .gs-lbresume-l{flex:1 1 auto; min-width:0; font-size:13px; color:var(--ink-body)}
 .gs-lbresume-meta{margin-left:9px; font-size:12px; color:var(--ink-2)}
 .gs-lbresume .gs-btn{margin-left:auto}
 /* 직전 결과지 한 줄 — 벤토 아래입니다. 정산 이야기는 판이 끝난 뒤에 합니다 */
-.gs-lblast{display:flex; align-items:center; gap:11px; width:100%; max-width:1150px;
+.gs-lblast{display:flex; align-items:center; gap:11px; width:100%; max-width:var(--stage);
   margin:15px auto 0; padding:10px 15px; border-radius:9px; font:inherit; cursor:pointer;
   text-align:left; background:transparent; border:1px solid rgba(var(--ink-rgb),.16)}
 .gs-lblast:hover{border-color:rgba(var(--ink-rgb),.34); background:rgba(var(--ink-rgb),.04)}
@@ -14075,7 +13894,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-room-btns{display:flex; align-items:center; gap:10px; margin-top:11px}
 .gs-room-end{margin-left:auto}
 @media (max-width:640px){ .gs-roompanel{width:min(320px,calc(100vw - 40px))} }
-/* ── 파티 서랍 — 신청·파티원·초대 링크·파티 끝내기가 방 칩 안에 모입니다 (§3-7) ── */
+/* ── 파티 서랍 — 신청·함께한 사람·초대 링크·파티원이 방 칩 안에 모입니다 (§3.1) ── */
 .gs-roompanel-host{width:320px}
 .gs-room-sec{margin-top:11px; padding-top:11px; border-top:1px solid rgba(var(--ink-rgb),.14)}
 .gs-room-sech{margin:0 0 7px; font-size:11px; letter-spacing:.1em; color:var(--ink-2);
@@ -14083,10 +13902,6 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-room-cnt{margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--gold)}
 .gs-room-sech .gs-obs-why{margin-left:auto; font-size:11px; letter-spacing:0; font-weight:400}
 .gs-room-none{margin:0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
-/* 판을 닫는 두 동사 — [중단]은 무게를 낮춘 밑줄 문이고, 이 서랍에서 할 일인
-   [정산 끝내기]가 오른쪽 끝의 채운 버튼입니다 (§9-2·§9-3) */
-.gs-room-foot{margin-top:11px; padding-top:11px; border-top:1px solid rgba(var(--ink-rgb),.14);
-  display:flex; align-items:center; gap:10px}
 .gs-room-sec .gs-lbreq{padding:7px 9px; gap:7px}
 .gs-room-sec .gs-lbreq > b{font-size:15px}
 .gs-room-sec .gs-memlist li{padding:6px 9px; margin-top:5px}
