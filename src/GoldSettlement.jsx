@@ -5981,7 +5981,9 @@ export default function GoldSettlement() {
                                 return (
                                   <li key={m.acct}>
                                     <b>{m.nick || m.acct}</b>
-                                    <span className="gs-mem-id">({m.acct})</span>
+                                    {/* 아이디는 앞 두 글자만 (§3.1) — 파티 서랍도 방장
+                                        화면이라 통째로 방송에 잡힙니다 */}
+                                    <span className="gs-mem-id">({m.acct.slice(0, 2) + "····"})</span>
                                     {/* 계정 닉·아이디는 참고 정보이고, 판에 오르는 이름은
                                         자리의 것입니다 (§3.2) */}
                                     {st && <span className="gs-mem-seat">{seatName2(st, i)} 자리</span>}
@@ -10095,7 +10097,8 @@ function InviteCard({ inv, onAccept, onDeny }) {
       <b>초대가 왔어요</b>
       <span className="gs-join-sub">
         {inv.fromNick || inv.from}
-        <span className="gs-join-id">({inv.from})</span>님이 파티에 초대했어요
+        {/* 받는 쪽 화면도 방송에 잡힙니다 — 부른 사람의 아이디도 앞 두 글자만 (§3.1) */}
+        <span className="gs-join-id">({inv.from.slice(0, 2) + "····"})</span>님이 파티에 초대했어요
       </span>
       <div className="gs-join-acts">
         <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => onDeny(inv)}>
