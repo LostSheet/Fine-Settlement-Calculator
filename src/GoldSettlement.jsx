@@ -13885,7 +13885,10 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 }
 .gs-lbrow-in:focus{outline:0}
 /* 계정이 붙은 자리는 이름 옆에 파란 아이디 — 자리의 참고 정보입니다 (§3.2) */
-.gs-lbrow-id{font-family:var(--mono); font-size:10.5px; color:var(--blue); flex:none}
+/* 가린 아이디 — 10.5px 는 점인지 글자인지도 안 보였습니다. 확인용 표식이라 읽히는
+   크기여야 하고, 전체는 title 로 봅니다 */
+.gs-lbrow-id{font-family:var(--mono); font-size:12.5px; color:var(--blue); flex:none;
+  letter-spacing:.04em}
 .gs-lbrow{cursor:text}
 .gs-lbrow-in,.gs-lbrow-id,.gs-lbslot-x{cursor:auto}
 .gs-lbslot-x{border:0; background:transparent; cursor:pointer; flex:none; margin-left:auto;
