@@ -720,6 +720,9 @@ const JOIN_KEY = "j"; // #live=ID&j=CODE — 초대 코드. 읽기 권한까지�
 const OBS_KEY = "o"; // #o=TOKEN — 내 방송용 주소. 지금 들어가 있는 방을 비춥니다
 /* 예시 방 — 서버에 방이 없습니다. 앱이 예시 장부를 직접 비춰서, 실제 링크와 똑같이 동작합니다 */
 const DEMO_ROOM = "CAFE22";
+/* 지목 초대의 수명 — 서버와 같은 1분입니다 (§3.3). 알리는 배관이 없어서, 이 시간은
+   "쏜 사람 화면의 `초대함…`을 언제 내리나"를 정하는 데 씁니다 */
+const INV_MS = 60 * 1000;
 
 /* ================= OBS 중계 =================
    방장의 앱만 상태를 밀어 올리고, OBS와 파티원은 읽기 전용으로 구독합니다.
@@ -981,6 +984,10 @@ const authApi = {
   look: (token, look) => callApi("/api/auth/look", { method: "POST", body: { look }, token }),
   /* 내 방송용 주소가 지금 어느 방을 비추는지 — OBS 조회도 활동으로 칩니다 */
   resolveObs: (t) => callApi("/api/o/" + encodeURIComponent(t) + "/resolve"),
+  /* 지목 초대 — 함께한 사람에게만 갑니다. 자리는 보내는 쪽이 그때 정합니다 (§3.3).
+     유효 1분짜리 실시간 악수라, 만료를 알리는 배관은 없습니다 */
+  invite: (token, to, seat) =>
+    callApi("/api/invite", { method: "POST", body: seat ? { to, seat } : { to }, token }),
 };
 
 const roomApi = {
@@ -1012,8 +1019,14 @@ const roomApi = {
       body: rowId ? { acct, action, rowId } : { acct, action },
       token,
     }),
+  /* 들어가는 길 셋 (§3.3) — 링크 코드, 지목 초대(inv), 코드 없는 노크.
+     본문이 갈래를 정합니다: 코드가 있으면 신청, inv 면 즉시 입장, 빈 본문이면 노크 */
   join: (token, roomId, j) =>
     callApi(`/api/r/${roomId}/join`, { method: "POST", body: { j }, token }),
+  joinInvited: (token, roomId) =>
+    callApi(`/api/r/${roomId}/join`, { method: "POST", body: { inv: 1 }, token }),
+  knock: (token, roomId) =>
+    callApi(`/api/r/${roomId}/join`, { method: "POST", body: {}, token }),
   leave: (token, roomId) => callApi(`/api/r/${roomId}/leave`, { method: "POST", body: {}, token }),
   /* [중단]·[이어가기] — 아무것도 지우지 않고 얼렸다 풉니다 (§3.4) */
   pause: (token, roomId) => callApi(`/api/r/${roomId}/pause`, { method: "POST", body: {}, token }),
@@ -2221,6 +2234,16 @@ export default function GoldSettlement() {
   const [nickDraft, setNickDraft] = useState("");
   const [nickBusy, setNickBusy] = useState(false);
   const [nickErr, setNickErr] = useState("");
+  /* ---------- 함께한 사람과 지목 초대 (§3.3) ----------
+     목록이 곧 방 찾기입니다 — 검색은 없습니다. 전달은 디스코드가 하고, 앱은 열 때와
+     창에 초점이 돌아올 때만 /me 로 확인합니다. 폴링도 푸시도 깔지 않습니다. */
+  const [mates, setMates] = useState([]); // [{id, nick, t, room}]
+  const [invites, setInvites] = useState([]); // [{from, fromNick, room, seat}]
+  const [meCur, setMeCur] = useState(null); // 서버가 아는 "지금 들어가 있는 방"
+  const [invSent, setInvSent] = useState({}); // 쏜 시각 {acct: t} — 1분 지나면 원래대로
+  const [mateSheet, setMateSheet] = useState(null); // 함께한 사람 시트 {id, nick, room}
+  const [invSeat, setInvSeat] = useState(null); // 초대할 자리 고르기 {id, nick}
+  const [invHide, setInvHide] = useState({}); // 거절한 초대는 이 화면에서 지웁니다
   /* 서버 로비가 "모으는 중"인지 — 이 동안만 뷰어·오버레이가 대기실을 그립니다 (§4.3).
      로비 자체는 홈이라 늘 있습니다 (§1) */
   const [lobbyOn, setLobbyOn] = useState(false);
@@ -2541,10 +2564,45 @@ export default function GoldSettlement() {
     putRelay({ ...relay, room: undefined, invite: undefined, on: false });
   };
   /* 세션은 90일이고 쓸 때마다 연장됩니다 — 열 때 한 번 확인해서 닉·OBS 토큰도 맞춥니다.
+     같은 응답이 함께한 사람과 대기 중인 지목 초대를 실어 옵니다 (§3.3) — 그래서
+     창에 초점이 돌아올 때도 한 번 더 봅니다("초대 쐈어, 받아" → 알트탭 → 그 순간).
      서버가 없거나 끊겨 있으면 조용히 지나갑니다(방송 화면에 에러를 그리지 않습니다). */
   useEffect(() => {
-    if (!auth) return;
+    if (!auth) {
+      setMates([]);
+      setInvites([]);
+      return;
+    }
     let gone = false;
+    let lookedAt = 0;
+    const look = () => {
+      if (gone) return;
+      /* 초점과 화면 복귀는 붙어서 오는 일이 잦습니다 — 한 번의 알트탭에 요청이 둘씩
+         나가지 않게 잠깐 겹치는 것만 접습니다. 주기적으로 도는 것은 여전히 없습니다 */
+      const now = Date.now();
+      if (now - lookedAt < 1500) return;
+      lookedAt = now;
+      authApi
+        .me(auth.token)
+        .then((m) => {
+          if (gone || !m || !m.id) return;
+          setMates(Array.isArray(m.mates) ? m.mates : []);
+          setInvites(Array.isArray(m.invites) ? m.invites : []);
+          setMeCur(m.cur || null);
+        })
+        .catch(() => {
+          /* 못 읽어도 화면은 그대로 둡니다 — 다음 초점 때 다시 봅니다 */
+        });
+    };
+    /* 창에 초점이 돌아올 때와 화면이 다시 보일 때 — 그 둘이 "지금 확인할 때"입니다.
+       숨은 화면인지는 visibilitychange 만 따집니다: 초점이 왔다는 것은 이미 보고 있다는
+       뜻이고, 여기서 한 번 더 물으면 확인해야 할 바로 그때를 놓칩니다 */
+    const onFocus = () => look();
+    const onVisible = () => {
+      if (document.visibilityState !== "hidden") look();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
     authApi
       .me(auth.token)
       .then((m) => {
@@ -2556,6 +2614,9 @@ export default function GoldSettlement() {
           obsToken: m.obsToken || auth.obsToken,
           anon: !!m.anon,
         });
+        setMates(Array.isArray(m.mates) ? m.mates : []);
+        setInvites(Array.isArray(m.invites) ? m.invites : []);
+        setMeCur(m.cur || null);
         /* 오버레이 외형은 계정에 저장돼 있습니다 — 새 기기에서 로그인해도 제 외형으로 돌아옵니다.
            저장해 둔 것이 없으면 이 브라우저 값을 그대로 두고, 아래 저장 효과가 올려 줍니다 */
         if (m.look && typeof m.look === "object" && typeof m.look.t === "string") {
@@ -2570,6 +2631,8 @@ export default function GoldSettlement() {
       });
     return () => {
       gone = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [auth && auth.token]);
 
@@ -2924,14 +2987,17 @@ export default function GoldSettlement() {
       );
     }
     putSeats(next);
-    try {
-      await roomApi.member(auth.token, relay.room, acct, "approve", id);
-    } catch (e) {
-      /* 정원은 서버가 수락 시점에 셉니다 — 방장이 고칠 수 있는 말로 바꿔 줍니다 */
-      say(e && e.status === 409 ? "대기실이 가득 찼어요. 정원을 늘려야 앉힐 수 있어요." : e.message);
-      putSeats(seats);
-      return;
-    }
+    /* 지목 초대를 받아들인 사람은 서버 명단이 이미 ok 입니다 — 방장이 수락할 것이 없어서
+       자리와 줄만 맞춥니다 (§3.3). opts.local 이 그 길입니다 */
+    if (!(opts && opts.local))
+      try {
+        await roomApi.member(auth.token, relay.room, acct, "approve", id);
+      } catch (e) {
+        /* 정원은 서버가 수락 시점에 셉니다 — 방장이 고칠 수 있는 말로 바꿔 줍니다 */
+        say(e && e.status === 409 ? "대기실이 가득 찼어요. 정원을 늘려야 앉힐 수 있어요." : e.message);
+        putSeats(seats);
+        return;
+      }
     setMembers((prev) => prev.map((m) => (m.acct === acct ? { ...m, st: "ok", rowId: id } : m)));
     /* 판이 살아 있으면 그 자리의 줄도 지금 만듭니다 — 판 도중 [+ 인원 추가]와 같은 일입니다.
        판이 없으면(로비) 줄은 [시작]할 때 자리에서 한꺼번에 생깁니다 */
@@ -3034,6 +3100,10 @@ export default function GoldSettlement() {
     join: (m) => {
       if (!m || !m.acct) return refreshMembers();
       if (m.st === "req") setJoinAsk({ acct: m.acct, nick: m.nick || m.acct });
+      /* 지목 초대를 받아들인 사람입니다 — 서버 명단이 이미 ok 라 방장이 수락할 것이 없습니다.
+         자리와, 판이 살아 있으면 그 자리의 줄까지 여기서 맞춥니다 (§3.3) */
+      else if (m.st === "ok" && m.seat)
+        seatMember(m.acct, m.nick || m.acct, m.seat, { local: true });
       refreshMembers();
     },
     lobby: (lb) => {
@@ -3427,10 +3497,14 @@ export default function GoldSettlement() {
       say(e.message);
     }
   };
+  /* 파티 중(계정 붙은 자리가 있을 때) 끄면 잃는 것이 다릅니다 — 예고 없이 자수와 중계가
+     같이 죽던 구멍이라, 그때는 그 말을 그대로 합니다 (§3.3·§8). 공유 자동화는 보류입니다 */
   const askShareOff = () =>
     setAsk({
       title: "공유를 끌까요?",
-      body: "끄면 지금부터의 기록이 OBS와 파티원 화면에 반영되지 않아요. 마지막으로 보낸 상태는 화면에 남아 있어요.",
+      body: seats.some((s) => s.acct)
+        ? "공유를 끄면 파티원이 판을 못 보고 자수도 멈춰요."
+        : "끄면 지금부터의 기록이 OBS와 파티원 화면에 반영되지 않아요. 마지막으로 보낸 상태는 화면에 남아 있어요.",
       action: "끄기",
       onYes: shareOff,
     });
@@ -3695,6 +3769,106 @@ export default function GoldSettlement() {
     setLeft(false);
     setDenied(null);
   };
+
+  /* ---------- 함께한 사람·지목 초대·노크 (§3.3 라운드 B) ----------
+     남의 판에 들어가는 것은 주소로 정해집니다 — 뷰어인지는 부트가 읽으므로
+     주소에 방을 적고 다시 엽니다 (끝난 파티를 닫는 [닫기]와 같은 길입니다). */
+  const enterRoom = (room) => {
+    if (typeof window === "undefined" || !room) return;
+    saveLastLive(null);
+    const { pathname, search } = window.location;
+    window.history.replaceState(null, "", pathname + search + "#" + LIVE_KEY + "=" + room);
+    window.location.reload();
+  };
+  /* 쏜 초대는 1분이 지나면 조용히 스러집니다 — 칩의 `초대함…`도 같이 내립니다.
+     알리는 배관이 없는 설계라, 지난 것을 화면에서 치우는 것이 만료 처리의 전부입니다 */
+  useEffect(() => {
+    const ts = Object.values(invSent);
+    if (!ts.length) return;
+    const due = Math.min(...ts) + INV_MS - Date.now();
+    const t = setTimeout(() => {
+      setInvSent((prev) => {
+        const now = Date.now();
+        const next = {};
+        for (const k in prev) if (now - prev[k] < INV_MS) next[k] = prev[k];
+        return next;
+      });
+    }, Math.max(200, due));
+    return () => clearTimeout(t);
+  }, [invSent]);
+  /* 지목 초대를 쏩니다 — 함께한 사람에게만 갑니다. 자리는 여기서 정해져 넘어가고,
+     받은 사람이 수락하면 방장 수락 없이 그 자리에 앉습니다 (§3.3) */
+  const sendInvite = async (id, nick, seatId) => {
+    if (!auth) return;
+    setInvSeat(null);
+    let sid = seatId;
+    /* '새 자리에'는 아직 없는 자리입니다 — 여기서 만들어 두고 그 자리로 부릅니다.
+       수락은 방장을 거치지 않으니, 앉을 곳이 그 전에 있어야 합니다 (§3.3) */
+    if (sid === "new") {
+      sid = "r" + seq.current++;
+      putSeats((prev) => [
+        ...prev,
+        { id: sid, name: nick || "", acct: null, mem: id, named: false },
+      ]);
+    }
+    try {
+      await authApi.invite(auth.token, id, sid);
+      setInvSent((prev) => ({ ...prev, [id]: Date.now() }));
+      say((nick || id) + "님에게 초대를 보냈어요 — 1분 안에 수락하면 바로 앉아요.");
+    } catch (e) {
+      if (seatId === "new") putSeats((prev) => prev.filter((s) => s.id !== sid));
+      say(e && e.status === 429 ? "초대를 너무 자주 보냈어요. 잠깐 뒤에 다시 해주세요." : e.message);
+    }
+  };
+  /* 자리는 지목할 때 정합니다 — 이름이 맞는 빈 자리가 하나면 그리로, 아니면 방장이 고릅니다 */
+  const inviteMate = (m) => {
+    const id = autoSeatFor(m.id, m.nick || m.id);
+    if (id) return sendInvite(m.id, m.nick, id);
+    setInvSeat({ id: m.id, nick: m.nick || m.id });
+  };
+  /* 노크 — 문 앞에 서는 것이라 취소·거절 전까지 유지됩니다 (§3.3).
+     서고 나면 그 방으로 들어갑니다: 대기 배너와 [신청 취소]가 거기 있고,
+     방장이 수락하는 순간도 그 화면이 실시간으로 받습니다 */
+  const knockMate = async (m) => {
+    if (!auth || !m.room) return;
+    setMateSheet(null);
+    try {
+      await roomApi.knock(auth.token, m.room);
+    } catch (e) {
+      say(e && e.status === 403 ? "지금은 신청할 수 없어요." : e.message);
+      return;
+    }
+    enterRoom(m.room);
+  };
+  /* 받은 초대를 수락합니다 — 서버 명단이 바로 ok 라 방장 수락을 기다리지 않습니다.
+     지난 초대는 여기서 403 으로 돌아오고, 그때 §8 만료 문구를 띄웁니다 */
+  const takeInvite = async (iv, leaveFirst) => {
+    if (!auth) return;
+    if (leaveFirst && liveRoom) await roomApi.leave(auth.token, liveRoom).catch(() => {});
+    try {
+      await roomApi.joinInvited(auth.token, iv.room);
+    } catch (e) {
+      setInvites((prev) => prev.filter((x) => x.from !== iv.from));
+      say("초대 시간이 지났어요. 다시 초대해 달라고 해주세요.");
+      return;
+    }
+    enterRoom(iv.room);
+  };
+  const acceptInvite = (iv) => {
+    /* 이미 딴 파티에 있으면 수락은 곧 옮기는 것입니다 — 한 번 물어봅니다 (§8) */
+    if (viewer && liveRoom && liveRoom !== iv.room && you)
+      return setAsk({
+        title: (iv.fromNick || iv.from) + "님의 파티로 옮길까요?",
+        body: "지금 파티에서 나가고 옮겨요.",
+        action: "옮기기",
+        onYes: () => takeInvite(iv, true),
+      });
+    takeInvite(iv, false);
+  };
+  /* 거절은 기록도 차단도 아닙니다 — 이 화면에서 치우기만 합니다 (§3.3) */
+  const denyInvite = (iv) => setInvHide((prev) => ({ ...prev, [iv.from]: iv.t || 1 }));
+  /* 지금 보여 줄 초대 — 서버가 신선한 것만 싣고, 거절한 것은 여기서 뺍니다 */
+  const liveInvites = invites.filter((x) => x && invHide[x.from] !== (x.t || 1));
   /* 자수 — 낙관 갱신을 하지 않습니다. 방장이 장부에 적고 푸시로 돌아온 것만 화면에 뜹니다 */
   const sendConfess = (rowId, colId, dir) => {
     if (!auth || !liveRoom) return;
@@ -5441,6 +5615,20 @@ export default function GoldSettlement() {
                           </ul>
                         )}
                       </div>
+                      {/* 함께한 사람 — 로비와 같은 목록이 판 도중에도 여기 있습니다 (§3.3).
+                          늦게 온 사람을 부르는 자리가 초대 링크보다 앞입니다 */}
+                      <div className="gs-room-sec">
+                        <h6 className="gs-room-sech">함께한 사람</h6>
+                        <MateChips
+                          mates={mates}
+                          seats={seats}
+                          invSent={invSent}
+                          onPick={(m) => {
+                            setRoomOpen(false);
+                            setMateSheet(m);
+                          }}
+                        />
+                      </div>
                       <div className="gs-room-sec">
                         <h6 className="gs-room-sech">초대 링크</h6>
                         {!auth || !relay.room || !lobbyOn ? (
@@ -5891,7 +6079,9 @@ export default function GoldSettlement() {
                 <b>읽기 전용 화면</b>이에요 — 참여하려면 로그인이 필요해요.
               </>
             ) : you && you.st === "req" ? (
-              "참여를 신청했어요 — 방장이 수락하면 시작돼요."
+              /* 문 앞에 서 있는 상태입니다 — 노크든 링크 신청이든 기다리는 것은 같습니다.
+                 취소는 본인 몫이라 옆에 [신청 취소]가 섭니다 (§3.3) */
+              "참여를 신청했어요 — " + (ownerNick || "방장") + "님이 수락하면 들어가요."
             ) : guestWaiting ? (
               <>
                 <b>자리에 앉았어요</b> — 방장이 시작하면 함께 시작돼요.
@@ -5922,6 +6112,11 @@ export default function GoldSettlement() {
               }
             >
               참여하기
+            </button>
+          )}
+          {you && you.st === "req" && !left && (
+            <button className="gs-btn gs-btn-sm gs-btn-ghost gs-slip-act" onClick={leaveRoom}>
+              신청 취소
             </button>
           )}
           {guestWaiting && (
@@ -6204,6 +6399,9 @@ export default function GoldSettlement() {
           onInvite={newInvite}
           onStart={() => startRound(cols)}
           onCopy={copy}
+          mates={mates}
+          invSent={invSent}
+          onMate={setMateSheet}
           flash={flash}
           paused={paused}
           pausedInfo={{ n: rows.length, gold: slotGold(currentLedger()) }}
@@ -7655,6 +7853,39 @@ export default function GoldSettlement() {
             </button>
           </div>
         </div>
+      )}
+      {/* 지목 초대 — 앱을 열 때와 창에 초점이 돌아올 때 확인한 것이 여기 뜹니다 (§3.3).
+          어느 화면에 있든 보여야 해서 맨 바깥에 둡니다. 여럿이면 제일 최근 것 하나만 —
+          1분짜리라 쌓아 두면 이미 스러진 초대에 손이 갑니다 */}
+      {auth && !genView && liveInvites.length > 0 && (
+        <InviteCard
+          inv={liveInvites[liveInvites.length - 1]}
+          onAccept={acceptInvite}
+          onDeny={denyInvite}
+        />
+      )}
+      {/* 함께한 사람 시트 (§8) */}
+      {mateSheet && (
+        <MateSheet
+          mate={mateSheet}
+          canInvite={!!(auth && relay.room && mateSheet.id !== auth.id)}
+          onInvite={(m) => {
+            setMateSheet(null);
+            inviteMate(m);
+          }}
+          onKnock={knockMate}
+          onClose={() => setMateSheet(null)}
+        />
+      )}
+      {/* 지목할 자리 고르기 — 이름이 맞는 빈 자리가 없거나 애매할 때만 묻습니다 (§3.2) */}
+      {invSeat && (
+        <SeatPick
+          title="어느 자리로 부를까요?"
+          nick={invSeat.nick}
+          seats={seats}
+          onPick={(id) => sendInvite(invSeat.id, invSeat.nick, id)}
+          onClose={() => setInvSeat(null)}
+        />
       )}
       {priceAsk && cols.some((c) => c.id === priceAsk) && (
         <PriceModal
@@ -9645,6 +9876,97 @@ function SeatPick({ title, nick, seats, onPick, onClose }) {
   );
 }
 
+/* ---------- 함께한 사람 · 지목 초대 (§3.3 라운드 B) ----------
+   셋 다 자기 안에서 끝나는 조각입니다 — 로비든 파티 서랍이든 붙이는 자리만 바꾸면 되게
+   바깥에서 값을 받고 동작만 올려보냅니다. 로비 화면이 다시 짜여도 이 셋은 그대로 옮깁니다. */
+
+/* 칩 한 줄. 얼굴이 상태를 말합니다: 앉아 있으면 `앉음`, 방금 쐈으면 `초대함…`,
+   아니면 `+ 초대`. 누르면 시트가 열립니다 */
+function MateChips({ mates, seats, invSent, onPick }) {
+  if (!mates.length)
+    return (
+      <p className="gs-lb-none">
+        아직 함께한 사람이 없어요. 초대 링크로 한 번 함께하면 여기 남아요.
+      </p>
+    );
+  return (
+    <div className="gs-mates">
+      {mates.map((m) => {
+        const seated = seats.some((s) => s.acct === m.id);
+        const sent = !seated && invSent[m.id] && Date.now() - invSent[m.id] < INV_MS;
+        return (
+          <button
+            key={m.id}
+            className={"gs-mate" + (seated ? " on" : "")}
+            onClick={() => onPick(m)}
+            disabled={seated}
+            aria-label={(m.nick || m.id) + (seated ? " — 앉음" : "")}
+          >
+            {m.nick || m.id}
+            <i>{seated ? "앉음" : sent ? "초대함…" : "+ 초대"}</i>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* 함께한 사람 시트 (§8) — 갈래가 둘입니다: 내 판으로 부르거나, 저쪽 문을 두드리거나.
+   저쪽에 방이 없으면 두드릴 문도 없어서 그 줄은 빠집니다 */
+function MateSheet({ mate, canInvite, onInvite, onKnock, onClose }) {
+  const nick = mate.nick || mate.id;
+  return (
+    <InfoModal title={nick + "님과"} onClose={onClose}>
+      <div className="gs-key">
+        <div className="gs-seatlist">
+          {canInvite && (
+            <button className="gs-seatopt" onClick={() => onInvite(mate)}>
+              내 판으로 초대
+            </button>
+          )}
+          {mate.room && (
+            <button className="gs-seatopt" onClick={() => onKnock(mate)}>
+              {nick}네 판에 참여 신청
+            </button>
+          )}
+        </div>
+        {!canInvite && (
+          <p className="gs-lb-note">
+            내 판으로 부르려면 <b>파티원 모으기</b>로 방을 먼저 열어야 해요.
+          </p>
+        )}
+        <div className="gs-obs-acts gs-acts-end">
+          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onClose}>
+            닫기
+          </button>
+        </div>
+      </div>
+    </InfoModal>
+  );
+}
+
+/* 받은 지목 초대 (§8) — 수락하면 방장 수락 없이 바로 앉습니다.
+   1분짜리라 알림을 쌓지 않습니다: 화면에 떠 있는 동안이 곧 유효 시간입니다 */
+function InviteCard({ inv, onAccept, onDeny }) {
+  return (
+    <div className="gs-fxcard gs-invcard" role="status">
+      <b>초대가 왔어요</b>
+      <span className="gs-join-sub">
+        {inv.fromNick || inv.from}
+        <span className="gs-join-id">({inv.from})</span>님이 파티에 초대했어요
+      </span>
+      <div className="gs-join-acts">
+        <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => onDeny(inv)}>
+          거절
+        </button>
+        <button className="gs-btn gs-btn-sm" onClick={() => onAccept(inv)}>
+          수락하고 들어가기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* 로비 = 홈 (§3.1). 판이 없을 때의 화면이고, 혼자든 여덟이든 같은 그림입니다 —
    다른 건 초대 칸을 펴느냐뿐입니다. 이름 자리 + 항목 + 큰 [시작]이 전부이고,
    초대·신청 칸은 접혀 있습니다. 중단된 판이 있으면 그 카드가, 직전 결과지가 있으면
@@ -9673,6 +9995,9 @@ function LobbyScreen({
   onInvite,
   onStart,
   onCopy,
+  mates,
+  invSent,
+  onMate,
   flash,
   paused,
   pausedInfo,
@@ -9928,6 +10253,9 @@ function LobbyScreen({
               <p className="gs-lb-note">
                 디스코드에 붙이면 <b>버튼 하나</b>로 보여요. 누른 사람이 신청 칸에 떠요.
               </p>
+              {/* 함께한 사람 — 목록이 곧 방 찾기입니다 (§3.3). 검색은 없습니다 */}
+              <h5 className="gs-lbfold-sech">함께한 사람</h5>
+              <MateChips mates={mates} seats={seats} invSent={invSent} onPick={onMate} />
               <h5 className="gs-lbfold-sech">
                 신청<span className="gs-lbcnt">{pending.length}</span>
               </h5>
@@ -13379,6 +13707,21 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-join-more{margin-left:6px; font-size:11.5px; color:var(--gold)}
 /* 버튼은 오른쪽 끝 한 선에 (§9-1) — 주 동작이 맨 오른쪽입니다 */
 .gs-join-acts{display:flex; justify-content:flex-end; gap:8px; margin-top:11px}
+/* 지목 초대 카드 — 신청 알림과 같은 자리, 같은 몸입니다. 다른 건 금테 하나뿐입니다:
+   1분 안에 손이 가야 하는 카드라 눈에 먼저 걸려야 합니다 (§3.3) */
+.gs-invcard{pointer-events:auto; max-width:330px; border-color:rgba(var(--gold-rgb),.5)}
+
+/* 함께한 사람 칩 — 목록이 곧 방 찾기입니다 (§3.3). 얼굴 하나가 상태를 말합니다 */
+.gs-mates{display:flex; gap:7px; flex-wrap:wrap}
+.gs-mate{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:13.5px;
+  color:var(--ink); background:none; padding:4px 10px; cursor:pointer;
+  border:1px solid rgba(var(--ink-rgb),.22); border-radius:7px}
+.gs-mate:hover{border-color:rgba(var(--gold-rgb),.55)}
+.gs-mate i{font-style:normal; font-family:inherit; font-weight:400; font-size:10.5px;
+  color:var(--gold); margin-left:5px}
+/* 이미 앉은 사람은 부를 데가 없습니다 — 목록에는 남기고 손만 뗍니다 */
+.gs-mate:disabled{cursor:default; color:var(--ink-2); border-color:rgba(var(--ink-rgb),.14)}
+.gs-mate:disabled i{color:var(--ink-2)}
 
 /* 계정 창 */
 .gs-auth-head{display:flex; align-items:center; gap:10px}

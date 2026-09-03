@@ -43,6 +43,12 @@ const MAX_STATE_BYTES = 128 * 1024;
 const MAX_AUTH_BYTES = 32 * 1024;
 const LOOK_MAX_BYTES = 4 * 1024;
 const CONFESS_PER_MIN = 20;
+/* 지목 초대는 1분짜리 실시간 악수입니다 (§3.3) — 만료를 알리는 배관은 없고,
+   지난 것은 읽을 때 버립니다. 다시 지목하면 그만입니다 */
+const INV_MS = 60 * 1000;
+const INVITE_PER_MIN = 10;
+/* 함께한 사람 — 최근 함께한 순 30명, 넘치면 오래된 것부터 밀립니다 (§3.3) */
+const MATES_MAX = 30;
 const LOGIN_FAILS = 30;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 /* 계정 만들기(가입·익명) 한 창 상한 — 익명이 가입보다 헐거운 구멍이 되지 않게 같이 셉니다 */
@@ -108,8 +114,13 @@ export default {
     const p = url.pathname;
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
-    /* 계정부 — Bearer 는 Accounts DO 가 직접 풉니다 (왕복 한 번으로 끝납니다) */
-    if (p.startsWith("/api/auth/") || new RegExp(`^/api/o/${TOK20}/resolve$`).test(p))
+    /* 계정부 — Bearer 는 Accounts DO 가 직접 풉니다 (왕복 한 번으로 끝납니다).
+       지목 초대도 계정부에 삽니다 — 함께한 사람이 계정에 붙어 있어서요 (§3.3) */
+    if (
+      p.startsWith("/api/auth/") ||
+      p === "/api/invite" ||
+      new RegExp(`^/api/o/${TOK20}/resolve$`).test(p)
+    )
       return accountsDO(env).fetch(new Request("https://do" + p, req));
 
     // 내 방 — 계정마다 하나, 처음 필요할 때 만듭니다
@@ -381,7 +392,33 @@ export class Accounts {
         anon: !!u.anon,
       };
       if (u.look) out.look = u.look;
+      /* 함께한 사람과 대기 중인 지목 초대를 같이 싣습니다 (§4 라운드 B).
+         전달 배관은 안 깝니다 — 앱이 열릴 때와 창에 초점이 돌아올 때 이 응답으로 확인합니다 */
+      out.mates = await this.mateList(u.id);
+      out.invites = await this.freshInvites(u.id, now);
       return json(out);
+    }
+
+    /* 지목 초대 — 함께한 사람에게만 쏩니다 (§3.3). 자리는 보내는 쪽이 그때 정하고,
+       같은 (받는이, 보낸이)는 열쇠가 하나라 다시 지목하면 그대로 갱신입니다 */
+    if (p === "/api/invite" && req.method === "POST") {
+      const u = await this.session(req, now);
+      if (!u) return json({ error: "unauthorized" }, 401);
+      const to = String(b.to || "").toLowerCase();
+      if (!to || to === u.id) return json({ error: "bad input" }, 400);
+      if (!u.room) return json({ error: "no room" }, 409);
+      const list = (await S.get("f:" + u.id)) || [];
+      // 무지성 지목은 관계 문턱이 막습니다 — 목록에 없는 사람에게는 쏠 수 없습니다
+      if (!list.some((x) => x && x.id === to)) return json({ error: "not mate" }, 403);
+      if (!(await S.get("u:" + to))) return json({ error: "not found" }, 404);
+      let g = (await S.get("ig:" + u.id)) || { n: 0, until: 0 };
+      if (g.until <= now) g = { n: 0, until: now + 60000 };
+      g.n++;
+      await S.put("ig:" + u.id, g);
+      if (g.n > INVITE_PER_MIN) return json({ error: "slow down" }, 429);
+      const seat = typeof b.seat === "string" && b.seat ? b.seat.slice(0, 64) : null;
+      await S.put("inv:" + to + ":" + u.id, { room: u.room, seat, t: now });
+      return json({ ok: true, to, seat, exp: now + INV_MS });
     }
 
     // 닉을 바꾸면 지금 있는 방의 서기가 줄 이름을 따라 바꿔 줍니다
@@ -466,6 +503,34 @@ export class Accounts {
       return json({ id: u.id, nick: u.nick });
     }
 
+    /* 함께한 사람이 생기는 순간 — 방이 알려 줍니다 (수락·지목 초대 수락 둘 다).
+       양쪽에 같이 적습니다: 관계는 한쪽만 아는 것이 아닙니다 (§3.3) */
+    if (p === "/mated") {
+      if (typeof b.a !== "string" || typeof b.b !== "string" || !b.a || !b.b)
+        return json({ error: "bad json" }, 400);
+      await this.addMate(b.a, b.b, now);
+      await this.addMate(b.b, b.a, now);
+      return json({ ok: true });
+    }
+
+    // 노크가 문 앞에 설 수 있는지 — a 의 함께한 사람에 b 가 있는지 (§3.3)
+    if (p === "/mate-of") {
+      const list = (await S.get("f:" + b.a)) || [];
+      return json({ yes: list.some((x) => x && x.id === b.b) });
+    }
+
+    /* 지목 초대를 집어 갑니다 — 한 번 쓰면 사라지고, 1분 지난 것은 읽는 김에 버립니다.
+       만료를 알리는 배관을 따로 깔지 않는 것이 이 설계의 요점입니다 (§3.3) */
+    if (p === "/inv-take") {
+      const k = "inv:" + b.to + ":" + b.from;
+      const iv = await S.get(k);
+      if (!iv) return json({ error: "no invite" }, 404);
+      await S.delete(k);
+      if (now - (iv.t || 0) > INV_MS) return json({ error: "expired" }, 404);
+      if (b.room && iv.room !== b.room) return json({ error: "other room" }, 404);
+      return json({ ok: true, seat: iv.seat || null });
+    }
+
     if (p === "/obs-verify") {
       const id = typeof b.token === "string" ? await S.get("t:" + b.token) : null;
       const u = id ? await S.get("u:" + id) : null;
@@ -504,6 +569,47 @@ export class Accounts {
     }
 
     return json({ error: "not found" }, 404);
+  }
+
+  /* 함께한 사람 목록에 한 사람을 올립니다 — 최근 순 30, 넘치면 오래된 것부터 밀립니다.
+     닉은 여기 안 적습니다: 닉은 바뀌는 값이라 베껴 두면 두 곳이 어긋납니다 (§4 라운드 B) */
+  async addMate(a, b, now) {
+    if (!a || !b || a === b) return;
+    const list = (await this.ctx.storage.get("f:" + a)) || [];
+    const next = [{ id: b, t: now }, ...list.filter((x) => x && x.id !== b)].slice(0, MATES_MAX);
+    await this.ctx.storage.put("f:" + a, next);
+  }
+
+  /* 목록이 곧 방 찾기입니다 (§3.3) — 검색이 없으니 어느 방으로 노크할지를 여기서 답합니다.
+     방 주소는 비밀이 아니고(§1), 한 번 함께한 사람에게만 나갑니다 */
+  async mateList(id) {
+    const list = (await this.ctx.storage.get("f:" + id)) || [];
+    const out = [];
+    for (const m of list) {
+      if (!m || !m.id) continue;
+      const u = await this.ctx.storage.get("u:" + m.id);
+      if (!u) continue; // 지워진 계정은 조용히 빠집니다
+      out.push({ id: m.id, nick: u.nick, t: m.t || 0, room: u.room || null });
+    }
+    return out;
+  }
+
+  // 대기 중인 지목 초대 — 신선한 것만. 1분 지난 것은 읽는 김에 버립니다
+  async freshInvites(id, now) {
+    const pre = "inv:" + id + ":";
+    const out = [];
+    const dead = [];
+    for (const [k, v] of await this.ctx.storage.list({ prefix: pre })) {
+      if (!v || now - (v.t || 0) > INV_MS) {
+        dead.push(k);
+        continue;
+      }
+      const from = k.slice(pre.length);
+      const u = await this.ctx.storage.get("u:" + from);
+      out.push({ from, fromNick: u ? u.nick : from, room: v.room, seat: v.seat || null, t: v.t });
+    }
+    if (dead.length) await this.ctx.storage.delete(dead);
+    return out;
   }
 
   async freeToken() {
@@ -572,7 +678,7 @@ export class Accounts {
         const keys = [k];
         if (u.obsToken) keys.push("t:" + u.obsToken);
         if (u.room) keys.push("rm:" + u.room);
-        keys.push("lg:" + u.id);
+        keys.push("lg:" + u.id, "f:" + u.id, "ig:" + u.id);
         for (const [sk, sv] of sessions) if (sv.id === u.id) keys.push(sk);
         await S.delete(keys);
         if (u.room) {
@@ -602,10 +708,30 @@ const tagOf = (ws) => {
 const youOf = (m) => (m ? { nick: m.nick, rowId: m.rowId || null, st: m.st } : null);
 
 export class Room {
-  constructor(ctx) {
+  constructor(ctx, env) {
     this.ctx = ctx;
+    /* 계정부에 말을 걸 일이 생겼습니다 — 함께한 사람은 계정에 살고, 그 관계가 생기고
+       쓰이는 순간(수락·지목 초대·노크)은 방이 압니다 (§3.3) */
+    this.env = env;
     /* 구독자의 keepalive 는 DO를 깨우지 않고 런타임이 대신 답합니다 (하이버네이션 유지) */
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  // 계정부에 한마디. 실패해도 방의 일은 진행합니다 — 관계는 다음 수락 때 다시 생깁니다
+  async toAccounts(path, body) {
+    try {
+      const r = await this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("global")).fetch(
+        "https://do" + path,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body || {}),
+        }
+      );
+      return r.ok ? await r.json().catch(() => null) : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   /* 계정은 메인 fetch 가 풀어서 붙여 줍니다. 두 통로를 섞지 않습니다 —
@@ -939,6 +1065,8 @@ export class Room {
         await S.put("m:" + acct, m);
         /* 계정이 붙은 자리가 생겼습니다 — 이제부터 이 판은 자동 중단의 대상입니다 (§3.4) */
         await this.arm();
+        /* 한 번 수락되면 함께한 사람 관계가 생겨 다음부터는 링크가 필요 없습니다 (§3.3) */
+        await this.toAccounts("/mated", { a: me.id, b: acct });
         this.toAcct(acct, { kind: "you", you: youOf(m) });
         return json({ ok: true, member: { acct, ...youOf(m) } });
       }
@@ -955,8 +1083,11 @@ export class Room {
       return json({ error: "bad action" }, 400);
     }
 
-    /* 초대로 들어오기 — 언제나 신청입니다 (§3-4). 초대 링크는 디코에도 방송 화면에도
-       새므로, 낯선 사람이 자리를 먼저 차지한 뒤 빼내는 것보다 문 앞에서 기다리는 것이 맞습니다 */
+    /* 들어오는 길 셋 (§3.3·§4.2 라운드 B).
+       (a) 지목 초대 — 방장이 이미 고른 사람이라 방장 수락이 없습니다.
+       (b) 코드 없음 — 노크. 방장의 함께한 사람만 문 앞에 설 수 있습니다.
+       (c) 링크 — 소지자 표라 언제나 신청입니다. 초대 링크는 디코에도 방송 화면에도 새므로,
+           낯선 사람이 자리를 먼저 차지한 뒤 빼내는 것보다 문 앞에서 기다리는 것이 맞습니다 */
     if (path === "/join" && req.method === "POST") {
       if (!me) return json({ error: "unauthorized" }, 401);
       const owner = await S.get("owner");
@@ -970,9 +1101,35 @@ export class Room {
         }
         return json({ ok: true, st: cur.st, you: youOf(cur), already: true });
       }
-      const inv = await S.get("invite");
+      /* (a) 지목 초대 — 자리도 그때 정해져 있어서 그대로 앉히고, 서기에게 알려
+         장부의 줄까지 잇게 합니다. 유효하지 않으면 여기서 끝입니다 (앱은 만료 문구를 띄웁니다) */
+      if (b.inv) {
+        const iv = await this.toAccounts("/inv-take", {
+          to: me.id,
+          from: owner,
+          room: req.headers.get("x-room") || "",
+        });
+        if (!iv || !iv.ok) return json({ error: "invite" }, 403);
+        const m = { nick: me.nick, rowId: iv.seat || null, st: "ok", t: now };
+        await S.put("m:" + me.id, m);
+        await this.arm();
+        await this.toAccounts("/mated", { a: owner, b: me.id });
+        this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "ok", seat: iv.seat || null });
+        return json({ ok: true, st: "ok", you: youOf(m), seat: iv.seat || null });
+      }
       const code = String(b.j || "").toUpperCase();
-      if (!inv || !code || code !== inv.code || inv.exp < now) return json({ error: "invite" }, 403);
+      /* (b) 노크 — 문 앞에 서는 것이라 취소·거절 전까지 유지됩니다 (§3.3) */
+      if (!code) {
+        const r = await this.toAccounts("/mate-of", { a: owner, b: me.id });
+        if (!r || !r.yes) return json({ error: "invite" }, 403);
+        const m = { nick: me.nick, rowId: null, st: "req", t: now };
+        await S.put("m:" + me.id, m);
+        this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "req", knock: 1 });
+        return json({ ok: true, st: "req", you: youOf(m) });
+      }
+      // (c) 링크 신청
+      const inv = await S.get("invite");
+      if (!inv || code !== inv.code || inv.exp < now) return json({ error: "invite" }, 403);
       const st = "req";
       const m = { nick: me.nick, rowId: null, st, t: now };
       await S.put("m:" + me.id, m);
@@ -980,6 +1137,8 @@ export class Room {
       return json({ ok: true, st, you: youOf(m) });
     }
 
+    /* [나가기]와 [신청 취소]가 같은 길입니다 — st:"req" 도 여기서 지워집니다 (§4.2 라운드 B).
+       문 앞에 서 있던 사람이 물러나는 것이라, 방장 쪽 신청 칸에서도 그대로 사라집니다 */
     if (path === "/leave" && req.method === "POST") {
       if (!me) return json({ error: "unauthorized" }, 401);
       if (await S.get("m:" + me.id)) {

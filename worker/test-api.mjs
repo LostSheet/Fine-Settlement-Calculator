@@ -1069,6 +1069,185 @@ const main = async () => {
     eq(r.data.error, "not anon", "error");
   });
 
+  /* ---- 함께한 사람·지목 초대·노크 (§3.3 라운드 B) ---- */
+  head("함께한 사람과 지목 초대");
+  /* 여기서는 익명 계정을 씁니다 — 관계를 여럿 만들어야 하는데 선해시가 계정마다
+     31만 번이라, 가입으로 서른 몇을 만들면 검사가 몇 분씩 걸립니다.
+     서버 쪽에서는 익명도 그냥 계정 하나라 관계·초대 경로가 똑같습니다 (§3-11) */
+  const MATES = 30;
+  const anon = async () => {
+    const r = await api("POST", "/api/auth/anon", { body: {} });
+    expect(r.status === 200, "anon → " + r.status + " " + JSON.stringify(r.data));
+    return r.data;
+  };
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const roomOf = async (u) => (await api("POST", "/api/my/room", { token: u.token })).data.roomId;
+  const codeOf = async (u, rm) =>
+    (await api("POST", "/api/r/" + rm + "/invite", { token: u.token, body: {} })).data.invite.code;
+
+  const P = await anon(); // 방장
+  const Q = await anon(); // 함께할 사람
+  const Z = await anon(); // 관계가 없는 사람
+  const pRoom = await roomOf(P);
+  const pCode = await codeOf(P, pRoom);
+  let qRoom = null;
+  let pScribe = null;
+  let expAt = 0; // 만료 검사용 — 초대를 쏜 시각
+  let pInv = 0; // 방장이 이번 분에 쏜 초대 수 (리밋 검사용)
+
+  await step("관계: 링크로 한 번 함께하면 양쪽 목록에 생긴다", async () => {
+    const j = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: { j: pCode } });
+    eq(j.status, 200, "join");
+    eq(j.data.st, "req", "st");
+    const a = await api("POST", "/api/r/" + pRoom + "/member", {
+      token: P.token,
+      body: { acct: Q.id, action: "approve" },
+    });
+    eq(a.status, 200, "approve");
+    const meP = await api("GET", "/api/auth/me", { token: P.token });
+    const meQ = await api("GET", "/api/auth/me", { token: Q.token });
+    expect((meP.data.mates || []).some((x) => x.id === Q.id), "방장 목록에 없음");
+    const mine = (meQ.data.mates || []).find((x) => x.id === P.id);
+    expect(mine, "파티원 목록에 없음: " + JSON.stringify(meQ.data.mates));
+    eq(mine.room, pRoom, "함께한 사람의 방");
+    eq(mine.nick, P.nick, "함께한 사람의 닉");
+  });
+
+  /* 만료는 60초를 실제로 기다려야 확인됩니다 — 여기서 하나 쏴 두고,
+     나머지 검사를 다 돌린 뒤 이 절의 끝에서 남은 시간만 기다립니다 */
+  await step("만료 준비: 함께한 사람에게 초대를 하나 쏴 둔다", async () => {
+    qRoom = await roomOf(Q);
+    const r = await api("POST", "/api/invite", { token: Q.token, body: { to: P.id } });
+    eq(r.status, 200, "status");
+    expAt = Date.now();
+  });
+
+  await step("나가도 관계는 남는다", async () => {
+    eq(
+      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
+      200,
+      "leave"
+    );
+    const meQ = await api("GET", "/api/auth/me", { token: Q.token });
+    expect((meQ.data.mates || []).some((x) => x.id === P.id), "관계가 사라짐");
+  });
+
+  await step("초대: 함께한 사람에게 자리를 지정해 쏜다", async () => {
+    const r = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id, seat: "r7" } });
+    pInv++;
+    eq(r.status, 200, "status");
+    eq(r.data.seat, "r7", "seat");
+  });
+  await step("초대: 함께한 사람이 아니면 403", async () => {
+    const r = await api("POST", "/api/invite", { token: P.token, body: { to: Z.id } });
+    eq(r.status, 403, "status");
+    eq(r.data.error, "not mate", "error");
+  });
+  await step("/me: 대기 중인 지목 초대가 실린다", async () => {
+    const me = await api("GET", "/api/auth/me", { token: Q.token });
+    const iv = (me.data.invites || []).find((x) => x.from === P.id);
+    expect(iv, "초대가 안 보임: " + JSON.stringify(me.data.invites));
+    eq(iv.room, pRoom, "room");
+    eq(iv.seat, "r7", "seat");
+    eq(iv.fromNick, P.nick, "fromNick");
+  });
+  await step("수락: 방장 수락 없이 바로 자리에 앉고 서기에 통지된다", async () => {
+    pScribe = await open("/api/r/" + pRoom + "/scribe?s=" + encodeURIComponent(P.token));
+    await pScribe.want((x) => x.kind === "members");
+    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: { inv: 1 } });
+    eq(r.status, 200, "status");
+    eq(r.data.st, "ok", "st");
+    eq(r.data.you.rowId, "r7", "rowId");
+    const j = await pScribe.want((x) => x.kind === "join");
+    eq(j.st, "ok", "서기 통지 st");
+    eq(j.seat, "r7", "서기 통지 seat");
+  });
+  await step("수락: 한 번 쓴 초대는 사라진다", async () => {
+    const me = await api("GET", "/api/auth/me", { token: Q.token });
+    expect(!(me.data.invites || []).some((x) => x.from === P.id), "초대가 남아 있음");
+  });
+
+  await step("노크 준비: 나갔다 다시 문 앞에 선다", async () => {
+    eq(
+      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
+      200,
+      "leave"
+    );
+  });
+  await step("노크: 관계 없는 계정의 코드 없는 join → 403", async () => {
+    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Z.token, body: {} });
+    eq(r.status, 403, "status");
+  });
+  await step("노크: 함께한 사람의 코드 없는 join → 신청(req)", async () => {
+    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: {} });
+    eq(r.status, 200, "status");
+    eq(r.data.st, "req", "st");
+    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
+    expect(
+      list.some((m) => m.acct === Q.id && m.st === "req"),
+      "신청 칸에 없음: " + JSON.stringify(list)
+    );
+  });
+  await step("신청 취소: /leave 가 st:req 도 지운다", async () => {
+    eq(
+      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
+      200,
+      "leave"
+    );
+    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
+    expect(!list.some((m) => m.acct === Q.id), "신청이 남아 있음");
+  });
+
+  await step("초대 리밋: 분당 10회를 넘기면 429", async () => {
+    for (; pInv < 10; pInv++) {
+      const r = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id } });
+      eq(r.status, 200, "리밋 안쪽 " + (pInv + 1) + "회");
+    }
+    const over = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id } });
+    eq(over.status, 429, "11회째");
+  });
+
+  await step("함께한 사람: 최근 순 30명, 넘치면 오래된 것부터 밀린다", async () => {
+    const H = await anon();
+    const hRoom = await roomOf(H);
+    const code = await codeOf(H, hRoom);
+    const guests = [];
+    for (let i = 0; i <= MATES; i++) {
+      const g = await anon();
+      guests.push(g);
+      eq(
+        (await api("POST", "/api/r/" + hRoom + "/join", { token: g.token, body: { j: code } })).status,
+        200,
+        "join " + i
+      );
+      eq(
+        (await api("POST", "/api/r/" + hRoom + "/member", {
+          token: H.token,
+          body: { acct: g.id, action: "approve" },
+        })).status,
+        200,
+        "approve " + i
+      );
+    }
+    const me = await api("GET", "/api/auth/me", { token: H.token });
+    const ids = (me.data.mates || []).map((x) => x.id);
+    eq(ids.length, MATES, "목록 길이");
+    expect(!ids.includes(guests[0].id), "제일 오래된 사람이 안 밀림");
+    eq(ids[0], guests[MATES].id, "제일 최근 사람이 맨 앞");
+  });
+
+  await step("만료: 60초 지난 초대는 /me 에서 사라진다", async () => {
+    const left = 61000 - (Date.now() - expAt);
+    if (left > 0) await sleep(left);
+    const me = await api("GET", "/api/auth/me", { token: P.token });
+    expect(!(me.data.invites || []).some((x) => x.from === Q.id), "만료된 초대가 남아 있음");
+  });
+  await step("만료: 지난 초대로 수락하면 403", async () => {
+    const r = await api("POST", "/api/r/" + qRoom + "/join", { token: P.token, body: { inv: 1 } });
+    eq(r.status, 403, "status");
+  });
+  if (pScribe) await pScribe.close();
+
   /* ---- 옛 주소 (§4.4) ---- */
   head("옛 주소 안내(gone)");
   await step("WS: 방장이 없는 방(옛 주소) → denied gone", async () => {
