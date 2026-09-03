@@ -356,9 +356,16 @@ const FILL_NAME = (k) => "(모험가" + k + ")";
 /* 예전 이름들도 자리표시로 알아봐야 합니다 — 저장된 표를 열었을 때 그대로 남으면
    지우지도 못하고 진짜 이름처럼 굴러다닙니다. */
 const isFillName = (s) => /^\((이름(입력|없음)|모험가)\d+\)$/.test(s || "");
-/* 이름을 지운 줄은 화면에서 "모험가n" 으로 부릅니다 — n 은 표에서 몇 번째 줄인지.
-   "이름 없음" 이 여럿이면 우편에서 누구한테 보내야 할지 알 수가 없습니다. */
-const ANON = (i) => "모험가" + (i + 1);
+/* 자리표시이자 이름 없는 자리의 표시명 (§8). 게임에서 다들 아는 이름 여덟이라
+   "모험가3" 보다 사람 자리로 읽히고, [4인]·[8인] 채우기가 쓰는 이름도 이것입니다.
+   4인은 앞 넷입니다. */
+const DEFAULT_NAMES = ["실리안", "니나브", "샨디", "웨이", "갈라투르", "아제나", "이난나", "카단"];
+/* 이름을 지운 줄은 화면에서 이 이름으로 부릅니다 — 우편·오버레이에서 누구 줄인지
+   가려야 하므로 이름은 표 안에서 겹치면 안 됩니다.
+   여덟을 넘는 자리(정원은 16까지)는 §8에 이름이 없습니다. 배열을 돌리면 두 사람이
+   같은 이름이 되고, 없는 이름을 새로 지으면 §8 밖의 작명이라, 이름 대신 자리 번호를
+   그대로 부릅니다 — 아홉 번째부터는 사람 이름이 아니라는 것도 같이 보입니다. */
+const ANON = (i) => DEFAULT_NAMES[i] || i + 1 + "번 자리";
 const seatName = (row, i) => ((row && row.name) || "").trim() || ANON(i);
 /* 판 기록에 적을 파티원 — 손으로 적은 이름만 남깁니다. 자리 채우는 기본 이름은
    누구인지 말해 주지 않아서 목록만 길어집니다 */
@@ -2246,7 +2253,6 @@ export default function GoldSettlement() {
     boot.current.partyReg || { list: [{ name: "기본", t: 0 }], active: "기본" }
   );
   const [presetOpen, setPresetOpen] = useState(false); // 프리셋 창(로비 항목 카드에서 엽니다)
-  const [gensOpen, setGensOpen] = useState(false); // 지난 판 드롭다운
 
   /* ---------- 로비(홈)와 자리 ----------
      혼자와 파티가 같은 문법을 씁니다 (§3). 로컬 모드라는 것은 없고, 혼자는 자리에
@@ -2343,17 +2349,7 @@ export default function GoldSettlement() {
     if (relay.invite && relay.invite.exp && relay.invite.exp - Date.now() > 60000) return;
     ensureInvite();
   }, [roomOpen, lobbyOn]);
-  /* 지난 판 드롭다운 — 바깥을 클릭하면 닫습니다 */
-  useEffect(() => {
-    if (!gensOpen) return;
-    const onDown = (e) => {
-      if (e.target.closest && e.target.closest(".gs-gensdd")) return;
-      setGensOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [gensOpen]);
-  /* 계정 드롭다운도 같은 규칙 — 바깥을 누르면 닫힙니다 */
+  /* 계정 드롭다운 — 바깥을 누르면 닫힙니다 */
   useEffect(() => {
     if (!acctOpen) return;
     const onDown = (e) => {
@@ -2788,18 +2784,37 @@ export default function GoldSettlement() {
   const dropSeat = (id) => putSeats((prev) => prev.filter((s) => s.id !== id));
   /* 로비에 그릴 목록 — 첫 자리는 언제나 방장입니다 (§3.4) */
   const lobbySeats = seats;
-  /* 로그인하면 첫 자리가 방장 자리가 됩니다. 자리가 하나도 없으면 여기서 하나 만듭니다 —
-     혼자도 자리에 이름만 채운 로비라, 빈 로비에서 [시작]을 누를 일이 없게 합니다 */
+  /* 로그인 상태면 1번 자리에 방장이 미리 앉습니다 (§3.1) — 로아 로비에서 파티장이
+     1번 슬롯인 것과 같습니다. 방장이 명단에 들어가는 길이 없으면 자기 벌금을 못 셉니다.
+     **내 계정이 붙은 자리**여야 자수 자격·바인딩이 맞습니다 (§3.2).
+     이미 내 자리가 있으면 새로 만들지 않고, 자리가 있는 상태에서 로그인하면 1번에
+     끼워 넣습니다(기존 자리는 밀립니다). [×]로 빼면 다시 만들지 않습니다 — 이 효과는
+     로그인이 바뀌거나 닉이 바뀔 때만 다시 돕니다 */
   useEffect(() => {
     if (readOnly || !auth || roundLive) return;
     putSeats((prev) => {
-      if (!prev.length)
-        return [{ id: "r" + seq.current++, name: auth.nick || "", acct: null, mem: null, named: false }];
+      const i = prev.findIndex((s) => s.acct === auth.id);
+      if (i >= 0) {
+        /* 방장이 손으로 고쳐 둔 이름은 닉을 따라가지 않습니다 (§3.2) */
+        const me = prev[i];
+        const name = me.named ? me.name : auth.nick || me.name;
+        if (i === 0 && name === me.name) return prev;
+        return [{ ...me, name }, ...prev.filter((_, k) => k !== i)];
+      }
+      const seat = {
+        id: "r" + seq.current++,
+        name: auth.nick || "",
+        acct: auth.id,
+        mem: auth.id,
+        named: false,
+      };
+      /* 1번이 빈 줄이면 그 줄에 앉습니다 — 빈 줄을 남기고 밀어내면 명단에 구멍이 생깁니다 */
       const h = prev[0];
-      if (h.named || (h.name || "") === (auth.nick || "")) return prev;
-      return [{ ...h, name: auth.nick || "" }, ...prev.slice(1)];
+      if (h && !h.acct && !(h.name || "").trim())
+        return [{ ...seat, id: h.id }, ...prev.slice(1)];
+      return [seat, ...prev];
     });
-  }, [auth && auth.nick, readOnly, roundLive]);
+  }, [auth && auth.id, auth && auth.nick, readOnly, roundLive]);
   /* 신청 — 방장이 수락/거절을 고릅니다 (§3.3) */
   const pending = members.filter((m) => m.st === "req");
   /* 명단이 바뀌었는지 한 줄로 — 인원 수가 같아도 사람이나 상태가 바뀌면 다시 밀어야 합니다 */
@@ -2817,7 +2832,7 @@ export default function GoldSettlement() {
     }
   };
 
-  /* [파티원 모으기] — 로비의 초대·신청 칸을 펴고, 서버 로비를 "모으는 중"으로 세웁니다.
+  /* [초대 링크 만들기] — 로비의 초대·신청 칸을 펴고, 서버 로비를 "모으는 중"으로 세웁니다.
      로비 자체는 홈이라 늘 있습니다 (§1) — 여는 것은 대기실 표시입니다.
      대기실이 열려 있는 동안만 오버레이가 순위표 대신 대기실을 그립니다 (§4.3) */
   const startParty = async () => {
@@ -3004,7 +3019,11 @@ export default function GoldSettlement() {
   /* [시작] (로비) — 자리·항목으로 판을 엽니다. 첫 줄은 언제나 방장입니다 (§3.4) */
   const startRound = async (nCols) => {
     if (readOnly) return;
-    const list = seats.length ? seats : [newSeat((auth && auth.nick) || "")];
+    /* 자리는 로비가 보장합니다 (§3.1: 로그인하면 1번에 방장이 앉아 있습니다).
+       여기 한 줄은 그래도 빈 판이 열리지 않게 남겨 둔 방어입니다 */
+    const list = seats.length
+      ? seats
+      : [{ ...newSeat((auth && auth.nick) || ""), acct: auth ? auth.id : null, mem: auth ? auth.id : null }];
     if (!seats.length) putSeats(list);
     /* 지금 판이 살아 있었으면 결과지로 보냅니다 — 로비에서 [시작]을 누르는 길은
        판이 없을 때뿐이지만, 되돌아온 판이 남아 있을 수 있어서 한 번 닫습니다 */
@@ -3080,12 +3099,15 @@ export default function GoldSettlement() {
       if (m.st === "ok" && m.rowId) ok.set(m.rowId, m);
     });
     /* 서버 명단이 원본입니다 — 그 자리에 앉은 사람으로만 acct 를 채우고, 나머지는 미연결로
-       돌립니다. 아이디(mem)는 지우지 않습니다: 돌아오면 자기 자리를 되찾는 열쇠입니다 */
+       돌립니다. 아이디(mem)는 지우지 않습니다: 돌아오면 자기 자리를 되찾는 열쇠입니다.
+       내 자리는 예외입니다 (§3.1): 방장은 자기 방의 명단(members)에 들어 있지 않아서,
+       여기서 함께 쓸어 버리면 1번에 앉은 방장의 계정이 곧바로 떨어져 나갑니다 */
     putSeats((prev) => {
       let hit = false;
       const next = prev.map((s) => {
         const m = ok.get(s.id);
-        const acct = m ? m.acct : null;
+        const mine = s.acct === auth.id;
+        const acct = m ? m.acct : mine ? s.acct : null;
         const mem = m ? m.acct : s.mem;
         if (acct === s.acct && mem === s.mem) return s;
         hit = true;
@@ -3611,13 +3633,13 @@ export default function GoldSettlement() {
     setTab("sheet");
     /* 모으는 중이었으면 접습니다 — 정산이 끝난 판은 오버레이와 파티원 화면에 그대로
        남아야 하는데(§3.4), 대기실을 계속 알리면 그 자리를 대기실이 덮어씁니다.
-       다시 모으고 싶으면 로비의 [파티원 모으기]가 그 문입니다 */
+       다시 모으고 싶으면 로비의 [초대 링크 만들기]가 그 문입니다 */
     if (lobbyOn) closeLobby();
   };
   const askEndRound = () =>
     setAsk({
       title: "이 판을 마감할까요?",
-      body: "결과지가 판 기록에 남아요. 파티원은 그대로 있어요.",
+      body: "결과지가 판 기록에 남아요.",
       action: "정산 끝내기",
       onYes: endRound,
     });
@@ -5768,7 +5790,7 @@ export default function GoldSettlement() {
                               className="gs-btn gs-btn-sm"
                               onClick={auth && relay.room ? newInvite : startParty}
                             >
-                              {auth && relay.room ? "초대 발급" : "파티원 모으기"}
+                              {auth && relay.room ? "초대 발급" : "초대 링크 만들기"}
                             </button>
                           </div>
                         ) : (
@@ -5847,80 +5869,114 @@ export default function GoldSettlement() {
               )}
             </div>
           )}
-          {/* 판 기록 — 전역(장부 이력)이라 헤더 왼쪽, 앱 이름 옆입니다.
-              파티원의 판도 여기 남으므로 뷰어에게도 기록이 있으면 보입니다 */}
-          {(!viewer || genEntries().length > 0) && (
-            <div className="gs-gensdd">
-              <button
-                className={"gs-gensbtn" + (gensOpen ? " on" : "")}
-                onClick={() => setGensOpen((v) => !v)}
-                aria-expanded={gensOpen}
-                aria-haspopup="menu"
-              >
-                판 기록{genEntries().length > 0 && <b>{genEntries().length}</b>} ▾
-              </button>
-              {gensOpen && (
-                <div className="gs-genspanel" role="menu">
-                  <h4 className="gs-gens-h">판 기록</h4>
-                  <p className="gs-gens-lead">
-                    끝난 판이 여기 남아요. 보기만 할 수 있고, 최근 20판까지 남습니다.
-                  </p>
-                  {gensList().length === 0 && (
-                    <p className="gs-gens-empty">아직 끝난 판이 없어요.</p>
-                  )}
-                  {gensList().map((g) => (
-                    <div className="gs-hisrow" key={g.name}>
-                      {/* 배지가 '누구의 판'을 말합니다 — 제목을 따로 되풀이하지 않습니다 */}
-                      <span className={"gs-idsrc" + (g.src === "party" ? "" : " gs-idsrc-local")}>
-                        {g.title}
-                      </span>
-                      <button
-                        className="gs-hisbody"
-                        onClick={() => {
-                          setGensOpen(false);
-                          openGen(g.name);
-                        }}
-                      >
-                        <span className="gs-hist1">
-                          <b>{fmtWhenShort(g.from || g.t)}</b>
-                          <span>{g.n}명</span>
-                        </span>
-                        {/* 파티원 전부 — "외 4명"으로 줄이지 않습니다 */}
-                        {g.mems.length > 0 && (
-                          <span className="gs-idmems">
-                            {g.mems.map((n, i) => (
-                              <span
-                                key={n + "@" + i}
-                                className={
-                                  "gs-idmem" +
-                                  (g.host && n === g.host
-                                    ? " gs-idmem-host"
-                                    : g.me && n === g.me
-                                    ? " gs-idmem-me"
-                                    : "")
-                                }
-                              >
-                                {n}
-                              </span>
-                            ))}
-                          </span>
-                        )}
-                      </button>
-                      <span className="gs-hisgold">{man(g.gold || 0)}</span>
-                      <button
-                        className="gs-x"
-                        onClick={() => askDropGen(g)}
-                        aria-label={g.title + " 기록 지우기"}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* 판 기록은 로비 히어로의 아이콘 하나로 갔습니다 (§3.1) — 판 중에 지난 판을
+              볼 일이 거의 없어서(정산 비교는 판이 끝난 뒤, 항목·단가는 지금 판에 있습니다)
+              헤더에서 뺍니다 */}
           <div className="gs-sysbar-r">
+            {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
+            {(!readOnly || shareGuest) && (
+              <span className="gs-tip">
+                <button
+                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (!shareGuest && relay.on ? " on" : "")}
+                  onClick={() => {
+                    courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
+                    setObsOpen(true);
+                  }}
+                >
+                  {/* OBS 로고는 상표라 안 씁니다 — 이름을 글자로 쓰는 건 괜찮지만
+                      마크를 넣으면 OBS 쪽이 만든 것처럼 보일 여지가 있습니다.
+                      대신 송출을 뜻하는 모니터 아이콘을 답니다. */}
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="1.6" y="2.6" width="12.8" height="8.6" rx="1.4" />
+                      <path d="M5.6 14h4.8M8 11.2V14" />
+                    </g>
+                  </svg>
+                  오버레이 공유 설정
+                  {/* 상태는 방 칩이 말합니다 — 여기에도 점을 두면 화면에 점이 둘이라
+                      뭐가 뭔지 모릅니다. 이 버튼은 창을 여는 일만 합니다 */}
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  {shareGuest ? (
+                    <>
+                      <b>내 방송용 주소</b>와 오버레이 외형을 여기서 챙겨요. 주소는 사람마다
+                      하나씩이에요.
+                    </>
+                  ) : (
+                    <>
+                      벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를{" "}
+                      <b>어떤 방송 프로그램이든</b> 브라우저 소스에 넣으면 돼요.
+                    </>
+                  )}
+                </span>
+              </span>
+            )}
+            <button
+              className={"gs-qm gs-helpbtn" + (showHelp ? " gs-qm-on" : "")}
+              onClick={() => setShowHelp(true)}
+              aria-haspopup="dialog"
+              aria-label="사용법 보기"
+            >
+              ?
+            </button>
+            {/* 하는 일과 나를 가릅니다 — 왼쪽은 이 앱으로 하는 일, 오른쪽은 내 것입니다 */}
+            <span className="gs-sysbar-sep" aria-hidden="true" />
+            {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
+            <span className="gs-viewseg">
+              <span className="gs-tip">
+                <button
+                  className={theme === "system" ? "" : "on"}
+                  onClick={() =>
+                    setTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")
+                  }
+                  aria-label={`화면 밝기: ${
+                    theme === "system" ? "시스템 설정" : theme === "light" ? "밝게" : "어둡게"
+                  }`}
+                >
+                  {theme === "light" ? (
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <circle cx="8" cy="8" r="3.1" />
+                        <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" />
+                      </g>
+                    </svg>
+                  ) : theme === "dark" ? (
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                      <path
+                        d="M13 10.3A5.6 5.6 0 0 1 5.7 3a5.8 5.8 0 1 0 7.3 7.3z"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                      />
+                      <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
+                    </svg>
+                  )}
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  <b>
+                    {theme === "system"
+                      ? "시스템 설정을 따라요"
+                      : theme === "light"
+                      ? "밝게 고정"
+                      : "어둡게 고정"}
+                    </b>{" "}
+                  — 눌러서 {theme === "system" ? "밝게" : theme === "light" ? "어둡게" : "시스템"}
+                  로 바꿔요.
+                </span>
+              </span>
+            </span>
             {/* 계정 — 로그인은 눌러서 찾아가는 것이지, 하려던 일에 걸려 나오는 것이 아닙니다.
                 로그인한 뒤에는 닉네임이 곧 벌금판의 내 이름이라, 여기 떠 있는 것이 정보입니다.
                 파티원도 자기 계정으로 들어온 사람이라 닉네임 확인과 로그아웃이 되어야 합니다.
@@ -6052,108 +6108,6 @@ export default function GoldSettlement() {
                   </span>
                 )}
             </div>
-            {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리 */}
-            {(!readOnly || shareGuest) && (
-              <span className="gs-tip">
-                <button
-                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (!shareGuest && relay.on ? " on" : "")}
-                  onClick={() => {
-                    courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
-                    setObsOpen(true);
-                  }}
-                >
-                  {/* OBS 로고는 상표라 안 씁니다 — 이름을 글자로 쓰는 건 괜찮지만
-                      마크를 넣으면 OBS 쪽이 만든 것처럼 보일 여지가 있습니다.
-                      대신 송출을 뜻하는 모니터 아이콘을 답니다. */}
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="1.6" y="2.6" width="12.8" height="8.6" rx="1.4" />
-                      <path d="M5.6 14h4.8M8 11.2V14" />
-                    </g>
-                  </svg>
-                  오버레이 공유 설정
-                  {/* 상태는 방 칩이 말합니다 — 여기에도 점을 두면 화면에 점이 둘이라
-                      뭐가 뭔지 모릅니다. 이 버튼은 창을 여는 일만 합니다 */}
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  {shareGuest ? (
-                    <>
-                      <b>내 방송용 주소</b>와 오버레이 외형을 여기서 챙겨요. 주소는 사람마다
-                      하나씩이에요.
-                    </>
-                  ) : (
-                    <>
-                      벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를{" "}
-                      <b>어떤 방송 프로그램이든</b> 브라우저 소스에 넣으면 돼요.
-                    </>
-                  )}
-                </span>
-              </span>
-            )}
-            {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
-            <span className="gs-viewseg">
-              <span className="gs-tip">
-                <button
-                  className={theme === "system" ? "" : "on"}
-                  onClick={() =>
-                    setTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")
-                  }
-                  aria-label={`화면 밝기: ${
-                    theme === "system" ? "시스템 설정" : theme === "light" ? "밝게" : "어둡게"
-                  }`}
-                >
-                  {theme === "light" ? (
-                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                        <circle cx="8" cy="8" r="3.1" />
-                        <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" />
-                      </g>
-                    </svg>
-                  ) : theme === "dark" ? (
-                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                      <path
-                        d="M13 10.3A5.6 5.6 0 0 1 5.7 3a5.8 5.8 0 1 0 7.3 7.3z"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                      <circle
-                        cx="8"
-                        cy="8"
-                        r="6"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                      />
-                      <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
-                    </svg>
-                  )}
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  <b>
-                    {theme === "system"
-                      ? "시스템 설정을 따라요"
-                      : theme === "light"
-                      ? "밝게 고정"
-                      : "어둡게 고정"}
-                    </b>{" "}
-                  — 눌러서 {theme === "system" ? "밝게" : theme === "light" ? "어둡게" : "시스템"}
-                  로 바꿔요.
-                </span>
-              </span>
-            </span>
-            <button
-              className={"gs-qm gs-helpbtn" + (showHelp ? " gs-qm-on" : "")}
-              onClick={() => setShowHelp(true)}
-              aria-haspopup="dialog"
-              aria-label="사용법 보기"
-            >
-              ?
-            </button>
           </div>
         </div>
       </div>
@@ -6434,35 +6388,37 @@ export default function GoldSettlement() {
                 ))}
               </nav>
             )}
-          </div>
-          {/* 수명 동사는 상태가 바뀌어도 같은 자리입니다 (§3.4) — 로비에서 [시작]이 앉는
-              우상단 모서리를 판에서는 이 둘이 씁니다. 파티원 화면에는 뜨지 않습니다.
-              둘 중 더 자주 누르는 것이 [중단]이라 그쪽이 오른쪽 끝입니다 */}
-          {!readOnly && (
-            <div className="gs-mastverbs">
-              <span className="gs-tip">
-                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={askEndRound}>
-                  정산 끝내기
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  결과지를 <b>판 기록</b>에 남기고 판을 닫아요. 파티원은 그대로 있어요.
-                </span>
-              </span>
-              {/* 얼리는 것은 방에 붙은 판만 할 수 있습니다 — 혼자 판은 영구라 얼릴 이유도
-                  없습니다 (§3.4) */}
-              {auth && relay.room && (
+            {/* 수명 동사는 상태가 바뀌어도 같은 자리입니다 (§3.4) — 로비에서 [시작]이 앉는
+                우상단 모서리를 판에서는 이 둘이 씁니다. 탭을 왼쪽 끝으로 보내지 않고
+                탭 오른쪽에 이어 붙여, 높이·모서리·글자를 탭에 맞춥니다.
+                파티원 화면에는 뜨지 않습니다.
+                둘 중 더 자주 누르는 것이 [중단]이라 그쪽이 오른쪽 끝입니다 */}
+            {!readOnly && (
+              <div className="gs-mastverbs">
                 <span className="gs-tip">
-                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={pauseRound}>
-                    중단
+                  <button className="gs-btn gs-btn-ghost gs-lifebtn" onClick={askEndRound}>
+                    정산 끝내기
                   </button>
                   <span className="gs-tip-body gs-tip-r" role="tooltip">
-                    아무것도 지우지 않고 잠깐 멈춰요. 로비의 <b>[이어가기]</b>로 그대로
-                    돌아와요.
+                    결과지를 <b>판 기록</b>에 남기고 판을 닫아요.
                   </span>
                 </span>
-              )}
-            </div>
-          )}
+                {/* 얼리는 것은 방에 붙은 판만 할 수 있습니다 — 혼자 판은 영구라 얼릴 이유도
+                    없습니다 (§3.4) */}
+                {auth && relay.room && (
+                  <span className="gs-tip">
+                    <button className="gs-btn gs-btn-ghost gs-lifebtn" onClick={pauseRound}>
+                      중단
+                    </button>
+                    <span className="gs-tip-body gs-tip-r" role="tooltip">
+                      아무것도 지우지 않고 잠깐 멈춰요. 로비의 <b>[이어가기]</b>로 그대로
+                      돌아와요.
+                    </span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
       )}
@@ -6588,8 +6544,9 @@ export default function GoldSettlement() {
           paused={paused}
           pausedInfo={{ n: rows.length, gold: slotGold(currentLedger()) }}
           onResume={resumeRound}
-          lastGen={gensList()[0] || null}
+          gens={gensList()}
           onOpenGen={openGen}
+          onDropGen={askDropGen}
           seq={seq}
         />
       )}
@@ -10006,7 +9963,7 @@ function MateSheet({ mate, canInvite, onInvite, onKnock, onClose }) {
         </div>
         {!canInvite && (
           <p className="gs-lb-note">
-            내 판으로 부르려면 <b>파티원 모으기</b>로 방을 먼저 열어야 해요.
+            내 판으로 부르려면 <b>초대 링크 만들기</b>로 방을 먼저 열어야 해요.
           </p>
         )}
         <div className="gs-obs-acts gs-acts-end">
@@ -10041,10 +9998,11 @@ function InviteCard({ inv, onAccept, onDeny }) {
   );
 }
 
-/* 로비 = 홈 (§3.1). 2열 벤토입니다 — 왼쪽 열이 파티원 모으기(상설), 오른쪽 열은
-   위가 명단, 아래가 항목입니다. [시작]은 명단 카드의 우측 상단 모서리에 붙어 있고
-   이 화면에서 유일하게 채운 버튼입니다. 중단된 판 카드는 벤토 위, 지난 판 한 줄은
-   벤토 아래에 섭니다. 모으기 열의 순서(신청 → 함께한 사람 → 처음 오는 사람)는
+/* 로비 = 홈 (§3.1). 2열 벤토입니다 — 왼쪽 열이 위가 명단, 아래가 항목이고,
+   오른쪽 열이 파티원 모으기(상설)입니다. 첫 할 일이 읽기 시작점에 있어야 합니다.
+   [시작]은 히어로 한 줄의 오른쪽 끝(무대 우상단 모서리)이고 이 화면에서 유일하게
+   채운 버튼입니다. 판 기록은 히어로의 아이콘 하나로 열리는 창이고, 중단된 판 카드는
+   히어로 아래·벤토 위에 섭니다. 모으기 열의 순서(신청 → 함께한 사람 → 처음 오는 사람)는
    판 중 파티 서랍이 그대로 다시 씁니다 — 표면이 이사해도 지도는 같습니다. */
 function LobbyScreen({
   seats,
@@ -10078,11 +10036,15 @@ function LobbyScreen({
   paused,
   pausedInfo,
   onResume,
-  lastGen,
+  gens,
   onOpenGen,
+  onDropGen,
   seq,
 }) {
   const [reveal, setReveal] = useState(false);
+  /* 판 기록 — 히어로의 아이콘으로 여는 창입니다 (§3.1). 로비에서 줄 하나를 통째로
+     내주지 않습니다: 지난 판은 가끔 들추는 것이지 늘 보는 것이 아닙니다 */
+  const [gensOpen, setGensOpen] = useState(false);
   /* 빈 줄의 id 를 미리 뽑아 둡니다 — 첫 글자가 들어오는 순간 그 id 로 자리가 생기고,
      줄의 key 가 그대로라 입력칸 DOM 이 살아남습니다. 한글은 조합 중에 포커스가
      날아가면 글자가 깨지므로, 이 한 줄이 그것을 막습니다 */
@@ -10098,7 +10060,11 @@ function LobbyScreen({
   const named = seats.filter((s) => (s.name || "").trim()).length;
   const rename = (id, v) =>
     onSeats(seats.map((s) => (s.id === id ? { ...s, name: v, named: true } : s)));
-  const drop = (s) => (s.acct ? onKick(s.acct) : onSeats(seats.filter((x) => x.id !== s.id)));
+  /* 내 자리는 내보내는 것이 아니라 빼는 것입니다 — 방장이 자기를 서버에 내보내라고
+     할 수는 없습니다 (§3.1: [×]로 뺄 수 있다) */
+  const meId = (auth && auth.id) || "";
+  const drop = (s) =>
+    s.acct && s.acct !== meId ? onKick(s.acct) : onSeats(seats.filter((x) => x.id !== s.id));
   /* 줄은 치는 만큼 생깁니다 — 빈 줄 하나가 늘 아래에 있고, 거기 글자가 들어오면
      그 줄이 자리가 되면서 새 빈 줄이 따라옵니다 (§3.1) */
   const canAdd = seats.length < cap && manual < MANUAL_MAX;
@@ -10109,10 +10075,91 @@ function LobbyScreen({
     onSeats([...seats, { id: draftId, name: v, acct: null, mem: null, named: true }]);
     setDraftId("r" + seq.current++);
   };
+  /* [4인]·[8인] — 빈 명단을 기본 이름으로 채웁니다 (§8). 사람이 앉은 자리와 이미 이름이
+     있는 자리는 그대로 두고 모자란 만큼만 뒤에 붙입니다 — 채우기가 사람을 지우면
+     안 됩니다. 이미 쓰고 있는 이름은 건너뛰어 표에서 이름이 겹치지 않게 합니다.
+     named 를 세우지 않는 것은 자리표시라서입니다 — 그 자리에 사람이 앉으면 그 사람의
+     닉이 이깁니다 (§3.2) */
+  /* 자리표시 = 이 문이 놓아 둔 자리입니다 — 사람이 앉지 않았고, 손으로 친 이름도 아니고,
+     기본 이름 그대로인 자리. 늘리고 줄이는 것은 이 자리들뿐이라, [8인] 뒤에 [4인]을
+     눌러도 사람과 손으로 친 이름은 그 자리에 그대로 있습니다 */
+  const isFillSeat = (s) =>
+    !s.acct && !s.named && DEFAULT_NAMES.includes((s.name || "").trim());
+  const fill = (n) => {
+    const want = Math.min(n, cap);
+    const kept = seats.filter((s) => (s.acct || (s.name || "").trim()) && !isFillSeat(s));
+    const spare = seats.filter(isFillSeat); // 있던 자리를 다시 써서 줄 id 를 지킵니다
+    const used = new Set(kept.map((s) => (s.name || "").trim()));
+    const out = [...kept];
+    for (const nm of DEFAULT_NAMES) {
+      if (out.length >= want) break;
+      if (used.has(nm)) continue;
+      out.push(
+        spare.find((s) => (s.name || "").trim() === nm) || {
+          id: "r" + seq.current++,
+          name: nm,
+          acct: null,
+          mem: null,
+          named: false,
+        }
+      );
+    }
+    onSeats(out);
+  };
+  /* 방금 앉은 줄 — 초대·신청으로 사람이 들어오면 그 줄이 잠깐 밝아집니다 (§3.1).
+     명단이 어떻게 차는지가 화면에서 읽혀야 합니다 */
+  const seatedRef = useRef(null);
+  const [justSat, setJustSat] = useState(null);
+  useEffect(() => {
+    const now = seats.filter((s) => s.acct).map((s) => s.id);
+    const before = seatedRef.current;
+    seatedRef.current = now;
+    if (!before) return; // 처음 그릴 때는 전부 새것이라 번쩍이지 않습니다
+    const fresh = now.filter((id) => !before.includes(id));
+    if (!fresh.length) return;
+    setJustSat(fresh[fresh.length - 1]);
+    const t = setTimeout(() => setJustSat(null), 1600);
+    return () => clearTimeout(t);
+  }, [seats.map((s) => s.id + ":" + (s.acct || "")).join("|")]);
 
   return (
     <section className="gs-lobbyscr">
-      {/* 중단된 판 — 아무것도 지워지지 않았습니다. [이어가기] 한 번이면 그대로 돌아옵니다 */}
+      {/* 이 화면에서 일어나는 일 한 줄 (§8). 제목은 두지 않습니다 — 홈이 곧 로비라
+          "여기가 어디인가"를 글자로 말할 이유가 없습니다.
+          [시작]은 이 줄의 오른쪽 끝, 무대 우상단 모서리입니다 (§3.1) — 판 화면의
+          [정산 끝내기]·[중단]과 같은 좌표라, 상태가 바뀌어도 수명 동사는 같은 자리입니다 */}
+      <div className="gs-lbtop">
+        <p className="gs-lb-lead">
+          {seats.length > 1
+            ? "시작하면 이 사람들로 새 판이 열려요. 지금 판은 판 기록에 남아요."
+            : "혼자서도 시작할 수 있어요."}
+        </p>
+        {/* 판 기록 — 아이콘 하나와 개수입니다 (§3.1). 지난 판은 가끔 들추는 것이지 늘
+            보는 것이 아니라, 로비에서 줄 하나를 통째로 내주지 않습니다.
+            기록이 없으면 아이콘도 없습니다 */}
+        {gens.length > 0 && (
+          <span className="gs-tip">
+            <button
+              className="gs-lbgensbtn"
+              onClick={() => setGensOpen(true)}
+              aria-label="판 기록"
+            >
+              <IconHistory />
+              <b>{gens.length}</b>
+            </button>
+            <span className="gs-tip-body gs-tip-l" role="tooltip">
+              판 기록
+            </span>
+          </span>
+        )}
+        {/* 이 화면의 유일한 채운 금색 버튼입니다. 이름이 하나도 없으면 흐립니다 */}
+        <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onStart} disabled={named === 0}>
+          시작
+        </button>
+      </div>
+
+      {/* 중단된 판 — 히어로 아래, 벤토 위입니다 (§3.1).
+          아무것도 지워지지 않았습니다. [이어가기] 한 번이면 그대로 돌아옵니다 */}
       {paused && (
         <div className="gs-lbresume">
           <span className="gs-lbresume-l">
@@ -10131,24 +10178,169 @@ function LobbyScreen({
         </div>
       )}
 
-      {/* 이 화면에서 일어나는 일 한 줄 (§8). 제목은 두지 않습니다 — 홈이 곧 로비라
-          "여기가 어디인가"를 글자로 말할 이유가 없습니다.
-          [시작]은 이 줄의 오른쪽 끝, 무대 우상단 모서리입니다 (§3.1) — 판 화면의
-          [정산 끝내기]·[중단]과 같은 좌표라, 상태가 바뀌어도 수명 동사는 같은 자리입니다 */}
-      <div className="gs-lbtop">
-        <p className="gs-lb-lead">
-          {seats.length > 1
-            ? "시작하면 이 사람들로 새 판이 열려요. 지금 판은 판 기록에 남아요."
-            : "혼자서도 시작할 수 있어요."}
-        </p>
-        {/* 이 화면의 유일한 채운 금색 버튼입니다. 이름이 하나도 없으면 흐립니다 */}
-        <button className="gs-btn gs-lbstart" onClick={onStart} disabled={named === 0}>
-          시작
-        </button>
-      </div>
+      {gensOpen && (
+        <GenModal
+          gens={gens}
+          onOpen={(name) => {
+            setGensOpen(false);
+            onOpenGen(name);
+          }}
+          onDrop={onDropGen}
+          onClose={() => setGensOpen(false)}
+        />
+      )}
 
       <div className="gs-bento">
-        {/* ── 왼쪽 = 파티원 모으기 (상설) ─────────────────────────
+        <div className="gs-bento-l">
+          {/* ── 왼쪽 위 = 명단 ─────────────────────────────────
+              첫 할 일이라 읽기 시작점에 둡니다 (§3.1).
+              번호 + 아이디 + 인라인 입력이고, 아이디는 닉네임 왼쪽입니다.
+              머리는 `명단 · n/8`만 말합니다 — [시작]은 무대 우상단으로 갔습니다 */}
+          <div className="gs-lbcard gs-lbroster">
+            <h4 className="gs-lbcard-h">
+              명단
+              <span className="gs-lbroster-n">
+                {named} / {cap}
+              </span>
+            </h4>
+            <div className="gs-lbrows">
+              {rows.map((s, i) => {
+                const has = !!(s.name || "").trim();
+                return (
+                  <div
+                    className={
+                      "gs-lbrow" + (s.acct ? " on" : "") + (justSat === s.id ? " sat" : "")
+                    }
+                    key={s.id}
+                    /* 이름 칸이 줄을 다 채우지 않으므로 빈 자리를 눌러도 이름으로 들어갑니다 */
+                    onMouseDown={(e) => {
+                      if (e.target === e.currentTarget) {
+                        e.preventDefault();
+                        const el = e.currentTarget.querySelector(".gs-lbrow-in");
+                        if (el) el.focus();
+                      }
+                    }}
+                  >
+                    <span className="gs-lbrow-n">{i + 1}</span>
+                    <input
+                      className="gs-lbrow-in"
+                      value={s.name}
+                      placeholder={s.draft ? "이름" : ANON(i)}
+                      maxLength={12}
+                      onChange={(e) => type(s, e.target.value)}
+                      aria-label={"자리 " + (i + 1) + " 이름"}
+                    />
+                    {/* 아이디는 닉네임 바로 오른쪽에 붙습니다 (§3.1) — 줄 오른쪽 끝에
+                        떨어져 있으면 어느 이름의 것인지 눈이 건너가야 합니다 */}
+                    {s.acct && <span className="gs-lbrow-id">{s.acct}</span>}
+                    {has && (
+                      <button
+                        className="gs-lbslot-x"
+                        onClick={() => drop(s)}
+                        aria-label={
+                          (s.name || ANON(i)) +
+                          (s.acct && s.acct !== meId ? " 내보내기" : " 자리 지우기")
+                        }
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {/* 발치 한 줄 — 왼쪽이 "무엇을 하면 되는지", 오른쪽 끝이 채우는 문입니다 (§9-1).
+                명단이 비었거나 방장만 있을 때만 안내를 답니다: 사람이 차고 나면
+                할 말이 없는 줄입니다 */}
+            <div className="gs-lbrosterfoot">
+              {named <= 1 && (
+                <p className="gs-lbrosterhint">
+                  이름을 직접 쳐도 되고, [8인]으로 채워도 되고, 오른쪽 파티원 모으기로 불러도 돼요.
+                </p>
+              )}
+              {/* 채운 버튼이 아니라 밑줄 문입니다 — 이 화면의 채운 버튼은 [시작] 하나입니다 (§9-2) */}
+              <button className="gs-swaplink gs-lbfill" onClick={() => fill(4)}>
+                4인
+              </button>
+              <button className="gs-swaplink" onClick={() => fill(8)}>
+                8인
+              </button>
+            </div>
+          </div>
+
+          {/* ── 왼쪽 아래 = 항목 ── 줄에서 바로 고칩니다. 요약↔편집 모드를 오가게 할
+              이유가 없습니다 — 채운 버튼 없는 조용한 줄들이라 [시작]과 자리를 다투지 않습니다 */}
+          <div className="gs-lbcard">
+            <h4 className="gs-lbcard-h">
+              항목
+              {/* 프리셋 — 구성을 통째로 갈아끼우는 문입니다. 항목 줄을 읽는 눈을 안
+                  건드리게 카드 머리 오른쪽 끝에 둡니다 */}
+              <button className="gs-swaplink gs-lbpreset" onClick={onPresets}>
+                프리셋
+              </button>
+            </h4>
+            {(
+              <div className="gs-lbcoledit">
+                {cols.map((c) => (
+                  <div className="gs-lbcolrow" key={c.id}>
+                    <input
+                      className="gs-in gs-in-col"
+                      value={c.name}
+                      placeholder="항목명"
+                      onChange={(e) => patch(c.id, "name", e.target.value)}
+                      aria-label="항목 이름"
+                    />
+                    {isRoulette(c) ? (
+                      <span className="gs-rcbtn">◎ 룰렛 · 나온 숫자 × {man(Math.round(goldOf(c.price)))}</span>
+                    ) : (
+                      <span className="gs-lbcolprice">
+                        <span>1회</span>
+                        <PriceFree
+                          gold={goldOf(c.price)}
+                          per={per}
+                          suffix={unitLabel}
+                          onChange={(g) => patch(c.id, "price", commafy(g))}
+                        />
+                      </span>
+                    )}
+                    <button
+                      className="gs-x"
+                      onClick={() => onCols(cols.filter((x) => x.id !== c.id))}
+                      aria-label={`${c.name || "항목"} 삭제`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {/* 두 종류를 밖으로 꺼내 둡니다 — [+ 항목] 하나로는 룰렛을 만들 길이
+                    없었습니다. 만드는 문이라 발치 오른쪽 끝입니다 (§9-3) */}
+                <div className="gs-lbcolfoot">
+                  <button
+                    className="gs-swaplink"
+                    onClick={() =>
+                      onCols([...cols, { id: "c" + seq.current++, name: "", price: "10,000" }])
+                    }
+                  >
+                    + 항목
+                  </button>
+                  <button
+                    className="gs-swaplink"
+                    onClick={() =>
+                      onCols([
+                        ...cols,
+                        { id: "c" + seq.current++, name: "룰렛", price: "10,000", type: "roulette" },
+                      ])
+                    }
+                  >
+                    + 룰렛
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── 오른쪽 = 파티원 모으기 (상설) ─────────────────────────
             비로그인이면 조용한 권유 한 장입니다. 로그인하면 신청 → 함께한 사람 →
             처음 오는 사람 순서로 서고, 이 순서가 판 중 파티 서랍과 같습니다 */}
         <div className="gs-lbcard">
@@ -10207,7 +10399,7 @@ function LobbyScreen({
                       className="gs-btn gs-btn-sm gs-btn-ghost"
                       onClick={gather ? onInvite : onGather}
                     >
-                      {gather ? "초대 발급" : "파티원 모으기"}
+                      {gather ? "초대 발급" : "초대 링크 만들기"}
                     </button>
                   </div>
                 ) : (
@@ -10253,116 +10445,96 @@ function LobbyScreen({
             </>
           )}
         </div>
-
-        <div className="gs-bento-r">
-          {/* ── 오른쪽 위 = 명단 ─────────────────────────────────
-              번호 + 인라인 입력이고, 계정이 붙은 자리는 이름 옆에 파란 아이디가 섭니다.
-              머리는 `명단 · n/8`만 말합니다 — [시작]은 무대 우상단으로 갔습니다 (§3.1) */}
-          <div className="gs-lbcard gs-lbroster">
-            <h4 className="gs-lbcard-h">
-              명단
-              <span className="gs-lbroster-n">
-                {named} / {cap}
-              </span>
-            </h4>
-            <div className="gs-lbrows">
-              {rows.map((s, i) => {
-                const has = !!(s.name || "").trim();
-                return (
-                  <div className={"gs-lbrow" + (s.acct ? " on" : "")} key={s.id}>
-                    <span className="gs-lbrow-n">{i + 1}</span>
-                    <input
-                      className="gs-lbrow-in"
-                      value={s.name}
-                      placeholder={s.draft ? "이름" : ANON(i)}
-                      maxLength={12}
-                      onChange={(e) => type(s, e.target.value)}
-                      aria-label={"자리 " + (i + 1) + " 이름"}
-                    />
-                    {s.acct && <span className="gs-lbrow-id">{s.acct}</span>}
-                    {has && (
-                      <button
-                        className="gs-lbslot-x"
-                        onClick={() => drop(s)}
-                        aria-label={(s.name || ANON(i)) + (s.acct ? " 내보내기" : " 자리 지우기")}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ── 오른쪽 아래 = 항목 ── 줄에서 바로 고칩니다. 요약↔편집 모드를 오가게 할
-              이유가 없습니다 — 채운 버튼 없는 조용한 줄들이라 [시작]과 자리를 다투지 않습니다 */}
-          <div className="gs-lbcard">
-            <h4 className="gs-lbcard-h">항목</h4>
-            {(
-              <div className="gs-lbcoledit">
-                {cols.map((c) => (
-                  <div className="gs-lbcolrow" key={c.id}>
-                    <input
-                      className="gs-in gs-in-col"
-                      value={c.name}
-                      placeholder="항목명"
-                      onChange={(e) => patch(c.id, "name", e.target.value)}
-                      aria-label="항목 이름"
-                    />
-                    {isRoulette(c) ? (
-                      <span className="gs-rcbtn">◎ 룰렛 · 나온 숫자 × {man(Math.round(goldOf(c.price)))}</span>
-                    ) : (
-                      <span className="gs-lbcolprice">
-                        <span>1회</span>
-                        <PriceFree
-                          gold={goldOf(c.price)}
-                          per={per}
-                          suffix={unitLabel}
-                          onChange={(g) => patch(c.id, "price", commafy(g))}
-                        />
-                      </span>
-                    )}
-                    <button
-                      className="gs-x"
-                      onClick={() => onCols(cols.filter((x) => x.id !== c.id))}
-                      aria-label={`${c.name || "항목"} 삭제`}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                <div className="gs-lbcolfoot">
-                  <button
-                    className="gs-swaplink"
-                    onClick={() => onCols([...cols, { id: "c" + seq.current++, name: "", price: "10,000" }])}
-                  >
-                    + 항목
-                  </button>
-                  {/* 프리셋 — 자주 쓰는 구성을 통째로 갈아끼우는 문입니다 (§3.4).
-                      판을 닫는 일이 아니라 로비의 명단·항목이 바뀔 뿐이라 여기 발치에 섭니다 */}
-                  <button className="gs-swaplink gs-lbpreset" onClick={onPresets}>
-                    프리셋
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* 직전 결과지 한 줄 — 벤토 아래입니다. 정산 이야기는 판이 끝난 뒤에 합니다 */}
-      {!paused && lastGen && (
-        <button className="gs-lblast" onClick={() => onOpenGen(lastGen.name)}>
-          <span className="gs-lblast-t">
-            지난 판 <b>{lastGen.title}</b>
-            <em>{fmtWhenShort(lastGen.from || lastGen.t)}</em>
-          </span>
-          <span className="gs-lblast-g">{man(lastGen.gold || 0)}</span>
-          <span className="gs-lblast-a">정산 보기</span>
-        </button>
-      )}
     </section>
+  );
+}
+
+/* 판 기록 아이콘 — 시계 문자판에 되돌아가는 화살표가 걸린 모양입니다 (§3.1).
+   지나간 판을 되짚는 문이라, 목록도 달력도 아닌 이 글리프가 맞습니다 */
+function IconHistory() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3 4v5h5" />
+        <path d="M3.05 13A9 9 0 1 0 6 5.3L3 9" />
+        <path d="M12 7.5v5l4 2" />
+      </g>
+    </svg>
+  );
+}
+
+/* 판 기록 창 — 로비 히어로의 아이콘으로 엽니다 (§3.1). 헤더 드롭다운에 있던 내용
+   그대로이고, 줄을 누르면 그 판의 결과지로 갑니다 */
+function GenModal({ gens, onOpen, onDrop, onClose }) {
+  return (
+    <InfoModal title="판 기록" onClose={onClose}>
+      <p className="gs-gens-lead">
+        끝난 판이 여기 남아요. 보기만 할 수 있고, 최근 20판까지 남습니다.
+      </p>
+      <GenList gens={gens} onOpen={onOpen} onDrop={onDrop} />
+      {/* 모달의 마무리는 오른쪽 하단입니다 (§9-6) */}
+      <div className="gs-obs-acts gs-acts-end">
+        <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onClose}>
+          닫기
+        </button>
+      </div>
+    </InfoModal>
+  );
+}
+
+/* 판 기록 목록 — 창과 목록을 따로 두어, 줄의 생김새를 한 군데서만 고칩니다.
+   줄마다 판의 신분증입니다: 배지(누구의 판)·기간·인원·파티원 전부·총액·[×] */
+function GenList({ gens, onOpen, onDrop }) {
+  if (!gens.length) return <p className="gs-gens-empty">아직 끝난 판이 없어요.</p>;
+  return (
+    <>
+      {gens.map((g) => (
+        <div className="gs-hisrow" key={g.name}>
+          {/* 배지가 '누구의 판'을 말합니다 — 제목을 따로 되풀이하지 않습니다 */}
+          <span className={"gs-idsrc" + (g.src === "party" ? "" : " gs-idsrc-local")}>
+            {g.title}
+          </span>
+          <button className="gs-hisbody" onClick={() => onOpen(g.name)}>
+            <span className="gs-hist1">
+              <b>{fmtWhenShort(g.from || g.t)}</b>
+              <span>{g.n}명</span>
+            </span>
+            {/* 파티원 전부 — "외 4명"으로 줄이지 않습니다 */}
+            {g.mems.length > 0 && (
+              <span className="gs-idmems">
+                {g.mems.map((n, i) => (
+                  <span
+                    key={n + "@" + i}
+                    className={
+                      "gs-idmem" +
+                      (g.host && n === g.host
+                        ? " gs-idmem-host"
+                        : g.me && n === g.me
+                        ? " gs-idmem-me"
+                        : "")
+                    }
+                  >
+                    {n}
+                  </span>
+                ))}
+              </span>
+            )}
+          </button>
+          <span className="gs-hisgold">{man(g.gold || 0)}</span>
+          <button className="gs-x" onClick={() => onDrop(g)} aria-label={g.title + " 기록 지우기"}>
+            ×
+          </button>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -11842,27 +12014,25 @@ const CSS = `
   gap:10px 14px; flex-wrap:wrap}
 .gs-tabbed .gs-mastrow::after{content:''; position:absolute; left:0; right:0; bottom:0;
   height:1px; background:var(--kraft-dk)}
-/* 탭은 왼쪽입니다 (§3.4) — 비운 오른쪽 끝을 수명 동사가 씁니다 */
-.gs-mastside{display:flex; align-items:flex-end; gap:12px}
+/* 탭과 수명 동사는 한 덩어리로 오른쪽 끝에 섭니다 (§3.4) — 탭을 왼쪽 끝까지 보내지
+   않고, 그 오른쪽에 [정산 끝내기]·[중단]을 잇습니다. 마스트 왼쪽은 [전부 비우기]뿐입니다 */
+.gs-mastside{display:flex; align-items:flex-end; gap:12px; margin-left:auto}
 /* 제목 아래 모드 — 화면에서 가장 먼저 읽혀야 하는 상태라 크게, 아이콘까지 붙입니다 */
 .gs-mastleft{display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding-bottom:9px}
 /* 수명 동사 — 무대 우상단 모서리. 로비 [시작]과 같은 좌표라, 판이 열려도 닫혀도
-   손이 가는 자리가 안 바뀝니다 (§3.1·§3.4). 둘 다 유령 버튼입니다 */
-.gs-mastverbs{display:flex; align-items:center; gap:8px; margin-left:auto; padding-bottom:9px}
+   손이 가는 자리가 안 바뀝니다 (§3.1·§3.4). 둘 다 유령 버튼입니다.
+   탭과 같은 바닥선에 서야 나란히 선 것으로 읽힙니다 */
+.gs-mastverbs{display:flex; align-items:flex-end; gap:8px; margin-bottom:7px}
 .gs-presetbtn{display:inline-flex; align-items:center; gap:6px}
 .gs-presetbtn svg{opacity:.85; flex:none}
 /* 왼쪽 끝 버튼의 툴팁은 화면 밖으로 안 나가게 왼끝 정렬 */
 .gs-tip-body.gs-tip-l{left:0; transform:none}
-/* 지난 판 드롭다운 — 마스트 왼쪽의 조용한 자리 */
-.gs-gensdd{position:relative}
+/* 시스템 줄의 조용한 드롭다운 — 판 기록이 로비로 간 뒤로는 계정 줄이 씁니다 */
 .gs-gensbtn{font:inherit; font-size:12.5px; color:var(--ink-2); background:none; cursor:pointer;
   border:1px solid rgba(var(--ink-rgb),.25); border-radius:7px; padding:6px 11px;
   display:inline-flex; align-items:center; gap:6px}
 .gs-gensbtn:hover,.gs-gensbtn.on{color:var(--ink); border-color:var(--kraft-dk)}
 .gs-gensbtn b{font-weight:700; color:var(--ink)}
-.gs-genspanel{position:absolute; left:0; top:calc(100% + 6px); z-index:30; width:min(470px,92vw);
-  background:var(--paper); border:1px solid var(--kraft-dk); border-radius:10px;
-  padding:10px 12px; box-shadow:0 10px 26px rgba(0,0,0,.28)}
 .gs-gens-empty{margin:2px; font-size:12px; color:var(--ink-2); line-height:1.65}
 .gs-modebar{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
 .gs-seg-lg button{font-size:15px; padding:8px 15px; display:inline-flex; align-items:center; gap:7px}
@@ -11931,6 +12101,12 @@ const CSS = `
 .gs-btn-ghost{background:transparent; color:var(--ink)}
 .gs-btn-ghost:hover{background:rgba(var(--ink-rgb),.08)}
 .gs-btn-sm{padding:6px 11px; font-size:12px}
+/* 수명 동사 한 벌 — 로비 [시작]과 판 [정산 끝내기]·[중단]이 같은 룩입니다 (§3.4).
+   높이·모서리·글자 크기를 탭에 맞췄습니다(안 열린 탭과 같은 39px). 두 화면이
+   우상단 모서리를 나눠 쓰므로, 화면이 바뀌어도 같은 크기의 것이 같은 자리에 섭니다.
+   다른 것은 채움뿐입니다 — [시작]은 금색 주 동작, 판의 둘은 유령입니다 (§9-2) */
+.gs-lifebtn{font-size:14px; font-weight:600; letter-spacing:.08em; padding:8px 20px;
+  border-radius:7px}
 .gs-btn-danger{background:var(--red); border-color:var(--red); color:var(--paper)}
 .gs-btn-danger:hover{background:var(--red-dk); border-color:var(--red-dk)}
 
@@ -12787,9 +12963,14 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
    같은 줄에 선 것들이 저마다 다른 물건처럼 보입니다 */
 .gs-sysbar .gs-btn{height:32px; padding-top:0; padding-bottom:0;
   display:inline-flex; align-items:center}
-.gs-sysbar .gs-viewseg{margin-bottom:0}
+/* 테마·도움말은 테두리를 벗겨 아이콘만 남깁니다 — 평생 몇 번 안 누르는 것들이
+   계정·오버레이와 같은 무게로 서 있으면 눈이 우선순위를 못 잡습니다 (§9) */
+.gs-sysbar .gs-viewseg{margin-bottom:0; border-color:transparent}
 .gs-sysbar .gs-viewseg button{height:30px; width:31px} /* 테두리 포함 32px — 줄 안 한 높이 */
-.gs-sysbar .gs-qm{width:32px; height:32px; font-size:12px}
+.gs-sysbar .gs-qm{width:32px; height:32px; font-size:12px; border-color:transparent}
+.gs-sysbar .gs-qm:hover,.gs-sysbar .gs-viewseg:hover{border-color:rgba(var(--ink-rgb),.3)}
+/* 하는 일(왼쪽)과 나(오른쪽)를 가르는 실선 */
+.gs-sysbar-sep{width:1px; height:18px; background:rgba(var(--ink-rgb),.18); flex:none}
 .gs-sysbar .gs-gensbtn,
 .gs-sysbar .gs-roomchip{height:32px; padding:0 11px}
 .gs-sysbar .gs-backrow{margin:0 0 0 -4px}
@@ -13605,8 +13786,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-urltext{font-family:var(--mono); font-size:12.5px; color:var(--ink-body);
   word-break:break-all; letter-spacing:.02em}
 
-/* 지난 판 드롭다운 — 목록은 보기·삭제만 */
-.gs-gens-h{margin:0 0 2px; font-family:'Gowun Batang',serif; font-size:15px; font-weight:700}
+/* 판 기록 창 — 목록은 보기·삭제만 */
 .gs-gens-lead{margin:0 0 4px; font-size:11.5px; line-height:1.75; color:var(--ink-2)}
 
 /* 파티원 화면 — 내 줄만 금색, 나머지는 한 톤 물러납니다 */
@@ -13628,11 +13808,11 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbtop{max-width:var(--stage); margin:0 auto 13px; display:flex; align-items:center;
   gap:14px; min-height:38px}
 .gs-lb-lead{flex:1 1 auto; min-width:0; margin:0; font-size:12.5px; color:var(--ink-2)}
-/* 2열 벤토 (§3.1). 왼쪽이 모으기, 오른쪽이 명단·항목입니다 —
-   오른쪽을 조금 넓게 두어 이름 줄이 먼저 접히지 않게 합니다 */
-.gs-bento{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.18fr); gap:15px;
+/* 2열 벤토 (§3.1). 왼쪽이 명단·항목, 오른쪽이 모으기입니다 — 첫 할 일이 읽기
+   시작점에 있어야 합니다. 왼쪽을 조금 넓게 두어 이름 줄이 먼저 접히지 않게 합니다 */
+.gs-bento{display:grid; grid-template-columns:minmax(0,1.18fr) minmax(0,1fr); gap:15px;
   align-items:start; max-width:var(--stage); margin:0 auto}
-.gs-bento-r{display:flex; flex-direction:column; gap:15px; min-width:0}
+.gs-bento-l{display:flex; flex-direction:column; gap:15px; min-width:0}
 @media (max-width:900px){ .gs-bento{grid-template-columns:1fr} }
 .gs-lbcard{border:1px solid rgba(var(--ink-rgb),.2); border-radius:9px; background:var(--paper);
   padding:14px 15px 16px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.16)}
@@ -13691,18 +13871,35 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbrow:focus-within{background:rgba(var(--ink-rgb),.05)}
 .gs-lbrow-n{width:15px; flex:none; text-align:right; font-family:var(--mono); font-size:12px;
   color:rgba(var(--ink-rgb),.35)}
-.gs-lbrow-in{flex:1 1 auto; min-width:0; border:0; background:transparent; color:var(--ink);
+.gs-lbrow-in{flex:0 1 8.5em; min-width:3em; border:0; background:transparent; color:var(--ink);
   font-family:'Gowun Batang',serif; font-weight:700; font-size:17px; padding:2px 0}
 .gs-lbrow-in::placeholder{color:rgba(var(--ink-rgb),.3); font-weight:400}
 .gs-lbrow-in:focus{outline:0}
 /* 계정이 붙은 자리는 이름 옆에 파란 아이디 — 자리의 참고 정보입니다 (§3.2) */
 .gs-lbrow-id{font-family:var(--mono); font-size:10.5px; color:var(--blue); flex:none}
-.gs-lbslot-x{border:0; background:transparent; cursor:pointer; flex:none;
+.gs-lbrow{cursor:text}
+.gs-lbrow-in,.gs-lbrow-id,.gs-lbslot-x{cursor:auto}
+.gs-lbslot-x{border:0; background:transparent; cursor:pointer; flex:none; margin-left:auto;
   color:rgba(var(--ink-rgb),.34); font-size:15px; line-height:1; padding:2px 5px; border-radius:4px}
 .gs-lbslot-x:hover{color:var(--red); background:rgba(var(--red-rgb),.1)}
-/* 이 화면에서 할 일은 하나입니다 — 무대 우상단 모서리의 채운 금색 하나 (§3.1) */
-.gs-lbstart{flex:none; margin-left:auto; font-size:14px; font-weight:600;
-  letter-spacing:.1em; padding:9px 26px; background:var(--gold); border-color:var(--gold);
+/* 방금 앉은 줄 — 초대·신청으로 사람이 들어온 자리가 잠깐 밝아집니다 (§3.1).
+   명단이 어떻게 차는지가 눈에 보여야 합니다 */
+.gs-lbrow.sat{animation:gs-satflash 1.6s ease-out}
+@keyframes gs-satflash{0%{background:rgba(var(--gold-rgb),.3)}
+  70%{background:rgba(var(--gold-rgb),.12)} 100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){ .gs-lbrow.sat{animation:none;
+  background:rgba(var(--gold-rgb),.12)} }
+/* 명단 발치 — 왼쪽이 무엇을 하면 되는지, 오른쪽 끝이 채우는 문입니다 (§9-1) */
+.gs-lbrosterfoot{display:flex; align-items:center; gap:12px; margin-top:11px;
+  padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.22)}
+.gs-lbrosterhint{margin:0; flex:1 1 auto; min-width:0; font-size:11.5px; line-height:1.7;
+  color:var(--ink-2)}
+.gs-lbfill{margin-left:auto}
+.gs-lbrosterhint + .gs-lbfill{margin-left:0}
+/* 이 화면에서 할 일은 하나입니다 — 무대 우상단 모서리의 채운 금색 하나 (§3.1).
+   크기는 .gs-lifebtn 한 벌이 정합니다 — 판의 [정산 끝내기]와 같은 룩이라야
+   같은 모서리를 나눠 쓰는 것으로 읽힙니다 (§3.4) */
+.gs-lbstart{flex:none; margin-left:auto; background:var(--gold); border-color:var(--gold);
   color:#241f19}
 .gs-lbstart:hover:not(:disabled){background:var(--gold); filter:brightness(1.07)}
 .gs-lbstart:disabled:hover{background:var(--gold)}
@@ -13712,9 +13909,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   padding-left:2px}
 .gs-lbcolprice{display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
   color:var(--ink-2); flex:none}
-.gs-lbcolfoot{display:flex; align-items:center; gap:12px; margin-top:6px}
-.gs-lbcolfoot .gs-btn{margin-left:auto}
-/* 프리셋 — 발치의 조용한 문입니다. 오른쪽 끝이라 항목 줄을 읽는 눈을 안 건드립니다 */
+/* 만드는 문 둘은 발치 오른쪽 끝에 나란히 (§9-3) */
+.gs-lbcolfoot{display:flex; align-items:center; justify-content:flex-end; gap:14px; margin-top:8px}
 .gs-lbpreset{margin-left:auto}
 /* 중단된 판 카드 — 벤토 위입니다. 잃은 것이 없다는 것을 수와 총액이 말합니다 */
 .gs-lbresume{max-width:var(--stage); margin:0 auto 13px; display:flex; align-items:center; gap:12px;
@@ -13723,16 +13919,14 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbresume-l{flex:1 1 auto; min-width:0; font-size:13px; color:var(--ink-body)}
 .gs-lbresume-meta{margin-left:9px; font-size:12px; color:var(--ink-2)}
 .gs-lbresume .gs-btn{margin-left:auto}
-/* 직전 결과지 한 줄 — 벤토 아래입니다. 정산 이야기는 판이 끝난 뒤에 합니다 */
-.gs-lblast{display:flex; align-items:center; gap:11px; width:100%; max-width:var(--stage);
-  margin:15px auto 0; padding:10px 15px; border-radius:9px; font:inherit; cursor:pointer;
-  text-align:left; background:transparent; border:1px solid rgba(var(--ink-rgb),.16)}
-.gs-lblast:hover{border-color:rgba(var(--ink-rgb),.34); background:rgba(var(--ink-rgb),.04)}
-.gs-lblast-t{flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--ink-2)}
-.gs-lblast-t b{margin-left:6px; color:var(--ink); font-weight:600}
-.gs-lblast-t em{margin-left:8px; font-style:normal; font-size:11.5px}
-.gs-lblast-g{font-family:var(--mono); font-size:13px; color:var(--ink-body)}
-.gs-lblast-a{font-size:11.5px; color:var(--gold)}
+/* 판 기록 — 히어로의 아이콘 하나입니다 (§3.1). 개수가 옆에 붙고, 누르면 목록이
+   창으로 뜹니다. 지난 판은 가끔 들추는 것이라 로비의 줄을 먹지 않습니다 */
+.gs-lbgensbtn{flex:none; font:inherit; font-size:11.5px; cursor:pointer; padding:5px 9px;
+  display:inline-flex; align-items:center; gap:5px; border-radius:7px;
+  color:var(--ink-2); background:transparent; border:1px solid rgba(var(--ink-rgb),.2)}
+.gs-lbgensbtn:hover{color:var(--ink); border-color:var(--kraft-dk);
+  background:rgba(var(--ink-rgb),.05)}
+.gs-lbgensbtn b{font-family:var(--mono); font-weight:700; color:var(--ink)}
 /* [수락 ▾] 의 자리 지정 — 그 자리에서 바로 고릅니다 */
 .gs-seatdd{position:relative; display:inline-block}
 .gs-seatmenu{position:absolute; right:0; top:calc(100% + 5px); z-index:30; min-width:150px;
