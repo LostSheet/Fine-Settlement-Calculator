@@ -5,6 +5,7 @@
    Accounts DO 하나가 계정·세션·OBS 토큰을 갖고, 방 하나마다 Room DO 하나가 판과 명단을 갖습니다. */
 
 import { PAGE_HTML, APP_URL } from "./page.js";
+import { PAUSE_IDLE_MS, STATE_IDLE_MS, shouldAutoPause, nextRoomAlarm } from "./round.js";
 
 const ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"; // 헷갈리는 글자(I,L,O,U,0,1) 제외
 const CH = "[ABCDEFGHJKMNPQRSTVWXYZ23456789]";
@@ -32,8 +33,7 @@ const json = (data, status = 200) =>
 /* 수명 (§1) */
 const SESSION_MS = 90 * 86400 * 1000;
 const INVITE_MS = 10 * 60 * 1000;
-const LOBBY_MS = 6 * 3600 * 1000;
-const STATE_IDLE_MS = 90 * 86400 * 1000; // 판만 지웁니다 — 방·멤버십은 남습니다
+/* 판의 수명 판단(자동 중단 24시간·판 삭제 90일)은 round.js 가 갖고 있습니다 */
 const ACCT_IDLE_MS = 365 * 86400 * 1000;
 const ACCT_SCAN_MS = 7 * 86400 * 1000;
 
@@ -123,7 +123,9 @@ export default {
 
     // 방 API
     const api = p.match(
-      new RegExp(`^/api/r/(${ID6})/(state|read|invite|lobby|members|member|join|leave|confess|end)$`)
+      new RegExp(
+        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|join|leave|confess|pause|resume|end)$`
+      )
     );
     if (api) {
       const me = await verify(env, bearer(req));
@@ -665,10 +667,9 @@ export class Room {
       } catch (e) {}
     }
   }
-  /* 파티를 통째로 해산합니다. 파티 = 오늘의 모임이고 판은 그 안의 한 게임이라,
-     새 파티를 꾸리거나 파티를 끝내면 옛 파티원은 이 방에서 빠져야 합니다.
-     안 그러면 사흘 전 파티원의 /o/ 에 사흘 뒤 파티의 판이 계속 뜹니다 —
-     이 설계를 시작한 이유가 그 관음을 막는 것이었습니다.
+  /* 옛 [파티 끝내기] 가 쓰던 전원 해제입니다. 해산(전원 킥) 동사는 폐기됐고 (§3.4)
+     앱은 이 길을 부르지 않습니다 — 사람 정리는 본인 [나가기]와 방장 내보내기뿐입니다.
+     라우트만 남겨 둡니다(옛 앱이 부를 수 있어서).
      통지 뒤 소켓을 닫는 것은 member remove 와 같은 이유입니다 (§4.2). */
   async clearMembers() {
     const list = await this.members();
@@ -698,6 +699,27 @@ export class Room {
   async isOwner(me) {
     const owner = await this.ctx.storage.get("owner");
     return !!me && !!owner && me.id === owner;
+  }
+
+  /* 계정이 붙은 자리가 하나라도 있는지 — 자동 중단을 걸지 말지를 이것이 정합니다 (§3.4).
+     멤버가 없는 방(혼자 판)에는 알람을 아예 걸지 않습니다 */
+  async seated() {
+    for (const [, v] of await this.ctx.storage.list({ prefix: "m:" }))
+      if (v && v.st === "ok") return true;
+    return false;
+  }
+
+  /* 중단 표시를 세우거나 내립니다. 아무것도 지우지 않습니다 —
+     사람·셈·연결이 그대로 있고, 얼렸다는 표시 하나만 붙습니다 (§3.4) */
+  async setPaused(on, why) {
+    const S = this.ctx.storage;
+    const cur = await S.get("paused");
+    if (!!cur === !!on) return false;
+    if (on) await S.put("paused", { t: Date.now(), why: why || "host" });
+    else await S.delete("paused");
+    await this.arm();
+    this.bcast({ kind: "paused", paused: on ? { why: why || "host" } : null });
+    return true;
   }
 
   async fetch(req) {
@@ -787,11 +809,18 @@ export class Room {
       }
       if (owner !== me.id) return json({ error: "forbidden" }, 403);
       await S.put("ownerNick", me.nick);
-      const [invite, lobby] = await Promise.all([S.get("invite"), S.get("lobby")]);
+      const [invite, lobby, paused] = await Promise.all([
+        S.get("invite"),
+        S.get("lobby"),
+        S.get("paused"),
+      ]);
+      /* 중단은 서버에 사는 상태입니다 — 다른 기기에서 열어도 얼어 있는 판을 얼어 있는
+         채로 만나고, 자동 중단 카드도 그 기기에서 뜹니다 (§3.4) */
       return json({
         roomId,
         invite: invite || null,
         lobby: lobby || { open: false, cap: 8, since: 0 },
+        paused: paused ? { why: paused.why, t: paused.t } : null,
       });
     }
 
@@ -812,34 +841,14 @@ export class Room {
           moved.push([acct, m]);
         }
       }
-      /* 줄이 사라진 멤버는 같은 닉의 빈 줄로 다시 이어 줍니다 — '처음부터'나 프리셋으로
-         판을 새로 짜면 rowId 가 통째로 바뀌는데, 같은 멤버끼리 다시 뛰는 재팟에서
-         아무도 아무것도 안 해도 자수가 이어져야 해서요 (§3-9).
-         로비가 열려 있는 동안은 건드리지 않습니다 — 그때 실린 rows2 는 아직 지금 판이라,
-         대기실에 모인 사람을 지난 판의 줄에 붙여 버립니다. */
-      const rows2 = state && Array.isArray(state.rows2) ? state.rows2 : null;
-      const lob = await S.get("lobby");
-      if (rows2 && !(lob && lob.open)) {
-        const live = new Set(rows2.map((r) => r && r.rowId).filter(Boolean));
-        const list = (await this.members()).filter((x) => x.st === "ok");
-        const taken = new Set(list.map((x) => x.rowId).filter((id) => id && live.has(id)));
-        for (const mem of list) {
-          if (mem.rowId && live.has(mem.rowId)) continue;
-          const hit = rows2.find((r) => r && r.rowId && r.n === mem.nick && !taken.has(r.rowId));
-          const v = hit ? hit.rowId : null;
-          if ((mem.rowId || null) === v) continue;
-          const rec = await S.get("m:" + mem.acct);
-          if (!rec) continue;
-          rec.rowId = v;
-          await S.put("m:" + mem.acct, rec);
-          if (v) taken.add(v);
-          moved.push([mem.acct, rec]);
-        }
-      }
+      /* 닉네임 매칭 재연결은 폐기했습니다 (§3.2·§3.7). 연결은 판의 행이 아니라 로비의
+         자리에 살아서, '처음부터'로 판이 갈려도 방장 앱이 자리에서 뽑은 bindings 를
+         그대로 실어 보냅니다 — 서버가 이름을 보고 짐작할 일이 없습니다. */
       await S.put({ state, stateAt: now });
       await this.arm();
       const on = this.scribeOn();
-      this.toViewers({ kind: "state", state, scribeOn: on });
+      const paused = await S.get("paused");
+      this.toViewers({ kind: "state", state, scribeOn: on, paused: paused ? { why: paused.why } : null });
       // 줄이 바뀐 사람은 자기 줄을 다시 알아야 자수를 누를 수 있습니다
       for (const [acct, m] of moved) this.toAcct(acct, { kind: "you", you: youOf(m) });
       return json({ ok: true, watchers: this.ctx.getWebSockets().length });
@@ -869,17 +878,28 @@ export class Room {
         cap = c;
       }
       const open = !!b.open;
-      /* 로비를 새로 여는 순간 이전 파티가 끝납니다 — 새로 꾸리는 행위가 곧 이전 것의
-         종료라, 방장이 [파티 끝내기]를 잊어도 옛 파티원이 새 판을 보지 못합니다.
-         대기실은 방장만 앉은 빈 자리에서 시작합니다.
-         이미 열려 있는 로비의 정원만 바꾸는 호출(open:true 재호출)에서는 안 지웁니다. */
-      const cleared = open && !cur.open ? await this.clearMembers() : 0;
-      // 열려 있던 로비를 다시 열어도 6시간 시계는 처음 열린 때부터입니다
+      /* 로비를 열고 닫는 것은 "모으는 중"의 표시일 뿐입니다 — 멤버십은 건드리지 않습니다 (§1).
+         멤버십이 끊기는 길은 본인 [나가기]와 방장 내보내기 둘뿐이고, 해산(전원 킥) 동사는
+         없습니다 (§3.4). 로비 6시간 자동 닫힘도 폐기했습니다 — 로비는 영구입니다 (§1). */
       const lobby = { open, cap, since: open ? (cur.open && cur.since ? cur.since : now) : 0 };
       await S.put("lobby", lobby);
-      await this.arm();
       this.bcast({ kind: "lobby", lobby });
-      return json({ lobby, cleared });
+      return json({ lobby });
+    }
+
+    /* [중단] — 아무것도 지우지 않고 얼립니다. 전 구독자에게 알려서 파티원 앱이
+       얼림 띠를 그리게 합니다 (§3.4) */
+    if (path === "/pause" && req.method === "POST") {
+      if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
+      await this.setPaused(true, "host");
+      return json({ ok: true, paused: true });
+    }
+
+    // [이어가기] — 표시만 내립니다. 사람·셈·연결은 애초에 그대로였습니다
+    if (path === "/resume" && req.method === "POST") {
+      if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
+      await this.setPaused(false);
+      return json({ ok: true, paused: false });
     }
 
     /* [파티 끝내기] — 파티원 전부 해제. 파티원은 마지막으로 받은 판(정산 결과)을
@@ -915,12 +935,17 @@ export class Room {
         }
         m.st = "ok";
         m.t = now;
+        if (typeof b.rowId === "string" && b.rowId) m.rowId = b.rowId;
         await S.put("m:" + acct, m);
+        /* 계정이 붙은 자리가 생겼습니다 — 이제부터 이 판은 자동 중단의 대상입니다 (§3.4) */
+        await this.arm();
         this.toAcct(acct, { kind: "you", you: youOf(m) });
         return json({ ok: true, member: { acct, ...youOf(m) } });
       }
       if (b.action === "remove") {
         await S.delete("m:" + acct);
+        // 마지막 파티원이 빠지면 혼자 판입니다 — 자동 중단 알람을 걷습니다
+        await this.arm();
         this.toAcct(acct, { kind: "you", you: null });
         /* 통지 뒤에 그 사람의 뷰어 소켓을 닫습니다 (§4.2) — 안 닫으면 브라우저가 끊김을
            알아챌 때까지 2~3초 동안 못 보는 판이 화면에 남습니다 */
@@ -959,6 +984,7 @@ export class Room {
       if (!me) return json({ error: "unauthorized" }, 401);
       if (await S.get("m:" + me.id)) {
         await S.delete("m:" + me.id);
+        await this.arm();
         this.toScribe({ kind: "left", acct: me.id });
         this.toAcct(me.id, { kind: "you", you: null });
       }
@@ -975,6 +1001,8 @@ export class Room {
       if ((dir !== 1 && dir !== -1) || !colId || colId.length > 64)
         return json({ error: "bad request" }, 400);
       if (!m.rowId || b.rowId !== m.rowId) return json({ error: "not your row" }, 403);
+      // 얼어 있는 판에는 아무것도 못 적습니다 — 방장이 이어가면 다시 눌립니다 (§3.4)
+      if (await S.get("paused")) return json({ error: "paused" }, 409);
       let g = (await S.get("cg:" + me.id)) || { n: 0, until: 0 };
       if (g.until <= now) g = { n: 0, until: now + 60000 };
       g.n++;
@@ -1046,8 +1074,16 @@ export class Room {
     server.serializeAttachment({ k: "v", acct: me ? me.id : null });
     this.ctx.acceptWebSocket(server);
     const on = this.scribeOn();
-    this.send(server, { kind: "hello", you, scribeOn: on, ownerNick: (await S.get("ownerNick")) || "" });
-    this.send(server, { kind: "state", state: (await S.get("state")) || null, scribeOn: on });
+    const pz = await S.get("paused");
+    const paused = pz ? { why: pz.why } : null;
+    this.send(server, {
+      kind: "hello",
+      you,
+      scribeOn: on,
+      paused,
+      ownerNick: (await S.get("ownerNick")) || "",
+    });
+    this.send(server, { kind: "state", state: (await S.get("state")) || null, scribeOn: on, paused });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -1076,16 +1112,12 @@ export class Room {
     if (!this.scribeOn(ws)) this.bcast({ kind: "presence", scribeOn: false }, (w) => w !== ws);
   }
 
-  /* 알람 하나로 다음 만료 시각을 관리합니다 — 로비 6시간과 판 90일이 같이 삽니다 */
+  /* 알람 하나로 다음 만료 시각을 관리합니다 — 자동 중단 24시간과 판 삭제 90일이 같이 삽니다.
+     멤버가 없는 방(혼자 판)에는 자동 중단 알람을 걸지 않습니다 (§3.4) */
   async arm() {
     const S = this.ctx.storage;
-    const [lobby, stateAt] = await Promise.all([S.get("lobby"), S.get("stateAt")]);
-    let at = 0;
-    if (lobby && lobby.open && lobby.since) at = lobby.since + LOBBY_MS;
-    if (stateAt) {
-      const t = stateAt + STATE_IDLE_MS;
-      if (!at || t < at) at = t;
-    }
+    const [stateAt, paused] = await Promise.all([S.get("stateAt"), S.get("paused")]);
+    const at = nextRoomAlarm({ stateAt, paused: !!paused, seated: await this.seated() });
     if (at) await S.setAlarm(Math.max(at, Date.now() + 1000));
     else await S.deleteAlarm();
   }
@@ -1093,13 +1125,11 @@ export class Room {
   async alarm() {
     const now = Date.now();
     const S = this.ctx.storage;
-    const lobby = await S.get("lobby");
-    if (lobby && lobby.open && lobby.since + LOBBY_MS <= now) {
-      const next = { open: false, cap: lobby.cap, since: 0 };
-      await S.put("lobby", next);
-      this.bcast({ kind: "lobby", lobby: next });
-    }
-    const stateAt = await S.get("stateAt");
+    const [stateAt, paused] = await Promise.all([S.get("stateAt"), S.get("paused")]);
+    /* 무활동 24시간 — 잊힌 파티 판이 라이브로 남아 어제 파티원에게 오늘 셈이
+       중계되지 않게 경계에서 얼립니다. 잃는 것은 없습니다 ([이어가기] 한 번이면 복귀) */
+    if (shouldAutoPause({ stateAt, paused: !!paused, seated: await this.seated(), now }))
+      await this.setPaused(true, "idle");
     // 판만 지웁니다 — 방·명단·방장은 남습니다
     if (stateAt && stateAt + STATE_IDLE_MS <= now) {
       await S.delete(["state", "stateAt"]);

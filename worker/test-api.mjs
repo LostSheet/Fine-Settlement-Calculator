@@ -710,42 +710,73 @@ const main = async () => {
   await vB.close();
   await vJ.close();
 
-  /* ---- 파티 수명 ----
-     파티는 오늘의 모임이고 판은 그 안의 한 게임입니다. 새 파티를 꾸리거나 파티를 끝내면
-     옛 파티원은 이 방에서 빠져야 합니다 — 안 그러면 옛 파티원의 /o/ 에 다음 파티가 뜹니다 */
-  head("파티 수명 — 로비 열기·파티 끝내기가 파티원을 해제");
-  await step("end: 방장 아니면 403", async () => {
-    eq((await api("POST", "/api/r/" + room + "/end", { token: C.token })).status, 403, "status");
-  });
-  await step("end: 파티원 전부 해제 + you=null 통지 + 소켓 닫힘", async () => {
-    // C 는 아직 이 방의 멤버입니다 (앞 단계에서 수락됨)
-    const before = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
-    expect(before.some((x) => x.acct === C.id), "C 가 멤버가 아님");
+  /* ---- 판의 수명 (§3.4) ----
+     사람 정리는 본인 [나가기]와 방장 내보내기(개별)뿐입니다. 해산(전원 킥) 동사는 없고,
+     로비를 열고 닫는 것도 [정산 끝내기]도 멤버십을 안 끊습니다 (§1). */
+  head("판의 수명 — 멤버십은 나가기·내보내기로만 끊긴다");
+  await step("member approve: rowId 를 같이 주면 그 자리에 앉음 ([수락 ▾])", async () => {
+    // C 는 앞 단계에서 이미 멤버입니다 — 자리를 지정해 다시 앉혀 봅니다
     const vC = await open("/api/r/" + room + "/live?s=" + C.token);
     await vC.want((m) => m.kind === "hello");
-    const r = await api("POST", "/api/r/" + room + "/end", { token: A.token });
-    eq(r.status, 200, "status");
-    expect(r.data.cleared >= 1, "해제 인원: " + r.data.cleared);
-    const y = await vC.want((x) => x.kind === "you");
-    eq(y.you, null, "you 통지가 먼저");
-    await waitClosed(vC, 20000);
-    expect(vC.closed, "소켓이 안 닫힘");
-    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
-    eq(after.length, 0, "명단이 안 비었음");
-  });
-  await step("end 후: 옛 파티원이 다시 붙으면 denied(member)", async () => {
-    const bad = await open("/api/r/" + room + "/live?s=" + C.token);
-    const m = await bad.want((x) => x.kind === "denied");
-    eq(m.why, "member", "why");
-    await bad.close();
-  });
-  await step("lobby 열기: 닫힘→열림이면 옛 파티원을 해제하고 빈 대기실로", async () => {
-    // 새 파티원 하나를 앉혀 두고, 로비를 새로 열어 해제되는지 봅니다
-    await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
-    await api("POST", "/api/r/" + room + "/member", {
+    const r = await api("POST", "/api/r/" + room + "/member", {
       token: A.token,
-      body: { acct: C.id, action: "approve" },
+      body: { acct: C.id, action: "approve", rowId: "s9" },
     });
+    eq(r.status, 200, "status");
+    eq(r.data.member.rowId, "s9", "지정한 자리");
+    const y = await vC.want((x) => x.kind === "you");
+    eq(y.you.rowId, "s9", "당사자에게 간 자리");
+    await vC.close();
+    const list = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    eq(list.find((x) => x.acct === C.id).rowId, "s9", "명단의 자리");
+  });
+  await step("pause: 방장 아니면 403", async () => {
+    eq((await api("POST", "/api/r/" + room + "/pause", { token: C.token })).status, 403, "status");
+  });
+  await step("pause: 얼리면 전 구독자에 통지 — 아무것도 안 지움", async () => {
+    const before = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    const vC = await open("/api/r/" + room + "/live?s=" + C.token);
+    await vC.want((m) => m.kind === "hello");
+    const r = await api("POST", "/api/r/" + room + "/pause", { token: A.token });
+    eq(r.status, 200, "status");
+    eq(r.data.paused, true, "paused");
+    const p = await vC.want((x) => x.kind === "paused");
+    expect(!!p.paused, "얼림 통지");
+    eq(p.paused.why, "host", "why");
+    await vC.close();
+    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    eq(after.length, before.length, "중단이 사람을 지움");
+  });
+  await step("pause: 얼어 있는 판에는 자수가 안 들어감 (409 paused)", async () => {
+    const r = await api("POST", "/api/r/" + room + "/confess", {
+      token: C.token,
+      body: { rowId: "s9", colId: "c1", dir: 1 },
+    });
+    eq(r.status, 409, "status");
+    eq(r.data.error, "paused", "error");
+  });
+  await step("my/room: 방장이 다시 열면 얼어 있는 채로 만남", async () => {
+    const r = await api("POST", "/api/my/room", { token: A.token, body: {} });
+    eq(r.status, 200, "status");
+    expect(!!r.data.paused, "paused 가 안 실림");
+    eq(r.data.paused.why, "host", "why");
+  });
+  await step("resume: 표시가 내려가고 전 구독자에 통지", async () => {
+    const vC = await open("/api/r/" + room + "/live?s=" + C.token);
+    const hello = await vC.want((m) => m.kind === "hello");
+    expect(!!hello.paused, "hello 에 얼림이 안 실림");
+    const r = await api("POST", "/api/r/" + room + "/resume", { token: A.token });
+    eq(r.status, 200, "status");
+    eq(r.data.paused, false, "paused");
+    const p = await vC.want((x) => x.kind === "paused");
+    eq(p.paused, null, "풀림 통지");
+    await vC.close();
+    const r2 = await api("POST", "/api/my/room", { token: A.token, body: {} });
+    eq(r2.data.paused, null, "my/room 에 얼림이 남음");
+  });
+  await step("lobby 열기: 멤버십을 안 지운다 (§1)", async () => {
+    const before = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    expect(before.some((x) => x.acct === C.id), "C 가 멤버가 아님");
     const vC = await open("/api/r/" + room + "/live?s=" + C.token);
     await vC.want((m) => m.kind === "hello");
     const r = await api("POST", "/api/r/" + room + "/lobby", {
@@ -753,34 +784,111 @@ const main = async () => {
       body: { open: true, cap: 8 },
     });
     eq(r.status, 200, "status");
-    eq(r.data.cleared, 1, "해제 인원");
-    const y = await vC.want((x) => x.kind === "you");
-    eq(y.you, null, "you 통지");
-    await waitClosed(vC, 20000);
+    eq(r.data.cleared, undefined, "해산 동사가 아직 살아 있음");
+    const lb = await vC.want((x) => x.kind === "lobby");
+    eq(lb.lobby.open, true, "로비 열림 브로드캐스트");
+    expect(!vC.closed, "로비를 열었다고 소켓이 닫힘");
+    await vC.close();
     const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
-    eq(after.length, 0, "대기실이 빈 자리로 시작하지 않음");
+    eq(after.length, before.length, "로비를 열었다고 파티원이 사라짐");
   });
-  await step("lobby: 이미 열린 로비의 정원만 바꿀 때는 해제하지 않음", async () => {
-    await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
-    await api("POST", "/api/r/" + room + "/member", {
-      token: A.token,
-      body: { acct: C.id, action: "approve" },
-    });
+  await step("lobby: 이미 열린 로비의 정원만 바꿔도 명단 그대로", async () => {
     const r = await api("POST", "/api/r/" + room + "/lobby", {
       token: A.token,
       body: { open: true, cap: 10 },
     });
     eq(r.status, 200, "status");
-    eq(r.data.cleared, 0, "정원만 바꿨는데 해제됨");
     eq(r.data.lobby.cap, 10, "cap");
     const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
-    eq(after.length, 1, "명단이 유지되지 않음");
+    expect(after.some((x) => x.acct === C.id), "명단이 유지되지 않음");
   });
   await step("lobby 닫기 → 파티원은 그대로 (판을 몇 번 돌리든 재팟은 유지)", async () => {
     const r = await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: false } });
     eq(r.status, 200, "status");
     const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
-    eq(after.length, 1, "로비를 닫았다고 파티원이 사라짐");
+    expect(after.some((x) => x.acct === C.id), "로비를 닫았다고 파티원이 사라짐");
+  });
+  await step("내보내기만이 사람을 뺀다 — 그 자리에서 you=null + 소켓 닫힘", async () => {
+    const vC = await open("/api/r/" + room + "/live?s=" + C.token);
+    await vC.want((m) => m.kind === "hello");
+    const r = await api("POST", "/api/r/" + room + "/member", {
+      token: A.token,
+      body: { acct: C.id, action: "remove" },
+    });
+    eq(r.status, 200, "status");
+    const y = await vC.want((x) => x.kind === "you");
+    eq(y.you, null, "you 통지가 먼저");
+    await waitClosed(vC, 20000);
+    expect(vC.closed, "소켓이 안 닫힘");
+    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    expect(!after.some((x) => x.acct === C.id), "명단에서 안 빠짐");
+  });
+  await step("end: 라우트는 남아 있다 (앱은 더는 부르지 않음)", async () => {
+    eq((await api("POST", "/api/r/" + room + "/end", { token: C.token })).status, 403, "남이 부르면 403");
+    const r = await api("POST", "/api/r/" + room + "/end", { token: A.token });
+    eq(r.status, 200, "status");
+  });
+
+  /* ---- 자동 중단 (§3.4) ----
+     알람은 시각을 조작하기 어려워서, 판단을 맡은 순수 함수로 검증합니다.
+     "계정 붙은 자리가 있는 판만, 무활동 24시간" 이 그 함수의 전부입니다. */
+  head("자동 중단 — 판단 함수");
+  const { PAUSE_IDLE_MS, autoPauseAt, shouldAutoPause, nextRoomAlarm } = await import(
+    "./src/round.js"
+  );
+  await step("자동 중단: 24시간", () => {
+    eq(PAUSE_IDLE_MS, 24 * 3600 * 1000, "PAUSE_IDLE_MS");
+  });
+  await step("멤버 없는 방(혼자 판)은 알람을 걸지 않는다 — 판은 영구", () => {
+    const stateAt = 1000;
+    eq(autoPauseAt({ stateAt, paused: false, seated: false }), 0, "혼자 판에 알람이 걸림");
+    eq(
+      shouldAutoPause({ stateAt, paused: false, seated: false, now: stateAt + PAUSE_IDLE_MS * 9 }),
+      false,
+      "혼자 판이 얼었음"
+    );
+    // 판 삭제(90일) 알람만 남습니다
+    eq(
+      nextRoomAlarm({ stateAt, paused: false, seated: false }),
+      stateAt + 90 * 86400 * 1000,
+      "판 90일 알람이 사라짐"
+    );
+  });
+  await step("계정 붙은 자리가 있으면 마지막 푸시 + 24시간에 얼린다", () => {
+    const stateAt = 5_000_000;
+    eq(
+      autoPauseAt({ stateAt, paused: false, seated: true }),
+      stateAt + PAUSE_IDLE_MS,
+      "얼릴 시각"
+    );
+    eq(
+      shouldAutoPause({ stateAt, paused: false, seated: true, now: stateAt + PAUSE_IDLE_MS - 1 }),
+      false,
+      "경계 직전에 얼었음"
+    );
+    eq(
+      shouldAutoPause({ stateAt, paused: false, seated: true, now: stateAt + PAUSE_IDLE_MS }),
+      true,
+      "경계에서 안 얼었음"
+    );
+    eq(
+      nextRoomAlarm({ stateAt, paused: false, seated: true }),
+      stateAt + PAUSE_IDLE_MS,
+      "알람이 자동 중단보다 늦음"
+    );
+  });
+  await step("이미 얼어 있으면 다시 얼리지 않는다", () => {
+    const stateAt = 1;
+    eq(autoPauseAt({ stateAt, paused: true, seated: true }), 0, "얼린 판에 알람이 또 걸림");
+    eq(
+      shouldAutoPause({ stateAt, paused: true, seated: true, now: stateAt + PAUSE_IDLE_MS * 3 }),
+      false,
+      "얼린 판을 또 얼림"
+    );
+  });
+  await step("판이 없으면 알람도 없다 (로비 6시간 자동 닫힘 폐기)", () => {
+    eq(autoPauseAt({ stateAt: 0, paused: false, seated: true }), 0, "판 없이 알람이 걸림");
+    eq(nextRoomAlarm({ stateAt: 0, paused: false, seated: true }), 0, "판 없이 알람이 걸림");
   });
 
   /* ---- 가입 없이 주소 받기 (§3-11) ---- */
