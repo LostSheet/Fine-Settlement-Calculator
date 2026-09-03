@@ -320,6 +320,10 @@ export class Accounts {
       const puts = { ["u:" + id]: next };
       if (u.obsToken) puts["t:" + u.obsToken] = id;
       if (u.room) puts["rm:" + u.room] = id;
+      /* 앉아 있는 방 색인도 새 아이디로 옮깁니다 (§3.3) — 안 옮기면 그 사람이
+         두 방에 앉을 수 있는 채로 남습니다 */
+      const seatRoom = await S.get("rm:a:" + old);
+      if (seatRoom) puts["rm:a:" + id] = seatRoom;
       await S.put(puts);
       /* 세션은 계정 이름을 들고 있습니다 — 지금 켜 둔 기기가 튕기지 않게 갈아 끼웁니다.
          한 번에 넣을 수 있는 열쇠 수가 정해져 있어서 나눠 씁니다 */
@@ -335,7 +339,7 @@ export class Accounts {
         }
       }
       if (n) await S.put(batch);
-      if (id !== old) await S.delete(["u:" + old, "lg:" + old]);
+      if (id !== old) await S.delete(["u:" + old, "lg:" + old, "rm:a:" + old]);
       // 방장 자리와 명단의 이름표도 같이 옮깁니다 — 안 옮기면 제 방을 잃습니다
       const rooms = [u.room, u.cur].filter((x, i, a) => x && a.indexOf(x) === i);
       for (const rm of rooms) {
@@ -396,6 +400,13 @@ export class Accounts {
          전달 배관은 안 깝니다 — 앱이 열릴 때와 창에 초점이 돌아올 때 이 응답으로 확인합니다 */
       out.mates = await this.mateList(u.id);
       out.invites = await this.freshInvites(u.id, now);
+      /* 내가 앉아 있는 방이 지금 어떤지 — 정산이 끝난 뒤 [닫기]로 자기 앱에 돌아온 사람은
+         명단에 그대로 남아 있습니다(§1). 그 방에서 판이 다시 열리면 앱이 카드 하나로
+         알려야 해서, 열 때와 초점이 돌아올 때 이 응답이 그것을 싣습니다 (§3.4·§8) */
+      if (u.cur) {
+        const seat = await this.seatInfo(u.cur, u.id);
+        if (seat) out.seat = seat;
+      }
       return json(out);
     }
 
@@ -531,6 +542,39 @@ export class Accounts {
       return json({ ok: true, seat: iv.seat || null });
     }
 
+    /* 파티 하나 규칙의 색인 (§3.3) — 계정이 지금 앉아 있는 방 하나를 계정부가 들고 있습니다.
+       `rm:` 아래에 두되 방 색인(`rm:<ROOMID>` = 방장)과 열쇠가 겹치지 않게 `a:` 를 끼웁니다.
+       어느 방에서든 st:"ok" 가 되는 순간 여기로 와서, 다른 방의 착석을 서버가 지웁니다 —
+       클라이언트 보정에 기대지 않습니다(한 사람이 두 방에 동시에 앉는 구멍이 있었습니다) */
+    if (p === "/seat-claim") {
+      const acct = String(b.acct || "");
+      const room = String(b.room || "");
+      if (!acct || !room) return json({ error: "bad json" }, 400);
+      const k = "rm:a:" + acct;
+      const prev = await S.get(k);
+      await S.put(k, room);
+      if (!prev || prev === room) return json({ ok: true, left: null });
+      try {
+        await this.env.ROOM.get(this.env.ROOM.idFromName(prev)).fetch("https://do/seat-drop", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ acct }),
+        });
+      } catch (e) {
+        /* 옛 방이 없어졌어도 색인은 이미 새 방을 가리킵니다 */
+      }
+      return json({ ok: true, left: prev });
+    }
+    /* 자리에서 빠졌습니다 (본인 [나가기]·방장 내보내기) — 색인도 같이 놓습니다 */
+    if (p === "/seat-clear") {
+      const acct = String(b.acct || "");
+      if (!acct) return json({ error: "bad json" }, 400);
+      const k = "rm:a:" + acct;
+      const cur = await S.get(k);
+      if (cur && (!b.room || cur === b.room)) await S.delete(k);
+      return json({ ok: true });
+    }
+
     if (p === "/obs-verify") {
       const id = typeof b.token === "string" ? await S.get("t:" + b.token) : null;
       const u = id ? await S.get("u:" + id) : null;
@@ -578,6 +622,20 @@ export class Accounts {
     const list = (await this.ctx.storage.get("f:" + a)) || [];
     const next = [{ id: b, t: now }, ...list.filter((x) => x && x.id !== b)].slice(0, MATES_MAX);
     await this.ctx.storage.put("f:" + a, next);
+  }
+
+  /* 그 방에서 내가 어떤 상태인지 한 줄 — 방이 없어졌거나 못 닿으면 조용히 null 입니다 */
+  async seatInfo(room, id) {
+    try {
+      const r = await this.env.ROOM.get(this.env.ROOM.idFromName(room)).fetch("https://do/seat-of", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acct: id }),
+      });
+      return r.ok ? await r.json().catch(() => null) : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   /* 목록이 곧 방 찾기입니다 (§3.3) — 검색이 없으니 어느 방으로 노크할지를 여기서 답합니다.
@@ -678,7 +736,7 @@ export class Accounts {
         const keys = [k];
         if (u.obsToken) keys.push("t:" + u.obsToken);
         if (u.room) keys.push("rm:" + u.room);
-        keys.push("lg:" + u.id, "f:" + u.id, "ig:" + u.id);
+        keys.push("lg:" + u.id, "f:" + u.id, "ig:" + u.id, "rm:a:" + u.id);
         for (const [sk, sv] of sessions) if (sv.id === u.id) keys.push(sk);
         await S.delete(keys);
         if (u.room) {
@@ -807,6 +865,23 @@ export class Room {
     return list.length;
   }
 
+  /* 파티 하나 규칙 (§3.3) — 이 계정이 여기 앉는 순간, 계정부가 다른 방의 착석을 지웁니다.
+     방 id 는 메인 fetch 가 헤더로 실어 줍니다(내 방 열 때는 저장해 둔 것도 있습니다) */
+  async roomId(req) {
+    return req.headers.get("x-room") || (await this.ctx.storage.get("roomId")) || "";
+  }
+  async claimSeat(acct, req) {
+    const room = await this.roomId(req);
+    if (!room || !acct) return;
+    await this.toAccounts("/seat-claim", { acct, room });
+  }
+  /* 자리에서 빠졌습니다 — 색인도 같이 놓아야 다음에 다른 방에 앉을 때 헛일을 안 합니다 */
+  async releaseSeat(acct, req) {
+    const room = await this.roomId(req);
+    if (!acct) return;
+    await this.toAccounts("/seat-clear", { acct, room });
+  }
+
   scribeOn(except) {
     return this.ctx.getWebSockets().some((ws) => {
       if (ws === except) return false;
@@ -867,6 +942,36 @@ export class Room {
       }
       await S.deleteAll();
       return json({ ok: true });
+    }
+
+    /* 이 계정이 이 방에서 어떤 상태인지 (Accounts /me → 방).
+       `live` 는 "지금 판이 살아 있나"입니다 — 마지막으로 받은 판이 끝난 판(end)도
+       얼어 있는 판(paused)도 아니어야 합니다 (§3.4) */
+    if (path === "/seat-of") {
+      const { acct } = await req.json().catch(() => ({}));
+      if (typeof acct !== "string" || !acct) return json({ error: "bad json" }, 400);
+      const m = await S.get("m:" + acct);
+      if (!m) return json({ st: null, live: false });
+      const [state, paused] = await Promise.all([S.get("state"), S.get("paused")]);
+      return json({
+        st: m.st,
+        live: !!state && !state.end && !paused,
+        ownerNick: (await S.get("ownerNick")) || "",
+      });
+    }
+
+    /* 이 사람이 다른 방에 앉았습니다 (§3.3 파티 하나 규칙, Accounts → 방).
+       내보내기와 같은 처리입니다 — 통지 뒤에 그 사람의 뷰어 소켓을 닫습니다 */
+    if (path === "/seat-drop") {
+      const { acct } = await req.json().catch(() => ({}));
+      if (typeof acct !== "string" || !acct) return json({ error: "bad json" }, 400);
+      if (!(await S.get("m:" + acct))) return json({ ok: true, dropped: false });
+      await S.delete("m:" + acct);
+      await this.arm();
+      this.toScribe({ kind: "left", acct });
+      this.toAcct(acct, { kind: "you", you: null });
+      this.dropAcct(acct);
+      return json({ ok: true, dropped: true });
     }
 
     // 닉 변경 통지 (Accounts DO → 방)
@@ -1063,6 +1168,8 @@ export class Room {
         m.t = now;
         if (typeof b.rowId === "string" && b.rowId) m.rowId = b.rowId;
         await S.put("m:" + acct, m);
+        /* st:"ok" 가 되는 순간이 파티 하나 규칙이 걸리는 자리입니다 (§3.3) */
+        await this.claimSeat(acct, req);
         /* 계정이 붙은 자리가 생겼습니다 — 이제부터 이 판은 자동 중단의 대상입니다 (§3.4) */
         await this.arm();
         /* 한 번 수락되면 함께한 사람 관계가 생겨 다음부터는 링크가 필요 없습니다 (§3.3) */
@@ -1072,6 +1179,7 @@ export class Room {
       }
       if (b.action === "remove") {
         await S.delete("m:" + acct);
+        await this.releaseSeat(acct, req);
         // 마지막 파티원이 빠지면 혼자 판입니다 — 자동 중단 알람을 걷습니다
         await this.arm();
         this.toAcct(acct, { kind: "you", you: null });
@@ -1112,6 +1220,8 @@ export class Room {
         if (!iv || !iv.ok) return json({ error: "invite" }, 403);
         const m = { nick: me.nick, rowId: iv.seat || null, st: "ok", t: now };
         await S.put("m:" + me.id, m);
+        /* 지목 초대 수락도 st:"ok" 가 되는 순간입니다 — 딴 파티에 있었으면 여기서 옮겨집니다 */
+        await this.claimSeat(me.id, req);
         await this.arm();
         await this.toAccounts("/mated", { a: owner, b: me.id });
         this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "ok", seat: iv.seat || null });
@@ -1127,9 +1237,11 @@ export class Room {
         this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "req", knock: 1 });
         return json({ ok: true, st: "req", you: youOf(m) });
       }
-      // (c) 링크 신청
+      /* (c) 링크 신청. 지난 코드와 애초에 안 맞는 코드는 사람이 할 일이 같아도 말이
+         다릅니다 (§8: `초대가 만료됐어요…` / `이 초대는 쓸 수 없어요…`) */
       const inv = await S.get("invite");
-      if (!inv || code !== inv.code || inv.exp < now) return json({ error: "invite" }, 403);
+      if (!inv || code !== inv.code) return json({ error: "invite" }, 403);
+      if (inv.exp < now) return json({ error: "expired" }, 403);
       const st = "req";
       const m = { nick: me.nick, rowId: null, st, t: now };
       await S.put("m:" + me.id, m);
@@ -1143,6 +1255,7 @@ export class Room {
       if (!me) return json({ error: "unauthorized" }, 401);
       if (await S.get("m:" + me.id)) {
         await S.delete("m:" + me.id);
+        await this.releaseSeat(me.id, req);
         await this.arm();
         this.toScribe({ kind: "left", acct: me.id });
         this.toAcct(me.id, { kind: "you", you: null });
@@ -1223,12 +1336,17 @@ export class Room {
         }
       }
     }
+    let why = me ? "member" : "invite";
     if (!ok) {
       const inv = await S.get("invite");
       const j = String(url.searchParams.get("j") || "").toUpperCase();
-      if (owner && inv && j && j === inv.code && inv.exp > Date.now()) ok = true;
+      if (owner && inv && j && j === inv.code) {
+        if (inv.exp > Date.now()) ok = true;
+        /* 코드는 맞는데 시간이 지난 것입니다 — 문구가 다릅니다 (§8) */
+        else if (!me) why = "expired";
+      }
     }
-    if (!ok) return this.deny(client, server, me ? "member" : "invite");
+    if (!ok) return this.deny(client, server, why);
 
     server.serializeAttachment({ k: "v", acct: me ? me.id : null });
     this.ctx.acceptWebSocket(server);
