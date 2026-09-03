@@ -10269,7 +10269,6 @@ function LobbyScreen({
   seq,
 }) {
   const [reveal, setReveal] = useState(false);
-  const [editCols, setEditCols] = useState(false);
   /* 빈 줄의 id 를 미리 뽑아 둡니다 — 첫 글자가 들어오는 순간 그 id 로 자리가 생기고,
      줄의 key 가 그대로라 입력칸 DOM 이 살아남습니다. 한글은 조합 중에 포커스가
      날아가면 글자가 깨지므로, 이 한 줄이 그것을 막습니다 */
@@ -10443,6 +10442,10 @@ function LobbyScreen({
               <span className="gs-lbroster-n">
                 {named} / {cap}
               </span>
+              {/* 이 화면의 유일한 채운 버튼 — 머리줄 흐름에 앉혀서 카드 테두리와 안 겹칩니다 */}
+              <button className="gs-btn gs-lbstart" onClick={onStart} disabled={named === 0}>
+                시작
+              </button>
             </h4>
             <div className="gs-lbrows">
               {rows.map((s, i) => {
@@ -10472,16 +10475,13 @@ function LobbyScreen({
                 );
               })}
             </div>
-            {/* 이 화면의 유일한 채운 버튼입니다. 이름이 하나도 없으면 흐립니다 */}
-            <button className="gs-btn gs-lbstart" onClick={onStart} disabled={named === 0}>
-              시작
-            </button>
           </div>
 
-          {/* ── 오른쪽 아래 = 항목 ─── 한 줄 + [고치기] (§3.1) ── */}
+          {/* ── 오른쪽 아래 = 항목 ── 줄에서 바로 고칩니다. 요약↔편집 모드를 오가게 할
+              이유가 없습니다 — 채운 버튼 없는 조용한 줄들이라 [시작]과 자리를 다투지 않습니다 */}
           <div className="gs-lbcard">
             <h4 className="gs-lbcard-h">항목</h4>
-            {editCols ? (
+            {(
               <div className="gs-lbcoledit">
                 {cols.map((c) => (
                   <div className="gs-lbcolrow" key={c.id}>
@@ -10521,33 +10521,7 @@ function LobbyScreen({
                   >
                     + 항목
                   </button>
-                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => setEditCols(false)}>
-                    다 고쳤어요
-                  </button>
                 </div>
-              </div>
-            ) : (
-              <div className="gs-lbitems">
-                {cols.length === 0 ? (
-                  <span className="gs-lb-none2">아직 항목이 없어요</span>
-                ) : (
-                  cols.map((c) => (
-                    <span className="gs-lbitem" key={c.id}>
-                      <b>
-                        {isRoulette(c) ? "◎ " : ""}
-                        {(c.name || "").trim() || "항목"}
-                      </b>
-                      {isRoulette(c) ? " ×" : " "}
-                      {man(Math.round(goldOf(c.price)))}
-                    </span>
-                  ))
-                )}
-                <button
-                  className="gs-btn gs-btn-sm gs-btn-ghost gs-lbitems-fix"
-                  onClick={() => setEditCols(true)}
-                >
-                  고치기
-                </button>
               </div>
             )}
           </div>
@@ -13833,7 +13807,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 
 /* ── 로비(홈) — 판이 없을 때의 화면이고 헤더 아래를 통째로 덮습니다. 바탕부터
       벌금표와 갈라 두어야 "지금 무슨 화면인가"를 글자로 안 읽어도 압니다 ── */
-.gs-lobbyscr{margin:-4px -20px 0; padding:22px 20px 28px; min-height:calc(100vh - 120px);
+.gs-lobbyscr{margin:-20px -20px 0; padding:26px 20px 28px; min-height:calc(100vh - 104px);
   background:radial-gradient(120% 70% at 50% 0%, rgba(var(--gold-rgb),.09), transparent 62%)}
 .gs-lb-lead{max-width:1150px; margin:0 auto 13px; font-size:12.5px; color:var(--ink-2)}
 /* 무대 ~1150px, 2열 벤토 (§3.1). 왼쪽이 모으기, 오른쪽이 명단·항목입니다 —
@@ -13849,7 +13823,6 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbcnt{margin-left:auto; font-family:var(--mono); font-size:13px; color:var(--gold)}
 .gs-lb-none{margin:0; font-size:12px; color:var(--ink-2); line-height:1.75;
   padding:10px 4px; text-align:center}
-.gs-lb-none2{font-size:12px; color:var(--ink-2)}
 .gs-lb-note{margin:10px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
 .gs-lb-note b{color:var(--ink-body); font-weight:600}
 /* 모으기 열 — 섹션 셋이 같은 리듬으로 섭니다. 이 순서가 곧 파티 서랍의 순서입니다 */
@@ -13892,8 +13865,6 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lb-dot{width:7px; height:7px; border-radius:50%; background:#6fbf73; flex:none}
 .gs-lb-dot.none{background:rgba(var(--ink-rgb),.3)}
 /* 명단 — 번호 + 인라인 입력(벌금표 이름 글꼴). 줄은 치는 만큼 생깁니다 (§3.1) */
-.gs-lbroster{position:relative}
-.gs-lbroster .gs-lbcard-h{padding-right:104px}
 .gs-lbroster-n{margin-left:auto; font-family:var(--mono); font-size:12.5px; color:var(--gold)}
 .gs-lbrows{display:flex; flex-direction:column}
 .gs-lbrow{display:flex; align-items:center; gap:11px; padding:7px 4px;
@@ -13913,20 +13884,15 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-lbslot-x:hover{color:var(--red); background:rgba(var(--red-rgb),.1)}
 /* 이 화면에서 할 일은 하나입니다 — 채운 금색 하나가 명단 카드의 모서리에 붙어 있어서
    "이름을 적는 곳"과 "시작하는 곳"이 한 눈에 들어옵니다 (§3.1) */
-.gs-lbstart{position:absolute; top:10px; right:11px; font-size:14px; font-weight:600;
+.gs-lbstart{margin-left:12px; font-size:14px; font-weight:600;
   letter-spacing:.1em; padding:9px 26px; background:var(--gold); border-color:var(--gold);
   color:#241f19}
 .gs-lbstart:hover:not(:disabled){background:var(--gold); filter:brightness(1.07)}
 .gs-lbstart:disabled:hover{background:var(--gold)}
-/* 항목은 한 줄입니다 — 표를 펼치면 벌금표와 구분이 안 됩니다 */
-.gs-lbitems{display:flex; align-items:baseline; gap:0 7px; flex-wrap:wrap; font-size:13px;
-  color:var(--ink-2)}
-.gs-lbitem b{color:var(--ink-body); font-weight:600}
-.gs-lbitem + .gs-lbitem::before{content:"·"; margin-right:7px; color:rgba(var(--ink-rgb),.35)}
-.gs-lbitems-fix{margin-left:auto}
 .gs-lbcoledit{display:flex; flex-direction:column; gap:6px}
 .gs-lbcolrow{display:flex; align-items:center; gap:8px}
-.gs-lbcolrow .gs-in-col{flex:1 1 auto; min-width:0; font-size:12.5px}
+.gs-lbcolrow .gs-in-col{flex:0 1 9em; min-width:4em; font-size:12.5px; text-align:left;
+  padding-left:2px}
 .gs-lbcolprice{display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
   color:var(--ink-2); flex:none}
 .gs-lbcolfoot{display:flex; align-items:center; gap:12px; margin-top:6px}
