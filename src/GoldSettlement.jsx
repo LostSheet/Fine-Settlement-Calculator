@@ -355,8 +355,8 @@ const rowsToMemo = (rows) =>
 /* 송출 상태의 이름들 (§5.7·§8) — 헤더 버튼과 공유 창이 같은 말을 씁니다.
    두 군데서 따로 지으면 같은 상태를 두 가지로 부르게 됩니다.
    FACE 는 헤더의 짧은 얼굴, UI 는 창 안의 한 줄입니다 */
-const CAST_FACE = { none: "주소 없음", off: "송출 꺼짐", down: "연결 끊김", idle: "판 없음", on: "방송 중" };
-const CAST_FACE_UI = { none: "주소 없음", off: "방송에 안 나가는 중", down: "연결 끊김", idle: "판 없음", on: "방송 중" };
+const CAST_FACE = { none: "주소 없음", down: "연결 끊김", idle: "판 없음", on: "방송 중" };
+const CAST_FACE_UI = { none: "주소 없음", down: "연결 끊김", idle: "판 없음", on: "방송 중" };
 const FILL_NAME = (k) => "(모험가" + k + ")";
 /* 예전 이름들도 자리표시로 알아봐야 합니다 — 저장된 표를 열었을 때 그대로 남으면
    지우지도 못하고 진짜 이름처럼 굴러다닙니다. */
@@ -3155,7 +3155,6 @@ export default function GoldSettlement() {
       fxSpd: fxOn(relay) ? "norm" : "off",
       mvMode: "swipe",
       spin: null,
-      cast: !!relay.on,
       full: { mode, cols: nCols, rows: nRows, feePercent, unit, splitMode, log: [], memoFreeze: null },
       rows2: nRows.map((x, i) => {
         const s = (list || []).find((k) => k.id === x.id);
@@ -3698,10 +3697,6 @@ export default function GoldSettlement() {
             })),
         }
       : undefined,
-    /* 방송에 띄울지 (§5.7) — 토글이 하는 일은 이것 하나입니다. 오버레이만 이 값을 보고,
-       파티원 화면은 무시합니다: 끈다는 것은 "내 방송에 안 띄운다"이지 "파티를 끊는다"가
-       아닙니다. 그래서 꺼도 파티원은 판을 계속 보고 자수도 그대로 됩니다 */
-    cast: !!relay.on,
     look: lookOut(),
     t: Date.now(),
   });
@@ -3711,8 +3706,7 @@ export default function GoldSettlement() {
   const pushRef = useRef(null);
   pushRef.current = liveSnapshot;
   useEffect(() => {
-    /* 송출 토글(relay.on)은 여기 없습니다 (§5.7) — 그것은 오버레이가 그릴지 말지이지
-       서버에 올릴지 말지가 아닙니다. 껐다고 밀기를 멈추면 파티원 화면까지 굳습니다 */
+    /* 송출 토글은 폐지했습니다 (§5.7) — 판이 있으면 나가고 없으면 안 나갑니다 */
     if (!canPush) return;
     /* 판이 닫혔거나 얼어 있으면 밀지 않습니다 — 서버에 남은 마지막 한 장(끝난 판·굳은 판)이
        파티원 화면과 오버레이의 그림입니다 (§3.4). 모으는 중이면 대기실을 밉니다 */
@@ -3726,7 +3720,7 @@ export default function GoldSettlement() {
         });
     }, 300);
     return () => clearTimeout(pushTimer.current);
-  }, [canPush, relay.on, relay.room, lobbyOn, lobbyCap, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, relay.fx, relay.mv,
+  }, [canPush, relay.room, lobbyOn, lobbyCap, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, relay.fx, relay.mv,
       /* 연출거리는 기록에서 나옵니다 — 표가 안 바뀌는 취소도 방송에는 알려야 해서 */
       log.length,
       /* 대기실이 차오르는 것도 방송에 그대로 나갑니다 — 수가 같아도 사람이 바뀌면 다시 밉니다 */
@@ -3749,17 +3743,6 @@ export default function GoldSettlement() {
   /* 끄기는 방송에 바로 티가 나는 일이라 한 번 물어봅니다. 켜기는 그냥 켜집니다.
      끄기 전에 마지막 한 장을 '끝났어요' 표시(end)와 함께 보냅니다 — 안 보내면 파티원은
      방장이 잠깐 자리를 비운 줄 알고, 판이 끝났다는 것을 알 길이 없습니다. */
-  /* 송출 끄기 (§5.7) — 하는 일은 하나입니다: 오버레이가 안 그린다.
-     예전에는 여기서 `end:1` 을 함께 보내 파티원 화면을 '끝났어요'로 만들고 서기 소켓까지
-     끊었습니다. 방장은 판을 안 끝냈는데 파티원에게는 끝났다고 말하는 거짓말이었고,
-     자수까지 같이 죽었습니다. 셋이 한 스위치에 붙어 있을 이유가 없습니다. */
-  const setCast = (on) => {
-    setRelay((prev) => {
-      const next = { ...prev, on: !!on };
-      saveRelay(next);
-      return next;
-    });
-  };
   /* [정산 끝내기] — 결과지를 판 기록에 남기고 판을 닫습니다. **아무도 내보내지 않습니다** —
      정산 직후 전광판이 꺼지면 이상하니까요 (§3.4). 공유도 안 끕니다: 파티원 화면과
      오버레이에는 끝난 판이 그대로 뜹니다. 방장은 홈(로비)으로 갑니다. */
@@ -4314,20 +4297,19 @@ export default function GoldSettlement() {
        on    이 판이 나가는 중 */
   const castState = !auth || !relay.room
     ? "none"
-    : !relay.on
-    ? "off"
     : !scribeLive
     ? "down"
     : roundLive
     ? "on"
     : "idle";
-  /* 헤더 버튼과 패널이 같은 말을 씁니다 — 두 군데서 따로 지으면 어긋납니다 (§8) */
+  /* 헤더 버튼과 패널이 같은 말을 씁니다 — 두 군데서 따로 지으면 어긋납니다 (§8).
+     계기판이라 "고치는 법"까지 말합니다 — 안 뜰 때 OBS 쪽을 볼지 앱 쪽을 볼지가
+     한 줄로 갈려야 두 군데를 뒤지지 않습니다 */
   const CAST_WHY = {
     none: "방송용 주소를 아직 안 받았어요. 받으면 이 자리에서 지금 뭐가 나가는지 알려줘요.",
-    off: "껐어요. 파티원은 판을 그대로 보고 자수도 돼요 — 방송에만 안 나가요.",
     down: "서버와 끊겨서 갱신이 멈췄어요. 마지막으로 보낸 판이 그대로 떠 있어요.",
     idle: "지금은 새 판이 안 나가요. [시작]하면 그 판이 방송에 떠요. (직전 판이 있으면 그 판이 계속 떠 있어요.)",
-    on: "이 판이 방송용 주소에 나가는 중이에요.",
+    on: "이 판이 방송용 주소에 나가는 중이에요. 방송에 안 보이면 OBS 쪽 소스를 확인해 주세요.",
   };
   /* 공유 설정 창은 파티원도 엽니다 — 자기 방송용 주소·소스 나누기·외형은 각자 고르는 것이고,
      계정마다 주소가 하나씩이라 파티원도 자기 것을 챙길 자리가 있어야 합니다.
@@ -6031,7 +6013,7 @@ export default function GoldSettlement() {
             {(!readOnly || shareGuest) && (
               <span className="gs-tip">
                 <button
-                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (!shareGuest && relay.on ? " on" : "")}
+                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (!shareGuest && castState === "on" ? " on" : "")}
                   onClick={() => {
                     courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
                     setObsOpen(true);
@@ -8074,7 +8056,6 @@ export default function GoldSettlement() {
           onOvItem={toggleOvItem}
           onOvKey={toggleOvCol}
           onAskReissue={askObsReissue}
-          onCast={setCast}
           castState={castState}
           onClose={() => {
             setObsOpen(false);
@@ -10743,7 +10724,7 @@ function GenList({ gens, onOpen, onDrop }) {
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
    guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissue, onCast, castState, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
+function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissue, castState, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -10807,21 +10788,12 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
                 {CAST_FACE_UI[castState]}
               </span>
             )}
-            {auth && !guest && (
-              <label className="gs-switch">
-                방송에 띄우기
-                <input
-                  type="checkbox"
-                  checked={!!relay.on}
-                  onChange={(e) => onCast(e.target.checked)}
-                />
-                <span className="gs-sw-track" aria-hidden="true">
-                  <span className="gs-sw-knob" />
-                </span>
-              </label>
-            )}
-            {/* 도움말 둘을 머리에 나란히 두면 제목이 밀려 두 줄로 접힙니다.
-                각자 답하는 물음이 있는 자리로 내려보내고, 머리에는 제목과 공유 토글만 둡니다 */}
+            {/* 송출 토글은 폐지했습니다 (§5.7) — OBS 에는 이미 소스를 껐다 켜는 눈알이
+                있고 씬까지 나눠 쓰는데, 앱에 같은 스위치를 하나 더 두면 판이 안 뜰 때
+                원인을 두 군데서 찾게 됩니다. 앱이 남길 것은 스위치가 아니라 계기판입니다.
+                주소에 손대는 문은 [주소 새로 발급] 하나뿐입니다.
+                도움말 둘을 머리에 나란히 두면 제목이 밀려 두 줄로 접힙니다 —
+                각자 답하는 물음이 있는 자리로 내려보내고, 머리에는 제목과 상태만 둡니다 */}
             <button className="gs-x gs-dialog-x" onClick={onClose} aria-label="닫기">
               ×
             </button>
@@ -14337,14 +14309,14 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   margin-left:7px; background:rgba(var(--ink-rgb),.32)}
 .gs-castdot-on{background:#6fbf73}
 .gs-castdot-down{background:var(--red)}
-.gs-castdot-off,.gs-castdot-idle,.gs-castdot-none{background:transparent;
+.gs-castdot-idle,.gs-castdot-none{background:transparent;
   box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.45)}
 /* 공유 창 머리의 상태 한 줄 — 토글 왼쪽에 붙어 "지금 어떤 상태인지"를 먼저 말합니다 */
 .gs-caststat{display:inline-flex; align-items:center; gap:2px; font-size:11.5px;
   color:var(--ink-2); margin-right:12px; flex-direction:row-reverse}
 .gs-caststat.gs-castdot-on{color:var(--ink)}
 .gs-caststat .gs-castdot{margin-left:0; margin-right:6px}
-.gs-caststat.gs-castdot-off,.gs-caststat.gs-castdot-idle,.gs-caststat.gs-castdot-none{background:none; box-shadow:none}
+.gs-caststat.gs-castdot-idle,.gs-caststat.gs-castdot-none{background:none; box-shadow:none}
 .gs-caststat.gs-castdot-down{background:none; color:var(--red)}
 .gs-roomdot.warn{background:rgba(var(--ink-rgb),.42)}
 .gs-roomdot.off{background:transparent; box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.45)}

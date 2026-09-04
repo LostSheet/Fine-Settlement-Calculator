@@ -733,6 +733,28 @@ const main = async () => {
     eq((await api("GET", "/api/o/" + old + "/resolve")).status, 404, "옛 토큰");
     eq((await api("GET", "/api/o/" + A.obsToken + "/resolve")).data.roomId, room, "새 토큰");
   });
+  /* 이 라우트만 리밋이 비어 있었습니다 — 계정부는 전역 DO 하나라, 반복 호출이
+     다른 사람의 로그인·참여까지 느리게 만듭니다 (§4.1) */
+  await step("obs-reissue: 계정당 하루 5회, 넘으면 429", async () => {
+    const R = { id: acct("reis"), nick: "재발" };
+    await reg(R);
+    /* 위 준비에서 이미 한 번도 안 썼으니 5번은 통과해야 합니다 */
+    for (let i = 1; i <= 4; i++)
+      eq((await api("POST", "/api/auth/obs-reissue", { token: R.token })).status, 200, i + "회");
+    eq((await api("POST", "/api/auth/obs-reissue", { token: R.token })).status, 200, "5회");
+    const over = await api("POST", "/api/auth/obs-reissue", { token: R.token });
+    eq(over.status, 429, "6회");
+    eq(over.data.error, "slow down", "error");
+  });
+  await step("resolve: 잦은 조회가 매번 쓰기를 만들지 않는다 (seen 은 반나절에 한 번)", async () => {
+    /* 값이 아니라 동작을 봅니다 — 연속 조회가 전부 200 이고 방을 같게 가리키면
+       충분합니다. 쓰기를 건너뛰어도 답이 달라지지 않아야 합니다 */
+    for (let i = 0; i < 3; i++) {
+      const r = await api("GET", "/api/o/" + A.obsToken + "/resolve");
+      eq(r.status, 200, i + "번째");
+      eq(r.data.roomId, room, "roomId");
+    }
+  });
   await step("WS ?o=: 방송용 토큰으로 구독", async () => {
     const ov = await open("/api/r/" + room + "/live?o=" + A.obsToken);
     const hello = await ov.want((m) => m.kind === "hello");

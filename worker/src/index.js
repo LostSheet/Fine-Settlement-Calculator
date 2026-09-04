@@ -53,6 +53,14 @@ const LOGIN_FAILS = 30;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 /* 계정 만들기(가입·익명) 한 창 상한 — 익명이 가입보다 헐거운 구멍이 되지 않게 같이 셉니다 */
 const REG_PER_WINDOW = 200;
+/* seen 을 다시 적기까지 건너뛰는 시간 (§4.1) — 유휴 오버레이의 1분 폴링이 그대로
+   스토리지 쓰기가 되지 않게 합니다. 계정 청소 기준이 1년이라 반나절이면 넉넉합니다 */
+const SEEN_SKIP_MS = 12 * 3600 * 1000;
+/* 방송용 주소 재발급 — 계정당 하루 몇 번 (§4.1). 주소가 샜을 때 쓰는 문이라 평생 몇
+   번이면 충분하고, 반복 호출은 계정부(전역 DO 하나)에 쓰기를 몰아 다른 사람의
+   로그인·참여까지 느리게 만듭니다 */
+const REISSUE_WINDOW_MS = 24 * 3600 * 1000;
+const REISSUE_PER_WINDOW = 5;
 /* 게스트가 닉을 안 보냈을 때의 이름. 예전 값은 "방장"이었는데, 게스트로도 남의 파티에
    들어갈 수 있게 되면서 명단에 방장이 둘 앉는 그림이 됐습니다 (§3.11) */
 const ANON_NICK = "손님";
@@ -466,6 +474,14 @@ export class Accounts {
     if (p === "/api/auth/obs-reissue" && req.method === "POST") {
       const u = await this.session(req, now);
       if (!u) return json({ error: "unauthorized" }, 401);
+      /* 계정당 창 하나 — 이 라우트만 리밋이 비어 있었습니다(초대·로그인·자수는 다
+         걸려 있습니다). 사용량보다 전역 DO 점유가 문제라, 창은 넉넉하고 횟수는 빡빡하게 */
+      if (!u.riT || now - u.riT > REISSUE_WINDOW_MS) {
+        u.riT = now;
+        u.riN = 0;
+      }
+      if (u.riN >= REISSUE_PER_WINDOW) return json({ error: "slow down" }, 429);
+      u.riN = (u.riN || 0) + 1;
       const next = await this.freeToken();
       const old = u.obsToken;
       u.obsToken = next;
@@ -497,8 +513,14 @@ export class Accounts {
       const id = await S.get("t:" + res[1]);
       const u = id ? await S.get("u:" + id) : null;
       if (!u || !u.cur) return json({ error: "not found" }, 404);
-      u.seen = now;
-      await S.put("u:" + id, u);
+      /* seen 은 "1년 미사용 계정 삭제"용이라 분 단위 정밀도가 필요 없습니다.
+         오버레이가 볼 것이 없으면 이 주소를 1분마다 다시 묻는데, 그때마다 쓰면
+         켜 둔 채 방치된 OBS 소스 하나가 하루 1,440번씩 이 DO(전역 하나)에
+         쓰기를 만듭니다. 반나절에 한 번만 적어 두면 충분합니다 */
+      if (now - (u.seen || 0) > SEEN_SKIP_MS) {
+        u.seen = now;
+        await S.put("u:" + id, u);
+      }
       // 외형이 저장돼 있으면 같이 보냅니다 — 오버레이가 주소를 안 고치고 갈아입습니다
       return u.look ? json({ roomId: u.cur, look: u.look }) : json({ roomId: u.cur });
     }
