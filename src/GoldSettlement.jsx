@@ -9857,19 +9857,26 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
             ? (ctx && ctx.loginVerb) || "로그인"
             : (ctx && ctx.joinVerb) || "가입하기"}
         </button>
-        {/* 나머지 두 문 — 눌러도 적어 둔 것은 그대로 둡니다. 지금 서 있는 문은 빼고
-            둘만 보여 줍니다: 셋을 다 늘어놓으면 어디에 서 있는지가 흐려집니다 */}
-        <p className="gs-authswap">
-          {[
-            ["login", "로그인"],
-            ["register", "가입하기"],
-            ["guest", "게스트로 시작"],
-          ]
-            .filter(([m]) => m !== mode)
-            .map(([m, label], i) => (
-              <Fragment key={m}>
-                {i > 0 && " · "}
+        {/* 나머지 두 문 — 밑줄 글자가 아니라 **같은 폭의 버튼 둘**로 세웁니다 (§3.11).
+            셋이 병렬이어야 "이 화면에 방법이 셋 있고 지금 하나가 펼쳐져 있다"가 읽힙니다.
+            글자 링크로 두면 게스트만 화면을 다 쓰고 나머지는 곁다리로 보였습니다.
+            방법을 고르는 화면을 따로 두지 않는 것은, 어느 문을 펼칠지 들어온 자리가
+            이미 정하기 때문입니다 — 초대로 오면 게스트, 헤더에서 열면 로그인.
+            (탭은 한 번 폐기했습니다 — 작아서 처음 온 사람이 못 찾았습니다)
+            눌러도 적어 둔 것은 그대로 둡니다 */}
+        <div className="gs-authswap">
+          <span className="gs-authswap-or">또는</span>
+          <div className="gs-authswap-row">
+            {[
+              ["login", "로그인"],
+              ["register", "가입하기"],
+              ["guest", "게스트로 시작"],
+            ]
+              .filter(([m]) => m !== mode)
+              .map(([m, label]) => (
                 <button
+                  key={m}
+                  className="gs-btn gs-btn-ghost gs-authswap-b"
                   onClick={() => {
                     setErr("");
                     setMode(m);
@@ -9877,9 +9884,9 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
                 >
                   {label}
                 </button>
-              </Fragment>
-            ))}
-        </p>
+              ))}
+          </div>
+        </div>
         </>
         )}
       </div>
@@ -14221,13 +14228,15 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 주 버튼은 폭을 다 씁니다 — 이 창에서 할 일이 하나라 고민할 자리가 없습니다 */
 .gs-authgo{display:block; width:100%; margin-top:16px; padding:11px 14px; font-size:13.5px;
   font-weight:600; text-align:center}
-.gs-authswap{margin:14px 0 0; padding-top:13px; text-align:center; font-size:12.5px;
-  color:var(--ink-2); border-top:1px solid rgba(var(--ink-rgb),.16)}
-/* 반대편으로 가는 문 — 경고가 아니라 안내라서 빨강을 안 씁니다 */
-.gs-authswap button{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
-  background:none; border:0; cursor:pointer; padding:0;
-  text-decoration:underline; text-underline-offset:3px}
-.gs-authswap button:hover{color:var(--ink)}
+/* 나머지 두 문 (§3.11) — 셋이 병렬로 읽히게 같은 폭의 버튼으로 세웁니다.
+   가운데 '또는'이 구분선에 걸터앉아 "여기부터는 다른 방법"을 말합니다 */
+.gs-authswap{margin:18px 0 0; padding-top:16px; position:relative;
+  border-top:1px solid rgba(var(--ink-rgb),.16)}
+.gs-authswap-or{position:absolute; top:-8px; left:50%; transform:translateX(-50%);
+  padding:0 9px; background:var(--paper); font-size:11px; color:var(--ink-2)}
+.gs-authswap-row{display:flex; gap:8px}
+.gs-authswap-b{flex:1 1 0; min-width:0; justify-content:center; text-align:center;
+  font-size:13px; padding:9px 10px}
 .gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
   color:var(--ink-2)}
 .gs-field-hint{letter-spacing:0; font-size:11px}
