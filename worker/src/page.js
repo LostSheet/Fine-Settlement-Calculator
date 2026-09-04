@@ -504,6 +504,9 @@ export const PAGE_HTML = `<!doctype html>
   var DELTA_MS = 4200, MOVE_MS = 6000;
   var name = "";
   var dead = false;   // 판을 볼 수 없는 상태 — 침묵이 기본입니다
+  /* 방장이 송출을 껐습니다 (state.cast === false). 토글이 하는 일은 이것 하나입니다 —
+     파티원 화면은 그대로 살아 있고 자수도 됩니다. 방송에만 안 나갑니다 (§5.7) */
+  var castOff = false;
   var lobby = null;   // 로비가 열려 있는 동안만. 순위표 대신 대기실을 그립니다
 
   /* 앱과 같은 만 단위 표기 */
@@ -1508,6 +1511,17 @@ export const PAGE_HTML = `<!doctype html>
   };
 
   var render = function () {
+    /* 방장이 송출을 껐으면 여기서 끝입니다 — 아무것도 안 그립니다 (§5.7).
+       알림도 안 띄웁니다: 끈 것은 고장이 아니라 뜻이라, 방송 화면에 설명이 뜨면
+       그게 더 이상한 그림입니다. 대기실도 룰렛도 여기서 함께 멈춥니다 */
+    if (castOff) {
+      ovBoard = null;
+      prev = {};
+      recent = {};
+      root.dataset.notice = "0";
+      app.innerHTML = "";
+      return;
+    }
     /* 룰렛 전용 소스 — 보드도 알림도 안 그립니다. 판이 없으면 그냥 투명입니다 */
     if (TYPE === "spin") {
       if (!document.getElementById("ovspin")) app.innerHTML = '<div id="ovspin"></div>';
@@ -1668,6 +1682,8 @@ export const PAGE_HTML = `<!doctype html>
         } else if (m.kind === "state") {
           dead = false;
           var st = m.state || {};
+          /* 없으면 켜진 것으로 봅니다 — 옛 앱이 민 판에는 이 값이 없습니다 */
+          castOff = st.cast === false;
           lobby = st.lobby || null;
           /* 판은 바로 그리지 않고 담아 둡니다 — 연출이 다 끝나야 앉힙니다 */
           next = {

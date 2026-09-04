@@ -352,6 +352,11 @@ const rowsToMemo = (rows) =>
 /* 빈 자리는 "(모험가n)"이라는 실제 이름으로 채워 둡니다. 번호가 있어 장부·우편·
    오버레이에서 누구 줄인지 구분되고, 닫는 괄호가 이름과 금액의 경계라 메모장에서
    붙여 써도 안 섞입니다. 벌금이 0이어도 정산 인원입니다 (표에 있는 줄 = 사람). */
+/* 송출 상태의 이름들 (§5.7·§8) — 헤더 버튼과 공유 창이 같은 말을 씁니다.
+   두 군데서 따로 지으면 같은 상태를 두 가지로 부르게 됩니다.
+   FACE 는 헤더의 짧은 얼굴, UI 는 창 안의 한 줄입니다 */
+const CAST_FACE = { none: "주소 없음", off: "송출 꺼짐", down: "연결 끊김", idle: "판 없음", on: "방송 중" };
+const CAST_FACE_UI = { none: "주소 없음", off: "방송에 안 나가는 중", down: "연결 끊김", idle: "판 없음", on: "방송 중" };
 const FILL_NAME = (k) => "(모험가" + k + ")";
 /* 예전 이름들도 자리표시로 알아봐야 합니다 — 저장된 표를 열었을 때 그대로 남으면
    지우지도 못하고 진짜 이름처럼 굴러다닙니다. */
@@ -3117,7 +3122,9 @@ export default function GoldSettlement() {
     setLobbyOn(false);
     setPaused(null);
     if (!auth || !relay.room) return;
-    putRelay({ ...relay, on: true });
+    /* [시작]은 송출 토글을 건드리지 않습니다 (§5.7) — 방장이 일부러 꺼 뒀는데 판을
+       연다고 방송에 다시 띄우면, 끈 것이 무슨 뜻인지 없어집니다. 주소를 받는 순간
+       이미 켜져 있으므로 처음 쓰는 사람은 그대로 나갑니다 */
     try {
       /* 얼어 있던 표시가 남아 있으면 여기서 풉니다 — 새 판은 얼어 있지 않습니다 */
       await roomApi.resume(auth.token, relay.room).catch(() => {});
@@ -3148,6 +3155,7 @@ export default function GoldSettlement() {
       fxSpd: fxOn(relay) ? "norm" : "off",
       mvMode: "swipe",
       spin: null,
+      cast: !!relay.on,
       full: { mode, cols: nCols, rows: nRows, feePercent, unit, splitMode, log: [], memoFreeze: null },
       rows2: nRows.map((x, i) => {
         const s = (list || []).find((k) => k.id === x.id);
@@ -3408,9 +3416,11 @@ export default function GoldSettlement() {
     paused: (p) => setPaused(p || null),
   };
 
-  /* --- 서기 소켓: 공유 켬(또는 로비 열림) 동안 상시 연결 --- */
+  /* --- 서기 소켓: 로그인해서 방이 있는 동안 상시 연결 ---
+     송출 토글과 상관없습니다 (§5.7). 이 소켓이 곧 "방장이 앉아 있다"이고 파티원의
+     자수가 이걸 타고 옵니다 — 방송을 안 띄운다고 자수가 멈출 이유가 없습니다 */
   useEffect(() => {
-    if (readOnly || !auth || !relay.room || (!relay.on && !lobbyOn)) return;
+    if (readOnly || !auth || !relay.room) return;
     let ws = null,
       beat = null,
       wait = 1000,
@@ -3481,7 +3491,7 @@ export default function GoldSettlement() {
         }
       } catch (e) {}
     };
-  }, [readOnly, auth && auth.token, relay.room, relay.on, lobbyOn]);
+  }, [readOnly, auth && auth.token, relay.room]);
 
   /* 로그인해 두면 어느 기기든 로비·중단 상태가 따라옵니다 — 서버가 원본입니다 (§0-7) */
   useEffect(() => {
@@ -3688,6 +3698,10 @@ export default function GoldSettlement() {
             })),
         }
       : undefined,
+    /* 방송에 띄울지 (§5.7) — 토글이 하는 일은 이것 하나입니다. 오버레이만 이 값을 보고,
+       파티원 화면은 무시합니다: 끈다는 것은 "내 방송에 안 띄운다"이지 "파티를 끊는다"가
+       아닙니다. 그래서 꺼도 파티원은 판을 계속 보고 자수도 그대로 됩니다 */
+    cast: !!relay.on,
     look: lookOut(),
     t: Date.now(),
   });
@@ -3697,7 +3711,9 @@ export default function GoldSettlement() {
   const pushRef = useRef(null);
   pushRef.current = liveSnapshot;
   useEffect(() => {
-    if (!canPush || (!relay.on && !lobbyOn)) return;
+    /* 송출 토글(relay.on)은 여기 없습니다 (§5.7) — 그것은 오버레이가 그릴지 말지이지
+       서버에 올릴지 말지가 아닙니다. 껐다고 밀기를 멈추면 파티원 화면까지 굳습니다 */
+    if (!canPush) return;
     /* 판이 닫혔거나 얼어 있으면 밀지 않습니다 — 서버에 남은 마지막 한 장(끝난 판·굳은 판)이
        파티원 화면과 오버레이의 그림입니다 (§3.4). 모으는 중이면 대기실을 밉니다 */
     if (!roundLive && !lobbyOn) return;
@@ -3733,16 +3749,13 @@ export default function GoldSettlement() {
   /* 끄기는 방송에 바로 티가 나는 일이라 한 번 물어봅니다. 켜기는 그냥 켜집니다.
      끄기 전에 마지막 한 장을 '끝났어요' 표시(end)와 함께 보냅니다 — 안 보내면 파티원은
      방장이 잠깐 자리를 비운 줄 알고, 판이 끝났다는 것을 알 길이 없습니다. */
-  const shareOff = () => {
-    clearTimeout(pushTimer.current);
-    if (auth && relay.room)
-      roomApi
-        .putState(auth.token, relay.room, { ...liveSnapshot(), end: 1 })
-        .catch(() => {
-          /* 못 보내도 이 브라우저의 장부는 그대로입니다 */
-        });
+  /* 송출 끄기 (§5.7) — 하는 일은 하나입니다: 오버레이가 안 그린다.
+     예전에는 여기서 `end:1` 을 함께 보내 파티원 화면을 '끝났어요'로 만들고 서기 소켓까지
+     끊었습니다. 방장은 판을 안 끝냈는데 파티원에게는 끝났다고 말하는 거짓말이었고,
+     자수까지 같이 죽었습니다. 셋이 한 스위치에 붙어 있을 이유가 없습니다. */
+  const setCast = (on) => {
     setRelay((prev) => {
-      const next = { ...prev, on: false };
+      const next = { ...prev, on: !!on };
       saveRelay(next);
       return next;
     });
@@ -3796,17 +3809,8 @@ export default function GoldSettlement() {
       say(e.message);
     }
   };
-  /* 파티 중(계정 붙은 자리가 있을 때) 끄면 잃는 것이 다릅니다 — 예고 없이 자수와 중계가
-     같이 죽던 구멍이라, 그때는 그 말을 그대로 합니다 (§3.3·§8). 공유 자동화는 보류입니다 */
-  const askShareOff = () =>
-    setAsk({
-      title: "공유를 끌까요?",
-      body: seats.some((s) => s.acct)
-        ? "공유를 끄면 파티원이 판을 못 보고 자수도 멈춰요."
-        : "끄면 지금부터의 기록이 OBS와 파티원 화면에 반영되지 않아요. 마지막으로 보낸 상태는 화면에 남아 있어요.",
-      action: "끄기",
-      onYes: shareOff,
-    });
+  /* 끄기 확인창은 폐지했습니다 (§5.7) — 파티원도 자수도 안 건드리니 물어볼 것이
+     없습니다. 되돌리는 것도 같은 스위치를 다시 누르는 것뿐입니다 */
   const askObsReissue = () =>
     setAsk({
       title: "내 방송용 주소를 새로 발급할까요?",
@@ -4300,7 +4304,31 @@ export default function GoldSettlement() {
      "on" 방송에 나가는 중 · "down" 켜 뒀는데 서기가 끊김 · "off" 공유 꺼짐 */
   /* 계정도 방도 없으면 끊긴 것이 아니라 애초에 안 켠 것입니다 — 혼자 세는 화면에
      빨간 '연결 끊김'을 띄우면 없는 고장을 말하게 됩니다 */
-  const castState = !auth || !relay.room || !relay.on ? "off" : scribeLive ? "on" : "down";
+  /* 방송에 지금 뭐가 나가는지 (§5.7) — 앱이 아는 만큼만 말합니다.
+     "OBS 가 실제로 받고 있나"는 세지 않습니다: 붙어 있는 것이 본인 OBS 인지 브라우저
+     탭인지 새어 나간 링크인지 구분할 수 없어서, 세어 봐야 틀린 말을 하게 됩니다.
+       none  주소가 없다 (로그인 전)
+       off   방장이 껐다
+       down  서버와 끊겨 갱신이 멈췄다
+       idle  판이 없다 (로비)
+       on    이 판이 나가는 중 */
+  const castState = !auth || !relay.room
+    ? "none"
+    : !relay.on
+    ? "off"
+    : !scribeLive
+    ? "down"
+    : roundLive
+    ? "on"
+    : "idle";
+  /* 헤더 버튼과 패널이 같은 말을 씁니다 — 두 군데서 따로 지으면 어긋납니다 (§8) */
+  const CAST_WHY = {
+    none: "방송용 주소를 아직 안 받았어요. 받으면 이 자리에서 지금 뭐가 나가는지 알려줘요.",
+    off: "껐어요. 파티원은 판을 그대로 보고 자수도 돼요 — 방송에만 안 나가요.",
+    down: "서버와 끊겨서 갱신이 멈췄어요. 마지막으로 보낸 판이 그대로 떠 있어요.",
+    idle: "지금은 새 판이 안 나가요. [시작]하면 그 판이 방송에 떠요. (직전 판이 있으면 그 판이 계속 떠 있어요.)",
+    on: "이 판이 방송용 주소에 나가는 중이에요.",
+  };
   /* 공유 설정 창은 파티원도 엽니다 — 자기 방송용 주소·소스 나누기·외형은 각자 고르는 것이고,
      계정마다 주소가 하나씩이라 파티원도 자기 것을 챙길 자리가 있어야 합니다.
      지난 판 보기(genView)는 방장이 제 옛 판을 들추는 자리라 방장 화면 그대로입니다. */
@@ -5786,19 +5814,13 @@ export default function GoldSettlement() {
               <button
                 className={
                   "gs-roomchip" +
-                  ((guestChip ? !roomLive : castState === "down") ? " gs-roomchip-down" : "") +
+                  (guestChip && !roomLive ? " gs-roomchip-down" : "") +
                   (roomOpen ? " on" : "")
                 }
                 onClick={() => setRoomOpen((v) => !v)}
                 aria-expanded={roomOpen}
                 aria-haspopup="menu"
-                aria-label={
-                  guestChip
-                    ? roomTitle + (roomLive ? "" : " — 방장 없음")
-                    : roomTitle +
-                      " — " +
-                      (castState === "on" ? "방송에 나가는 중" : castState === "down" ? "연결 끊김" : "공유 꺼짐")
-                }
+                aria-label={guestChip ? roomTitle + (roomLive ? "" : " — 방장 없음") : roomTitle}
               >
                 {guestChip ? (
                   <>
@@ -5806,26 +5828,14 @@ export default function GoldSettlement() {
                     {roomLive ? roomCount + "명" : <b>방장 없음</b>}
                   </>
                 ) : hostParty ? (
-                  <>내 파티 · {castState === "down" ? <b>연결 끊김</b> : roomCount + "명"}</>
+                  <>내 파티 · {roomCount}명</>
                 ) : (
-                  <>파티원 모으기{castState === "down" && <> · <b>연결 끊김</b></>}</>
+                  <>파티원 모으기</>
                 )}
-                {/* 점 하나가 방송 상태를 말합니다 — 공유 버튼에는 점을 두지 않습니다 */}
-                <em
-                  className={
-                    "gs-roomdot" +
-                    (guestChip
-                      ? roomLive
-                        ? ""
-                        : " warn"
-                      : castState === "down"
-                      ? " warn"
-                      : castState === "off"
-                      ? " off"
-                      : "")
-                  }
-                  aria-hidden="true"
-                />
+                {/* 방송 상태 점은 여기서 뗐습니다 (§5.7) — 이 칩은 파티 서랍 문이고,
+                    방송이 나가는지는 헤더의 송출 버튼이 답합니다. 성격이 다른 둘을
+                    한 얼굴에 붙여 두면 점이 무엇을 말하는지 알 길이 없습니다 */}
+                {guestChip && <em className={"gs-roomdot" + (roomLive ? "" : " warn")} aria-hidden="true" />}
               </button>
               <span className="gs-tip-body gs-tip-l" role="tooltip">
                 {guestChip ? (
@@ -5843,13 +5853,7 @@ export default function GoldSettlement() {
                       ? roomCount +
                         "명 · " +
                         (roomLive ? "실시간으로 이어져 있어요" : "방장이 자리를 비웠어요")
-                      : roomCount +
-                        "명 · " +
-                        (castState === "on"
-                          ? "방송에 나가는 중"
-                          : castState === "down"
-                          ? "연결이 끊겼어요"
-                          : "공유가 꺼져 있어요")}
+                      : roomCount + "명"}
                   </p>
                   {guestChip && (
                     <p className="gs-room-mem">
@@ -6042,9 +6046,16 @@ export default function GoldSettlement() {
                       <path d="M5.6 14h4.8M8 11.2V14" />
                     </g>
                   </svg>
-                  오버레이 공유 설정
-                  {/* 상태는 방 칩이 말합니다 — 여기에도 점을 두면 화면에 점이 둘이라
-                      뭐가 뭔지 모릅니다. 이 버튼은 창을 여는 일만 합니다 */}
+                  {/* 이 버튼이 곧 송출 상태입니다 (§5.7) — 방송에 지금 뭐가 나가는지를
+                      얼굴에 달고, 누르면 왜 그런지 창이 말합니다. 헤더에 물건을 하나 더
+                      늘리지 않고, 상태와 그 상태를 고치는 자리가 같은 곳이 됩니다 */}
+                  {shareGuest ? "오버레이 공유 설정" : CAST_FACE[castState]}
+                  {!shareGuest && (
+                    <em
+                      className={"gs-castdot gs-castdot-" + castState}
+                      aria-hidden="true"
+                    />
+                  )}
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
                   {shareGuest ? (
@@ -6054,8 +6065,9 @@ export default function GoldSettlement() {
                     </>
                   ) : (
                     <>
-                      벌금 현황을 <b>방송 화면에 실시간으로</b> 띄워요. 주소 하나를{" "}
-                      <b>어떤 방송 프로그램이든</b> 브라우저 소스에 넣으면 돼요.
+                      {CAST_WHY[castState]}
+                      <br />
+                      눌러서 주소와 오버레이 외형을 챙겨요.
                     </>
                   )}
                 </span>
@@ -8062,7 +8074,8 @@ export default function GoldSettlement() {
           onOvItem={toggleOvItem}
           onOvKey={toggleOvCol}
           onAskReissue={askObsReissue}
-          onAskShareOff={askShareOff}
+          onCast={setCast}
+          castState={castState}
           onClose={() => {
             setObsOpen(false);
             /* 다음 걸음 안내는 받은 그 자리에서만 — 다시 열면 평소 화면입니다 */
@@ -10730,7 +10743,7 @@ function GenList({ gens, onOpen, onDrop }) {
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
    guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissue, onAskShareOff, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
+function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissue, onCast, castState, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -10788,15 +10801,19 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
           <div className="gs-obs-headr">
             {/* 공유 켜기는 방장 것입니다 — 파티원 화면은 방장이 민 판을 비추기만 해서
                 여기 토글을 두면 아무 데도 안 닿는 스위치가 됩니다 */}
+            {auth && !guest && castState && (
+              <span className={"gs-caststat gs-castdot-" + castState}>
+                <em className={"gs-castdot gs-castdot-" + castState} aria-hidden="true" />
+                {CAST_FACE_UI[castState]}
+              </span>
+            )}
             {auth && !guest && (
               <label className="gs-switch">
-                공유 켜기
+                방송에 띄우기
                 <input
                   type="checkbox"
                   checked={!!relay.on}
-                  onChange={(e) =>
-                    e.target.checked ? putRelay({ ...relay, on: true }) : onAskShareOff()
-                  }
+                  onChange={(e) => onCast(e.target.checked)}
                 />
                 <span className="gs-sw-track" aria-hidden="true">
                   <span className="gs-sw-knob" />
@@ -14314,6 +14331,21 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 점 하나가 방송 상태를 말합니다 — 초록 나가는 중 · 속 빈 회색 끊김 · 빈 원 꺼짐 */
 .gs-roomdot{display:inline-block; width:6px; height:6px; border-radius:50%; flex:none;
   background:#6fbf73; margin-left:6px}
+/* 송출 상태 점 (§5.7) — 헤더 버튼과 공유 창이 같은 색을 씁니다.
+   나가는 중만 초록이고, 나머지는 고장이 아니라 그냥 안 나가는 것이라 조용합니다 */
+.gs-castdot{display:inline-block; width:6px; height:6px; border-radius:50%; flex:none;
+  margin-left:7px; background:rgba(var(--ink-rgb),.32)}
+.gs-castdot-on{background:#6fbf73}
+.gs-castdot-down{background:var(--red)}
+.gs-castdot-off,.gs-castdot-idle,.gs-castdot-none{background:transparent;
+  box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.45)}
+/* 공유 창 머리의 상태 한 줄 — 토글 왼쪽에 붙어 "지금 어떤 상태인지"를 먼저 말합니다 */
+.gs-caststat{display:inline-flex; align-items:center; gap:2px; font-size:11.5px;
+  color:var(--ink-2); margin-right:12px; flex-direction:row-reverse}
+.gs-caststat.gs-castdot-on{color:var(--ink)}
+.gs-caststat .gs-castdot{margin-left:0; margin-right:6px}
+.gs-caststat.gs-castdot-off,.gs-caststat.gs-castdot-idle,.gs-caststat.gs-castdot-none{background:none; box-shadow:none}
+.gs-caststat.gs-castdot-down{background:none; color:var(--red)}
 .gs-roomdot.warn{background:rgba(var(--ink-rgb),.42)}
 .gs-roomdot.off{background:transparent; box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.45)}
 .gs-roompanel{position:absolute; top:calc(100% + 7px); left:0; z-index:30; width:262px;
