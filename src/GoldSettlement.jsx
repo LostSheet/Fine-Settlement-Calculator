@@ -6361,14 +6361,9 @@ export default function GoldSettlement() {
             <button
               className="gs-btn gs-btn-sm gs-slip-act"
               onClick={() =>
-                /* 초대를 받고 들어온 사람은 이 앱이 처음일 확률이 높습니다 — 그래서
-                   게스트 문이 먼저 섭니다 (§3.11). 닉 한 줄이면 그 자리에서 참여합니다 */
-                openAuth("guest", null, {
-                  why: "닉네임만 정하면 바로 참여해요. 이 이름으로 벌금판에 올라가요.",
-                  loginVerb: "로그인하고 참여",
-                  joinVerb: "가입하고 참여",
-                  guestVerb: "참여하기",
-                })
+                /* 대문은 하나입니다 (§3.11) — 초대로 왔어도 같은 [계정 만들기] 화면이고,
+                   게스트 문이 그 안에 있습니다. 진입점마다 화면을 갈아끼우지 않습니다 */
+                openAuth("register")
               }
             >
               참여하기
@@ -8039,13 +8034,11 @@ export default function GoldSettlement() {
           relay={relay}
           putRelay={putRelay}
           auth={auth}
-          onOpenAuth={(tab) =>
-            openAuth(tab, tab === "guest" ? openMyRoom : null, {
-              why: "방송용 주소와 초대 링크는 계정마다 하나씩이에요. 로그인만 하면 다른 브라우저에서도 같은 주소를 써요.",
-              loginVerb: "로그인",
-              joinVerb: "가입하기",
-              guestVerb: "주소 받기",
-            })
+          onOpenAuth={(tab, wantAddr) =>
+            /* wantAddr = [내 방송용 주소 받기]로 들어온 경우 — 어느 문으로 끝내든
+               방을 열고 다음 걸음 안내(주소가 나왔어요)를 띄웁니다.
+               ctx 문구는 안 얹습니다 (§3.11) — 대문은 어디서 열든 같은 얼굴입니다 */
+            openAuth(tab, wantAddr ? openMyRoom : null)
           }
           fresh={obsFresh}
           guest={shareGuest}
@@ -9707,7 +9700,7 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
    밝힙니다. 없으면 헤더에서 스스로 연 것이라 제목과 버튼만 담백하게 둡니다. */
 /* 문 셋 — 로그인 · 가입 · **게스트로 시작** (§3.11). 게스트는 닉 한 줄이면 끝이고,
    아이디·비밀번호가 없을 뿐 가입과 같은 계정이라 방송용 주소도 파티 참여도 그대로
-   됩니다. 나중에 아이디를 붙이면(upgrade) 주소·방·관계가 전부 따라옵니다.
+   됩니다. 나중에 가입하면(upgrade) 주소·방·관계가 전부 따라옵니다.
    어느 문으로 열지는 들어온 자리가 정합니다 — 초대를 받고 온 사람에겐 게스트가,
    헤더의 [로그인]에는 로그인이 먼저 섭니다. */
 function AuthModal({ tab, ctx, onDone, onClose }) {
@@ -9730,7 +9723,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
   }, [onClose]);
 
   const guest = mode === "guest";
-  const title = guest ? "게스트로 시작" : mode === "login" ? "로그인" : "가입";
+  const title = guest ? "게스트로 시작" : mode === "login" ? "로그인" : "계정 만들기";
   const okId = /^[A-Za-z0-9]{4,20}$/.test(id.trim());
   const okNick = [...nick.trim()].length >= 2 && [...nick.trim()].length <= 3;
   const ready = guest ? okNick : okId && pw.length > 0 && (mode === "login" || okNick);
@@ -9762,10 +9755,11 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
   return (
     <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="gs-dialog" role="dialog" aria-modal="true" aria-label={title}>
-        {/* 한 화면은 한 가지 일만 합니다. 어느 쪽으로 열지는 들어온 자리가 정하고
-            (파티·초대는 처음 쓰는 사람이 많아 가입, 헤더의 [로그인]은 로그인),
-            반대편은 아래 한 줄로 갑니다. 탭을 위에 두면 제목과 자리를 다투는데다
-            작아서, 처음 온 사람이 로그인으로 한 번 실패한 뒤에야 찾게 됩니다. */}
+        {/* 대문은 하나입니다 (§3.11) — 어디서 열든 [계정 만들기]가 뜨고, 그 안에
+            "계정 없이도 쓸 수 있어요 → [게스트로 시작]"이 서 있습니다. 진입점마다
+            화면을 갈아끼우면 같은 화면인 걸 못 알아봅니다 — 계정 화면은 한 번 보면
+            다음에 알아봐야 하는 물건입니다. [게스트로 시작]을 누르면 닉네임 한 칸으로
+            넘어가고, [로그인]은 헤더의 그 버튼과 여기 아래 줄이 엽니다. */}
         <div className="gs-auth-head">
           <h3>{title}</h3>
           <button className="gs-x gs-dialog-x" onClick={onClose} aria-label="닫기">
@@ -9781,12 +9775,18 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
             어디 쓰이는지와 "벌금 세는 데는 필요 없다"를 대신 적어 둡니다 */}
         <p className="gs-auth-why">
           {guest ? (
-            <>
-              닉네임만 정하면 바로 시작해요. <b>방송용 주소</b>도 나오고 <b>파티</b>에도
-              들어갈 수 있어요.
-              <br />
-              이 브라우저에 저장돼요 — 나중에 아이디를 붙이면 주소도 파티도 그대로 따라와요.
-            </>
+            /* 게스트 칸은 질문 하나입니다 — 이 화면의 유일한 입력이 주인공이어야 합니다.
+               게스트가 뭘 할 수 있는지는 대문의 상자가 이미 말했습니다 */
+            <>벌금판에 올라갈 이름을 정해 주세요.</>
+          ) : mode === "register" ? (
+            /* 가입을 권하는 이유를 먼저 말합니다 — 전에는 "? 로그인하면 어떤 게
+               좋나요?" 링크 뒤에 숨어 있었습니다 */
+            (ctx && ctx.why) || (
+              <>
+                계정이 있으면 <b>두 컴퓨터에서 같은 방송 주소</b>를 쓰고, <b>파티를 열어</b>{" "}
+                파티원이 자기 벌금을 직접 세게 할 수 있어요.
+              </>
+            )
           ) : (
             (ctx && ctx.why) || (
               <>
@@ -9824,7 +9824,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
           />
         </label>
         )}
-        {(mode === "register" || guest) && (
+        {mode === "register" && (
           <label className="gs-field">
             닉네임 <span className="gs-field-hint">(2~3글자 — 벌금판에 이 이름으로 올라요)</span>
             <input
@@ -9835,6 +9835,21 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
               onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
+        )}
+        {guest && (
+          /* 유일한 입력이라 크게, 가운데에 (§3.11 — 목업 ⓑ) */
+          <>
+            <input
+              className="gs-in gs-in-nickxl"
+              value={nick}
+              maxLength={3}
+              autoFocus
+              onChange={(e) => setNick(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              aria-label="닉네임"
+            />
+            <p className="gs-auth-nickhint">2~3글자 · 이 브라우저에 저장돼요</p>
+          </>
         )}
         {mode === "register" && (
           <>
@@ -9852,41 +9867,70 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
           {busy
             ? "잠시만요…"
             : guest
-            ? (ctx && ctx.guestVerb) || "게스트로 시작"
+            ? "시작하기"
             : mode === "login"
             ? (ctx && ctx.loginVerb) || "로그인"
             : (ctx && ctx.joinVerb) || "가입하기"}
         </button>
-        {/* 나머지 두 문 — 밑줄 글자가 아니라 **같은 폭의 버튼 둘**로 세웁니다 (§3.11).
-            셋이 병렬이어야 "이 화면에 방법이 셋 있고 지금 하나가 펼쳐져 있다"가 읽힙니다.
-            글자 링크로 두면 게스트만 화면을 다 쓰고 나머지는 곁다리로 보였습니다.
-            방법을 고르는 화면을 따로 두지 않는 것은, 어느 문을 펼칠지 들어온 자리가
-            이미 정하기 때문입니다 — 초대로 오면 게스트, 헤더에서 열면 로그인.
-            (탭은 한 번 폐기했습니다 — 작아서 처음 온 사람이 못 찾았습니다)
-            눌러도 적어 둔 것은 그대로 둡니다 */}
-        <div className="gs-authswap">
-          <span className="gs-authswap-or">또는</span>
-          <div className="gs-authswap-row">
-            {[
-              ["login", "로그인"],
-              ["register", "가입하기"],
-              ["guest", "게스트로 시작"],
-            ]
-              .filter(([m]) => m !== mode)
-              .map(([m, label]) => (
-                <button
-                  key={m}
-                  className="gs-btn gs-btn-ghost gs-authswap-b"
-                  onClick={() => {
-                    setErr("");
-                    setMode(m);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+        {/* 대문(가입) 아래에는 게스트 상자가 섭니다 (§3.11 — 목업 ⓓ). 버튼만 두면
+            도망칠 구멍으로 읽히는데, 이유 한 문장을 달면 제시된 선택지가 됩니다 */}
+        {mode === "register" && (
+          <>
+            <div className="gs-auth-guestbox">
+              <p>
+                <b>계정 없이도 쓸 수 있어요.</b> 닉네임만 정하면 방송 주소가 나오고 파티에도
+                들어가요 — 나중에 가입해도 주소도 파티도 그대로예요.
+              </p>
+              <button
+                className="gs-btn gs-btn-ghost gs-auth-guestgo"
+                onClick={() => {
+                  setErr("");
+                  setMode("guest");
+                }}
+              >
+                게스트로 시작
+              </button>
+            </div>
+            <p className="gs-auth-line">
+              이미 계정이 있어요 ·{" "}
+              <button
+                className="gs-auth-linkb"
+                onClick={() => {
+                  setErr("");
+                  setMode("login");
+                }}
+              >
+                로그인
+              </button>
+            </p>
+          </>
+        )}
+        {/* 게스트 칸·로그인에서는 나머지 문이 같은 폭의 버튼 둘로 나란히 섭니다 */}
+        {mode !== "register" && (
+          <div className="gs-authswap">
+            <span className="gs-authswap-or">또는</span>
+            <div className="gs-authswap-row">
+              {[
+                ["login", "로그인"],
+                ["register", "계정 만들기"],
+                ["guest", "게스트로 시작"],
+              ]
+                .filter(([m]) => m !== mode)
+                .map(([m, label]) => (
+                  <button
+                    key={m}
+                    className="gs-btn gs-btn-ghost gs-authswap-b"
+                    onClick={() => {
+                      setErr("");
+                      setMode(m);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+            </div>
           </div>
-        </div>
+        )}
         </>
         )}
       </div>
@@ -10817,7 +10861,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
             <div className="gs-obs-acts">
               {/* 게스트 문으로 보냅니다 (§3.11) — 닉 한 줄을 받아야 벌금판에 오르는
                   이름이 생깁니다. 예전에는 조용히 만들어서 모두가 `방장`이 됐습니다 */}
-              <button className="gs-btn gs-authgo" onClick={() => onOpenAuth("guest")}>
+              <button className="gs-btn gs-authgo" onClick={() => onOpenAuth("register", true)}>
                 내 방송용 주소 받기
               </button>
             </div>
@@ -14237,6 +14281,25 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-authswap-row{display:flex; gap:8px}
 .gs-authswap-b{flex:1 1 0; min-width:0; justify-content:center; text-align:center;
   font-size:13px; padding:9px 10px}
+/* 게스트 칸의 닉 입력 — 이 화면의 유일한 입력이라 크게, 가운데에 (§3.11 목업 ⓑ) */
+.gs-in-nickxl{display:block; width:100%; margin-top:12px; font-family:'Gowun Batang',serif;
+  font-weight:700; font-size:26px; text-align:center; letter-spacing:.06em; color:var(--ink);
+  border:1px solid rgba(var(--ink-rgb),.28); border-radius:3px; padding:12px 14px;
+  background:rgba(var(--ink-rgb),.04)}
+.gs-auth-nickhint{margin:9px 0 0 !important; font-size:11.5px !important;
+  color:var(--ink-2) !important; text-align:center}
+/* 대문 아래의 게스트 상자 (§3.11 목업 ⓓ) — 이유 한 문장 + 문 하나 */
+.gs-auth-guestbox{margin-top:18px; padding-top:16px; border-top:1px solid rgba(var(--ink-rgb),.16)}
+.gs-auth-guestbox p{margin:0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
+.gs-auth-guestbox p b{color:var(--ink)}
+.gs-auth-guestgo{display:block; width:100%; margin-top:11px; padding:10px 14px;
+  font-size:13px; text-align:center}
+.gs-auth-line{margin:14px 0 0 !important; text-align:center; font-size:12.5px !important;
+  color:var(--ink-2) !important}
+.gs-auth-linkb{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
+  background:none; border:0; cursor:pointer; padding:0;
+  text-decoration:underline; text-underline-offset:3px}
+.gs-auth-linkb:hover{color:var(--ink)}
 .gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
   color:var(--ink-2)}
 .gs-field-hint{letter-spacing:0; font-size:11px}
