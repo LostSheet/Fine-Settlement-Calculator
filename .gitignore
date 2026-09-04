@@ -2,3 +2,4 @@ node_modules/
 bundle.tmp.js
 worker/.wrangler/
 .claude/
+dev/
