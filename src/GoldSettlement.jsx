@@ -997,7 +997,9 @@ const authApi = {
   obsReissue: (token) => callApi("/api/auth/obs-reissue", { method: "POST", body: {}, token }),
   /* 가입 없이 주소 받기 — 서버가 무작위 아이디·비밀번호로 계정 하나를 만들어 줍니다.
      비밀번호는 서버에서 만들고 알려 주지 않습니다. 정식 계정이 되는 길은 upgrade 하나입니다 */
-  anon: () => callApi("/api/auth/anon", { method: "POST", body: {} }),
+  /* [게스트로 시작] — 닉 하나로 계정을 만듭니다. 아이디·비밀번호가 없을 뿐 가입과 같은
+     계정이라 방송용 주소도 파티 참여도 그대로 됩니다 (§3.11) */
+  anon: (nick) => callApi("/api/auth/anon", { method: "POST", body: nick ? { nick } : {} }),
   /* 익명 계정에 아이디·비밀번호·닉네임을 붙입니다. 같은 계정에 덧씌우는 것이라
      세션·방송용 주소·방·멤버십이 전부 그대로입니다 — 다시 로그인하지 않습니다 */
   upgrade: async (token, id, pw, nick) =>
@@ -2620,13 +2622,16 @@ export default function GoldSettlement() {
      헤더에서 스스로 연 창은 말할 이유가 없어서 비워 둡니다. */
   const openAuth = (tab, after, ctx) =>
     setAuthOpen({ tab: tab || "login", after: after || null, ctx: ctx || null });
-  /* 가입 없이 주소 받기 — 익명 계정을 조용히 만들고 주소를 바로 보여 줍니다 (§3-11).
-     방까지 같이 팝니다. 방이 없으면 그 주소는 비출 판이 없어서, 받자마자 검은 화면이 됩니다 —
-     "주소 받기"를 누른 사람이 바라는 것은 주소 문자열이 아니라 방송에 뜨는 판입니다. */
-  const getAnonAddr = async () => {
-    const r = await authApi.anon();
-    const a = { id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: true };
-    putAuth(a);
+  /* 방송용 주소를 받은 직후 — 방까지 같이 팝니다. 방이 없으면 그 주소는 비출 판이
+     없어서 받자마자 검은 화면이 됩니다. "주소 받기"를 누른 사람이 바라는 것은 주소
+     문자열이 아니라 방송에 뜨는 판입니다.
+     계정을 만드는 일 자체는 게스트 문(AuthModal)이 합니다 (§3.11) — 예전에는 여기서
+     조용히 만들어서 닉을 못 받았고, 그래서 모두가 `방장`이라는 이름으로 앉았습니다. */
+  const [obsFresh, setObsFresh] = useState(false);
+  const openMyRoom = async () => {
+    const a = authRef.current;
+    if (!a) return;
+    setObsFresh(true);
     const room = await roomApi.myRoom(a.token);
     putRelay({
       ...relayRef.current,
@@ -6362,11 +6367,13 @@ export default function GoldSettlement() {
             <button
               className="gs-btn gs-btn-sm gs-slip-act"
               onClick={() =>
-                /* 초대를 받고 들어온 사람은 이 앱이 처음일 확률이 높습니다 */
-                openAuth("register", null, {
-                  why: "이 파티에 참여하려면 계정이 필요해요. 닉네임이 벌금판에 올라가는 내 이름이에요.",
+                /* 초대를 받고 들어온 사람은 이 앱이 처음일 확률이 높습니다 — 그래서
+                   게스트 문이 먼저 섭니다 (§3.11). 닉 한 줄이면 그 자리에서 참여합니다 */
+                openAuth("guest", null, {
+                  why: "닉네임만 정하면 바로 참여해요. 이 이름으로 벌금판에 올라가요.",
                   loginVerb: "로그인하고 참여",
                   joinVerb: "가입하고 참여",
+                  guestVerb: "참여하기",
                 })
               }
             >
@@ -8039,13 +8046,14 @@ export default function GoldSettlement() {
           putRelay={putRelay}
           auth={auth}
           onOpenAuth={(tab) =>
-            openAuth(tab, null, {
+            openAuth(tab, tab === "guest" ? openMyRoom : null, {
               why: "방송용 주소와 초대 링크는 계정마다 하나씩이에요. 로그인만 하면 다른 브라우저에서도 같은 주소를 써요.",
               loginVerb: "로그인",
               joinVerb: "가입하기",
+              guestVerb: "주소 받기",
             })
           }
-          onAnon={getAnonAddr}
+          fresh={obsFresh}
           guest={shareGuest}
           ovCols={simple ? [] : activeCols}
           isOff={(id) => ovShow().itemOff(id)}
@@ -8057,6 +8065,8 @@ export default function GoldSettlement() {
           onAskShareOff={askShareOff}
           onClose={() => {
             setObsOpen(false);
+            /* 다음 걸음 안내는 받은 그 자리에서만 — 다시 열면 평소 화면입니다 */
+            setObsFresh(false);
             if (obsCoachPending.current) {
               obsCoachPending.current = false;
               setCoach({ kind: "obs" });
@@ -9701,8 +9711,15 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
    비밀번호는 여기서 선해시되고, 원문은 서버에 도착하지 않습니다. */
 /* 계정 창. ctx 가 있으면 끼어든 것이라 "왜 묻는지"와 "누르면 무엇이 이어지는지"를
    밝힙니다. 없으면 헤더에서 스스로 연 것이라 제목과 버튼만 담백하게 둡니다. */
+/* 문 셋 — 로그인 · 가입 · **게스트로 시작** (§3.11). 게스트는 닉 한 줄이면 끝이고,
+   아이디·비밀번호가 없을 뿐 가입과 같은 계정이라 방송용 주소도 파티 참여도 그대로
+   됩니다. 나중에 아이디를 붙이면(upgrade) 주소·방·관계가 전부 따라옵니다.
+   어느 문으로 열지는 들어온 자리가 정합니다 — 초대를 받고 온 사람에겐 게스트가,
+   헤더의 [로그인]에는 로그인이 먼저 섭니다. */
 function AuthModal({ tab, ctx, onDone, onClose }) {
-  const [mode, setMode] = useState(tab === "register" ? "register" : "login");
+  const [mode, setMode] = useState(
+    tab === "register" ? "register" : tab === "guest" ? "guest" : "login"
+  );
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [nick, setNick] = useState("");
@@ -9718,22 +9735,26 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const title = mode === "login" ? "로그인" : "가입";
+  const guest = mode === "guest";
+  const title = guest ? "게스트로 시작" : mode === "login" ? "로그인" : "가입";
   const okId = /^[A-Za-z0-9]{4,20}$/.test(id.trim());
   const okNick = [...nick.trim()].length >= 2 && [...nick.trim()].length <= 3;
-  const ready = okId && pw.length > 0 && (mode === "login" || okNick);
+  const ready = guest ? okNick : okId && pw.length > 0 && (mode === "login" || okNick);
 
   const submit = async () => {
     if (!ready || busy) return;
-    if (!hasSubtle()) return setErr(SUBTLE_MSG);
+    /* 게스트는 비밀번호가 없어 선해시도 없습니다 — crypto.subtle 이 없는 자리에서도
+       열리는 유일한 문이라, 여기서 막지 않습니다 */
+    if (!guest && !hasSubtle()) return setErr(SUBTLE_MSG);
     setBusy(true);
     setErr("");
     try {
-      const r =
-        mode === "login"
-          ? await authApi.login(id.trim().toLowerCase(), pw)
-          : await authApi.register(id.trim().toLowerCase(), pw, nick.trim());
-      onDone({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken });
+      const r = guest
+        ? await authApi.anon(nick.trim())
+        : mode === "login"
+        ? await authApi.login(id.trim().toLowerCase(), pw)
+        : await authApi.register(id.trim().toLowerCase(), pw, nick.trim());
+      onDone({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: guest });
     } catch (e) {
       setErr(
         e && e.status === 409
@@ -9758,21 +9779,31 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
           </button>
         </div>
         {/* 비보안 컨텍스트에는 crypto.subtle 이 없습니다 — 선해시를 못 하니 입구를 닫습니다 */}
-        {!hasSubtle() ? (
+        {!guest && !hasSubtle() ? (
           <p className="gs-auth-warn">{SUBTLE_MSG}</p>
         ) : (
         <>
         {/* 이 창이 왜 떴는지. 헤더에서 스스로 연 사람은 이유를 모르니, 계정이
             어디 쓰이는지와 "벌금 세는 데는 필요 없다"를 대신 적어 둡니다 */}
         <p className="gs-auth-why">
-          {(ctx && ctx.why) || (
+          {guest ? (
             <>
-              계정은 <b>파티 모드</b>와 <b>내 방송용 주소</b>에 써요.
+              닉네임만 정하면 바로 시작해요. <b>방송용 주소</b>도 나오고 <b>파티</b>에도
+              들어갈 수 있어요.
               <br />
-              벌금을 세고 정산하는 데는 계정이 필요 없어요.
+              이 브라우저에 저장돼요 — 나중에 아이디를 붙이면 주소도 파티도 그대로 따라와요.
             </>
+          ) : (
+            (ctx && ctx.why) || (
+              <>
+                계정은 <b>파티 모드</b>와 <b>내 방송용 주소</b>에 써요.
+                <br />
+                벌금을 세고 정산하는 데는 계정이 필요 없어요.
+              </>
+            )
           )}
         </p>
+        {!guest && (
         <label className="gs-field">
           아이디
           <input
@@ -9785,6 +9816,8 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
         </label>
+        )}
+        {!guest && (
         <label className="gs-field">
           비밀번호
           <input
@@ -9796,7 +9829,8 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
         </label>
-        {mode === "register" && (
+        )}
+        {(mode === "register" || guest) && (
           <label className="gs-field">
             닉네임 <span className="gs-field-hint">(2~3글자 — 벌금판에 이 이름으로 올라요)</span>
             <input
@@ -9823,21 +9857,34 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
         <button className="gs-btn gs-authgo" onClick={submit} disabled={!ready || busy}>
           {busy
             ? "잠시만요…"
+            : guest
+            ? (ctx && ctx.guestVerb) || "게스트로 시작"
             : mode === "login"
             ? (ctx && ctx.loginVerb) || "로그인"
             : (ctx && ctx.joinVerb) || "가입하기"}
         </button>
-        {/* 반대편으로 가는 문 — 눌러도 적어 둔 아이디·비밀번호는 그대로 둡니다 */}
+        {/* 나머지 두 문 — 눌러도 적어 둔 것은 그대로 둡니다. 지금 서 있는 문은 빼고
+            둘만 보여 줍니다: 셋을 다 늘어놓으면 어디에 서 있는지가 흐려집니다 */}
         <p className="gs-authswap">
-          {mode === "login" ? "아직 계정이 없어요 · " : "이미 계정이 있어요 · "}
-          <button
-            onClick={() => {
-              setErr("");
-              setMode(mode === "login" ? "register" : "login");
-            }}
-          >
-            {mode === "login" ? "가입하기" : "로그인"}
-          </button>
+          {[
+            ["login", "로그인"],
+            ["register", "가입하기"],
+            ["guest", "게스트로 시작"],
+          ]
+            .filter(([m]) => m !== mode)
+            .map(([m, label], i) => (
+              <Fragment key={m}>
+                {i > 0 && " · "}
+                <button
+                  onClick={() => {
+                    setErr("");
+                    setMode(m);
+                  }}
+                >
+                  {label}
+                </button>
+              </Fragment>
+            ))}
         </p>
         </>
         )}
@@ -10683,7 +10730,7 @@ function GenList({ gens, onOpen, onDrop }) {
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
    guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, onAnon, guest, onAskReissue, onAskShareOff, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
+function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissue, onAskShareOff, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -10772,26 +10819,21 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onAnon, guest, onAskReiss
             {/* §8 가입 없이 주소 받기 — 한 글자도 바꾸지 않습니다 */}
             <p>지금 이 브라우저의 벌금판만 방송에 띄우려면 가입 없이도 돼요.</p>
             <div className="gs-obs-acts">
-              <button
-                className="gs-btn gs-authgo"
-                disabled={busy === "anon"}
-                onClick={async () => {
-                  setBusy("anon");
-                  setErr("");
-                  try {
-                    await onAnon();
-                  } catch (e) {
-                    setErr((e && e.message) || "실패했어요");
-                  }
-                  setBusy("");
-                }}
-              >
-                {busy === "anon" ? "잠시만요…" : "내 방송용 주소 받기"}
+              {/* 게스트 문으로 보냅니다 (§3.11) — 닉 한 줄을 받아야 벌금판에 오르는
+                  이름이 생깁니다. 예전에는 조용히 만들어서 모두가 `방장`이 됐습니다 */}
+              <button className="gs-btn gs-authgo" onClick={() => onOpenAuth("guest")}>
+                내 방송용 주소 받기
               </button>
             </div>
             <p className="gs-obs-makenote">이 브라우저에 저장돼요.</p>
+            {/* 송출컴이 따로 있는 사람이 여기서 또 누르는 것이 함정입니다 — 누르면
+                다른 계정이 되고, 주소가 둘이 되어 "왜 안 되지"가 됩니다 (§3.11) */}
+            <p className="gs-obs-warn2">
+              이미 다른 컴퓨터에서 받았다면 <b>여기서 또 받지 마세요</b> — 그 주소를 그대로
+              붙여넣으면 돼요. 여기서 받으면 다른 주소가 나와요.
+            </p>
             <div className="gs-obs-makeacct">
-              <p>계정을 만들면 다른 컴퓨터에서도 같은 주소를 쓰고, 파티원이 자기 벌금을 직접 셀 수 있어요.</p>
+              <p>두 컴퓨터에서 같은 주소를 쓰려면 계정을 만들어 양쪽에서 로그인하세요. 파티원이 자기 벌금을 직접 세는 것도 계정이 있어야 해요.</p>
               {/* 이 줄의 주 동작은 [계정 만들기]입니다 — 오른쪽 끝에 앉고, 이미 계정이
                   있는 사람이 가는 [로그인]은 무게를 낮춰 그 왼쪽으로 물러납니다 (§9-2·§9-3) */}
               <div className="gs-obs-acts gs-acts-end">
@@ -10812,6 +10854,22 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onAnon, guest, onAskReiss
           <>
             {/* 내 방송용 주소 — 영구(재발급 전까지), 읽기 전용.
                 제목 줄에는 제목만 둡니다 — 도움말을 얹으면 제목이 밀립니다 (§9-5) */}
+            {/* 방금 받은 사람에게는 주소를 보여 주는 것으로 부족합니다 — 다음 걸음을
+                시켜야 합니다 (§3.11). 이 한 장은 발급 직후 한 번만 뜨고, 다음부터는
+                아래 평소 화면입니다 */}
+            {fresh && (
+              <div className="gs-obs-fresh">
+                <b>주소가 나왔어요.</b>
+                <p>
+                  이 주소를 복사해서 방송 프로그램(OBS·프리즘 등)의 <b>브라우저 소스</b>에
+                  붙여넣으면 벌금판이 방송에 떠요.
+                </p>
+                <p className="gs-obs-fresh2">
+                  <b>송출컴이 따로 있나요?</b> 여기서 복사해서 옮기세요 — 거기서 새로 받으면
+                  다른 주소가 나와요.
+                </p>
+              </div>
+            )}
             <h4 className="gs-key-h">내 방송용 주소</h4>
             <div className="gs-obs-boxtop">
               {srcMode === "one" ? (
@@ -12763,6 +12821,17 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-obs-make{margin-top:14px}
 .gs-obs-make p{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.8}
 .gs-obs-makenote{margin-top:8px !important; font-size:11.5px !important}
+/* 두 컴퓨터 함정을 막는 한 줄 (§3.11) — 혜택이 아니라 경고라 금색으로 세웁니다 */
+.gs-obs-warn2{margin:10px 0 0; font-size:12px; line-height:1.75; color:var(--ink-2);
+  padding:9px 11px; border-radius:7px; background:rgba(var(--gold-rgb),.07);
+  border:1px solid rgba(var(--gold-rgb),.32)}
+.gs-obs-warn2 b{color:var(--gold)}
+/* 주소를 방금 받은 사람에게만 뜨는 다음 걸음 (§3.11) */
+.gs-obs-fresh{margin:0 0 14px; padding:12px 13px; border-radius:8px;
+  background:rgba(var(--gold-rgb),.09); border:1px solid rgba(var(--gold-rgb),.42)}
+.gs-obs-fresh > b{display:block; font-size:14px; color:var(--gold); margin-bottom:5px}
+.gs-obs-fresh p{margin:0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
+.gs-obs-fresh2{margin-top:7px !important; color:var(--ink-2) !important}
 /* 주소는 위에서 마찰 없이 주고, 계정 권유는 선 아래에서 이득만 말합니다 */
 .gs-obs-makeacct{margin-top:18px; padding-top:14px;
   border-top:1px dotted rgba(var(--ink-rgb),.28)}

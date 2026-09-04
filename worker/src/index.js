@@ -53,7 +53,9 @@ const LOGIN_FAILS = 30;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 /* 계정 만들기(가입·익명) 한 창 상한 — 익명이 가입보다 헐거운 구멍이 되지 않게 같이 셉니다 */
 const REG_PER_WINDOW = 200;
-const ANON_NICK = "방장";
+/* 게스트가 닉을 안 보냈을 때의 이름. 예전 값은 "방장"이었는데, 게스트로도 남의 파티에
+   들어갈 수 있게 되면서 명단에 방장이 둘 앉는 그림이 됐습니다 (§3.11) */
+const ANON_NICK = "손님";
 
 const RE_ID = /^[a-z0-9]{4,20}$/;
 const RE_NICK = /^[가-힣a-zA-Z0-9]{2,3}$/;
@@ -270,8 +272,14 @@ export class Accounts {
        만들어 세션만 돌려줍니다. 사용자는 가입 화면을 본 적이 없고, 서버 쪽에서는 그냥 계정
        하나라 인증 경로가 하나로 유지됩니다. 비밀번호는 여기서 만들고 어디에도 안 알려 줍니다 —
        이 계정으로 다시 로그인할 일은 없고, 정식 계정이 되는 길은 /upgrade 하나뿐입니다. */
+    /* [게스트로 시작] — 아이디·비밀번호 없이 닉 하나로 계정을 만듭니다 (§3.11).
+       가입과 같은 계정이라 방송용 주소도 파티 참여도 그대로 되고, 나중에 upgrade 로
+       아이디를 붙이면 주소·방·관계가 전부 따라옵니다. 닉은 벌금판에 오르는 이름이라
+       가입과 같은 규칙(2~3자)을 씁니다 — 안 보내면 옛 호출부 호환으로 기본 이름입니다 */
     if (p === "/api/auth/anon" && req.method === "POST") {
       if (!(await this.regGuard(req, now))) return json({ error: "slow down" }, 429);
+      const wantNick = String(b.nick || "").trim();
+      if (wantNick && !RE_NICK.test(wantNick)) return json({ error: "bad input" }, 400);
       const id = await this.freeId();
       if (!id) return json({ error: "could not allocate account" }, 503);
       const pw = hex(crypto.getRandomValues(new Uint8Array(32)));
@@ -280,7 +288,7 @@ export class Accounts {
       const token = rid(32);
       const u = {
         id,
-        nick: ANON_NICK,
+        nick: wantNick || ANON_NICK,
         salt: hex(salt),
         ph: await derive(salt, pw),
         created: now,
@@ -296,7 +304,7 @@ export class Accounts {
         ["s:" + token]: { id, exp: now + SESSION_MS },
       });
       await this.arm();
-      return json({ id, nick: ANON_NICK, token, obsToken });
+      return json({ id, nick: u.nick, token, obsToken });
     }
 
     /* 익명 계정에 아이디·비밀번호·닉네임을 붙입니다 (§3-11).

@@ -958,11 +958,23 @@ const main = async () => {
   /* ---- 가입 없이 주소 받기 (§3-11) ---- */
   head("가입 없이 주소 받기(anon)");
   const N = {}; // 익명으로 시작해서 정식이 되는 계정 하나
-  await step("anon: 본문 없이 계정 하나 — 닉 기본값 방장", async () => {
+  await step("anon: 닉을 보내면 그 이름으로 시작한다 ([게스트로 시작])", async () => {
+    const r = await api("POST", "/api/auth/anon", { body: { nick: "곰돌" } });
+    eq(r.status, 200, "status");
+    eq(r.data.nick, "곰돌", "nick");
+    const me = await api("GET", "/api/auth/me", { token: r.data.token });
+    eq(me.data.nick, "곰돌", "me.nick");
+    eq(me.data.anon, true, "anon 표시");
+  });
+  await step("anon: 닉이 2~3자가 아니면 400", async () => {
+    eq((await api("POST", "/api/auth/anon", { body: { nick: "네글자닉" } })).status, 400, "4자");
+    eq((await api("POST", "/api/auth/anon", { body: { nick: "한" } })).status, 400, "1자");
+  });
+  await step("anon: 본문 없이 계정 하나 — 닉 기본값 손님", async () => {
     const r = await api("POST", "/api/auth/anon", { body: {} });
     eq(r.status, 200, "status");
     expect(/^[a-z0-9]{4,20}$/.test(r.data.id), "익명 id 형식: " + r.data.id);
-    eq(r.data.nick, "방장", "nick");
+    eq(r.data.nick, "손님", "nick");
     expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{32}$/.test(r.data.token), "세션 토큰 32자");
     expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{20}$/.test(r.data.obsToken), "OBS 토큰 20자");
     N.id = r.data.id;
@@ -973,7 +985,7 @@ const main = async () => {
     const r = await api("GET", "/api/auth/me", { token: N.token });
     eq(r.status, 200, "status");
     eq(r.data.id, N.id, "id");
-    eq(r.data.nick, "방장", "nick");
+    eq(r.data.nick, "손님", "nick");
     eq(r.data.obsToken, N.obsToken, "obsToken");
     eq(r.data.cur, null, "아직 들어간 방 없음");
     eq(r.data.anon, true, "익명 표시 — 앱이 파티 모드에서 이걸 보고 아이디를 받습니다");
