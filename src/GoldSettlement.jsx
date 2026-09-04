@@ -2633,10 +2633,12 @@ export default function GoldSettlement() {
      계정을 만드는 일 자체는 게스트 문(AuthModal)이 합니다 (§3.11) — 예전에는 여기서
      조용히 만들어서 닉을 못 받았고, 그래서 모두가 `방장`이라는 이름으로 앉았습니다. */
   const [obsFresh, setObsFresh] = useState(false);
-  const openMyRoom = async () => {
+  const openMyRoom = async (done) => {
     const a = authRef.current;
     if (!a) return;
-    setObsFresh(true);
+    /* "주소가 나왔어요"는 방금 만든 계정에만 — 로그인으로 돌아온 사람의 주소는
+       나온 게 아니라 원래 있던 것입니다 */
+    setObsFresh(!(done && done.via === "login"));
     const room = await roomApi.myRoom(a.token);
     putRelay({
       ...relayRef.current,
@@ -8070,7 +8072,7 @@ export default function GoldSettlement() {
             setAuthOpen(null);
             putAuth(a);
             /* 하려던 일이 있으면 그것부터 — 없을 때만 이어가기를 제안합니다 */
-            if (after) setTimeout(() => after(), 0);
+            if (after) setTimeout(() => after(a), 0);
             else askResume(a);
           }}
           onClose={() => setAuthOpen(null)}
@@ -9741,7 +9743,9 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
         : mode === "login"
         ? await authApi.login(id.trim().toLowerCase(), pw)
         : await authApi.register(id.trim().toLowerCase(), pw, nick.trim());
-      onDone({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: guest });
+      /* via — 어느 문으로 끝냈는지. 이어서 할 일(after)이 "방금 만든 계정"과
+         "돌아온 계정"을 갈라야 할 때 씁니다(예: 주소 안내는 새 계정에만) */
+      onDone({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: guest, via: mode });
     } catch (e) {
       setErr(
         e && e.status === 409
@@ -9773,30 +9777,28 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
         <>
         {/* 이 창이 왜 떴는지. 헤더에서 스스로 연 사람은 이유를 모르니, 계정이
             어디 쓰이는지와 "벌금 세는 데는 필요 없다"를 대신 적어 둡니다 */}
-        <p className="gs-auth-why">
-          {guest ? (
-            /* 게스트 칸은 질문 하나입니다 — 이 화면의 유일한 입력이 주인공이어야 합니다.
-               게스트가 뭘 할 수 있는지는 대문의 상자가 이미 말했습니다 */
-            <>벌금판에 올라갈 이름을 정해 주세요.</>
-          ) : mode === "register" ? (
-            /* 가입을 권하는 이유를 먼저 말합니다 — 전에는 "? 로그인하면 어떤 게
-               좋나요?" 링크 뒤에 숨어 있었습니다 */
-            (ctx && ctx.why) || (
-              <>
-                계정이 있으면 <b>두 컴퓨터에서 같은 방송 주소</b>를 쓰고, <b>파티를 열어</b>{" "}
-                파티원이 자기 벌금을 직접 세게 할 수 있어요.
-              </>
-            )
-          ) : (
-            (ctx && ctx.why) || (
-              <>
-                계정은 <b>파티 모드</b>와 <b>내 방송용 주소</b>에 써요.
-                <br />
-                벌금을 세고 정산하는 데는 계정이 필요 없어요.
-              </>
-            )
-          )}
-        </p>
+        {/* 로그인에는 설명 상자를 안 답니다 — 로그인하러 온 사람은 계정이 왜 필요한지
+            이미 아는 사람이라, 상자가 있으면 세 화면이 같은 말을 세 벌로 하게 됩니다 */}
+        {(guest || mode === "register" || (ctx && ctx.why)) && (
+          <p className="gs-auth-why">
+            {guest ? (
+              /* 게스트 칸은 질문 하나입니다 — 이 화면의 유일한 입력이 주인공이어야
+                 합니다. 게스트가 뭘 할 수 있는지는 대문의 상자가 이미 말했습니다 */
+              <>벌금판에 올라갈 이름을 정해 주세요.</>
+            ) : mode === "register" ? (
+              /* 가입을 권하는 이유를 먼저 말합니다 — 전에는 "? 로그인하면 어떤 게
+                 좋나요?" 링크 뒤에 숨어 있었습니다 */
+              (ctx && ctx.why) || (
+                <>
+                  계정이 있으면 <b>두 컴퓨터에서 같은 방송 주소</b>를 쓰고, <b>파티를 열어</b>{" "}
+                  파티원이 자기 벌금을 직접 세게 할 수 있어요.
+                </>
+              )
+            ) : (
+              ctx.why
+            )}
+          </p>
+        )}
         {!guest && (
         <label className="gs-field">
           아이디
@@ -9853,13 +9855,14 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
         )}
         {mode === "register" && (
           <>
-            <p className="gs-auth-warn">
-              비밀번호를 잊으면 되찾을 방법이 없어요.
+            {/* 경고 셋을 작은 한 덩어리로 — 세 문단으로 흩어 두면 폼과 버튼 사이가
+                글자 벽이 됩니다. 문구는 §8 그대로, 지울 때 알려 줄 방법이 없어(이메일을
+                안 받아서) 미리 적는 것도 그대로입니다 */}
+            <p className="gs-auth-fine">
+              비밀번호를 잊으면 되찾을 방법이 없어요. 다른 곳에서 쓰는 비밀번호는 쓰지 마세요.
               <br />
-              다른 곳에서 쓰는 비밀번호는 쓰지 마세요.
+              1년 넘게 한 번도 안 쓰면 계정이 지워질 수 있어요.
             </p>
-            {/* 지울 때 알려 줄 방법이 없습니다(이메일을 안 받아서) — 그래서 미리 적습니다 */}
-            <p className="gs-auth-note">1년 넘게 한 번도 안 쓰면 계정이 지워질 수 있어요.</p>
           </>
         )}
         {err && <p className="gs-obs-err">{err}</p>}
@@ -10872,23 +10875,16 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
               이미 다른 컴퓨터에서 받았다면 <b>여기서 또 받지 마세요</b> — 그 주소를 그대로
               붙여넣으면 돼요. 여기서 받으면 다른 주소가 나와요.
             </p>
-            <div className="gs-obs-makeacct">
-              <p>두 컴퓨터에서 같은 주소를 쓰려면 계정을 만들어 양쪽에서 로그인하세요. 파티원이 자기 벌금을 직접 세는 것도 계정이 있어야 해요.</p>
-              {/* 이 줄의 주 동작은 [계정 만들기]입니다 — 오른쪽 끝에 앉고, 이미 계정이
-                  있는 사람이 가는 [로그인]은 무게를 낮춰 그 왼쪽으로 물러납니다 (§9-2·§9-3) */}
-              <div className="gs-obs-acts gs-acts-end">
-                <button className="gs-swaplink" onClick={() => onOpenAuth("login")}>
-                  로그인
-                </button>
-                <button className="gs-btn gs-btn-sm" onClick={() => onOpenAuth("register")}>
-                  계정 만들기
-                </button>
-              </div>
-              <p className="gs-obs-makenote">나중에 계정을 만들면 이 주소를 그대로 옮겨요</p>
-              <button className="gs-obs-guideopen gs-obs-gainline" onClick={() => setShowGain(true)}>
-                <i aria-hidden="true">?</i> 로그인하면 어떤 게 좋나요?
+            {/* 계정 권유 덩어리("두 컴퓨터…"·[계정 만들기]·"나중에 계정을 만들면…"·
+                "? 로그인하면…")는 걷었습니다 (§3.11) — 대문이 열리면 같은 말을 이유
+                한 줄과 게스트 상자로 다시 하게 되어, 이 판이 세 벌로 늘어져 있었습니다.
+                여기 남는 것은 로그인 한 줄뿐입니다 — 대문 발치와 같은 문법입니다 */}
+            <p className="gs-auth-line">
+              이미 계정이 있어요 ·{" "}
+              <button className="gs-auth-linkb" onClick={() => onOpenAuth("login", true)}>
+                로그인
               </button>
-            </div>
+            </p>
           </div>
         ) : (
           <>
@@ -14300,6 +14296,9 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   background:none; border:0; cursor:pointer; padding:0;
   text-decoration:underline; text-underline-offset:3px}
 .gs-auth-linkb:hover{color:var(--ink)}
+/* 가입 경고 한 덩어리 — 겁주는 상자가 아니라 발치의 작은 글씨입니다 */
+.gs-auth-fine{margin:10px 0 0 !important; font-size:11.5px !important; line-height:1.7;
+  color:var(--ink-2) !important}
 .gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
   color:var(--ink-2)}
 .gs-field-hint{letter-spacing:0; font-size:11px}
