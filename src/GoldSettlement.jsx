@@ -2671,11 +2671,19 @@ export default function GoldSettlement() {
   const [tutAsk, setTutAsk] = useState(() => !coachSeen("partyAsk") && !cameByInvite());
   /* 부모 앱: [같이 해보기]·[?] [시작]은 예시 앱을 전체 화면 iframe 으로 엽니다. 끝·그만두기는 예시 앱이 postMessage 로 알립니다 */
   const [demoOpen, setDemoOpen] = useState(false);
+  const [demoReady, setDemoReady] = useState(false); // 예시 앱이 첫 그림을 그렸다고 알려 올 때까지 iframe 은 투명 — 흰 화면이 깜빡이지 않게
   const demoUrl = typeof window !== "undefined" ? window.location.origin + window.location.pathname + "#demo" : "";
   const startPartyCourse = () => {
     if (readOnly || DEMO) return;
+    setDemoReady(false);
     setDemoOpen(true);
   };
+  /* 예시 앱이 못 뜨더라도 갇히지 않게 — 8초 뒤엔 있는 그대로 보입니다 */
+  useEffect(() => {
+    if (!demoOpen || demoReady) return;
+    const t = setTimeout(() => setDemoReady(true), 8000);
+    return () => clearTimeout(t);
+  }, [demoOpen, demoReady]);
   const closeDemo = (done) => {
     setDemoOpen(false);
     coachDone("partyAsk");
@@ -2698,17 +2706,43 @@ export default function GoldSettlement() {
   useEffect(() => {
     if (DEMO) return;
     const on = (e) => {
-      if (e.origin !== window.location.origin || !e.data || e.data.gs !== "party-demo") return;
+      if (e.origin !== window.location.origin || !e.data) return;
+      if (e.data.gs === "party-demo-ready") return setDemoReady(true);
+      if (e.data.gs !== "party-demo") return;
       closeDemo(!!e.data.done);
     };
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
   }, []);
-  /* 예시 앱: 뜨자마자 첫 걸음 */
+  /* 걸음의 표적이 같은 렌더에서 막 생기는 중이면(웨이 줄처럼 명단과 걸음이 한 틱에 바뀜) 그 렌더의
+     querySelector 는 못 보고, 예시 앱은 서버 응답이 없어 다시 그려질 계기도 없습니다 — 표적이 보일 때까지 살핍니다 */
+  useEffect(() => {
+    if (!coach || coach.kind !== "party") return;
+    const st = PARTY_STEPS[coach.step];
+    if (!st) return;
+    /* 표적이 있어도 이번 렌더가 못 봤으면(같은 커밋에 생김) 말풍선이 없습니다 — 그때도 다시 그립니다 */
+    const drawn = () => !!document.querySelector(".gs-coach");
+    if (document.querySelector(st.sel) && drawn()) return;
+    const t = setInterval(() => {
+      if (!document.querySelector(st.sel)) return;
+      clearInterval(t);
+      if (!drawn()) setCoach((c) => (c ? { ...c } : c));
+    }, 150);
+    return () => clearInterval(t);
+  }, [coach]);
+  /* 예시 앱: 첫 그림을 그린 뒤 부모에게 알리고(그때 iframe 이 보입니다), 곧 첫 걸음 */
   useEffect(() => {
     if (!DEMO) return;
+    const raf = requestAnimationFrame(() => {
+      try {
+        if (window.parent && window.parent !== window) window.parent.postMessage({ gs: "party-demo-ready" }, window.location.origin);
+      } catch (e) {}
+    });
     const t = setTimeout(() => partyStep(0), 900);
-    return () => clearTimeout(t);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
   }, []);
   /* newBoard 의 로컬 부분만 — 로비를 열지도 코드를 내지도 않습니다. 정원 4, 이름은 예시 파티 */
   const tutNewBoard = () => {
@@ -2751,12 +2785,16 @@ export default function GoldSettlement() {
       partyT(() => partyStep(next + 1), 5400);
     }
     if (what === "press") {
-      partyT(tutConfess, 1200);
+      /* 누름 → (1.8초) 실리안 자수 + 그 말풍선 → (3.6초) 웨이 */
+      partyT(() => {
+        tutConfess();
+        partyStep(next + 1);
+      }, 1800);
       partyT(() => {
         tutArrive(2);
         say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
-        partyStep(next + 1);
-      }, 4800);
+        partyStep(next + 2);
+      }, 5400);
     }
   };
   /* 예시 앱: 끝(다 봤든 ✕·Esc·[그만두기]든) — 부모에게 알리고 부모가 창을 닫습니다. 부모 없이 열렸으면 보통 앱으로 */
@@ -7015,7 +7053,7 @@ export default function GoldSettlement() {
     </>
   );
   return (
-    <div className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "")}>
+    <div className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "")}>
       {DEMO && (
         <div className="gs-demoband" role="status">
           <span>
@@ -9338,8 +9376,8 @@ export default function GoldSettlement() {
       )}
       {demoOpen && (
         <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
-          <p className="gs-demo-load">예시를 불러오는 중…</p>
-          <iframe className="gs-demo-frame" title="처음부터 같이 해보기" src={demoUrl} />
+          {!demoReady && <p className="gs-demo-load">튜토리얼 시작 중</p>}
+          <iframe className={"gs-demo-frame" + (demoReady ? " on" : "")} title="처음부터 같이 해보기" src={demoUrl} />
         </div>
       )}
       {/* 같이 해보기(예시 앱 안) — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이). ✕는 그만두기, 표적이 사라진 건 다음 걸음이 오는 것 */}
@@ -9356,6 +9394,7 @@ export default function GoldSettlement() {
             total={PARTY_TOTAL}
             block
             lock={!!PARTY_STEPS[coach.step].lock}
+            center={!!PARTY_STEPS[coach.step].center}
             onNext={() => (coach.step >= PARTY_STEPS.length - 1 ? endPartyCourse(true) : partyStep(coach.step + 1))}
             onClose={() => {
               if (document.querySelector(PARTY_STEPS[coach.step].sel)) endPartyCourse(false);
@@ -13289,28 +13328,35 @@ const guideKey = (id) => "guide:" + id;
    no 는 화면에 보이는 번호(기다리는 걸음은 앞 걸음과 같은 번호). 문구는 전부 초안 */
 const PARTY_STEPS = [
   { no: 1, sel: ".gs-lh-newbtn", text: "판부터 만들어 볼게요. 파티는 판 안에 있어요.", wait: "newboard" },
-  { no: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
-  { no: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto" },
-  { no: 3, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
+  /* 항목·단가 (2026-09-06 사용자 요청) — 가리키기만, 예시에서 고치게 하진 않습니다 */
+  /* 단가 칸은 센 기록이 있으면 버튼(.gs-pricebtn), 없으면 바로 치는 칸(PriceFree)이라 감싸는 칸을 가리킵니다 */
+  { no: 2, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
+  { no: 3, sel: ".gs-addcol", text: "항목은 여기서 늘려요. 지우는 건 항목 이름 옆 ×.", action: "다음", lock: true },
+  { no: 4, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
+  { no: 4, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto" },
+  { no: 5, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
   {
-    no: 4,
+    no: 6,
     sel: ".gs-grid",
     text: (
       <>
-        칸을 <MouseIcon side="left" /> 누르면 1회예요. 파티원은 자수 탭에서 자기 줄을 직접 눌러요.
+        칸을 <MouseIcon side="left" /> 누르면 1회, <MouseIcon side="right" /> 우클릭하면 되돌려요. 한번 눌러 보세요.
       </>
     ),
     wait: "press",
   },
-  { no: 4, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
-  { no: 5, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [받기]를 누르면 빈 줄에 앉아요.", wait: "take" },
-  { no: 6, sel: ".gs-endbtn", text: "다 끝나면 여기예요. 결과지가 기록에 남아요. 다시 보려면 [?]에서요.", action: "알겠어요", lock: true },
+  /* 누른 뒤 한 박자 — 자수 안내가 누름과 같은 순간에 뜨면 이상합니다(사용자 지적). 실리안의 자수는 이 말풍선 뒤에 옵니다 */
+  { no: 6, sel: ".gs-grid", text: "올라갔죠? 파티원은 자기 줄을 자수 탭에서 직접 눌러요. 실리안이 지금 누르는 중…", lock: true, wait: "auto" },
+  { no: 6, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
+  /* 표 아래 줄은 화면 가운데로 — 아래 끝에 걸리면 '방금 바뀐' 카드가 [받기]를 덮습니다(사용자 지적) */
+  { no: 7, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [받기]를 누르면 빈 줄에 앉아요.", wait: "take", center: true },
+  { no: 8, sel: ".gs-endbtn", text: "다 끝나면 여기예요. 결과지가 기록에 남아요. 다시 보려면 [?]에서요.", action: "알겠어요", lock: true },
 ];
-const PARTY_TOTAL = 6;
+const PARTY_TOTAL = 8;
 const TUT_MEMBERS = [
-  { acct: "tut:1", nick: "실리안" },
-  { acct: "tut:2", nick: "니나브" },
-  { acct: "tut:3", nick: "웨이" },
+  { acct: "silian", nick: "실리안" },
+  { acct: "ninav", nick: "니나브" },
+  { acct: "wei", nick: "웨이" },
 ];
 /* 로비 권유 줄의 대상 — 초대 없이 들어온 사람. 초대 링크로 들어온 적이 있으면(코드 기억) 파티원이라 안 권합니다 */
 const cameByInvite = () => {
@@ -13323,7 +13369,7 @@ const cameByInvite = () => {
 
 /* block: 대상 말고는 못 누르게 막고 나머지를 어둡게 덮습니다.
    lock: 대상까지 막습니다 — 말풍선의 버튼으로만 넘어가는 걸음용. */
-function CoachMark({ sel, text, action, step, total, block, lock, onNext, onClose }) {
+function CoachMark({ sel, text, action, step, total, block, lock, center, onNext, onClose }) {
   const [box, setBox] = useState(null);
   /* 그린 뒤에 실제 높이를 재서 다시 앉힙니다 — 어림값으로 두면 걸음마다 틈이 달라집니다 */
   const bubRef = useRef(null);
@@ -13372,7 +13418,7 @@ function CoachMark({ sel, text, action, step, total, block, lock, onNext, onClos
     const first = document.querySelector(sel);
     /* 화면 밖이면 테두리도 말풍선도 안 보이는 채로 안내가 돕니다. nearest 라서
        표처럼 화면보다 큰 대상은 이미 보이는 대로 두고 건드리지 않습니다. */
-    if (first) first.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (first) first.scrollIntoView({ block: center ? "center" : "nearest", inline: "nearest" });
     let raf = 0;
     let miss = 0;
     let last = "";
@@ -14595,11 +14641,13 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-tutline b{color:var(--ink)}
 .gs-tutline-r{margin-left:auto; display:flex; gap:8px}
 /* 예시 앱 창(부모)과 예시 띠(예시 앱) (2026-09-06) */
-.gs-demo{position:fixed; inset:0; z-index:60; background:var(--paper); display:grid; place-items:center}
+.gs-demo{position:fixed; inset:0; z-index:60; background:var(--kraft); display:grid; place-items:center}
 .gs-demo-load{margin:0; font-size:13px; color:var(--ink-2)}
-.gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block}
+.gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block; opacity:0; transition:opacity .25s ease}
+.gs-demo-frame.on{opacity:1}
 .gs-demoband{margin:-20px -20px 0; padding:7px 20px; display:flex; align-items:center; justify-content:center; gap:14px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
 .gs-demoband b{color:var(--ink)}
+.gs-pressing{padding-bottom:300px} /* '방금 바뀐' 카드(고정, 아래 오른쪽)가 표 끝 줄의 버튼을 덮지 않게 내려 볼 여지 (2026-09-06) */
 .gs-demoband ~ .gs-sysbar{margin-top:0} /* 시스템 줄의 위 당김(-20px)은 띠가 없을 때의 것 — 사이에 <style> 이 있어 형제 선택자는 ~ */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px;
