@@ -2446,7 +2446,10 @@ export default function GoldSettlement() {
   /* [자리 바꾸기] — 파티 서랍에서 사람을 다른 자리로 옮깁니다. {acct, nick} */
   const [seatMove, setSeatMove] = useState(null);
   const [rowPerson, setRowPerson] = useState(null); // 줄의 사람 시트 — 자리 id (§3.2, 2026-09-05)
-  /* (폐기 2026-09-06, 당일) [자리 정하기] 시트 — 물어보는 쪽이 방장이 던전 중에 답해야 하는 괴물이었다. 앉히고 고친다 */
+  /* 표 아래 사람의 [자리 정하기] 시트 {acct, nick, st} (2026-09-06 재정정) — 진행 중에 줄 없이 온 사람은 방장이 직접 줄을 고른다
+     (빈 줄 · 퇴장한 사람 줄 · 새 줄). 사용자가 여러 번 말한 "직접 배치"다. (폐기, 같은 날) 이 시트를 "던전 중에 답해야 하는 괴물"이라며
+     걷어내고 [받기]가 첫 빈 줄/새 줄에 앉히게 한 것 — 내 판단이었고 동의받은 적 없다 */
+  const [waitPick, setWaitPick] = useState(null);
   /* 헤더의 초대 코드 팝오버 (2026-09-06 사용자: 공유 창 안은 숨겨져 있다) */
   const [invOpen, setInvOpen] = useState(false);
   const invWrapRef = useRef(null);
@@ -6929,11 +6932,15 @@ export default function GoldSettlement() {
       return id;
     });
   const waitPlace = (p, seatId) =>
-    seatMember(p.acct, p.nick || p.acct, seatId, p.st === "ok" ? { local: true } : undefined);
+    Promise.resolve(seatMember(p.acct, p.nick || p.acct, seatId, p.st === "ok" ? { local: true } : undefined)).then((id) => {
+      if (tutorialRef.current) tutHit("take"); // 같이 해보기 7걸음 — 고른 줄에 앉음
+      return id;
+    });
   /* 시작 전에 들어온 사람은 앱이 앉힙니다 — 첫 빈 자리. 방장 앱이 없던 사이 들어온 사람도 돌아오면 여기서 앉습니다.
-     진행 중엔 앱이 앉히지 않습니다 — 표 아래에 서고 방장이 [받기]로 앉힙니다(첫 빈 줄, 없으면 새 줄).
+     진행 중엔 앱이 앉히지 않습니다 — 표 아래에 서고 방장이 [자리 정하기] 시트에서 줄을 직접 고릅니다(빈 줄·퇴장 줄·새 줄).
      (기록 2026-09-06) 제가 규칙표를 새로 쓰며 진행 중도 자동 착석으로 바꿔 넣었고 그 지점의 동의를 받지 않았다 —
-     사용자의 원래 말("id가 같으면 같은 자리로, 나머지는 자리 지정 필요")대로 되돌린다. 자리 지정 시트는 없고 [받기] 하나다.
+     사용자의 원래 말("id가 같으면 같은 자리로, 나머지는 자리 지정 필요")대로 되돌린다. (재정정, 같은 날) 되돌리면서도 [받기]가
+     첫 빈 줄에 앉히게 두었는데 그것도 자동 배치다 — 사용자: "[받기]를 눌러서 바로 앉히는 게 아니지 않나요? 몇 번씩 얘기된 건데" → 시트로.
      자기 줄(출처)이 남아 있는 사람은 시작 전이든 진행 중이든 그 줄 밑 요청으로 [받기]를 기다립니다 */
   const placing = useRef(new Set());
   useEffect(() => {
@@ -8854,10 +8861,23 @@ export default function GoldSettlement() {
                             <button className="gs-swaplink gs-swaplink-mute" onClick={() => waitDeny(p)}>
                               거절
                             </button>
-                            {/* [받기] 하나 (2026-09-06) — 앉힐 자리는 규칙이 정합니다. (폐기) [자리 정하기] 시트 */}
-                            <button className="gs-btn gs-btn-sm" onClick={() => waitTake(p)}>
-                              받기
-                            </button>
+                            {/* 시작 전 신청은 [받기](첫 빈 자리, 정원 늘림). 진행 중에 줄 없이 온 사람은 [자리 정하기] — 방장이 직접 고릅니다
+                                (2026-09-06 재정정; (폐기) [받기] 하나가 첫 빈 줄/새 줄에 앉히던 것) */}
+                            {roundLive ? (
+                              <button
+                                className="gs-btn gs-btn-sm gs-waitpickbtn"
+                                onClick={() => {
+                                  setWaitPick(p);
+                                  if (tutorialRef.current) tutHit("pick"); // 같이 해보기 7걸음
+                                }}
+                              >
+                                자리 정하기
+                              </button>
+                            ) : (
+                              <button className="gs-btn gs-btn-sm" onClick={() => waitTake(p)}>
+                                받기
+                              </button>
+                            )}
                           </span>
                         </div>
                       </td>
@@ -9395,6 +9415,7 @@ export default function GoldSettlement() {
             block
             lock={!!PARTY_STEPS[coach.step].lock}
             center={!!PARTY_STEPS[coach.step].center}
+            overModal={!!PARTY_STEPS[coach.step].top}
             onNext={() => (coach.step >= PARTY_STEPS.length - 1 ? endPartyCourse(true) : partyStep(coach.step + 1))}
             onClose={() => {
               if (document.querySelector(PARTY_STEPS[coach.step].sel)) endPartyCourse(false);
@@ -9636,6 +9657,68 @@ export default function GoldSettlement() {
           </div>
         </InfoModal>
       )}
+      {/* 표 아래 사람의 [자리 정하기] (2026-09-06 재정정) — 빈 줄·퇴장한 사람 줄·새 줄 중에 방장이 고릅니다.
+          퇴장 줄에 벌금이 남아 있으면 확인창(사용자: "퇴장 자리에도 채울 수 있어야… 대신 알림이 떠야겠죠"). 문구는 §8 초안 */}
+      {waitPick &&
+        !readOnly &&
+        (() => {
+          const p = waitPick;
+          const nick = p.nick || p.acct;
+          const close = () => setWaitPick(null);
+          const opts = seats.map((s0, i) => ({ s: s0, i })).filter(({ s: s0, i }) => i > 0 && !s0.acct);
+          const fineOf = (s0) => {
+            const r = rows.find((x) => x.id === s0.id);
+            return r ? liveTotal(r) : 0;
+          };
+          const pick = (id) => {
+            close();
+            waitPlace(p, id);
+          };
+          return (
+            <InfoModal title={nick + " 자리 정하기"} onClose={close}>
+              <div className="gs-key">
+                <p className="gs-ppl-who">어느 줄에 앉힐까요? 퇴장한 사람 줄에 앉히면 남은 벌금도 그 사람 것이 돼요.</p>
+                <div className="gs-seatlist gs-waitpick">
+                  {opts.map(({ s: s0, i }) => {
+                    const g = fineOf(s0);
+                    const left = !!s0.left;
+                    const label = seatName2(s0, i);
+                    return (
+                      <button
+                        key={s0.id}
+                        className="gs-seatopt"
+                        onClick={() => {
+                          if (left && g > 0) {
+                            close();
+                            setAsk({
+                              title: label + "의 벌금 " + man(g) + "이 남아 있어요",
+                              body: nick + "님이 이 줄에 앉으면 그 벌금도 " + nick + "님 것이 돼요.",
+                              action: "이 줄에 앉히기",
+                              onYes: () => waitPlace(p, s0.id),
+                            });
+                            return;
+                          }
+                          pick(s0.id);
+                        }}
+                      >
+                        {label} 줄
+                        <em className="gs-seatopt-g">{left ? "퇴장 · 벌금 " + man(g) : "빈 줄"}</em>
+                      </button>
+                    );
+                  })}
+                  <button className="gs-seatopt gs-seatopt-new" onClick={() => pick("new")}>
+                    + 새 줄 만들기
+                  </button>
+                </div>
+                <div className="gs-obs-acts gs-acts-end">
+                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={close}>
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </InfoModal>
+          );
+        })()}
       {/* [자리 바꾸기] — 옮기면 자수 자격이 따라갑니다 */}
       {seatMove && (
         <SeatPick
@@ -13349,7 +13432,9 @@ const PARTY_STEPS = [
   { no: 6, sel: ".gs-grid", text: "올라갔죠? 파티원은 자기 줄을 자수 탭에서 직접 눌러요. 실리안이 지금 누르는 중…", lock: true, wait: "auto" },
   { no: 6, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
   /* 표 아래 줄은 화면 가운데로 — 아래 끝에 걸리면 '방금 바뀐' 카드가 [받기]를 덮습니다(사용자 지적) */
-  { no: 7, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [받기]를 누르면 빈 줄에 앉아요.", wait: "take", center: true },
+  { no: 7, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", center: true },
+  /* 시트는 모달(z 50) 위라 이 걸음만 안내를 그 위로 올립니다(top) */
+  { no: 7, sel: ".gs-modal .gs-waitpick", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
   { no: 8, sel: ".gs-endbtn", text: "다 끝나면 여기예요. 결과지가 기록에 남아요. 다시 보려면 [?]에서요.", action: "알겠어요", lock: true },
 ];
 const PARTY_TOTAL = 8;
@@ -13369,7 +13454,7 @@ const cameByInvite = () => {
 
 /* block: 대상 말고는 못 누르게 막고 나머지를 어둡게 덮습니다.
    lock: 대상까지 막습니다 — 말풍선의 버튼으로만 넘어가는 걸음용. */
-function CoachMark({ sel, text, action, step, total, block, lock, center, onNext, onClose }) {
+function CoachMark({ sel, text, action, step, total, block, lock, center, overModal, onNext, onClose }) {
   const [box, setBox] = useState(null);
   /* 그린 뒤에 실제 높이를 재서 다시 앉힙니다 — 어림값으로 두면 걸음마다 틈이 달라집니다 */
   const bubRef = useRef(null);
@@ -13474,7 +13559,7 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, onNext
   /* 자리를 옮겼으면 꼬리는 대상을 안 가리킵니다 — 엉뚱한 데를 찌르느니 뗍니다 */
   const tail = top === want;
   return (
-    <div className={"gs-coach" + (block ? " gs-coach-pass" : "")}
+    <div className={"gs-coach" + (block ? " gs-coach-pass" : "") + (overModal ? " gs-coach-top" : "")}
       onMouseDown={(e) => !block && e.target === e.currentTarget && onClose()}
     >
       {/* 대상만 남기고 덮습니다 — 어두운 곳은 눌러도 안 되는 곳입니다 */}
@@ -14650,6 +14735,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-pressing{padding-bottom:300px} /* '방금 바뀐' 카드(고정, 아래 오른쪽)가 표 끝 줄의 버튼을 덮지 않게 내려 볼 여지 (2026-09-06) */
 .gs-demoband ~ .gs-sysbar{margin-top:0} /* 시스템 줄의 위 당김(-20px)은 띠가 없을 때의 것 — 사이에 <style> 이 있어 형제 선택자는 ~ */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
+.gs-coach.gs-coach-top{z-index:55} /* 같이 해보기가 시트 안을 가리킬 때만 (2026-09-06) */
 .gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px;
   pointer-events:none; animation:gs-coach-breathe 1.6s ease-in-out infinite}
 @keyframes gs-coach-breathe{0%,100%{opacity:1} 50%{opacity:.45}}
