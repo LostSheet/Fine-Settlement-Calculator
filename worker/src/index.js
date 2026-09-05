@@ -33,6 +33,8 @@ const json = (data, status = 200) =>
 /* 수명 (§1) */
 const SESSION_MS = 90 * 86400 * 1000;
 const INVITE_MS = 10 * 60 * 1000;
+/* 코드 색인(계정부)은 방을 찾는 포인터일 뿐이고 유효는 방이 판단합니다 (2026-09-06) — 넉넉히 둡니다 */
+const INVITE_INDEX_MS = 7 * 86400 * 1000;
 /* 판의 수명 판단(자동 중단 24시간·판 삭제 90일)은 round.js 가 갖고 있습니다 */
 const ACCT_IDLE_MS = 365 * 86400 * 1000;
 const ACCT_SCAN_MS = 7 * 86400 * 1000;
@@ -43,6 +45,9 @@ const MAX_STATE_BYTES = 128 * 1024;
 const MAX_AUTH_BYTES = 32 * 1024;
 const LOOK_MAX_BYTES = 4 * 1024;
 const CONFESS_PER_MIN = 20;
+/* 자수 되돌리기 창 (§3.6, 2026-09-05) — 내가 방금 올린 것만 30초 안에 −1 로 되돌립니다.
+   그 뒤의 조정은 방장의 일입니다. 자기 벌금을 나중에 슬쩍 깎는 길을 막습니다 */
+const CONFESS_UNDO_MS = 30 * 1000;
 /* 지목 초대는 1분짜리 실시간 악수입니다 (§3.3) — 만료를 알리는 배관은 없고,
    지난 것은 읽을 때 버립니다. 다시 지목하면 그만입니다 */
 const INV_MS = 60 * 1000;
@@ -129,7 +134,8 @@ export default {
     if (
       p.startsWith("/api/auth/") ||
       p === "/api/invite" ||
-      new RegExp(`^/api/o/${TOK20}/resolve$`).test(p)
+      new RegExp(`^/api/o/${TOK20}/resolve$`).test(p) ||
+      /^\/api\/j\/[A-Z0-9]{8}\/resolve$/i.test(p)
     )
       return accountsDO(env).fetch(new Request("https://do" + p, req));
 
@@ -424,6 +430,25 @@ export class Accounts {
         if (seat) out.seat = seat;
       }
       return json(out);
+    }
+
+    /* 초대 코드 색인 (§3.0·§4 보충, 2026-09-05) — 코드 8자만 치고 들어오는 로비 입력칸이 방을
+       찾습니다. Room 이 초대를 발급할 때 /code-index 로 밀어 두고, 지난 것은 읽을 때 버립니다.
+       주소 붙여넣기는 색인 없이 됩니다(주소에 방과 코드가 다 있습니다) */
+    if (/^\/api\/j\/[A-Z0-9]{8}\/resolve$/i.test(p) && req.method === "GET") {
+      const code = p.split("/")[3].toUpperCase();
+      const c = await S.get("c:" + code);
+      if (!c || (c.exp && c.exp < now)) {
+        if (c) await S.delete("c:" + code);
+        return json({ error: "not found" }, 404);
+      }
+      return json({ roomId: c.room });
+    }
+    if (p === "/code-index" && req.method === "POST") {
+      const code = String(b.code || "").toUpperCase();
+      if (!/^[A-Z0-9]{8}$/.test(code) || !b.room) return json({ error: "bad input" }, 400);
+      await S.put("c:" + code, { room: String(b.room), exp: Number(b.exp) || now + 600000 });
+      return json({ ok: true });
     }
 
     /* 지목 초대 — 함께한 사람에게만 쏩니다 (§3.3). 자리는 보내는 쪽이 그때 정하고,
@@ -793,7 +818,8 @@ const tagOf = (ws) => {
     return null;
   }
 };
-const youOf = (m) => (m ? { nick: m.nick, rowId: m.rowId || null, st: m.st } : null);
+const youOf = (m) =>
+  m ? { nick: m.nick, rowId: m.rowId || null, st: m.st, kicked: !!m.kicked, full: !!m.full } : null;
 
 export class Room {
   constructor(ctx, env) {
@@ -881,24 +907,42 @@ export class Room {
       } catch (e) {}
     }
   }
-  /* 옛 [파티 끝내기] 가 쓰던 전원 해제입니다. 해산(전원 킥) 동사는 폐기됐고 (§3.4)
-     앱은 이 길을 부르지 않습니다 — 사람 정리는 본인 [나가기]와 방장 내보내기뿐입니다.
-     라우트만 남겨 둡니다(옛 앱이 부를 수 있어서).
-     통지 뒤 소켓을 닫는 것은 member remove 와 같은 이유입니다 (§4.2). */
-  async clearMembers() {
+  /* 끝내기 = 해산 (2026-09-06 모델). 파티원은 판에 속하니 판이 없어지면 전원 빠집니다 — 색인도 놓아
+     파티원 로비의 복귀 줄이 같이 사라집니다. 통지에 end:1 을 실어 앱이 내보내짐과 가릅니다.
+     통지 뒤 소켓을 닫는 것은 member remove 와 같은 이유입니다 (§4.2).
+     (폐기 2026-09-05 "해산 동사 없음, 정산 끝내기는 아무도 안 내보냄" — 다음 대기실에 지난 사람이 남는 그림이 됐다) */
+  async clearMembers(req) {
     const list = await this.members();
     for (const m of list) {
       await this.ctx.storage.delete("m:" + m.acct);
-      this.toAcct(m.acct, { kind: "you", you: null });
+      await this.releaseSeat(m.acct, req);
+      this.toAcct(m.acct, { kind: "you", you: null, end: 1 });
       this.dropAcct(m.acct);
     }
     return list.length;
+  }
+  /* 판을 없앱니다 — 명단·내보냄 표시·판 존재 표시가 비고 로비가 닫힙니다. 결과지(state, end:1)와
+     방·방장·코드는 남습니다. 남는 것은 결과지와 기본값이라는 규칙이 여기 삽니다 */
+  async endParty(req, now) {
+    const S = this.ctx.storage;
+    const cleared = await this.clearMembers(req);
+    /* 내보냄 표시는 판의 것입니다 — 다음 판엔 일반 입장. 계속 막으려면 코드 새로 발급 */
+    for (const [k] of await S.list({ prefix: "x:" })) await S.delete(k);
+    const st = await S.get("state");
+    if (st && st.roundId && !st.end) await S.put("state", { ...st, end: 1 });
+    const cur = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
+    const lobby = { open: false, cap: cur.cap || 8, since: 0 };
+    await S.put("lobby", lobby);
+    await S.delete("party");
+    await this.arm();
+    this.bcast({ kind: "lobby", lobby });
+    return cleared;
   }
 
   /* 파티 하나 규칙 (§3.3) — 이 계정이 여기 앉는 순간, 계정부가 다른 방의 착석을 지웁니다.
      방 id 는 메인 fetch 가 헤더로 실어 줍니다(내 방 열 때는 저장해 둔 것도 있습니다) */
   async roomId(req) {
-    return req.headers.get("x-room") || (await this.ctx.storage.get("roomId")) || "";
+    return (req && req.headers.get("x-room")) || (await this.ctx.storage.get("roomId")) || "";
   }
   async claimSeat(acct, req) {
     const room = await this.roomId(req);
@@ -919,6 +963,22 @@ export class Room {
       return !!a && a.k === "scribe";
     });
   }
+  /* 판이 있는가 (2026-09-06 모델: 판은 만들면 생기고 끝내면 없다) — 새 판 만들기가 로비를 열며 켠 표시,
+     또는 아직 끝나지 않은 진행 중 판. 문은 판이 있을 때만 열립니다 */
+  async hasParty() {
+    const S = this.ctx.storage;
+    if (await S.get("party")) return true;
+    /* 열린 로비 = 시작 전 판 (표시가 없는 옛 방도 같은 뜻입니다) */
+    const lb = await S.get("lobby");
+    if (lb && lb.open) return true;
+    const st = await S.get("state");
+    return !!(st && st.roundId && !st.end);
+  }
+  /* 코드는 방장이 앱을 열어 둔 동안(서기 소켓) 살아 있고, 마지막 서기 소켓이 끊기면 10분 뒤 만료입니다 (2026-09-06).
+     (폐기) 발급 뒤 10분 고정 — 20분 모으다 보면 링크가 죽어 다시 붙여야 했다 */
+  inviteOk(inv, now) {
+    return !!inv && (this.scribeOn() || (inv.exp || 0) > now);
+  }
 
   async members() {
     const out = [];
@@ -932,8 +992,21 @@ export class Room {
         st: v.st,
         t: v.t,
         inv: !!v.inv,
+        /* 왜 기다리는지 (§3.3, 2026-09-05 표준화) — 내보냈던 사람은 승인으로만 돌아옵니다 */
+        kicked: !!v.kicked,
+        full: !!v.full,
+        /* 지금 붙어 있는지 — 방장 표의 아이디 표시가 이걸로 흐려집니다 (§5.6) */
+        on: this.acctOn(k.slice(2)),
       });
     return out;
+  }
+  /* 이 계정의 뷰어 소켓이 하나라도 붙어 있는지 (except 는 지금 닫히는 소켓) */
+  acctOn(acct, except) {
+    return this.ctx.getWebSockets().some((ws) => {
+      if (ws === except) return false;
+      const a = tagOf(ws);
+      return !!a && a.k === "v" && a.acct === acct;
+    });
   }
 
   async isOwner(me) {
@@ -985,16 +1058,20 @@ export class Room {
 
     /* 이 계정이 이 방에서 어떤 상태인지 (Accounts /me → 방).
        `live` 는 "지금 판이 살아 있나"입니다 — 마지막으로 받은 판이 끝난 판(end)도
-       얼어 있는 판(paused)도 아니어야 합니다 (§3.4) */
+       얼어 있는 판(paused)도 아니어야 합니다 (§3.4). 시작 전(state.lobby)도 살아 있는 판입니다.
+       `round` 는 그중 "진행 중"만 — 로비 복귀 줄의 `시작 전/진행 중` 과 [나가기] 확인창이 봅니다
+       (2026-09-06 검증에서 고침: live 로 표시하니 시작 전 파티가 `진행 중` 이라 했고 나가기가 물었다) */
     if (path === "/seat-of") {
       const { acct } = await req.json().catch(() => ({}));
       if (typeof acct !== "string" || !acct) return json({ error: "bad json" }, 400);
       const m = await S.get("m:" + acct);
       if (!m) return json({ st: null, live: false });
       const [state, paused] = await Promise.all([S.get("state"), S.get("paused")]);
+      const live = !!state && !state.end && !paused;
       return json({
         st: m.st,
-        live: !!state && !state.end && !paused,
+        live,
+        round: live && !state.lobby,
         ownerNick: (await S.get("ownerNick")) || "",
       });
     }
@@ -1130,11 +1207,23 @@ export class Room {
       return json({ state: (await S.get("state")) || null });
     }
 
+    /* 지금 코드 (2026-09-06) — 새 판 만들기·새로고침이 있는 코드를 그대로 씁니다. 죽었으면 null */
+    if (path === "/invite" && req.method === "GET") {
+      if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
+      const inv = await S.get("invite");
+      return json({ invite: this.inviteOk(inv, now) ? inv : null });
+    }
     // 초대 재발급 — 옛 코드는 그 자리에서 무효, 기존 멤버는 무영향
     if (path === "/invite" && req.method === "POST") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
       const invite = { code: rid(8), exp: now + INVITE_MS };
       await S.put("invite", invite);
+      /* 코드만으로 찾아오는 길 (§3.0 로비 입장칸) — 계정부 색인에 한 줄. 유효는 방이 판단하므로 색인은 넉넉히 */
+      try {
+        await this.toAccounts("/code-index", { code: invite.code, room: await this.roomId(req), exp: now + INVITE_INDEX_MS });
+      } catch (e) {
+        /* 색인이 안 돼도 초대 자체는 살아 있습니다 — 주소 붙여넣기는 색인 없이 됩니다 */
+      }
       return json({ invite });
     }
 
@@ -1154,6 +1243,8 @@ export class Room {
          없습니다 (§3.4). 로비 6시간 자동 닫힘도 폐기했습니다 — 로비는 영구입니다 (§1). */
       const lobby = { open, cap, since: open ? (cur.open && cur.since ? cur.since : now) : 0 };
       await S.put("lobby", lobby);
+      /* 판 존재 표시 (2026-09-06 모델) — 새 판 만들기가 로비를 열며 켭니다. 끄는 것은 /end 뿐입니다 */
+      if (open) await S.put("party", { at: now });
       this.bcast({ kind: "lobby", lobby });
       return json({ lobby });
     }
@@ -1173,11 +1264,11 @@ export class Room {
       return json({ ok: true, paused: false });
     }
 
-    /* [파티 끝내기] — 파티원 전부 해제. 파티원은 마지막으로 받은 판(정산 결과)을
-       계속 보지만(§5.4), 그 뒤로는 아무것도 못 봅니다 */
+    /* [정산 끝내기]·[해산] — 판이 없어집니다 (2026-09-06 모델). 파티원은 마지막으로 받은 결과지를
+       계속 보고, 방장이 새 판을 만들면 그 화면의 띠가 [들어가기]로 바뀝니다 */
     if (path === "/end" && req.method === "POST") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
-      const cleared = await this.clearMembers();
+      const cleared = await this.endParty(req, now);
       return json({ ok: true, cleared });
     }
 
@@ -1206,8 +1297,11 @@ export class Room {
         }
         m.st = "ok";
         m.t = now;
-        /* 앉았으니 "자리가 없어 내려앉은 신청" 표시는 걷습니다 */
+        /* 앉았으니 "자리가 없어 내려앉은 신청" 표시는 걷습니다 — 내보냈던 기록도 여기서 지웁니다 (§3.3) */
         delete m.inv;
+        delete m.kicked;
+        delete m.full;
+        await S.delete("x:" + acct);
         if (typeof b.rowId === "string" && b.rowId) m.rowId = b.rowId;
         await S.put("m:" + acct, m);
         /* st:"ok" 가 되는 순간이 파티 하나 규칙이 걸리는 자리입니다 (§3.3) */
@@ -1220,6 +1314,9 @@ export class Room {
         return json({ ok: true, member: { acct, ...youOf(m) } });
       }
       if (b.action === "remove") {
+        /* 내보낸 사람은 같은 링크로 와도 즉시 착석이 아니라 방장 승인입니다 (§3.3, 2026-09-05 표준화).
+           표시는 승인 때 지워집니다 — 실수로 내보낸 경우의 복구 길이 그것입니다 */
+        await S.put("x:" + acct, { t: now });
         await S.delete("m:" + acct);
         await this.releaseSeat(acct, req);
         // 마지막 파티원이 빠지면 혼자 판입니다 — 자동 중단 알람을 걷습니다
@@ -1241,29 +1338,34 @@ export class Room {
       if (!me) return json({ error: "unauthorized" }, 401);
       const m = await S.get("m:" + me.id);
       if (!m || m.st !== "ok") return json({ error: "forbidden" }, 403);
-      if (m.rowId) return json({ error: "seated" }, 409);
+      const st = await S.get("state");
+      /* 시작 전(모집 중 = state.lobby 가 있음)에는 자리를 옮길 수 있습니다 (§3.2, 2026-09-05 표준화 — 빈 슬롯을
+         누르면 옮겨 가는 로비 문법). 진행 중엔 줄에 벌금이 붙어 있어 방장이 배치합니다 */
+      if (m.rowId && !(st && st.lobby)) return json({ error: "seated" }, 409);
       const rowId = typeof b.rowId === "string" ? b.rowId : "";
       if (!rowId) return json({ error: "bad row" }, 400);
       /* 줄이 실제로 있고 비어 있는지는 방장이 민 상태가 압니다 — 방장 줄(a:1)도
          멤버 목록에는 없어서, 상태의 표시가 문지기입니다 */
-      const st = await S.get("state");
       const r2 = st && Array.isArray(st.rows2) ? st.rows2.find((x) => x.rowId === rowId) : null;
       if (st && Array.isArray(st.rows2) && !r2) return json({ error: "bad row" }, 400);
       if (r2 && r2.a) return json({ error: "taken" }, 409);
       const taken = (await this.members()).some((x) => x.st === "ok" && x.rowId === rowId);
       if (taken) return json({ error: "taken" }, 409);
+      const from = m.rowId || null;
       m.rowId = rowId;
       m.t = now;
       await S.put("m:" + me.id, m);
-      this.toScribe({ kind: "seat", acct: me.id, nick: me.nick, rowId });
+      this.toScribe({ kind: "seat", acct: me.id, nick: me.nick, rowId, from });
       return json({ ok: true, you: youOf(m) });
     }
 
     /* 들어오는 길 셋 (§3.3·§4.2 라운드 B).
        (a) 지목 초대 — 방장이 이미 고른 사람이라 방장 수락이 없습니다.
        (b) 코드 없음 — 노크. 방장의 함께한 사람만 문 앞에 설 수 있습니다.
-       (c) 링크 — 소지자 표라 언제나 신청입니다. 초대 링크는 디코에도 방송 화면에도 새므로,
-           낯선 사람이 자리를 먼저 차지한 뒤 빼내는 것보다 문 앞에서 기다리는 것이 맞습니다 */
+       (c) 링크 = 초대장 (2026-09-05 개정, §3.3) — 유효한 코드면 바로 앉습니다. 방장이 골라 보낸
+           10분짜리 비밀 코드고, 새는 링크는 재발급·내보내기가 막습니다. 정원은 모집 중일 때만 세고,
+           만석이면 지목 초대와 같은 갈래로 신청으로 내려앉힙니다.
+           (폐기) "소지자 표라 언제나 신청" — 초대받고 왔는데 문 앞에 세워지는 게 낯설었습니다 */
     if (path === "/join" && req.method === "POST") {
       if (!me) return json({ error: "unauthorized" }, 401);
       const owner = await S.get("owner");
@@ -1277,6 +1379,9 @@ export class Room {
         }
         return json({ ok: true, st: cur.st, you: youOf(cur), already: true });
       }
+      /* 문은 판이 있을 때만 열립니다 (2026-09-06 모델) — 초대가 유효한지가 먼저고(무효·만료는 그 말로), 그 다음
+         판이 있는지입니다. 앱은 `지금은 열린 판이 없어요.` 한 줄을 띄우고, 방장이 새 판을 만들면 같은 링크로 다시 옵니다 */
+      const noParty = async () => !(await this.hasParty());
       /* (a) 지목 초대 — 자리도 그때 정해져 있어서 그대로 앉히고, 서기에게 알려
          장부의 줄까지 잇게 합니다. 유효하지 않으면 여기서 끝입니다 (앱은 만료 문구를 띄웁니다) */
       if (b.inv) {
@@ -1286,6 +1391,7 @@ export class Room {
           room: req.headers.get("x-room") || "",
         });
         if (!iv || !iv.ok) return json({ error: "invite" }, 403);
+        if (await noParty()) return json({ error: "no party" }, 409);
         /* 초대는 자리를 잡아 두지 않습니다 — 예약하면 여럿을 부른 순간 방이 잠기고,
            1분짜리 초대가 그동안 자리를 죽입니다. 그래서 문 앞에서 다시 셉니다.
            그 사이 자리가 없어졌으면 튕기지 않고 **신청으로 내려앉힙니다** (§3.3):
@@ -1318,6 +1424,7 @@ export class Room {
       if (!code) {
         const r = await this.toAccounts("/mate-of", { a: owner, b: me.id });
         if (!r || !r.yes) return json({ error: "invite" }, 403);
+        if (await noParty()) return json({ error: "no party" }, 409);
         const m = { nick: me.nick, rowId: null, st: "req", t: now };
         await S.put("m:" + me.id, m);
         this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "req", knock: 1 });
@@ -1327,12 +1434,33 @@ export class Room {
          다릅니다 (§8: `초대가 만료됐어요…` / `이 초대는 쓸 수 없어요…`) */
       const inv = await S.get("invite");
       if (!inv || code !== inv.code) return json({ error: "invite" }, 403);
-      if (inv.exp < now) return json({ error: "expired" }, 403);
-      const st = "req";
+      if (!this.inviteOk(inv, now)) return json({ error: "expired" }, 403);
+      if (await noParty()) return json({ error: "no party" }, 409);
+      const lobby = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
+      let full = false;
+      if (lobby.open) {
+        const seated = (await this.members()).filter((x) => x.st === "ok").length + 1;
+        full = seated >= lobby.cap;
+      }
+      /* 내보냈던 사람은 즉시 착석이 아니라 방장 승인입니다 (§3.3, 2026-09-05 표준화) */
+      const kicked = !!(await S.get("x:" + me.id));
+      const st = full || kicked ? "req" : "ok";
       const m = { nick: me.nick, rowId: null, st, t: now };
+      if (kicked) m.kicked = 1;
+      else if (full) m.full = 1;
       await S.put("m:" + me.id, m);
-      this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st });
-      return json({ ok: true, st, you: youOf(m) });
+      if (st === "ok") {
+        /* st:"ok" 가 되는 순간 — 파티 하나 규칙·자동 중단 무장·함께한 사람 관계 (§3.3) */
+        await this.claimSeat(me.id, req);
+        await this.arm();
+        await this.toAccounts("/mated", { a: owner, b: me.id });
+      }
+      /* 자리는 방장 앱이 §3.2 규칙으로 고릅니다(seat: null) — 지목 초대 수락과 같은 길 */
+      this.toScribe({
+        kind: "join", acct: me.id, nick: me.nick, st, seat: null, link: 1,
+        kicked: kicked ? 1 : 0, full: full ? 1 : 0,
+      });
+      return json({ ok: true, st, you: youOf(m), full, kicked });
     }
 
     /* [나가기]와 [신청 취소]가 같은 길입니다 — st:"req" 도 여기서 지워집니다 (§4.2 라운드 B).
@@ -1367,6 +1495,15 @@ export class Room {
       await S.put("cg:" + me.id, g);
       if (g.n > CONFESS_PER_MIN) return json({ error: "slow down" }, 429);
       if (!this.scribeOn()) return json({ error: "scribe-off" }, 409);
+      /* 되돌리기는 방금(30초 안) 올린 만큼만 — 항목별로 올린 수와 마지막 시각을 기억합니다 */
+      const ck = "cf:" + me.id + ":" + colId;
+      const cf = (await S.get(ck)) || { n: 0, t: 0 };
+      if (dir === -1) {
+        if (cf.n <= 0 || now - cf.t > CONFESS_UNDO_MS) return json({ error: "late" }, 409);
+        await S.put(ck, { n: cf.n - 1, t: cf.t });
+      } else {
+        await S.put(ck, { n: (now - cf.t > CONFESS_UNDO_MS ? 0 : cf.n) + 1, t: now });
+      }
       this.toScribe({
         kind: "confess",
         acct: me.id,
@@ -1427,15 +1564,17 @@ export class Room {
       const inv = await S.get("invite");
       const j = String(url.searchParams.get("j") || "").toUpperCase();
       if (owner && inv && j && j === inv.code) {
-        if (inv.exp > Date.now()) ok = true;
-        /* 코드는 맞는데 시간이 지난 것입니다 — 문구가 다릅니다 (§8) */
-        else if (!me) why = "expired";
+        if (this.inviteOk(inv, Date.now())) ok = true;
+        /* 코드는 맞는데 시간이 지난 것입니다 — 문구가 다릅니다 (§8). 로그인 상태도 같습니다 (2026-09-05) */
+        else why = "expired";
       }
     }
     if (!ok) return this.deny(client, server, why);
 
     server.serializeAttachment({ k: "v", acct: me ? me.id : null });
     this.ctx.acceptWebSocket(server);
+    /* 파티원이 붙었습니다 — 방장 앱의 접속 표시 (§5.6) */
+    if (me) this.toScribe({ kind: "viewer", acct: me.id, on: true });
     const on = this.scribeOn();
     const pz = await S.get("paused");
     const paused = pz ? { why: pz.why } : null;
@@ -1469,10 +1608,21 @@ export class Room {
   webSocketError(ws) {
     this.gone(ws);
   }
-  gone(ws) {
+  async gone(ws) {
     const a = tagOf(ws);
+    /* 파티원 소켓이 끊기면 방장에게 접속 표시를 내립니다 — 다른 탭이 남아 있으면 그대로 켜져 있습니다 */
+    if (a && a.k === "v" && a.acct) {
+      this.toScribe({ kind: "viewer", acct: a.acct, on: this.acctOn(a.acct, ws) });
+      return;
+    }
     if (!a || a.k !== "scribe") return;
-    if (!this.scribeOn(ws)) this.bcast({ kind: "presence", scribeOn: false }, (w) => w !== ws);
+    if (!this.scribeOn(ws)) {
+      this.bcast({ kind: "presence", scribeOn: false }, (w) => w !== ws);
+      /* 마지막 서기 소켓이 끊겼습니다 — 코드는 여기서부터 10분 뒤에 만료됩니다 (2026-09-06) */
+      const S = this.ctx.storage;
+      const inv = await S.get("invite");
+      if (inv) await S.put("invite", { ...inv, exp: Math.max(inv.exp || 0, Date.now() + INVITE_MS) });
+    }
   }
 
   /* 알람 하나로 다음 만료 시각을 관리합니다 — 자동 중단 24시간과 판 삭제 90일이 같이 삽니다.
@@ -1493,8 +1643,9 @@ export class Room {
        중계되지 않게 경계에서 얼립니다. 잃는 것은 없습니다 ([이어가기] 한 번이면 복귀) */
     if (shouldAutoPause({ stateAt, paused: !!paused, seated: await this.seated(), now }))
       await this.setPaused(true, "idle");
-    // 판만 지웁니다 — 방·명단·방장은 남습니다
+    /* 90일 무활동 — 판을 지웁니다. 판이 없어지는 것이니 해산과 같게 명단·표시도 비웁니다 (2026-09-06). 방·방장·코드는 남습니다 */
     if (stateAt && stateAt + STATE_IDLE_MS <= now) {
+      await this.endParty(null, now);
       await S.delete(["state", "stateAt"]);
       this.toViewers({ kind: "state", state: null, scribeOn: this.scribeOn() });
     }

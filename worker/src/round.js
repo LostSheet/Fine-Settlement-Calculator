@@ -9,8 +9,10 @@ export const PAUSE_IDLE_MS = 24 * 3600 * 1000;
 export const STATE_IDLE_MS = 90 * 86400 * 1000;
 
 /* seated = "계정이 붙은 자리(st ok)가 하나라도 있는가". 0 이면 걸 알람이 없습니다 */
-export const autoPauseAt = ({ stateAt, paused, seated }) =>
-  !stateAt || paused || !seated ? 0 : stateAt + PAUSE_IDLE_MS;
+/* (폐기 2026-09-05, §3.4) 자동 중단 — 방장 앱이 없으면 자수는 이미 잠기고(scribeOn=false),
+   오버레이에 옛 판이 남는 것은 "판을 언제 닫을지는 방장이 정한다"가 받아들인 일이라 근거가
+   사라졌다. 판단 함수는 시험이 부르므로 이름은 남기고 언제나 0(알람 없음)을 돌려준다 */
+export const autoPauseAt = () => 0;
 
 export const shouldAutoPause = ({ stateAt, paused, seated, now }) => {
   const at = autoPauseAt({ stateAt, paused, seated });

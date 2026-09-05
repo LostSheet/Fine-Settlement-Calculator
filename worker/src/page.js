@@ -336,6 +336,9 @@ export const PAGE_HTML = `<!doctype html>
     background-position:0 0,11px 11px;
   }
 
+  /* 미리보기의 예시 리본 (§4.4) — 미리보기 창에만 존재하는 요소라 방송에는 못 샙니다 */
+  .ov-sample{position:fixed; left:0; right:0; bottom:0; padding:10px 14px; font-size:13px; line-height:1.5;
+    color:rgba(255,255,255,.92); background:rgba(20,20,20,.78); text-align:center; letter-spacing:.01em}
   /* 방송 중이 아님이 확인될 때만 JS가 켭니다 */
   .ov-notice{display:none; font-size:2.6vw; line-height:1.6; color:#f0b8b0; padding:1.2vw 1.6vw;
     text-shadow:0 1px 3px rgba(0,0,0,.9)}
@@ -439,24 +442,35 @@ export const PAGE_HTML = `<!doctype html>
     }
   };
 
-  /* 브라우저로 열렸다고 판단될 때만 한 줄 얹습니다 — 판별을 거꾸로 쓴 자리입니다.
-     틀려서 방송에 새더라도 새는 것은 이 한 줄뿐입니다 (실패의 대가를 뒤집는 게 요점).
+  /* 사람 브라우저에서만 한 줄 얹습니다 — 판별은 마우스입니다 (2026-09-05): 송출
+     프로그램의 소스 화면에는 마우스가 안 움직이므로, 처음 마우스가 움직일 때만
+     띠를 만듭니다. UA·obsstudio 판별은 보조로 남깁니다(마이너 송출 프로그램은
+     UA 로 못 걸러서, 옛 방식으로는 방송에 띠가 샜습니다).
      미리보기 창(?fit=1)은 앱이 그림을 확인하라고 여는 자리라 빼 둡니다. */
   if (OTOK && !inCast && !isPreview) {
-    var hint = document.createElement("div");
-    hint.className = "ov-hint";
-    var hintText = document.createElement("b");
-    hintText.textContent = "이 주소는 방송 프로그램에 넣는 주소예요.";
-    /* 누를 수 있는 문 하나 — ?mode=page 로 다시 열면 앱의 읽기 화면으로 넘어갑니다 */
-    var hintGo = document.createElement("a");
-    hintGo.textContent = "현황판으로 보기";
-    hintGo.href = location.pathname + "?mode=page" + location.hash;
-    hintText.appendChild(hintGo);
-    hint.appendChild(hintText);
-    document.body.appendChild(hint);
+    var hintOnce = function () {
+      window.removeEventListener("mousemove", hintOnce);
+      window.removeEventListener("touchstart", hintOnce);
+      var hint = document.createElement("div");
+      hint.className = "ov-hint";
+      var hintText = document.createElement("b");
+      hintText.textContent = "이 주소는 방송 프로그램에 넣는 주소예요.";
+      /* 누를 수 있는 문 하나 — ?mode=page 로 다시 열면 앱의 읽기 화면으로 넘어갑니다 */
+      var hintGo = document.createElement("a");
+      hintGo.textContent = "현황판으로 보기";
+      hintGo.href = location.pathname + "?mode=page" + location.hash;
+      hintText.appendChild(hintGo);
+      hint.appendChild(hintText);
+      document.body.appendChild(hint);
+    };
+    window.addEventListener("mousemove", hintOnce);
+    window.addEventListener("touchstart", hintOnce);
   }
 
   var app = document.getElementById("app");
+  /* 예시 명단 — 예시 방(CAFE22)과 미리보기의 예시 판이 같이 씁니다 */
+  var SAMPLE = [["주키니", 450000], ["팔복", 340000], ["읍지", 320000], ["이다", 180000],
+                ["포셔", 170000], ["히휴", 110000], ["눈가루", 90000], ["티모", 60000]];
   var board = null;   // [{n,g,c}] — 앱이 계산해서 보내줍니다
   var cols = [];      // [{t,r}] — 항목 열 머리
   var showNet = true; // 순액 열을 켤지 (기본 켬)
@@ -542,10 +556,13 @@ export const PAGE_HTML = `<!doctype html>
   /* 순위: 금액 내림차순, 동률은 표에 적힌 순서 유지 */
   var ranked = function (rows) {
     return rows.map(function (r, i) {
-      return { n: r.n, g: r.g || 0, c: r.c || [], d: r.d || 0, i: i };
+      return { n: r.n, k: r.k, g: r.g || 0, c: r.c || [], d: r.d || 0, i: i };
     })
       .sort(function (a, b) { return b.g - a.g || a.i - b.i; });
   };
+  /* 줄의 열쇠 — 앱이 실어 주는 줄 고유번호가 있으면 그걸로, 없으면(옛 스냅샷) 이름으로.
+     이름을 열쇠로 쓰면 닉이 겹칠 때 번쩍임·이동표시가 남의 줄에 붙습니다 (2026-09-05) */
+  var rowKey = function (r) { return r.k != null ? "#" + r.k : r.n; };
 
   var esc = function (t) {
     return String(t == null ? "" : t).replace(/[&<>"]/g, function (c) {
@@ -621,10 +638,10 @@ export const PAGE_HTML = `<!doctype html>
 
     /* 이번 렌더에서 생긴 변화를 먼저 적어 둡니다 */
     list.forEach(function (r, i) {
-      var was = prev[r.n];
+      var was = prev[rowKey(r)];
       if (!was) return;
       var rank = i + 1;
-      var rc = recent[r.n] || (recent[r.n] = {});
+      var rc = recent[rowKey(r)] || (recent[rowKey(r)] = {});
 
       if (r.g !== was.g) {
         // 표시가 꺼져 있었으면 지금 값을 기준점으로 새로 시작합니다
@@ -644,9 +661,9 @@ export const PAGE_HTML = `<!doctype html>
        단가를 0으로 두고 횟수만 세는 판이 그렇습니다 — 그때는 아무도 안 흐리게 둡니다. */
     var anyPaid = list.some(function (r) { return (r.g || 0) !== 0; });
     var html = list.map(function (r, i) {
-      var was = prev[r.n];
+      var was = prev[rowKey(r)];
       var justHit = !!was && r.g - was.g !== 0;   // 번쩍임은 바뀐 그 순간만
-      var rc = recent[r.n] || {};
+      var rc = recent[rowKey(r)] || {};
       var dAge = rc.dAt == null ? Infinity : now - rc.dAt;
       var mAge = rc.mvAt == null ? Infinity : now - rc.mvAt;
       var showD = mvMode === "chip" && dAge < DELTA_MS, showM = mAge < MOVE_MS;
@@ -654,7 +671,7 @@ export const PAGE_HTML = `<!doctype html>
         (i === 0 && r.g ? " top" : "");
       /* 이미 흐르던 표시는 지난 만큼 앞당겨 이어 붙입니다 — 다시 처음부터 뜨지 않게 */
       var delay = function (age) { return ' style="animation-delay:-' + Math.round(age) + 'ms"'; };
-      return '<div class="' + cls + '" data-k="' + esc(r.n) + '">' +
+      return '<div class="' + cls + '" data-k="' + esc(rowKey(r)) + '">' +
         '<span class="ov-rank">' + (i + 1) + '</span>' +
         '<span class="ov-move ' + (showM ? (rc.mv > 0 ? "up" : "down") : "") + '"' +
           (showM ? delay(mAge) : "") + '>' +
@@ -679,7 +696,7 @@ export const PAGE_HTML = `<!doctype html>
     }).join("");
 
     prev = {};
-    list.forEach(function (r, i) { prev[r.n] = { g: r.g, rank: i + 1 }; });
+    list.forEach(function (r, i) { prev[rowKey(r)] = { g: r.g, rank: i + 1 }; });
     return html;
   };
 
@@ -834,6 +851,29 @@ export const PAGE_HTML = `<!doctype html>
     }
     else el.classList.remove("ov-w-free");
   };
+  /* 끝없이 돌던 원판을 지금 각도에 그대로 세웁니다 — 클래스만 벗기면 0도로 튑니다 */
+  var holdFree = function () {
+    var el = document.getElementById("ovdisc");
+    if (!el || !el.classList.contains("ov-w-free")) return;
+    var mm = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+    var deg = ((Math.atan2(mm.b, mm.a) * 180) / Math.PI + 360) % 360;
+    el.classList.remove("ov-w-free");
+    el.style.transition = "none";
+    el.style.transform = "rotate(" + deg.toFixed(2) + "deg)";
+    wheelRot = deg;
+  };
+  /* 건너뛰기 — 돌던 원판을 목표 자리에 짧게 세웁니다 (2026-09-05) */
+  var snapWheel = function () {
+    var el = document.getElementById("ovdisc");
+    if (!el) return;
+    if (el.classList.contains("ov-w-free")) { holdFree(); return; }
+    el.style.transition = "transform 240ms ease-out";
+    el.style.transform = "rotate(" + wheelRot.toFixed(2) + "deg)";
+  };
+  /* fast(결과 화면 없이 바로 닫기)면 남은 박자를 짧게 — 서기 화면과 같이 닫힙니다 */
+  var holdMs = function (ms) {
+    return play && play.sp && play.sp.fast ? Math.min(ms, 320) : ms;
+  };
 
   var rollStep = function () {
     if (!play) return;
@@ -900,7 +940,7 @@ export const PAGE_HTML = `<!doctype html>
       play.rolling = false;
       if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
       drawPlay();
-      stepTimer = setTimeout(stepPlay, OV_HOLD);
+      stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
       return;
     }
     /* 다음 면은 앱이 정합니다 — 여기서 앞서가면 아직 안 뽑힌 면을 보여 주게 됩니다.
@@ -926,7 +966,7 @@ export const PAGE_HTML = `<!doctype html>
       play.who = "land";
       if (!play.sp.pass2 || !play.sp.pass2.name) {
         /* 서기가 뽑기 전에 판을 닫았습니다 — 이름 없이 그대로 넘어갑니다 */
-        stepTimer = setTimeout(stepPlay, OV_HOLD);
+        stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
         return;
       }
       if (play.sp.look === "num") {
@@ -958,13 +998,13 @@ export const PAGE_HTML = `<!doctype html>
           }, 200);
         })(play.sp.pass2.name);
       }
-      stepTimer = setTimeout(stepPlay, OV_HOLD);
+      stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
       return;
     }
     if (!play.over) {
       play.over = true;
       drawPlay();
-      stepTimer = setTimeout(stepPlay, OV_END);
+      stepTimer = setTimeout(stepPlay, holdMs(OV_END));
       return;
     }
     /* 양도 대기 중이면 서기가 고를 때까지 결과를 띄워 둡니다 */
@@ -983,7 +1023,7 @@ export const PAGE_HTML = `<!doctype html>
     if (play.waited && !play.lastHold) {
       play.lastHold = true;
       drawPlay();
-      stepTimer = setTimeout(stepPlay, OV_HOLD);
+      stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
       return;
     }
     doneSid = play.sp.sid;
@@ -1056,15 +1096,18 @@ export const PAGE_HTML = `<!doctype html>
   var leaveFree = function () {
     if (!play || !play.free) return;
     play.free = false;
-    freeWheel(false);
+    /* (버그 기록 2026-09-05) 여기서 freeWheel(false) 로 클래스를 먼저 벗겼더니 spinTo 가 돌던 각도를 못 읽어
+       원판이 0도로 튄 뒤 멈춘 상태에서 다시 돌기 시작했다 — STOP 을 누르면 "다시 돈다"로 보였다.
+       클래스는 spinTo(원판)·holdFree(그 자리 멈춤)가 벗깁니다 */
     var sp = play.sp;
     /* 답 없이 사라진 판 — 돌던 자리에서 그냥 멈춥니다 */
     if (play.appGone && !(play.who === "roll" && sp.pass2 && sp.pass2.name)) {
+      holdFree();
       /* 자유 회전은 아직 안 뽑힌 자리를 가리킵니다 — 마지막으로 뽑힌 걸음으로 돌려놓습니다 */
       play.i = Math.max(0, (sp.steps || []).length - 1);
       play.rolling = false;
       drawPlay();
-      stepTimer = setTimeout(stepPlay, OV_HOLD);
+      stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
       return;
     }
     /* 사람 원판이면 뽑힌 이름으로 세웁니다 */
@@ -1257,7 +1300,7 @@ export const PAGE_HTML = `<!doctype html>
       for (var i = 0; i < newB.length; i++) {
         var o = null;
         for (var j = 0; j < oldB.length; j++)
-          if (oldB[j].n === newB[i].n) { o = oldB[j]; break; }
+          if (rowKey(oldB[j]) === rowKey(newB[i])) { o = oldB[j]; break; }
         if (o && o.g !== newB[i].g) { target = newB[i].n; oldG = o.g; newG = newB[i].g; break; }
       }
     }
@@ -1397,7 +1440,7 @@ export const PAGE_HTML = `<!doctype html>
     var up = e.g > 0;
     return '<div class="ov-fx ' + (up ? "up" : "dn") + (e.k === "roul" ? " roul" : "") + '">' +
       "<b>" + esc(e.n) + "</b>" +
-      "<span>" + esc(e.t || "") + ' <em>' + (up ? "+" : "\u2212") +
+      "<span>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + ' <em>' + (up ? "+" : "\u2212") +
       manShort(Math.abs(e.g)) + "</em></span></div>";
   };
 
@@ -1428,14 +1471,17 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 굴릴 거리 — 금액이 바뀐 줄과 총액 */
   var swipePlan = function (oldB, newB) {
+    /* 열쇠는 줄 고유번호(rowKey)입니다 — (버그 기록 2026-09-05) 이름을 열쇠로 남겨 둔 채 줄에는
+       data-k 로 고유번호를 적어서, 굴릴 줄을 하나도 못 찾았습니다. 총액만 굴렀습니다 */
     var was = {}, out = [];
-    oldB.forEach(function (r) { was[r.n] = r.g || 0; });
+    oldB.forEach(function (r) { was[rowKey(r)] = r.g || 0; });
     var oldSum = 0, newSum = 0;
     oldB.forEach(function (r) { oldSum += r.g || 0; });
     newB.forEach(function (r) {
       newSum += r.g || 0;
-      if (was[r.n] != null && was[r.n] !== (r.g || 0))
-        out.push({ n: r.n, from: was[r.n], to: r.g || 0 });
+      var k = rowKey(r);
+      if (was[k] != null && was[k] !== (r.g || 0))
+        out.push({ k: k, from: was[k], to: r.g || 0 });
     });
     if (oldSum !== newSum) out.push({ total: 1, from: oldSum, to: newSum });
     return out;
@@ -1452,7 +1498,7 @@ export const PAGE_HTML = `<!doctype html>
       if (m.total) el = document.querySelector(".ov-total");
       else
         for (var i = 0; i < rows.length; i++)
-          if (rows[i].getAttribute("data-k") === m.n) el = rows[i].querySelector(".ov-gold");
+          if (rows[i].getAttribute("data-k") === m.k) el = rows[i].querySelector(".ov-gold");
       if (!el) return;
       var up = m.to > m.from;
       var mid = (up ? "+" : "\u2212") + manShort(Math.abs(m.to - m.from));
@@ -1495,12 +1541,14 @@ export const PAGE_HTML = `<!doctype html>
      줄에 세우면 뒤에 선 카드들이 인질이 됩니다. 대신 재생 중인 카드 한 장은
      끝까지 보여 주고 — 뜨자마자 지우면 그 클릭은 아무도 못 본 것이 됩니다. */
   var pump = function () {
-    if (applying || fxCard) return;
-    if (pendSpin) {
+    /* 룰렛은 즉시 (2026-09-05) — 카드가 떠 있거나 금액이 굴러가는 중이어도 그 위에 뜹니다.
+       (버그 기록) 카드·스와이프 뒤로 밀려 STOP 을 누를 때쯤에야 원판이 떴다 */
+    if (pendSpin && !play) {
       var sp2 = pendSpin;
       pendSpin = null;
       if (sp2.sid !== doneSid) { startPlay(sp2); return; }
     }
+    if (applying || fxCard) return;
     if (play) return; // 판이 떠 있는 동안 큐는 멈춥니다. 쌓인 카드는 끝난 뒤에
     if (next && settleNow) { settleNow = false; settle(); return; }
     if (fxQ.length) { playCard(fxQ.shift()); return; }
@@ -1535,6 +1583,37 @@ export const PAGE_HTML = `<!doctype html>
         ln + "/" + (lobby.cap || 8) + "</span></div>" +
         '<div class="ov-lobby">' + lnames + "</div>" +
         '<div class="ov-lobby-note">모이는 중이에요…</div></div>';
+      fitBoard();
+      return;
+    }
+    /* 미리보기 창인데 그릴 판이 없습니다 (2026-09-05, §4.4) — 체커보드만 뜨면 "고장인가"가 되고,
+       이 창은 테마를 고르는 자리이기도 해서 예시 판을 지금 외형으로 그립니다. 리본이 예시임을 말합니다.
+       OBS 안(isPreview 거짓)에서는 절대 안 그립니다 — 방송에 예시가 새면 안 됩니다 */
+    /* (폐기 2026-09-06) 예시 판 — 앱이 나가는 게 없으면 미리보기 칸을 아예 안 그립니다. 코드는 두되 켜지 않습니다 */
+    if (false && isPreview && (dead || !board || !board.length)) {
+      ovBoard = null;
+      prev = {};
+      recent = {};
+      root.dataset.notice = "0";
+      cols = [];
+      var sample = SAMPLE.map(function (p) { return { n: p[0], g: p[1], c: [], d: 0 }; });
+      app.innerHTML =
+        '<div class="ov"><div class="ov-head">' +
+        '<span class="ov-rank"></span><span class="ov-move"></span>' +
+        '<span class="ov-name-t">벌금 순위</span>' +
+        (showSum
+          ? '<span class="ov-total">' +
+            manShort(sample.reduce(function (a, r) { return a + r.g; }, 0)) + "</span>"
+          : "") +
+        (showNet ? '<span class="ov-nethead">순액</span>' : "") +
+        '</div><div id="ovboard"></div></div>' +
+        '<div class="ov-sample">예시 화면이에요 — 지금은 방송에 나가는 게 없어요. ' +
+        '[시작]을 누르면 현황판이, 파티원을 모으면 대기실이 여기 떠요.</div>';
+      var sb = document.getElementById("ovboard");
+      setGoldW(sample);
+      sb.innerHTML = rowsHtml(sample);
+      prev = {};
+      recent = {};
       fitBoard();
       return;
     }
@@ -1695,6 +1774,17 @@ export const PAGE_HTML = `<!doctype html>
             if (nf && !play.free) enterFree();
             else if (!nf && play.free) leaveFree();
             else {
+              /* 건너뛰기 (2026-09-05) — 서기가 도는 중에 세웠으면(skipAt) 여기서도 그 자리에 세우고,
+                 fast(결과 화면 없이 닫기)면 남은 박자를 줄입니다. 예전엔 둘 다 무시돼 방송만 느긋했습니다 */
+              if (!play.over && play.rolling && spin.skipAt != null && play.skipDone !== spin.skipAt) {
+                play.skipDone = spin.skipAt;
+                snapWheel();
+                clearTimeout(stepTimer);
+                stepTimer = setTimeout(stepPlay, 240);
+              } else if (spin.fast && !play.rolling && stepTimer) {
+                clearTimeout(stepTimer);
+                stepTimer = setTimeout(stepPlay, 0);
+              }
               drawPlay();
               /* 다음 면을 기다리다 답이 왔습니다 — 안 깨우면 판이 안 끝납니다 */
               if (play.waiting) {
@@ -1708,7 +1798,7 @@ export const PAGE_HTML = `<!doctype html>
                안 그러면 오지 않을 답을 영원히 기다리며 표까지 붙잡고 있습니다. */
             play.appGone = true;
             if (play.free) leaveFree();
-            else if (!stepTimer) stepTimer = setTimeout(stepPlay, OV_HOLD);
+            else if (!stepTimer) stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
           }
           name = st.name || "";
           applyLook(st.look);
@@ -1756,10 +1846,8 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 예시: 몇 초마다 한 사람에게 벌금이 붙고, 순위가 바뀌면 줄이 미끄러집니다 */
   var startDemo = function () {
-    var BASE = [["주키니", 450000], ["팔복", 340000], ["읍지", 320000], ["이다", 180000],
-                ["포셔", 170000], ["히휴", 110000], ["눈가루", 90000], ["티모", 60000]];
     var reset = function () {
-      board = BASE.map(function (p) { return { n: p[0], g: p[1] }; });
+      board = SAMPLE.map(function (p) { return { n: p[0], g: p[1] }; });
     };
     reset();
     render();

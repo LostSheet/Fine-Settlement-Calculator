@@ -328,11 +328,11 @@ const main = async () => {
     const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: old } });
     eq(r.status, 403, "status");
   });
-  /* 로비가 열려 있어도 자동 입장은 없습니다 (§3-4) — 언제나 신청이고, 방장이 수락합니다 */
-  await step("join: 로비가 열려 있어도 st req (승인제)", async () => {
+  /* 링크는 초대장입니다 (§3.3, 2026-09-05) — 유효한 코드면 바로 앉고, 방장 수락이 없습니다 */
+  await step("join: 유효한 링크면 바로 앉음(st ok)", async () => {
     const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: invite } });
     eq(r.status, 200, "status");
-    eq(r.data.st, "req", "st");
+    eq(r.data.st, "ok", "st");
     eq(r.data.you.nick, B.nick, "you.nick");
     eq(r.data.you.rowId, null, "아직 줄 없음");
   });
@@ -344,11 +344,12 @@ const main = async () => {
     eq(r.status, 200, "status");
     eq(r.data.member.st, "ok", "st");
   });
-  await step("join: 정원이 차 있으면 신청은 되고 수락에서 409", async () => {
+  await step("join: 정원이 차 있으면 신청으로 내려앉고, 수락에서도 409", async () => {
     await reg(C);
     const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
     eq(j.status, 200, "신청 자체는 됨");
     eq(j.data.st, "req", "st");
+    eq(j.data.full, true, "full");
     const r = await api("POST", "/api/r/" + room + "/member", {
       token: A.token,
       body: { acct: C.id, action: "approve" },
@@ -501,21 +502,23 @@ const main = async () => {
 
   /* ---- 출발 후 합류 ---- */
   head("출발 후 합류 — 신청과 수락");
-  await step("join: 출발 후(로비 닫힘)에도 st req (신청)", async () => {
+  await step("join: 출발 후(로비 닫힘) 링크 합류는 정원 없이 바로 앉음(st ok)", async () => {
     await reg(D);
     const r = await api("POST", "/api/r/" + room + "/join", { token: D.token, body: { j: invite } });
     eq(r.status, 200, "status");
-    eq(r.data.st, "req", "st");
+    eq(r.data.st, "ok", "st");
+    eq(r.data.you.rowId, null, "줄은 본인이 고른다 (§3.2)");
     const m = await scribe.want((x) => x.kind === "join");
     eq(m.acct, D.id, "acct");
     eq(m.nick, D.nick, "nick");
-    eq(m.st, "req", "st");
+    eq(m.st, "ok", "st");
+    eq(m.link, 1, "link");
   });
-  await step("members: 신청자가 목록에 st req 로 보임", async () => {
+  await step("members: 합류자가 목록에 st ok 로 보임", async () => {
     const r = await api("GET", "/api/r/" + room + "/members", { token: A.token });
     eq(r.status, 200, "status");
     const d = r.data.list.find((x) => x.acct === D.id);
-    eq(d.st, "req", "st");
+    eq(d.st, "ok", "st");
     eq(d.nick, D.nick, "nick");
   });
   await step("member approve: 당사자 소켓에 you 통지", async () => {
@@ -604,6 +607,10 @@ const main = async () => {
   await step("member remove: 통지 뒤 그 계정의 뷰어 소켓을 닫음", async () => {
     const j = await api("POST", "/api/r/" + room + "/join", { token: D.token, body: { j: invite } });
     eq(j.status, 200, "다시 신청");
+    /* 내보냈던 사람은 같은 링크로 와도 즉시 착석이 아니라 방장 승인입니다 (§3.3, 2026-09-05 표준화) */
+    eq(j.data.st, "req", "내보냈던 사람은 승인 대기");
+    eq(!!j.data.kicked, true, "kicked 표시");
+    eq(!!j.data.you.kicked, true, "you.kicked");
     await scribe.want((x) => x.kind === "join");
     await api("POST", "/api/r/" + room + "/member", {
       token: A.token,
@@ -909,71 +916,57 @@ const main = async () => {
     const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
     expect(!after.some((x) => x.acct === C.id), "명단에서 안 빠짐");
   });
-  await step("end: 라우트는 남아 있다 (앱은 더는 부르지 않음)", async () => {
+  /* ---- 끝내기 = 해산 (2026-09-06 모델: 판은 만들면 생기고 끝내면 없다) ---- */
+  await step("end: 해산 — 명단이 비고 판이 없어진다", async () => {
     eq((await api("POST", "/api/r/" + room + "/end", { token: C.token })).status, 403, "남이 부르면 403");
     const r = await api("POST", "/api/r/" + room + "/end", { token: A.token });
     eq(r.status, 200, "status");
+    const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
+    eq(after.length, 0, "명단이 안 비었음");
+  });
+  await step("문은 판이 있을 때만 — 판이 없으면 코드가 맞아도 /join 은 409 no party", async () => {
+    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    eq(j.status, 409, "판 없는 방에 들어감");
+    eq(j.data.error, "no party", "error");
+  });
+  await step("새 판(lobby open) 뒤엔 들어가고, 지난 판의 내보냄 표시는 사라져 즉시 착석", async () => {
+    const lb = await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: true, cap: 8 } });
+    eq(lb.status, 200, "lobby");
+    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    eq(j.status, 200, "join");
+    eq(j.data.st, "ok", "내보냄 표시가 판을 넘어 남아 req 가 됨");
+  });
+  await step("GET invite: 지금 코드를 그대로 준다", async () => {
+    const r = await api("GET", "/api/r/" + room + "/invite", { token: A.token });
+    eq(r.status, 200, "status");
+    eq(r.data.invite && r.data.invite.code, invite, "code");
+    eq((await api("GET", "/api/r/" + room + "/invite", { token: C.token })).status, 403, "남이 읽으면 403");
+  });
+  await step("정리: 다음 단계를 위해 다시 해산", async () => {
+    eq((await api("POST", "/api/r/" + room + "/end", { token: A.token })).status, 200, "end");
   });
 
-  /* ---- 자동 중단 (§3.4) ----
-     알람은 시각을 조작하기 어려워서, 판단을 맡은 순수 함수로 검증합니다.
-     "계정 붙은 자리가 있는 판만, 무활동 24시간" 이 그 함수의 전부입니다. */
-  head("자동 중단 — 판단 함수");
+  /* ---- 자동 중단 폐지 (§3.4, 2026-09-05) ----
+     판단 함수는 남았지만 언제나 "얼리지 않는다"를 답해야 합니다. 알람은 판 삭제(90일)만 봅니다 */
+  head("자동 중단 — 폐지");
   const { PAUSE_IDLE_MS, autoPauseAt, shouldAutoPause, nextRoomAlarm } = await import(
     "./src/round.js"
   );
-  await step("자동 중단: 24시간", () => {
-    eq(PAUSE_IDLE_MS, 24 * 3600 * 1000, "PAUSE_IDLE_MS");
-  });
-  await step("멤버 없는 방(혼자 판)은 알람을 걸지 않는다 — 판은 영구", () => {
-    const stateAt = 1000;
-    eq(autoPauseAt({ stateAt, paused: false, seated: false }), 0, "혼자 판에 알람이 걸림");
-    eq(
-      shouldAutoPause({ stateAt, paused: false, seated: false, now: stateAt + PAUSE_IDLE_MS * 9 }),
-      false,
-      "혼자 판이 얼었음"
-    );
-    // 판 삭제(90일) 알람만 남습니다
-    eq(
-      nextRoomAlarm({ stateAt, paused: false, seated: false }),
-      stateAt + 90 * 86400 * 1000,
-      "판 90일 알람이 사라짐"
-    );
-  });
-  await step("계정 붙은 자리가 있으면 마지막 푸시 + 24시간에 얼린다", () => {
+  await step("계정 붙은 자리가 있어도 얼리지 않는다", () => {
     const stateAt = 5_000_000;
+    eq(autoPauseAt({ stateAt, paused: false, seated: true }), 0, "자동 중단 알람이 걸림");
     eq(
-      autoPauseAt({ stateAt, paused: false, seated: true }),
-      stateAt + PAUSE_IDLE_MS,
-      "얼릴 시각"
-    );
-    eq(
-      shouldAutoPause({ stateAt, paused: false, seated: true, now: stateAt + PAUSE_IDLE_MS - 1 }),
+      shouldAutoPause({ stateAt, paused: false, seated: true, now: stateAt + PAUSE_IDLE_MS * 3 }),
       false,
-      "경계 직전에 얼었음"
-    );
-    eq(
-      shouldAutoPause({ stateAt, paused: false, seated: true, now: stateAt + PAUSE_IDLE_MS }),
-      true,
-      "경계에서 안 얼었음"
+      "24시간 뒤에 얼었음"
     );
     eq(
       nextRoomAlarm({ stateAt, paused: false, seated: true }),
-      stateAt + PAUSE_IDLE_MS,
-      "알람이 자동 중단보다 늦음"
+      stateAt + 90 * 86400 * 1000,
+      "판 90일 알람만 남아야 함"
     );
   });
-  await step("이미 얼어 있으면 다시 얼리지 않는다", () => {
-    const stateAt = 1;
-    eq(autoPauseAt({ stateAt, paused: true, seated: true }), 0, "얼린 판에 알람이 또 걸림");
-    eq(
-      shouldAutoPause({ stateAt, paused: true, seated: true, now: stateAt + PAUSE_IDLE_MS * 3 }),
-      false,
-      "얼린 판을 또 얼림"
-    );
-  });
-  await step("판이 없으면 알람도 없다 (로비 6시간 자동 닫힘 폐기)", () => {
-    eq(autoPauseAt({ stateAt: 0, paused: false, seated: true }), 0, "판 없이 알람이 걸림");
+  await step("판이 없으면 알람도 없다", () => {
     eq(nextRoomAlarm({ stateAt: 0, paused: false, seated: true }), 0, "판 없이 알람이 걸림");
   });
 
@@ -1180,8 +1173,11 @@ const main = async () => {
   };
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
   const roomOf = async (u) => (await api("POST", "/api/my/room", { token: u.token })).data.roomId;
-  const codeOf = async (u, rm) =>
-    (await api("POST", "/api/r/" + rm + "/invite", { token: u.token, body: {} })).data.invite.code;
+  /* 코드 = 판이 열려 있다 (2026-09-06 모델: 문은 판이 있을 때만) — 앱의 새 판 만들기처럼 로비를 먼저 엽니다 */
+  const codeOf = async (u, rm) => {
+    await api("POST", "/api/r/" + rm + "/lobby", { token: u.token, body: { open: true, cap: 8 } });
+    return (await api("POST", "/api/r/" + rm + "/invite", { token: u.token, body: {} })).data.invite.code;
+  };
 
   const P = await anon(); // 방장
   const Q = await anon(); // 함께할 사람
@@ -1196,7 +1192,7 @@ const main = async () => {
   await step("관계: 링크로 한 번 함께하면 양쪽 목록에 생긴다", async () => {
     const j = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: { j: pCode } });
     eq(j.status, 200, "join");
-    eq(j.data.st, "req", "st");
+    eq(j.data.st, "ok", "st"); // 링크 = 초대장 (§3.3, 2026-09-05) — 관계는 앉는 순간 생긴다
     const a = await api("POST", "/api/r/" + pRoom + "/member", {
       token: P.token,
       body: { acct: Q.id, action: "approve" },
@@ -1373,6 +1369,9 @@ const main = async () => {
     const H = await anon();
     const hRoom = await roomOf(H);
     const code = await codeOf(H, hRoom);
+    /* 정원은 대기실(로비 열림)의 것입니다 — 판을 시작해 로비를 닫으면 합류에 정원이 없습니다 (2026-09-06 모델) */
+    await api("PUT", "/api/r/" + hRoom + "/state", { token: H.token, body: { state: { board: [], roundId: "m1" } } });
+    await api("POST", "/api/r/" + hRoom + "/lobby", { token: H.token, body: { open: false } });
     const guests = [];
     for (let i = 0; i <= MATES; i++) {
       const g = await anon();
@@ -1512,7 +1511,29 @@ const main = async () => {
     expect(me.data.seat, "seat 가 안 실림: " + JSON.stringify(me.data));
     eq(me.data.seat.st, "ok", "st");
     eq(me.data.seat.live, true, "live");
+    eq(me.data.seat.round, true, "round");
     eq(me.data.seat.ownerNick, H1.nick, "ownerNick");
+  });
+  await step("/me: 시작 전(state.lobby)은 live 지만 round 는 아니다 (2026-09-06)", async () => {
+    eq(
+      (await api("PUT", "/api/r/" + r1 + "/state", {
+        token: H1.token,
+        body: { state: { board: [], roundId: "g1", lobby: { open: true } } },
+      })).status,
+      200,
+      "state lobby"
+    );
+    const me = await api("GET", "/api/auth/me", { token: G1.token });
+    eq(me.data.seat.live, true, "live");
+    eq(me.data.seat.round, false, "round");
+    eq(
+      (await api("PUT", "/api/r/" + r1 + "/state", {
+        token: H1.token,
+        body: { state: { board: [], roundId: "g1" } },
+      })).status,
+      200,
+      "state back"
+    );
   });
   await step("/me: 정산이 끝난 판(end)은 live 가 아니다", async () => {
     eq(
