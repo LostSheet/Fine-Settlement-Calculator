@@ -811,7 +811,7 @@ function loadLastLive() {
 function saveLastLive(v) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(LAST_LIVE_KEY, JSON.stringify(v));
+    if (!DEMO) window.localStorage.setItem(LAST_LIVE_KEY, JSON.stringify(v));
   } catch (e) {}
 }
 
@@ -826,7 +826,7 @@ function loadPartyReg() {
 function savePartyReg(reg) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(PARTY_REG_KEY, JSON.stringify(reg));
+    if (!DEMO) window.localStorage.setItem(PARTY_REG_KEY, JSON.stringify(reg));
   } catch (e) {}
 }
 function loadPartySlot(name) {
@@ -842,13 +842,13 @@ function loadPartySlot(name) {
 function savePartySlot(name, data) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(partySlotKey(name), JSON.stringify(data));
+    if (!DEMO) window.localStorage.setItem(partySlotKey(name), JSON.stringify(data));
   } catch (e) {}
 }
 function dropPartySlot(name) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(partySlotKey(name));
+    if (!DEMO) window.localStorage.removeItem(partySlotKey(name));
   } catch (e) {}
 }
 const DEFAULT_ROOM_LABEL = "기본"; // 옛 파티 시절의 기본 명단 이름 (저장 호환용)
@@ -864,12 +864,13 @@ const loadPresets = () => {
 };
 const savePresets = (l) => {
   try {
-    window.localStorage.setItem(PRESETS_KEY, JSON.stringify(l));
+    if (!DEMO) window.localStorage.setItem(PRESETS_KEY, JSON.stringify(l));
   } catch (e) {}
 };
 
 function loadRelay() {
   if (typeof window === "undefined") return { on: false };
+  if (DEMO) return { on: false, look: { t: "dark", alpha: 25 } }; // 예시 앱엔 방이 없습니다
   try {
     const v = JSON.parse(window.localStorage.getItem(RELAY_KEY) || "null");
     if (!v || typeof v !== "object") throw 0;
@@ -920,11 +921,25 @@ function loadRelay() {
 function saveRelay(v) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(RELAY_KEY, JSON.stringify(v));
+    if (!DEMO) window.localStorage.setItem(RELAY_KEY, JSON.stringify(v));
   } catch (e) {
     /* 저장 불가 환경 */
   }
 }
+
+/* ---------- 예시 앱 (2026-09-06 사용자 확정: 완전한 더미) ----------
+   처음부터 같이 해보기는 부모 앱이 이 앱을 #demo 로 iframe 에 한 번 더 띄워서 돕니다.
+   예시 앱은 저장소를 읽지도 쓰지도 않고(화면 밝기 취향만 따름), 서버엔 한 번도 안 가고, 계정은 가짜입니다.
+   iframe 은 주소를 못 가지므로(canOwnUrl) 화면 이동은 상태만 바뀝니다. 부모의 진짜 판·소켓·저장소는 그대로라
+   진행 중이어도 언제든 열 수 있습니다 — (폐기 2026-09-06) 진짜 화면 위에서 장부·자리·명단을 바꿔치기했다 되돌리던 방식:
+   판이 있으면 못 열었고(사용자: "판을 닫은 뒤 로비에서"는 이상하다), 진행 중엔 파티원 자수를 잃었다 */
+const DEMO = (() => {
+  try {
+    return typeof window !== "undefined" && /(^|&)demo(=|&|$)/.test(window.location.hash.replace(/^#/, ""));
+  } catch (e) {
+    return false;
+  }
+})();
 
 /* ---------- 계정 ----------
    사람의 신원은 계정입니다. URL 은 읽기까지만 나르고, 쓰기는 전부 이 세션 토큰입니다. */
@@ -933,6 +948,8 @@ function loadAuth() {
   if (typeof window === "undefined") return null;
   try {
     const v = JSON.parse(window.localStorage.getItem(AUTH_KEY) || "null");
+    /* 예시 앱의 방장은 가짜 계정 — 닉만 진짜 계정 것을 빌립니다(없으면 `나`) */
+    if (DEMO) return { id: "demo:me", nick: (v && v.nick) || "나", anon: !!(v && v.anon), token: "demo", obsToken: "EXAMPLE" };
     if (v && typeof v.id === "string" && typeof v.token === "string") return v;
   } catch (e) {}
   return null;
@@ -940,6 +957,7 @@ function loadAuth() {
 function saveAuth(v) {
   if (typeof window === "undefined") return;
   try {
+    if (DEMO) return;
     if (v) window.localStorage.setItem(AUTH_KEY, JSON.stringify(v));
     else window.localStorage.removeItem(AUTH_KEY);
   } catch (e) {}
@@ -972,6 +990,7 @@ async function preHash(id, pw) {
 /* 서버 응답 규칙 하나로 모읍니다 — 화면에 그대로 띄울 한국어 메시지를 붙여서 던집니다 */
 const NET_MSG = "서버에 닿지 못했어요. 인터넷을 확인하고 다시 시도해 주세요.";
 async function callApi(path, { method = "GET", body, token } = {}) {
+  if (DEMO) return {}; // 예시 앱은 서버에 안 갑니다 — 빈 응답이면 부르는 쪽이 전부 조용히 지나갑니다
   const headers = {};
   if (body !== undefined) headers["content-type"] = "application/json";
   if (token) headers.authorization = "Bearer " + token;
@@ -1275,7 +1294,7 @@ const STORE_KEY = "goldSettlement.v1";
 const SEEN_KEY = "goldSettlement.seen";
 const markSeen = () => {
   try {
-    window.localStorage.setItem(SEEN_KEY, "1");
+    if (!DEMO) window.localStorage.setItem(SEEN_KEY, "1");
   } catch (e) {
     /* 저장이 막힌 환경이면 표시만 못 남깁니다 */
   }
@@ -1430,7 +1449,7 @@ const clampMemoFont = (v) => {
 function saveState(state) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    if (!DEMO) window.localStorage.setItem(STORE_KEY, JSON.stringify(state));
   } catch (e) {
     /* 용량 초과·차단된 환경이면 저장만 건너뜁니다 */
   }
@@ -1765,8 +1784,8 @@ export default function GoldSettlement() {
   }
   if (!boot.current) {
     const hashMode = readHashMode();
-    const shared = readShared();
-    const stored = loadSaved();
+    const shared = DEMO ? null : readShared();
+    const stored = DEMO ? null : loadSaved(); // 예시 앱은 백지 판으로
     // 공유 링크로 열면 표는 링크 것을 쓰지만, 보기 방식(탭/세로)은 이 브라우저의 취향을 따릅니다
     const saved = shared ? null : stored;
     /* 처음 여는 사람은 빈 카운터 표로 바로 시작합니다 (새 파티 기본값과 동일).
@@ -1787,7 +1806,7 @@ export default function GoldSettlement() {
     /* 파티 장부 — 공유 링크로 연 게 아니면, 활성 파티의 장부가 표를 정합니다.
        레지스트리가 없으면(기존 사용자·첫 방문) 지금 장부를 '기본' 파티로 승격합니다. */
     let partyReg = null;
-    if (!shared) {
+    if (!shared && !DEMO) {
       partyReg = loadPartyReg() || { list: [{ name: "기본", t: Date.now() }], active: "기본" };
       if (!partyReg.list.some((x) => x.name === partyReg.active))
         partyReg.active = partyReg.list[0].name;
@@ -1842,12 +1861,12 @@ export default function GoldSettlement() {
       view: stored ? stored.view : "tabs",
       tab: stored ? stored.tab : "sheet",
       // 화면 밝기 취향은 표와 무관하니 공유 링크로 들어와도 이 브라우저 것을 씁니다
-      theme: stored ? stored.theme : "system",
+      theme: stored ? stored.theme : DEMO ? (loadSaved() || {}).theme || "system" : "system",
       /* 저장된 장부도 공유 링크도 없으면 첫 방문입니다. 주소의 #m= 은 보지 않습니다 —
          앱이 제 주소에 그걸 적기 때문에, 조건에 넣으면 두 번째 방문처럼 보입니다.
          관문은 묻기만 하므로 해시를 달고 온 사람에게 떠도 아무것도 안 망가집니다.
          뷰어로만 열었던 브라우저에는 저장본이 없습니다 — 그때 남긴 표시를 같이 봅니다 */
-      firstVisit: !shared && !stored && !wasSeen(),
+      firstVisit: !DEMO && !shared && !stored && !wasSeen(),
       /* 로비(§3.0) 도착 규칙 — 주소에 화면이 적혀 있으면 그대로(새로고침·뒤로가기가 화면을 지킨다,
          2026-09-05). 비어 있으면 백지(내 판을 만든 적이 없음)면 로비, 아니면 판 — 결과는 마운트 때
          주소에 적는다. (폐기 2026-09-05) sessionStorage gs-home 표시 — 주소 #lobby 가 그 뜻을 말한다 */
@@ -1987,8 +2006,8 @@ export default function GoldSettlement() {
   /* 튜토리얼 중인지 — 예시 표는 화면에만 얹고 저장하지 않습니다. 저장하면 지난 판에
      남의 예시가 남고, 끝난 뒤 치우는 일이 사용자 몫이 됩니다. 끝나면 아래 장부로 돌아갑니다:
      첫 방문이면 빈 판, 나중에 다시 본 것이면 보던 장부(그래야 남의 장부를 안 덮습니다). */
-  const [tutorial, setTutorial] = useState(false);
-  const tutorialRef = useRef(false); // 같이 해보기가 도는 중인지 — 낡은 클로저(타이머·putRelay)에서 봅니다
+  const [tutorial, setTutorial] = useState(DEMO); // 예시 앱은 처음부터 끝까지 tutorial 입니다
+  const tutorialRef = useRef(DEMO); // 같이 해보기가 도는 중인지 — 낡은 클로저(타이머·putRelay)에서 봅니다
   tutorialRef.current = tutorial;
   const tutorialBack = useRef(null);
 
@@ -2650,26 +2669,38 @@ export default function GoldSettlement() {
   };
   const partyStep = (i) => setCoach({ kind: "party", step: i });
   const [tutAsk, setTutAsk] = useState(() => !coachSeen("partyAsk") && !cameByInvite());
+  /* 부모 앱: [같이 해보기]·[?] [시작]은 예시 앱을 전체 화면 iframe 으로 엽니다. 끝·그만두기는 예시 앱이 postMessage 로 알립니다 */
+  const [demoOpen, setDemoOpen] = useState(false);
+  const demoUrl = typeof window !== "undefined" ? window.location.origin + window.location.pathname + "#demo" : "";
   const startPartyCourse = () => {
-    if (readOnly || !authRef.current) return;
-    tutorialBack.current = {
-      ...currentLedger(),
-      seats,
-      roundLive,
-      roundId,
-      members,
-      relay: relayRef.current,
-      lobbyOn,
-      lobbyCap,
-      roundName,
-    };
-    partyTimers.current.forEach(clearTimeout);
-    partyTimers.current = [];
-    setTutorial(true);
-    setCoach(null);
-    go(VIEW_LOBBY);
-    partyT(() => partyStep(0), 700);
+    if (readOnly || DEMO) return;
+    setDemoOpen(true);
   };
+  const closeDemo = (done) => {
+    setDemoOpen(false);
+    coachDone("partyAsk");
+    setTutAsk(false);
+    if (done) {
+      coachDone("party");
+      /* 다 봤으면 로비·대기실·벌금판 사용법은 이미 본 것입니다 — 같은 버튼을 두 번 가리키지 않게 */
+      ["lobby", "ready", "board"].forEach((id) => coachDone(guideKey(id)));
+    }
+  };
+  useEffect(() => {
+    if (DEMO) return;
+    const on = (e) => {
+      if (e.origin !== window.location.origin || !e.data || e.data.gs !== "party-demo") return;
+      closeDemo(!!e.data.done);
+    };
+    window.addEventListener("message", on);
+    return () => window.removeEventListener("message", on);
+  }, []);
+  /* 예시 앱: 뜨자마자 첫 걸음 */
+  useEffect(() => {
+    if (!DEMO) return;
+    const t = setTimeout(() => partyStep(0), 900);
+    return () => clearTimeout(t);
+  }, []);
   /* newBoard 의 로컬 부분만 — 로비를 열지도 코드를 내지도 않습니다. 정원 4, 이름은 예시 파티 */
   const tutNewBoard = () => {
     setRoundName("예시 파티");
@@ -2719,32 +2750,18 @@ export default function GoldSettlement() {
       }, 4800);
     }
   };
+  /* 예시 앱: 끝(다 봤든 ✕·Esc·[그만두기]든) — 부모에게 알리고 부모가 창을 닫습니다. 부모 없이 열렸으면 보통 앱으로 */
   const endPartyCourse = (done) => {
     partyTimers.current.forEach(clearTimeout);
     partyTimers.current = [];
-    const back = tutorialBack.current;
-    setTutorial(false);
     setCoach(null);
-    if (done) coachDone("party");
-    coachDone("partyAsk");
-    setTutAsk(false);
-    /* 다 봤으면 로비·대기실·벌금판 사용법은 이미 본 것입니다 — 같은 버튼을 두 번 가리키지 않게 */
-    if (done) ["lobby", "ready", "board"].forEach((id) => coachDone(guideKey(id)));
-    applyLedger(back || blankPartyLedger(8));
-    putSeats((back && back.seats) || []);
-    setMembers((back && back.members) || []);
-    setRoundLive(!!(back && back.roundLive));
-    setRoundId((back && back.roundId) || "");
-    setRoundName((back && back.roundName) || defaultRoundName());
-    setLobbyOn(!!(back && back.lobbyOn));
-    setLobbyCap((back && back.lobbyCap) || 8);
-    if (back && back.relay) {
-      boardOnRef.current = !!back.relay.boardOn;
-      putRelay(back.relay);
+    if (window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage({ gs: "party-demo", done: !!done }, window.location.origin);
+      } catch (e) {}
+      return;
     }
-    tutorialBack.current = null;
-    go(VIEW_LOBBY);
-    window.scrollTo(0, 0); // 벌금판 아래에서 끝나도 로비는 위에서부터
+    window.location.replace(window.location.pathname + window.location.search);
   };
   const startTutorial = () => {
     if (readOnly) return;
@@ -6990,6 +7007,16 @@ export default function GoldSettlement() {
   );
   return (
     <div className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "")}>
+      {DEMO && (
+        <div className="gs-demoband" role="status">
+          <span>
+            <b>예시예요.</b> 실제 판엔 아무 영향 없어요.
+          </span>
+          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => endPartyCourse(false)}>
+            그만두기
+          </button>
+        </div>
+      )}
       <style>{CSS}</style>
 
       {/* ── 시스템 줄 — 뷰포트 맨 위에 딱 붙는 전폭 바. 안쪽 내용은 본문과 같은 열 ── */}
@@ -7347,7 +7374,7 @@ export default function GoldSettlement() {
           seatedLive={!!(meSeat && meSeat.round)}
           onReturn={(room) => enterRoom(room, { push: true })}
           onLeaveParty={askLeaveFromLobby}
-          tutLine={!!auth && !boardOn && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
+          tutLine={!readOnly && !boardOn && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
           onTut={startPartyCourse}
           onDropTut={() => {
             coachDone("partyAsk");
@@ -9123,24 +9150,20 @@ export default function GoldSettlement() {
       {showHelp && (
         <InfoModal title="사용법" onClose={() => setShowHelp(false)}>
           <div className="gs-guide-list">
-            {auth && (
+            {!readOnly && !DEMO && (
               <div className="gs-guide-row">
                 <b>처음부터 같이 해보기</b>
-                <span className="gs-guide-n">4인 파티 예시 · {PARTY_TOTAL}걸음 · 저장 안 됨</span>
+                <span className="gs-guide-n">4인 파티 예시 · {PARTY_TOTAL}걸음 · 지금 판엔 영향 없음</span>
                 {coachSeen("party") && <span className="gs-guide-seen">봤어요</span>}
-                {screenId === "lobby" && !boardOn ? (
-                  <button
-                    className="gs-btn gs-btn-sm"
-                    onClick={() => {
-                      setShowHelp(false);
-                      startPartyCourse();
-                    }}
-                  >
-                    {coachSeen("party") ? "다시" : "시작"}
-                  </button>
-                ) : (
-                  <span className="gs-guide-seen gs-guide-else">{boardOn ? "판이 없을 때 로비에서" : "로비에서"}</span>
-                )}
+                <button
+                  className="gs-btn gs-btn-sm"
+                  onClick={() => {
+                    setShowHelp(false);
+                    startPartyCourse();
+                  }}
+                >
+                  {coachSeen("party") ? "다시" : "시작"}
+                </button>
               </div>
             )}
             {[...GUIDE_ORDER].sort((a, b) => (a === screenId ? -1 : b === screenId ? 1 : 0)).map((id) => {
@@ -9304,7 +9327,13 @@ export default function GoldSettlement() {
           }}
         />
       )}
-      {/* 같이 해보기 — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이). ✕는 그만두기, 표적이 사라진 건 다음 걸음이 오는 것 */}
+      {demoOpen && (
+        <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
+          <p className="gs-demo-load">예시를 불러오는 중…</p>
+          <iframe className="gs-demo-frame" title="처음부터 같이 해보기" src={demoUrl} />
+        </div>
+      )}
+      {/* 같이 해보기(예시 앱 안) — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이). ✕는 그만두기, 표적이 사라진 건 다음 걸음이 오는 것 */}
       {coach &&
         coach.kind === "party" &&
         PARTY_STEPS[coach.step] &&
@@ -13105,7 +13134,7 @@ function coachDone(k) {
   try {
     const v = JSON.parse(window.localStorage.getItem(COACH_KEY) || "{}");
     v[k] = true;
-    window.localStorage.setItem(COACH_KEY, JSON.stringify(v));
+    if (!DEMO) window.localStorage.setItem(COACH_KEY, JSON.stringify(v));
   } catch (e) {}
 }
 
@@ -13113,7 +13142,7 @@ function coachReset(k) {
   try {
     const v = JSON.parse(window.localStorage.getItem(COACH_KEY) || "{}");
     delete v[k];
-    window.localStorage.setItem(COACH_KEY, JSON.stringify(v));
+    if (!DEMO) window.localStorage.setItem(COACH_KEY, JSON.stringify(v));
   } catch (e) {}
 }
 
@@ -13301,6 +13330,7 @@ function CoachMark({ sel, text, action, step, total, block, lock, onNext, onClos
     const ok = (t) => {
       if (!t || !t.closest) return false;
       if (t.closest(".gs-coach")) return true; // 말풍선과 그 버튼은 늘 열려 있습니다
+      if (t.closest(".gs-demoband")) return true; // 예시 띠의 [그만두기]도 — 걸음이 막고 있어도 나가는 길 (2026-09-06)
       return !lock && !!t.closest(sel);
     };
     const stop = (e) => {
@@ -14555,6 +14585,12 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-tutline{display:flex; align-items:center; gap:12px; margin:0 0 12px; text-align:left; padding:10px 12px; border:1px solid rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.07); font-size:12.5px; color:var(--ink-body); flex-wrap:wrap}
 .gs-tutline b{color:var(--ink)}
 .gs-tutline-r{margin-left:auto; display:flex; gap:8px}
+/* 예시 앱 창(부모)과 예시 띠(예시 앱) (2026-09-06) */
+.gs-demo{position:fixed; inset:0; z-index:60; background:var(--paper); display:grid; place-items:center}
+.gs-demo-load{margin:0; font-size:13px; color:var(--ink-2)}
+.gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block}
+.gs-demoband{display:flex; align-items:center; justify-content:center; gap:14px; padding:7px 12px; background:rgba(var(--gold-rgb),.14); border-bottom:1px solid rgba(var(--gold-rgb),.5); font-size:12.5px; color:var(--ink-body)}
+.gs-demoband b{color:var(--ink)}
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px;
   pointer-events:none; animation:gs-coach-breathe 1.6s ease-in-out infinite}
