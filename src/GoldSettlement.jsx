@@ -2687,6 +2687,15 @@ export default function GoldSettlement() {
     }
   };
   useEffect(() => {
+    if (!demoOpen) return;
+    const el = document.documentElement;
+    const prev = el.style.overflow;
+    el.style.overflow = "hidden"; // 창이 떠 있는 동안 부모는 스크롤하지 않습니다 — 스크롤바가 둘 보였음
+    return () => {
+      el.style.overflow = prev;
+    };
+  }, [demoOpen]);
+  useEffect(() => {
     if (DEMO) return;
     const on = (e) => {
       if (e.origin !== window.location.origin || !e.data || e.data.gs !== "party-demo") return;
@@ -14589,8 +14598,9 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-demo{position:fixed; inset:0; z-index:60; background:var(--paper); display:grid; place-items:center}
 .gs-demo-load{margin:0; font-size:13px; color:var(--ink-2)}
 .gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block}
-.gs-demoband{display:flex; align-items:center; justify-content:center; gap:14px; padding:7px 12px; background:rgba(var(--gold-rgb),.14); border-bottom:1px solid rgba(var(--gold-rgb),.5); font-size:12.5px; color:var(--ink-body)}
+.gs-demoband{margin:-20px -20px 0; padding:7px 20px; display:flex; align-items:center; justify-content:center; gap:14px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
 .gs-demoband b{color:var(--ink)}
+.gs-demoband ~ .gs-sysbar{margin-top:0} /* 시스템 줄의 위 당김(-20px)은 띠가 없을 때의 것 — 사이에 <style> 이 있어 형제 선택자는 ~ */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px;
   pointer-events:none; animation:gs-coach-breathe 1.6s ease-in-out infinite}
