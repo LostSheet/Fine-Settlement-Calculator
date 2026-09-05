@@ -1988,6 +1988,8 @@ export default function GoldSettlement() {
      남의 예시가 남고, 끝난 뒤 치우는 일이 사용자 몫이 됩니다. 끝나면 아래 장부로 돌아갑니다:
      첫 방문이면 빈 판, 나중에 다시 본 것이면 보던 장부(그래야 남의 장부를 안 덮습니다). */
   const [tutorial, setTutorial] = useState(false);
+  const tutorialRef = useRef(false); // 같이 해보기가 도는 중인지 — 낡은 클로저(타이머·putRelay)에서 봅니다
+  tutorialRef.current = tutorial;
   const tutorialBack = useRef(null);
 
   /* 코치마크 진행 상태 — {kind:"course",step} | {kind:"obs"} | {kind:"hint"} */
@@ -2015,6 +2017,7 @@ export default function GoldSettlement() {
   /* 코스 진행 — 해당 조작이 실제로 일어났을 때만 다음으로 */
   const courseHit = (what) => {
     const c = coachRef.current;
+    if (c && c.kind === "party") return tutHit(what); // 같이 해보기 4걸음(칸 누르기)
     if (!c || c.kind !== "course") return;
     const want = ["press", "unpress", "ledger", "mail", "obs"][c.step];
     if (what !== want) return;
@@ -2602,7 +2605,7 @@ export default function GoldSettlement() {
   const putRelay = (next) => {
     relayRef.current = next;
     setRelay(next);
-    saveRelay(next);
+    if (!tutorialRef.current) saveRelay(next); // 예시 파티(같이 해보기)는 남기지 않습니다 (2026-09-06)
   };
   /* 서버에서 돌아온 값을 얹는 자리는 낡은 클로저 안이라, 늘 최신 relay 를 봅니다 */
   const relayRef = useRef(relay);
@@ -2637,6 +2640,112 @@ export default function GoldSettlement() {
      끝나고 치울 것도 없습니다. 첫 방문이 아니면 보던 장부를 떠 뒀다가 끝날 때 돌려 놓습니다.
      예시도 판입니다 — 자리와 판 표시를 같이 세우지 않으면 홈이 로비로 떨어져서(§3.1)
      코스가 짚는 벌금표가 화면에 없습니다. 끝낼 때 원래 자리로 되돌립니다. */
+  /* 같이 해보기 컨트롤러 (2026-09-06). 예시가 도는 동안은 tutorial 이 참이라 저장·밀기·자리·명단·로비 호출이 전부 멈추고,
+     끝나면(다 봤든 ✕로 그만뒀든) 열기 전 상태로 돌아갑니다 */
+  const partyTimers = useRef([]);
+  const partyT = (fn, ms) => {
+    const t = setTimeout(fn, ms);
+    partyTimers.current.push(t);
+    return t;
+  };
+  const partyStep = (i) => setCoach({ kind: "party", step: i });
+  const [tutAsk, setTutAsk] = useState(() => !coachSeen("partyAsk") && !cameByInvite());
+  const startPartyCourse = () => {
+    if (readOnly || !authRef.current) return;
+    tutorialBack.current = {
+      ...currentLedger(),
+      seats,
+      roundLive,
+      roundId,
+      members,
+      relay: relayRef.current,
+      lobbyOn,
+      lobbyCap,
+      roundName,
+    };
+    partyTimers.current.forEach(clearTimeout);
+    partyTimers.current = [];
+    setTutorial(true);
+    setCoach(null);
+    go(VIEW_LOBBY);
+    partyT(() => partyStep(0), 700);
+  };
+  /* newBoard 의 로컬 부분만 — 로비를 열지도 코드를 내지도 않습니다. 정원 4, 이름은 예시 파티 */
+  const tutNewBoard = () => {
+    setRoundName("예시 파티");
+    setLog([]);
+    setUndoSnap(null);
+    setMemoFreeze(null);
+    setOpenRow(null);
+    setRoundId("");
+    setRoundLive(false);
+    setPaused(null);
+    setMembers([]);
+    putSeats((prev) => prev.filter((s0, i) => i === 0 && !!s0.acct));
+    setLobbyCap(4);
+    setLobbyOn(true);
+    boardOnRef.current = true;
+    putRelay({ ...relayRef.current, boardOn: true, lobbyCap: 4 });
+    go(VIEW_BOARD);
+  };
+  /* 더미 파티원 — 명단에 st:"ok"·rowId 없음으로 넣으면 시작 전 규칙대로 앱이 첫 빈 자리에 앉힙니다(앉음 강조·토스트 그대로).
+     진행 중이면 표 아래에 서서 [받기]를 기다립니다 */
+  const tutArrive = (i) => setMembers((p) => (p.some((m) => m.acct === TUT_MEMBERS[i].acct) ? p : [...p, { ...TUT_MEMBERS[i], st: "ok", rowId: null, on: true }]));
+  const tutConfess = () => {
+    const seat = seatsRef.current.find((k) => k.acct === TUT_MEMBERS[0].acct);
+    const col = cols.find((c) => !isRoulette(c));
+    if (!seat || !col) return;
+    applyConfess(seat.id, col.id, 1);
+    say(TUT_MEMBERS[0].nick + "이 자수했어요 — 파티원이 누른 건 이렇게 올라와요.", 8000);
+  };
+  const tutHit = (what) => {
+    const c = coachRef.current;
+    if (!tutorialRef.current || !c || c.kind !== "party") return;
+    const st = PARTY_STEPS[c.step];
+    if (!st || st.wait !== what) return;
+    const next = c.step + 1;
+    partyStep(next);
+    if (what === "link") {
+      partyT(() => tutArrive(0), 1800);
+      partyT(() => tutArrive(1), 3400);
+      partyT(() => partyStep(next + 1), 5400);
+    }
+    if (what === "press") {
+      partyT(tutConfess, 1200);
+      partyT(() => {
+        tutArrive(2);
+        say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
+        partyStep(next + 1);
+      }, 4800);
+    }
+  };
+  const endPartyCourse = (done) => {
+    partyTimers.current.forEach(clearTimeout);
+    partyTimers.current = [];
+    const back = tutorialBack.current;
+    setTutorial(false);
+    setCoach(null);
+    if (done) coachDone("party");
+    coachDone("partyAsk");
+    setTutAsk(false);
+    /* 다 봤으면 로비·대기실·벌금판 사용법은 이미 본 것입니다 — 같은 버튼을 두 번 가리키지 않게 */
+    if (done) ["lobby", "ready", "board"].forEach((id) => coachDone(guideKey(id)));
+    applyLedger(back || blankPartyLedger(8));
+    putSeats((back && back.seats) || []);
+    setMembers((back && back.members) || []);
+    setRoundLive(!!(back && back.roundLive));
+    setRoundId((back && back.roundId) || "");
+    setRoundName((back && back.roundName) || defaultRoundName());
+    setLobbyOn(!!(back && back.lobbyOn));
+    setLobbyCap((back && back.lobbyCap) || 8);
+    if (back && back.relay) {
+      boardOnRef.current = !!back.relay.boardOn;
+      putRelay(back.relay);
+    }
+    tutorialBack.current = null;
+    go(VIEW_LOBBY);
+    window.scrollTo(0, 0); // 벌금판 아래에서 끝나도 로비는 위에서부터
+  };
   const startTutorial = () => {
     if (readOnly) return;
     tutorialBack.current = {
@@ -2715,7 +2824,7 @@ export default function GoldSettlement() {
   }, [cols, rows, feePercent, splitMode, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro, tutorial, readOnly, partyReg.active, roundLive, roundId, paused, seats, roundName]);
 
   /* 방장으로서 밀어 올릴 수 있는 상태인지 — 로그인 + 내 방 */
-  const canPush = !readOnly && !!auth && !!relay.room;
+  const canPush = !readOnly && !!auth && !!relay.room && !tutorial; // 예시 파티는 밀지 않습니다 (2026-09-06)
   /* 판의 준비 상태 (§3.1, 2026-09-05) — 시작 전 벌금표입니다. 옛 로비 화면(2열 벤토)은
      폐지됐고, 칸은 잠기고 [시작]이 유일한 채운 버튼이며 표 위에 모집 카드가 섭니다.
      홈은 §3.0 로비입니다 */
@@ -3154,7 +3263,7 @@ export default function GoldSettlement() {
   const membersLoaded = useRef(false);
   const refreshMembers = async () => {
     const a = authRef.current;
-    if (!a || !relay.room) return;
+    if (!a || !relay.room || tutorialRef.current) return; // 예시 파티의 명단은 서버 것이 아닙니다 (2026-09-06)
     try {
       const r = await roomApi.members(a.token, relay.room);
       if (Array.isArray(r.list)) setMembers(r.list);
@@ -3218,6 +3327,12 @@ export default function GoldSettlement() {
      새로 냅니다(startParty). 비로그인은 이 브라우저만의 판입니다. 그리고 대기실로 */
   const newBoard = () => {
     if (readOnly) return;
+    if (tutorialRef.current) {
+      /* 같이 해보기 1걸음 — 진짜 판 대신 예시 판 */
+      tutNewBoard();
+      tutHit("newboard");
+      return;
+    }
     setRoundName(defaultRoundName());
     setLog([]);
     setUndoSnap(null);
@@ -3390,7 +3505,7 @@ export default function GoldSettlement() {
     const cap = Math.min(16, Math.max(1, used, Math.round(num(n)) || 0));
     setLobbyCap(cap);
     putRelay({ ...relay, lobbyCap: cap });
-    if (auth && relay.room && lobbyOn)
+    if (auth && relay.room && lobbyOn && !tutorialRef.current)
       roomApi.lobby(auth.token, relay.room, true, cap).catch(() => {});
   };
   /* 모으기를 접습니다 — 대기실 표시만 내리고, 모인 사람은 그대로 남습니다 (§1) */
@@ -3483,6 +3598,10 @@ export default function GoldSettlement() {
     setTab("sheet");
     setLobbyOn(false);
     setPaused(null);
+    if (tutorialRef.current) {
+      tutHit("start");
+      return;
+    }
     if (!auth || !relay.room) return;
     /* [시작]은 송출 토글을 건드리지 않습니다 (§5.7) — 방장이 일부러 꺼 뒀는데 판을
        연다고 방송에 다시 띄우면, 끈 것이 무슨 뜻인지 없어집니다. 주소를 받는 순간
@@ -3615,7 +3734,7 @@ export default function GoldSettlement() {
   };
   /* 그 자리에 사람을 앉힙니다 — 서버 명단·자리·판의 줄 이름이 같이 움직입니다 */
   const seatMember = async (acct, nick, seatId, opts) => {
-    if (!auth || !relay.room) return;
+    if (!auth || (!relay.room && !tutorialRef.current)) return;
     const fresh = seatId === "new";
     let id = seatId;
     let next = seats;
@@ -3657,7 +3776,9 @@ export default function GoldSettlement() {
     }
     /* 지목 초대를 받아들인 사람은 서버 명단이 이미 ok 입니다 — 방장이 수락할 것이 없어서
        자리와 줄만 맞춥니다 (§3.3). opts.local 이 그 길입니다 */
-    if (opts && opts.local) {
+    if (tutorialRef.current) {
+      /* 예시 파티 — 서버엔 아무것도 안 갑니다 (2026-09-06) */
+    } else if (opts && opts.local) {
       /* 이미 ok 인 사람(지목 초대·링크 착석)의 자리만 서버에 적어 둡니다 — 파티원 앱이 시작 전에도
          자기 줄(you.rowId)을 알아야 하고, 자리 기억(§3.2)도 서버에 남아야 합니다.
          실패해도 [시작]의 bindings 가 다시 적으므로 기다리지 않습니다 */
@@ -3674,7 +3795,7 @@ export default function GoldSettlement() {
     setMembers((prev) => prev.map((m) => (m.acct === acct ? { ...m, st: "ok", rowId: id } : m)));
     /* 수락하는 순간 함께한 사람 관계가 생깁니다 (§3.3) — 목록이 다음 알트탭까지 비어
        있으면 방금 받은 사람을 바로 다시 부를 길이 없습니다 */
-    refreshMe();
+    if (!tutorialRef.current) refreshMe();
     /* 판이 살아 있으면 그 자리의 줄도 지금 만듭니다 — 판 도중 [+ 인원 추가]와 같은 일입니다.
        판이 없으면(로비) 줄은 [시작]할 때 자리에서 한꺼번에 생깁니다 */
     if (roundLive) {
@@ -3715,7 +3836,7 @@ export default function GoldSettlement() {
     const cap = Math.min(16, Math.max(lobbyCap, seatsRef.current.length) + 1);
     setLobbyCap(cap);
     putRelay({ ...relay, lobbyCap: cap });
-    if (auth && relay.room && lobbyOn)
+    if (auth && relay.room && lobbyOn && !tutorialRef.current)
       await roomApi.lobby(auth.token, relay.room, true, cap).catch(() => {});
   };
   /* 앉히기 규칙 하나 (2026-09-06 확정). 출처(계정)가 같은 줄이 있으면 요청 줄의 [받기]가 그 줄로 보내고, 그 밖엔 여기서:
@@ -3890,7 +4011,7 @@ export default function GoldSettlement() {
           return;
         }
         if (!m || !m.kind) return;
-        if (m.kind === "members") setMembers(Array.isArray(m.list) ? m.list : []);
+        if (m.kind === "members" && !tutorialRef.current) setMembers(Array.isArray(m.list) ? m.list : []);
         else if (m.kind === "join") scribeRef.current.join(m.member || m);
         else if (m.kind === "left") scribeRef.current.refresh();
         /* 파티원 소켓이 붙거나 끊겼습니다 — 표의 아이디 표시가 흐려지고 돌아옵니다 (§5.6) */
@@ -4986,6 +5107,8 @@ export default function GoldSettlement() {
   /* 코드의 생사는 서버가 압니다 (2026-09-06: 방장이 앱을 열어 둔 동안 살고 닫으면 10분 뒤 만료) — 앱은 시계를 안 봅니다.
      (폐기) 만료 시각으로 걸러 `m분 남음`을 세던 것 — 20분 모으다 보면 링크가 죽어 다시 붙여야 했다 */
   const hostInvite = (() => {
+    /* 예시 파티의 문 — 진짜 코드를 내지 않습니다 (2026-09-06) */
+    if (tutorial && auth) return { url: window.location.origin + window.location.pathname + "#live=EXAMPLE&j=TUTORIAL", code: "TUTORIAL" };
     if (readOnly || !auth || !relay.room || !relay.invite || !relay.invite.code) return null;
     return { url: roomApi.inviteUrl(relay.room, relay.invite.code), code: relay.invite.code };
   })();
@@ -6208,7 +6331,7 @@ export default function GoldSettlement() {
      파티원 것과 같은 규칙: 브라우저마다 한 번, 주소를 복사한 적 있으면 생략. 비로그인 방장은 주소가 없어 대기실 카드의
      [주소 받기]가 이미 말하니 생략. "방장은 당연히 안다"고 여기고 빠뜨렸던 자리 */
   useEffect(() => {
-    if (readOnly || !auth || !boardOn || roundLive || showLobby || genView) return;
+    if (readOnly || !auth || !boardOn || roundLive || showLobby || genView || tutorial) return;
     if (coachSeen("obsHost")) return;
     if (!coachSeen(guideKey("ready"))) return; // 대기실 사용법이 먼저, 그다음에 OBS (2026-09-06)
     try {
@@ -6737,7 +6860,10 @@ export default function GoldSettlement() {
   const waitDeny = (p) => (p.st === "req" ? denyMember(p.acct) : kickMember(p.acct));
   /* [받기] — 신청은 승인, 진행 중에 들어온 사람은 첫 빈 줄(없으면 새 줄)에 앉힙니다. 자리를 고르는 시트는 없습니다 */
   const waitTake = (p) =>
-    p.st === "req" ? approveMember(p.acct, p.nick || p.acct) : placeMember(p.acct, p.nick || p.acct);
+    Promise.resolve(p.st === "req" ? approveMember(p.acct, p.nick || p.acct) : placeMember(p.acct, p.nick || p.acct)).then((id) => {
+      if (tutorialRef.current) tutHit("take"); // 같이 해보기 5걸음
+      return id;
+    });
   const waitPlace = (p, seatId) =>
     seatMember(p.acct, p.nick || p.acct, seatId, p.st === "ok" ? { local: true } : undefined);
   /* 시작 전에 들어온 사람은 앱이 앉힙니다 — 첫 빈 자리. 방장 앱이 없던 사이 들어온 사람도 돌아오면 여기서 앉습니다.
@@ -6747,7 +6873,7 @@ export default function GoldSettlement() {
      자기 줄(출처)이 남아 있는 사람은 시작 전이든 진행 중이든 그 줄 밑 요청으로 [받기]를 기다립니다 */
   const placing = useRef(new Set());
   useEffect(() => {
-    if (readOnly || !auth || !relay.room || !membersLoaded.current) return;
+    if (readOnly || !auth || (!tutorial && (!relay.room || !membersLoaded.current))) return;
     if (roundLive) return;
     waiting.forEach((m) => {
       if (placing.current.has(m.acct) || ownRowOf(m.acct)) return;
@@ -6826,6 +6952,13 @@ export default function GoldSettlement() {
             <button
               className="gs-btn gs-btn-sm gs-invlinkbtn"
               onClick={() => {
+                if (tutorialRef.current) {
+                  /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
+                  setFlash("invurl");
+                  setTimeout(() => setFlash(""), 1500);
+                  tutHit("link");
+                  return;
+                }
                 copy(hostInvite.url, "invurl");
                 if (!lobbyOn) startParty();
               }}
@@ -7214,6 +7347,12 @@ export default function GoldSettlement() {
           seatedLive={!!(meSeat && meSeat.round)}
           onReturn={(room) => enterRoom(room, { push: true })}
           onLeaveParty={askLeaveFromLobby}
+          tutLine={!!auth && !boardOn && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
+          onTut={startPartyCourse}
+          onDropTut={() => {
+            coachDone("partyAsk");
+            setTutAsk(false);
+          }}
           note={disbandNote}
           onDropNote={dropDisbandNote}
           onJoin={joinByCode}
@@ -8984,6 +9123,26 @@ export default function GoldSettlement() {
       {showHelp && (
         <InfoModal title="사용법" onClose={() => setShowHelp(false)}>
           <div className="gs-guide-list">
+            {auth && (
+              <div className="gs-guide-row">
+                <b>처음부터 같이 해보기</b>
+                <span className="gs-guide-n">4인 파티 예시 · {PARTY_TOTAL}걸음 · 저장 안 됨</span>
+                {coachSeen("party") && <span className="gs-guide-seen">봤어요</span>}
+                {screenId === "lobby" && !boardOn ? (
+                  <button
+                    className="gs-btn gs-btn-sm"
+                    onClick={() => {
+                      setShowHelp(false);
+                      startPartyCourse();
+                    }}
+                  >
+                    {coachSeen("party") ? "다시" : "시작"}
+                  </button>
+                ) : (
+                  <span className="gs-guide-seen gs-guide-else">{boardOn ? "판이 없을 때 로비에서" : "로비에서"}</span>
+                )}
+              </div>
+            )}
             {[...GUIDE_ORDER].sort((a, b) => (a === screenId ? -1 : b === screenId ? 1 : 0)).map((id) => {
               const g = GUIDES[id];
               const now = id === screenId;
@@ -9145,6 +9304,26 @@ export default function GoldSettlement() {
           }}
         />
       )}
+      {/* 같이 해보기 — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이). ✕는 그만두기, 표적이 사라진 건 다음 걸음이 오는 것 */}
+      {coach &&
+        coach.kind === "party" &&
+        PARTY_STEPS[coach.step] &&
+        document.querySelector(PARTY_STEPS[coach.step].sel) && (
+          <CoachMark
+            key={"party:" + coach.step}
+            sel={PARTY_STEPS[coach.step].sel}
+            text={PARTY_STEPS[coach.step].text}
+            action={PARTY_STEPS[coach.step].action}
+            step={PARTY_STEPS[coach.step].no}
+            total={PARTY_TOTAL}
+            block
+            lock={!!PARTY_STEPS[coach.step].lock}
+            onNext={() => (coach.step >= PARTY_STEPS.length - 1 ? endPartyCourse(true) : partyStep(coach.step + 1))}
+            onClose={() => {
+              if (document.querySelector(PARTY_STEPS[coach.step].sel)) endPartyCourse(false);
+            }}
+          />
+        )}
       {coach && coach.kind === "hint" && (
         <CoachMark
           sel=".gs-helpbtn"
@@ -11553,6 +11732,9 @@ function LobbyHome({
   onOpenGen,
   onDropGen,
   onAllGens,
+  tutLine,
+  onTut,
+  onDropTut,
 }) {
   const [code, setCode] = useState("");
   /* 자리표시 (모험가N)은 빈 칸입니다 — 판 중엔 자리 이름에도 그 글자가 들어가 있어 걸러 셉니다 */
@@ -11617,6 +11799,23 @@ function LobbyHome({
               <div className="gs-lh-empty">
                 {/* 처음에도, 끝내기·해산 뒤에도 같은 얼굴 (2026-09-06) — "아직"은 끝낸 뒤엔 안 맞아서 뺌 (초안) */}
                 <p>{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
+                {/* 같이 해보기 권유 (2026-09-06 사용자 확정) — 초대 없이 들어온 모든 사용자에게 한 번, 새 판 버튼 바로 위.
+                    [됐어요]로 접으면 [?]에만 남습니다. 문구는 초안 */}
+                {tutLine && (
+                  <div className="gs-tutline" role="status">
+                    <span>
+                      <b>리뉴얼됐어요.</b> 4인 파티를 예시로 처음부터 같이 열어 봐요.
+                    </span>
+                    <span className="gs-tutline-r">
+                      <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onDropTut}>
+                        됐어요
+                      </button>
+                      <button className="gs-btn gs-btn-sm gs-lbstart" onClick={onTut}>
+                        같이 해보기
+                      </button>
+                    </span>
+                  </div>
+                )}
                 <button className={"gs-btn gs-lh-newbtn " + (auth ? "gs-btn-ghost" : "gs-lifebtn gs-lbstart")} onClick={onEnter}>
                   + 새 판 만들기
                 </button>
@@ -13047,6 +13246,43 @@ const GUIDES = {
 const GUIDE_ORDER = ["lobby", "ready", "board", "confess"];
 const guideKey = (id) => "guide:" + id;
 
+/* 처음부터 같이 해보기 (2026-09-06 사용자 확정) — 4인 파티 예시. 더미 파티원 실리안·니나브·웨이가 정해진 박자로 움직이고
+   서버엔 아무것도 안 갑니다. wait 는 이 걸음을 넘기는 사건(사용자가 표적을 누름), auto 는 타이머가 넘깁니다.
+   no 는 화면에 보이는 번호(기다리는 걸음은 앞 걸음과 같은 번호). 문구는 전부 초안 */
+const PARTY_STEPS = [
+  { no: 1, sel: ".gs-lh-newbtn", text: "판부터 만들어 볼게요. 파티는 판 안에 있어요.", wait: "newboard" },
+  { no: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
+  { no: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto" },
+  { no: 3, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
+  {
+    no: 4,
+    sel: ".gs-grid",
+    text: (
+      <>
+        칸을 <MouseIcon side="left" /> 누르면 1회예요. 파티원은 자수 탭에서 자기 줄을 직접 눌러요.
+      </>
+    ),
+    wait: "press",
+  },
+  { no: 4, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
+  { no: 5, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [받기]를 누르면 빈 줄에 앉아요.", wait: "take" },
+  { no: 6, sel: ".gs-endbtn", text: "다 끝나면 여기예요. 결과지가 기록에 남아요. 다시 보려면 [?]에서요.", action: "알겠어요", lock: true },
+];
+const PARTY_TOTAL = 6;
+const TUT_MEMBERS = [
+  { acct: "tut:1", nick: "실리안" },
+  { acct: "tut:2", nick: "니나브" },
+  { acct: "tut:3", nick: "웨이" },
+];
+/* 로비 권유 줄의 대상 — 초대 없이 들어온 사람. 초대 링크로 들어온 적이 있으면(코드 기억) 파티원이라 안 권합니다 */
+const cameByInvite = () => {
+  try {
+    return Object.keys(window.localStorage).some((k) => k.startsWith("goldSettlement.joincode."));
+  } catch (e) {
+    return true;
+  }
+};
+
 /* block: 대상 말고는 못 누르게 막고 나머지를 어둡게 덮습니다.
    lock: 대상까지 막습니다 — 말풍선의 버튼으로만 넘어가는 걸음용. */
 function CoachMark({ sel, text, action, step, total, block, lock, onNext, onClose }) {
@@ -14315,6 +14551,10 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-guide-else{margin-left:auto}
 .gs-guide-row .gs-btn{margin-left:auto}
 .gs-guide-foot{margin:14px 0 0; padding-top:12px; border-top:1px solid rgba(var(--ink-rgb),.14); font-size:11.5px; color:var(--ink-2); line-height:1.7}
+/* 로비 권유 줄 (2026-09-06) */
+.gs-tutline{display:flex; align-items:center; gap:12px; margin:0 0 12px; text-align:left; padding:10px 12px; border:1px solid rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.07); font-size:12.5px; color:var(--ink-body); flex-wrap:wrap}
+.gs-tutline b{color:var(--ink)}
+.gs-tutline-r{margin-left:auto; display:flex; gap:8px}
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px;
   pointer-events:none; animation:gs-coach-breathe 1.6s ease-in-out infinite}
