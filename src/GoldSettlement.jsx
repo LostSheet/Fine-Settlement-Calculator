@@ -940,6 +940,18 @@ const DEMO = (() => {
     return false;
   }
 })();
+/* #demo&member — 예시의 뒷부분(2026-09-06 사용자 확정): 같은 앱을 파티원(뷰어) 모드로 한 번 더 띄워, 실리안의 자리에서
+   자수 화면을 보여 줍니다. 예시 방(DEMO_ROOM)의 길을 타되 판은 방장 예시와 같은 넷이고 숫자는 움직이지 않습니다 */
+const DEMO_MEMBER = DEMO && /(^|&)member(=|&|$)/.test(window.location.hash.replace(/^#/, ""));
+/* 진짜 계정의 닉 — 예시 판의 방장 이름에 씁니다(없으면 `방장`) */
+const realNick = () => {
+  try {
+    const v = JSON.parse(window.localStorage.getItem("goldSettlement.auth") || "null");
+    return (v && v.nick) || "";
+  } catch (e) {
+    return "";
+  }
+};
 
 /* ---------- 계정 ----------
    사람의 신원은 계정입니다. URL 은 읽기까지만 나르고, 쓰기는 전부 이 세션 토큰입니다. */
@@ -949,6 +961,7 @@ function loadAuth() {
   try {
     const v = JSON.parse(window.localStorage.getItem(AUTH_KEY) || "null");
     /* 예시 앱의 방장은 가짜 계정 — 닉만 진짜 계정 것을 빌립니다(없으면 `나`) */
+    if (DEMO_MEMBER) return { id: "silian", nick: "실리안", anon: false, token: "demo", obsToken: "EXAMPLE" };
     if (DEMO) return { id: "demo:me", nick: (v && v.nick) || "나", anon: !!(v && v.anon), token: "demo", obsToken: "EXAMPLE" };
     if (v && typeof v.id === "string" && typeof v.token === "string") return v;
   } catch (e) {}
@@ -1737,7 +1750,7 @@ export default function GoldSettlement() {
     /* #live=ROOMID 로 들어오면 읽기 전용 뷰어입니다. 이 브라우저에 저장된 장부는
        손대지 않고(저장도 안 하고), 방장이 밀어 주는 상태만 비춥니다.
        #o=TOKEN 은 방을 모른 채 들어오는 길입니다 — resolve 로 찾아 같은 뷰어를 엽니다. */
-    const liveRoom = readLiveRoom();
+    const liveRoom = DEMO_MEMBER ? DEMO_ROOM : readLiveRoom(); // 파티원 예시는 예시 방의 뷰어로 뜹니다
     const obsToken = readObsToken();
     /* 단, 방장 본인이 자기 방 주소를 열었다면 — 쓰기 세션이 이 브라우저에 있으니
        구경꾼 화면 대신 자기 장부(입력 화면)로 들어갑니다 */
@@ -2017,6 +2030,7 @@ export default function GoldSettlement() {
 
   const coachRef = useRef(null);
   coachRef.current = coach;
+  if (DEMO) window.__gsDemo = { coach, sel: coach && coach.kind === "party" && PARTY_FLOW[coach.step] ? PARTY_FLOW[coach.step].sel : null }; // 예시 앱 검사용
 
   useEffect(() => {
     if (!burst.length || burstHold) return;
@@ -2480,7 +2494,7 @@ export default function GoldSettlement() {
   const [inviteOpen, setInviteOpen] = useState(false); // 판 중 초대 링크 창 (옛 파티 서랍의 자리)
   const [scribeLive, setScribeLive] = useState(false); // 서기 소켓이 붙어 있는지
   /* --- 파티원 쪽 --- */
-  const [you, setYou] = useState(null); // {nick, rowId, st} — 이 방에서의 나
+  const [you, setYou] = useState(DEMO_MEMBER ? { nick: "실리안", rowId: "r2", st: "ok" } : null); // {nick, rowId, st} — 이 방에서의 나
   /* rowId↔이름 + 계정 붙음 표시(a) — 판 도중 합류자가 고를 수 있는 줄을 가립니다 (§3.2) */
   const [rows2v, setRows2v] = useState([]);
   const [scribeOn, setScribeOn] = useState(true); // 방장 앱이 켜져 있는지
@@ -2675,10 +2689,12 @@ export default function GoldSettlement() {
   /* 부모 앱: [같이 해보기]·[?] [시작]은 예시 앱을 전체 화면 iframe 으로 엽니다. 끝·그만두기는 예시 앱이 postMessage 로 알립니다 */
   const [demoOpen, setDemoOpen] = useState(false);
   const [demoReady, setDemoReady] = useState(false); // 예시 앱이 첫 그림을 그렸다고 알려 올 때까지 iframe 은 투명 — 흰 화면이 깜빡이지 않게
-  const demoUrl = typeof window !== "undefined" ? window.location.origin + window.location.pathname + "#demo" : "";
+  const demoBase = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
+  const [demoSrc, setDemoSrc] = useState(""); // #demo(방장 8걸음) → #demo&member(파티원 화면 2걸음)
   const startPartyCourse = () => {
     if (readOnly || DEMO) return;
     setDemoReady(false);
+    setDemoSrc(demoBase + "#demo&t=" + Date.now()); // t 는 같은 주소로 다시 열어도 새로 뜨게
     setDemoOpen(true);
   };
   /* 예시 앱이 못 뜨더라도 갇히지 않게 — 8초 뒤엔 있는 그대로 보입니다 */
@@ -2691,11 +2707,7 @@ export default function GoldSettlement() {
     setDemoOpen(false);
     coachDone("partyAsk");
     setTutAsk(false);
-    if (done) {
-      coachDone("party");
-      /* 다 봤으면 로비·대기실·벌금판 사용법은 이미 본 것입니다 — 같은 버튼을 두 번 가리키지 않게 */
-      ["lobby", "ready", "board"].forEach((id) => coachDone(guideKey(id)));
-    }
+    if (done) coachDone("party");
   };
   useEffect(() => {
     if (!demoOpen) return;
@@ -2712,6 +2724,12 @@ export default function GoldSettlement() {
       if (e.origin !== window.location.origin || !e.data) return;
       if (e.data.gs === "party-demo-ready") return setDemoReady(true);
       if (e.data.gs !== "party-demo") return;
+      if (e.data.next === "member") {
+        /* 방장 부분이 끝났습니다 — 같은 창에 파티원 예시를 갈아 끼웁니다(그릴 때까지 다시 투명) */
+        setDemoReady(false);
+        setDemoSrc(demoBase + "#demo&member&t=" + Date.now());
+        return;
+      }
       closeDemo(!!e.data.done);
     };
     window.addEventListener("message", on);
@@ -2721,7 +2739,7 @@ export default function GoldSettlement() {
      querySelector 는 못 보고, 예시 앱은 서버 응답이 없어 다시 그려질 계기도 없습니다 — 표적이 보일 때까지 살핍니다 */
   useEffect(() => {
     if (!coach || coach.kind !== "party") return;
-    const st = PARTY_STEPS[coach.step];
+    const st = PARTY_FLOW[coach.step];
     if (!st) return;
     /* 표적이 있어도 이번 렌더가 못 봤으면(같은 커밋에 생김) 말풍선이 없습니다 — 그때도 다시 그립니다 */
     const drawn = () => !!document.querySelector(".gs-coach");
@@ -2778,7 +2796,7 @@ export default function GoldSettlement() {
   const tutHit = (what) => {
     const c = coachRef.current;
     if (!tutorialRef.current || !c || c.kind !== "party") return;
-    const st = PARTY_STEPS[c.step];
+    const st = PARTY_FLOW[c.step];
     if (!st || st.wait !== what) return;
     const next = c.step + 1;
     partyStep(next);
@@ -2807,7 +2825,8 @@ export default function GoldSettlement() {
     setCoach(null);
     if (window.parent && window.parent !== window) {
       try {
-        window.parent.postMessage({ gs: "party-demo", done: !!done }, window.location.origin);
+        /* done: true = 다 봄, "member" = 방장 부분 끝, 파티원 화면으로, false = 그만둠 */
+        window.parent.postMessage({ gs: "party-demo", done: done === true, next: done === "member" ? "member" : null }, window.location.origin);
       } catch (e) {}
       return;
     }
@@ -4479,6 +4498,17 @@ export default function GoldSettlement() {
          장부와 우편이 실제로 다시 계산되는 것까지 보여 줍니다 --- */
   useEffect(() => {
     if (!readOnly || liveRoom !== DEMO_ROOM) return;
+    if (DEMO_MEMBER) {
+      /* 파티원 예시 — 방장 예시와 같은 판(방장·실리안·니나브·웨이, 잡힘 1회씩), 숫자는 누른 만큼만 움직입니다 */
+      setCols(DEFAULT_COLS);
+      setRows(TUT_ROWS(realNick() || "방장"));
+      setFeePercent("5");
+      setUnit("10000");
+      setSplitMode("pot");
+      setLiveName("예시 파티");
+      setLiveState("on");
+      return;
+    }
     setCols(DEFAULT_COLS);
     setRows(DEFAULT_ROWS);
     setFeePercent("5");
@@ -4908,6 +4938,13 @@ export default function GoldSettlement() {
        서버까지 갔다가 조용히 버려집니다(유령 자수) */
     if (!cols.some((c) => c.id === colId)) return;
     setConfessErr("");
+    if (DEMO) {
+      /* 파티원 예시 — 서버 없이 내 줄만 움직입니다. 같이 해보기 9걸음(누르기) */
+      setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, counts: { ...r.counts, [colId]: String(Math.max(0, num(r.counts[colId]) + dir)) } } : r)));
+      if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
+      if (tutorialRef.current && dir > 0) tutHit("confess");
+      return;
+    }
     roomApi
       .confess(auth.token, liveRoom, rowId, colId, dir)
       .then(() => {
@@ -6371,10 +6408,10 @@ export default function GoldSettlement() {
           : roundLive
             ? "board"
             : null;
-  const screenGuideSeen = !screenId || coachSeen(guideKey(screenId));
+  const screenGuideSeen = !screenId || !GUIDES[screenId] || coachSeen(guideKey(screenId));
   /* 화면에 처음 왔을 때 한 번 — 다른 코치가 떠 있거나 모달이 열려 있거나 예시 중이면 안 뜹니다 */
   useEffect(() => {
-    if (!screenId || tutorial || showHelp || obsOpen) return;
+    if (!screenId || !GUIDES[screenId] || tutorial || showHelp || obsOpen) return;
     if (coachSeen(guideKey(screenId))) return;
     const t = setTimeout(() => {
       if (!coachRef.current) setCoach({ kind: "guide", id: screenId, step: 0 });
@@ -9233,7 +9270,8 @@ export default function GoldSettlement() {
                 </button>
               </div>
             )}
-            {[...GUIDE_ORDER].sort((a, b) => (a === screenId ? -1 : b === screenId ? 1 : 0)).map((id) => {
+            {/* 자수 사용법은 파티원 화면의 것 — 방장 메뉴엔 같이 해보기만 (2026-09-06 통합) */}
+            {[...GUIDE_ORDER].filter((id) => id !== "confess" || readOnly).sort((a, b) => (a === screenId ? -1 : b === screenId ? 1 : 0)).map((id) => {
               const g = GUIDES[id];
               const now = id === screenId;
               const seen = coachSeen(guideKey(id));
@@ -9397,28 +9435,29 @@ export default function GoldSettlement() {
       {demoOpen && (
         <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
           {!demoReady && <p className="gs-demo-load">튜토리얼 시작 중</p>}
-          <iframe className={"gs-demo-frame" + (demoReady ? " on" : "")} title="처음부터 같이 해보기" src={demoUrl} />
+          {/* key — 해시만 바뀌면 같은 문서 안에서 이동할 뿐 다시 뜨지 않습니다. 새 iframe 이어야 파티원 예시가 새로 부팅합니다 */}
+          <iframe key={demoSrc} className={"gs-demo-frame" + (demoReady ? " on" : "")} title="처음부터 같이 해보기" src={demoSrc} />
         </div>
       )}
       {/* 같이 해보기(예시 앱 안) — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이). ✕는 그만두기, 표적이 사라진 건 다음 걸음이 오는 것 */}
       {coach &&
         coach.kind === "party" &&
-        PARTY_STEPS[coach.step] &&
-        document.querySelector(PARTY_STEPS[coach.step].sel) && (
+        PARTY_FLOW[coach.step] &&
+        document.querySelector(PARTY_FLOW[coach.step].sel) && (
           <CoachMark
             key={"party:" + coach.step}
-            sel={PARTY_STEPS[coach.step].sel}
-            text={PARTY_STEPS[coach.step].text}
-            action={PARTY_STEPS[coach.step].action}
-            step={PARTY_STEPS[coach.step].no}
+            sel={PARTY_FLOW[coach.step].sel}
+            text={PARTY_FLOW[coach.step].text}
+            action={PARTY_FLOW[coach.step].action}
+            step={PARTY_FLOW[coach.step].no}
             total={PARTY_TOTAL}
             block
-            lock={!!PARTY_STEPS[coach.step].lock}
-            center={!!PARTY_STEPS[coach.step].center}
-            overModal={!!PARTY_STEPS[coach.step].top}
-            onNext={() => (coach.step >= PARTY_STEPS.length - 1 ? endPartyCourse(true) : partyStep(coach.step + 1))}
+            lock={!!PARTY_FLOW[coach.step].lock}
+            center={!!PARTY_FLOW[coach.step].center}
+            overModal={!!PARTY_FLOW[coach.step].top}
+            onNext={() => (coach.step >= PARTY_FLOW.length - 1 ? endPartyCourse(DEMO_MEMBER ? true : "member") : partyStep(coach.step + 1))}
             onClose={() => {
-              if (document.querySelector(PARTY_STEPS[coach.step].sel)) endPartyCourse(false);
+              if (document.querySelector(PARTY_FLOW[coach.step].sel)) endPartyCourse(false);
             }}
           />
         )}
@@ -13339,52 +13378,10 @@ const COURSE_STEPS = [
    진짜 판에서 뭔가를 누르게 하지 않습니다(칸 누르기는 같이 해보기가 예시 판에서 맡습니다). 문구는 전부 초안.
    (폐기 2026-09-06) 첫 방문 관문 `처음 오셨나요?`(닫을 수 없는 모달, 새 판을 누른 뒤에야 떴다) · [?]의 질문 답변 목록 ·
    옛 여섯 걸음 예시 코스(COURSE_STEPS — 위치 안내 둘을 빼고 단가·사람 아이콘을 넣어 아래 board 로 리뉴얼) */
+/* 가이드는 하나로 (2026-09-06 사용자 확정, 통합) — 방장 쪽은 '처음부터 같이 해보기'가 전부고, 파티원 화면의 자수 사용법만 남습니다.
+   파티원은 초대로 들어와 방장 예시를 볼 일이 없어서요. 문구는 같이 해보기의 파티원 걸음(MEMBER_STEPS)과 같은 말.
+   (폐기 2026-09-06) 로비 3걸음·대기실 3걸음·벌금판 6걸음 사용법 — 원문은 OBS-SPEC §8 */
 const GUIDES = {
-  lobby: {
-    name: "로비 사용법",
-    steps: [
-      { sel: ".gs-lh-newbtn", text: "판은 여기서 만들어요. 파티는 판 안에 있어요.", action: "다음", lock: true },
-      { sel: ".gs-lh-join", text: "초대 코드나 링크를 받았으면 여기 붙여요.", action: "다음", lock: true },
-      { sel: ".gs-lh-recs", text: "끝난 판은 여기 남아요. 결과지를 다시 볼 수 있어요.", action: "알겠어요", lock: true },
-    ],
-  },
-  ready: {
-    name: "대기실 사용법",
-    steps: [
-      { sel: ".gs-invlinkbtn", text: "링크를 복사해서 디코에 붙여요. 파티원은 누르면 바로 앉아요.", action: "다음", lock: true },
-      { sel: ".gs-readytools", text: "인원과 항목은 시작 전에 정해요. 이름은 시작 뒤에 적어요.", action: "다음", lock: true },
-      { sel: ".gs-glow", text: "다 모이면 시작. 안 온 사람 자리는 비워 두고 시작해도 돼요.", action: "알겠어요", lock: true },
-    ],
-  },
-  board: {
-    name: "벌금판 사용법",
-    steps: [
-      {
-        sel: ".gs-grid-count",
-        text: (
-          <>
-            칸을 <MouseIcon side="left" /> 누르면 1회가 쌓여요.
-          </>
-        ),
-        action: "다음",
-        lock: true,
-      },
-      {
-        sel: ".gs-grid-count",
-        text: (
-          <>
-            <MouseIcon side="right" /> 우클릭하면 1회가 빠져요.
-          </>
-        ),
-        action: "다음",
-        lock: true,
-      },
-      { sel: ".gs-pricebtn, .gs-in-price", text: "단가는 머리의 숫자예요. 누르면 고칠 수 있고, 이미 센 것까지 바꿀지 그때 물어요.", action: "다음", lock: true },
-      { sel: ".gs-rowi", text: "이름 옆 사람 아이콘. 줄을 옮기거나 파티에서 내보내요.", action: "다음", lock: true },
-      { sel: ".gs-tab-ledger", text: "정산 장부 탭엔 누른 게 정산돼 있고, 보낼 우편엔 누가 누구에게 얼마 보낼지 있어요.", action: "다음", lock: true },
-      { sel: ".gs-endbtn", text: "다 끝나면 정산 끝내기. 결과지가 기록에 남아요.", action: "알겠어요", lock: true },
-    ],
-  },
   confess: {
     name: "자수 사용법",
     steps: [
@@ -13392,18 +13389,17 @@ const GUIDES = {
         sel: ".gs-confcard",
         text: (
           <>
-            내 줄이에요. <MouseIcon side="left" /> 누르면 방장 표에 바로 올라가요. 잘못 눌렀으면 30초 안에{" "}
-            <MouseIcon side="right" /> 우클릭으로 되돌려요.
+            내 줄이에요. 칸을 <MouseIcon side="left" /> 누르면 1회, <MouseIcon side="right" /> 우클릭하면 되돌려요.
           </>
         ),
         action: "다음",
         lock: true,
       },
-      { sel: ".gs-tab-sheet", text: "방장 표는 여기서 봐요.", action: "알겠어요", lock: true },
+      { sel: ".gs-confcard", text: "누른 건 방장 벌금판에 바로 올라가요. 되돌리기는 30초 안에만 돼요. 방장 표는 [벌금표] 탭에서 봐요.", action: "알겠어요", lock: true },
     ],
   },
 };
-const GUIDE_ORDER = ["lobby", "ready", "board", "confess"];
+const GUIDE_ORDER = ["confess"];
 const guideKey = (id) => "guide:" + id;
 
 /* 처음부터 같이 해보기 (2026-09-06 사용자 확정) — 4인 파티 예시. 더미 파티원 실리안·니나브·웨이가 정해진 박자로 움직이고
@@ -13435,9 +13431,31 @@ const PARTY_STEPS = [
   { no: 7, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", center: true },
   /* 시트는 모달(z 50) 위라 이 걸음만 안내를 그 위로 올립니다(top) */
   { no: 7, sel: ".gs-modal .gs-waitpick", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
-  { no: 8, sel: ".gs-endbtn", text: "다 끝나면 여기예요. 결과지가 기록에 남아요. 다시 보려면 [?]에서요.", action: "알겠어요", lock: true },
+  { no: 8, sel: ".gs-endbtn", text: "다 끝나면 여기예요. 결과지가 기록에 남아요. 이제 들어온 파티원이 보는 화면도 볼게요.", action: "파티원 화면 보기", lock: true },
 ];
-const PARTY_TOTAL = 8;
+/* 뒷부분 — 파티원 예시 앱(#demo&member)에서 도는 두 걸음. 번호는 방장 걸음에 이어 9·10 */
+const MEMBER_STEPS = [
+  {
+    no: 9,
+    sel: ".gs-confcard",
+    text: (
+      <>
+        들어온 파티원은 이 화면을 봐요. 자기 줄만 있고, 칸을 <MouseIcon side="left" /> 누르면 1회, <MouseIcon side="right" /> 우클릭하면 되돌려요. 한번 눌러 보세요.
+      </>
+    ),
+    wait: "confess",
+  },
+  { no: 10, sel: ".gs-confcard", text: "방장 벌금판에 바로 올라갔어요. 되돌리기는 30초 안에만 돼요. 다시 보려면 [?]에서요.", action: "알겠어요", lock: true },
+];
+const PARTY_FLOW = DEMO_MEMBER ? MEMBER_STEPS : PARTY_STEPS;
+const PARTY_TOTAL = 10;
+/* 파티원 예시의 판 — 방장 예시가 끝난 시점 그대로 */
+const TUT_ROWS = (host) => [
+  { id: "r1", name: host, counts: { c1: "1" }, extras: [] },
+  { id: "r2", name: "실리안", counts: { c1: "1" }, extras: [] },
+  { id: "r3", name: "니나브", counts: {}, extras: [] },
+  { id: "r4", name: "웨이", counts: {}, extras: [] },
+];
 const TUT_MEMBERS = [
   { acct: "silian", nick: "실리안" },
   { acct: "ninav", nick: "니나브" },
