@@ -3842,6 +3842,24 @@ export default function GoldSettlement() {
     askLeaveForJoin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /* [혼자 세기] (2026-09-08 사용자 확정) — 판을 만들고, 그 판이 실제로 선 다음 렌더에서 바로 시작합니다.
+     newBoard 직후에 startRound 를 부르면 아직 옛 자리(클로저)를 보므로 ref 로 한 박자 미룹니다 */
+  const soloPending = useRef(false);
+  useEffect(() => {
+    if (!soloPending.current) return;
+    if (roundLive) {
+      soloPending.current = false;
+      return;
+    }
+    if (!boardOn) return;
+    soloPending.current = false;
+    startRound(cols);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardOn, roundLive]);
+  const askSoloBoard = () => {
+    soloPending.current = true;
+    askNewBoard();
+  };
   /* 남의 파티에 앉은 채 새 판을 만들면 먼저 나갑니다 (방 하나 규칙, 2026-09-07). 문구 초안 */
   const askNewBoard = () => {
     if (readOnly) return;
@@ -7614,13 +7632,27 @@ export default function GoldSettlement() {
               </button>
             </div>
           )}
+          {/* 판을 만드는 문이 둘 (2026-09-08 사용자 확정) — 위는 파티원을 부르는 길(대기실로), 아래는 혼자 세는 길(바로 벌금표로).
+              (폐기, 하루 전) 문 하나 [+ 새 판 만들기] — 파티원을 부르는 길과 혼자 쓰는 길이 안 갈려 기존 방식으로 쓰던 사람이 초대 UI 앞에서 멈췄다.
+              (폐기, 같은 날) 이 둘을 대기실 모집 카드에 넣은 것 — 판을 만드는 자리는 로비다(사용자 정정) */}
           {head(false, "파티 없음", null)}
           <div className="gs-lh-box empty">
-            <p className="gs-lh-sub">{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
+            <p className="gs-lh-sub">초대 코드를 주면 각자 자기 화면에서 자수해요. 방장은 확인만 해요.</p>
             <div className="gs-lh-acts">
-              <button className={"gs-btn gs-lifebtn gs-lh-newbtn " + (auth ? "gs-btn-ghost" : "gs-lbstart")} onClick={askNewBoard}>
-                + 새 판 만들기
+              <button className="gs-btn gs-lifebtn gs-lbstart gs-lh-newbtn" onClick={askNewBoard}>
+                파티원 초대하여 시작하기
               </button>
+            </div>
+            <div className="gs-forksolo">
+              <p className="gs-forklead">
+                <b>혼자 세려면</b> 부르지 않고 바로 시작해요. 방장이 다 입력하고, 내 방송 주소만 OBS에 넣으면 돼요.
+              </p>
+              <div className="gs-lh-acts">
+                <button className="gs-btn gs-lifebtn gs-solobtn" onClick={askSoloBoard}>
+                  혼자 세기
+                  <em className="gs-forkbadge">기존 방식</em>
+                </button>
+              </div>
             </div>
           </div>
           {/* 비밀 파티 입장 문법 — 주소를 그대로 붙여넣어도, 코드 8자만 쳐도 들어가진다. 같은 말은 한 번만 (2026-09-07 사용자) */}
@@ -8456,8 +8488,10 @@ export default function GoldSettlement() {
                     <button className="gs-btn gs-btn-ghost gs-lifebtn gs-endbtn" onClick={() => askDisband()}>
                       해산
                     </button>
-                    {/* (폐기 2026-09-07 밤) 마스트의 [시작하기] — 시작하는 문이 모집 카드 안 둘로 갈렸습니다(파티원 초대 / 혼자 세기).
-                        [시작]이 3초 주기로 빛나던 것(.gs-glow)은 카드의 [파티원 초대하여 시작하기]가 물려받았습니다 */}
+                    {/* [시작]은 3초 주기로 느리게 빛납니다 (2026-09-06) — 시작 전의 유일한 움직임 */}
+                    <button className="gs-btn gs-lifebtn gs-lbstart gs-glow" onClick={() => startRound(cols)}>
+                      시작하기
+                    </button>
                   </>
                 ) : (
                   <span className="gs-tip">
@@ -8617,30 +8651,9 @@ export default function GoldSettlement() {
             </h4>
             {/* 대기실에 있는 사람은 이름으로 (2026-09-07 사용자: 1/8 이 아니라 사람을 보여 달라) */}
             <p className="gs-recruit-who">{seatNamesNow.length ? seatNamesNow.join(" · ") : "아직 아무도 없어요"}</p>
-            {/* 읽는 순서: 머리 → 사람 → 초대 한 덩이 → 시작 버튼. (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로 */}
-            <p className="gs-forklead">초대 코드를 주면 각자 자기 화면에서 자수해요. 방장은 확인만 해요.</p>
+            {/* 읽는 순서: 머리 → 사람 → 초대 한 덩이. (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로.
+                (폐기 2026-09-08) 여기 있던 시작 문 둘 — 판을 만드는 자리는 대기실이 아니라 로비의 파티 카드다(사용자 정정) */}
             <div className="gs-lbsec gs-recruit-code">{inviteLine()}</div>
-            {/* 시작하는 문 둘 (2026-09-07 밤 사용자 확정) — 위는 파티원 초대, 아래는 혼자 세기. 마스트의 [시작하기]는 여기로 옮겨졌습니다.
-                (폐기) 마스트 오른쪽 [시작하기] 하나 — 파티원을 부르는 길과 혼자 쓰는 길이 갈리지 않아, 기존 방식으로 쓰던 사람이 초대 UI 앞에서 멈췄다 */}
-            <div className="gs-forkgo">
-              <button className="gs-btn gs-lifebtn gs-lbstart gs-glow" onClick={() => startRound(cols)}>
-                파티원 초대하여 시작하기
-              </button>
-            </div>
-            {/* 남이 앉아 있으면 이미 파티입니다 — 혼자 세기 단은 그때 서지 않습니다 */}
-            {seatSum.on <= 1 && (
-              <div className="gs-forksolo">
-                <p className="gs-forklead">
-                  <b>혼자 세려면</b> 부르지 않고 바로 시작해요. 방장이 다 입력하고, 내 방송 주소만 OBS에 넣으면 돼요.
-                </p>
-                <div className="gs-forkgo">
-                  <button className="gs-btn gs-lifebtn gs-solobtn" onClick={() => startRound(cols)}>
-                    혼자 세기
-                    <em className="gs-forkbadge">기존 방식</em>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </section>
       )}
@@ -8654,11 +8667,6 @@ export default function GoldSettlement() {
             <span className="gs-recruit-liveacts">
               <button className="gs-btn gs-btn-sm" onClick={() => setObsOpen(true)}>
                 주소 받기
-              </button>
-              {/* 비로그인도 혼자 세는 길은 열려 있습니다 (2026-09-07 밤) — 마스트 [시작하기]가 카드로 옮겨졌기 때문입니다 */}
-              <button className="gs-btn gs-btn-sm gs-lbstart gs-solobtn" onClick={() => startRound(cols)}>
-                혼자 세기
-                <em className="gs-forkbadge">기존 방식</em>
               </button>
             </span>
           </div>
@@ -14227,8 +14235,7 @@ const MEMBER_INHOST = [
    파티원을 부르는 3·4장이 없는 대신, 정산 결과를 넘기는 길(우편·채팅 복사)을 한 장으로 세웠습니다. 문구는 전부 초안 */
 const SOLO_CHAPTERS = ["판 만들기", "벌금 세기", "정산 나누기", "방송에 띄우기"];
 const SOLO_STEPS = [
-  { ch: 0, sel: ".gs-lh-newbtn", text: "판부터 만들어요. 파티원을 부르지 않아도 판은 똑같아요.", wait: "newboard" },
-  { ch: 0, sel: ".gs-solobtn", text: "초대는 건너뛰어요. [혼자 세기]를 누르면 바로 벌금표로 가요.", wait: "start" },
+  { ch: 0, sel: ".gs-solobtn", text: "파티원을 부르지 않을 거예요. [혼자 세기]를 누르면 판을 만들고 바로 벌금표로 가요.", wait: "start" },
   { ch: 1, sel: ".gs-grid tbody tr:nth-child(2) .gs-in-name", text: "파티원 이름은 방장이 직접 적어요. 비워 두면 (모험가2)로 나가요.", action: "다음", lock: true },
   {
     ch: 1,
@@ -17024,12 +17031,10 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-invcode-renew:hover{color:var(--gold)}
 .gs-invdiscbtn{white-space:nowrap}
 .gs-recruit-who{margin:6px 0 12px; font-size:14px; color:var(--ink); line-height:1.6}
-/* 시작하는 문 둘 (2026-09-07 밤 사용자 확정) — 세로로, 위가 파티원 초대·아래가 혼자 세기 */
-.gs-forklead{margin:0 0 12px; font-size:12.5px; color:var(--ink-2); line-height:1.75}
+/* 판을 만드는 문 둘 (2026-09-08 사용자 확정) — 로비 파티 카드 안에서 세로로, 위가 파티원 초대·아래가 혼자 세기 */
+.gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
-.gs-forkgo{display:flex; justify-content:flex-end; margin-top:14px}
 .gs-forksolo{margin-top:16px; padding-top:15px; border-top:1px dashed rgba(var(--ink-rgb),.2)}
-.gs-forksolo .gs-forklead{margin-bottom:0}
 .gs-solobtn{display:inline-flex; align-items:center; gap:9px; background:transparent; border-color:rgba(var(--ink-rgb),.42); color:var(--ink)}
 .gs-solobtn:hover{border-color:var(--ink); background:rgba(var(--ink-rgb),.06)}
 /* 사각 뱃지 — 알약(칩)과 갈라 "옛 방식"이라는 꼬리표로 읽히게 (2026-09-07 밤 사용자 지정) */
