@@ -8729,40 +8729,19 @@ export default function GoldSettlement() {
           <div className="gs-card gs-recruit">
             {/* 머리가 "초대를 냈는지"를 말합니다 (2026-09-05 목업 확정): 모집 중 · 남은 시간 · 앉은 수.
                 (폐기, 당일) 제목 `파티원 모으기` + 이름 적힌 칸까지 센 수 — 초대가 나갔는지 안 읽혔다 */}
-            <h4 className="gs-lbcard-h gs-recruit-head">
-              {/* 남은 시간은 없습니다 (2026-09-06) — 코드는 방장이 앱을 열어 둔 동안 삽니다. `앉음` 라벨은 뺐습니다 (2026-09-07 사용자) */}
-              <span className="gs-recruit-live">
-                <i className="gs-livechip-dot" aria-hidden="true" /> 모집 중
-              </span>
-              <span className="gs-lbroster-n">
-                {seatSum.on}/{lobbyCap}
-              </span>
-            </h4>
-            {/* 좌우 두 덩이 (2026-09-08 사용자 확정) — 왼쪽 초대, 오른쪽 들어온 사람.
-                (폐기, 하루 전) 이름을 가운뎃점으로 이은 한 줄 + 그 아래 초대 덩이 — 카드가 네 단으로 늘어지고 오른쪽이 통째로 비었다.
+            {/* 남은 시간은 없습니다 (2026-09-06) — 코드는 방장이 앱을 열어 둔 동안 삽니다. `앉음` 라벨은 뺐습니다 (2026-09-07 사용자).
+                (폐기 2026-09-08) h4 머리줄 — 카드가 한 행이 되면서 상태·인원도 그 줄의 앞머리가 됐습니다 */}
+            <span className="gs-recruit-live">
+              <i className="gs-livechip-dot" aria-hidden="true" /> 모집 중
+            </span>
+            <span className="gs-lbroster-n gs-recruit-n">
+              {seatSum.on}/{lobbyCap}
+            </span>
+            {/* 사람과 초대 도구가 머리줄에 이어 붙습니다 — 카드 전체가 한 행 (2026-09-08 사용자 확정).
+                (폐기, 같은 날) 좌우 두 덩이 — 오른쪽 목록이 바로 아래 대기실 표와 같은 말을 했다.
                 (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로 */}
-            <div className="gs-recruit-split">
-              <div className="gs-recruit-inv">
-                <span className="gs-caplab">초대</span>
-                {inviteLine()}
-              </div>
-              <div className="gs-recruit-seats">
-                <span className="gs-caplab">들어온 사람</span>
-                <ol className="gs-seatlist">
-                  {Array.from({ length: lobbyCap }, (_, i) => {
-                    const s0 = seats[i];
-                    const nick = s0 ? (s0.name || s0.nick || "").trim() : "";
-                    const sat = !!(s0 && s0.acct);
-                    return (
-                      <li key={s0 ? s0.id : "e" + i} className={sat ? "" : nick && !isFillName(nick) ? "gs-seatlist-typed" : "gs-seatlist-empty"}>
-                        <b>{i + 1}</b>
-                        <span>{sat || (nick && !isFillName(nick)) ? nick : "빈 자리"}</span>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </div>
-            </div>
+            <span className="gs-recruit-who">{seatNamesNow.length ? seatNamesNow.join(" · ") : "아직 아무도 없어요"}</span>
+            {inviteLine()}
           </div>
         </section>
       )}
@@ -17173,21 +17152,13 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-invcode-renew{margin-left:2px; font-weight:400; color:var(--ink-2); text-decoration:underline}
 .gs-invcode-renew:hover{color:var(--gold)}
 .gs-invdiscbtn{white-space:nowrap}
-/* (폐기 2026-09-08) .gs-recruit-who — 이름을 가운뎃점으로 잇던 한 줄 */
-/* 좌우 두 덩이 (2026-09-08 사용자 확정) — 왼쪽 초대, 오른쪽 들어온 사람 */
-.gs-recruit-split{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; margin-top:12px}
-.gs-recruit-inv .gs-caplab,.gs-recruit-seats .gs-caplab{display:block; margin-bottom:9px}
-.gs-recruit-seats{border-left:1px solid rgba(var(--ink-rgb),.14); padding-left:20px}
-.gs-seatlist{list-style:none; margin:0; padding:0}
-.gs-seatlist li{display:flex; align-items:center; gap:9px; padding:3px 0; font-size:13.5px; line-height:1.5; color:var(--ink)}
-.gs-seatlist b{width:15px; text-align:right; flex:none; font-family:var(--mono); font-size:11.5px; font-weight:400; color:var(--ink-2)}
-.gs-seatlist li span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.gs-seatlist-typed{color:var(--ink-body)}
-.gs-seatlist-empty{color:var(--ink-2); opacity:.5}
-@media (max-width:720px){
-  .gs-recruit-split{grid-template-columns:minmax(0,1fr)}
-  .gs-recruit-seats{border-left:0; padding-left:0; border-top:1px dashed rgba(var(--ink-rgb),.18); padding-top:12px}
-}
+/* 한 행 (2026-09-08 사용자 확정) — 상태·인원·사람·초대 도구가 왼쪽부터 한 줄에 섭니다. 오른쪽에 남는 자리는 한 행이라 티가 안 납니다.
+   (폐기, 같은 날) 좌우 두 덩이 .gs-recruit-split · 네 단 세로 흐름 */
+.gs-recruitsec .gs-recruit{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 16px}
+.gs-recruit-n{margin-left:0}
+.gs-recruit-who{font-size:13.5px; color:var(--ink); padding-right:4px; border-right:1px solid rgba(var(--ink-rgb),.18); margin-right:2px}
+.gs-recruit .gs-invcode{flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap}
+.gs-recruit .gs-invcode-l1,.gs-recruit .gs-invcode-l2{gap:8px}
 /* 판을 만드는 문 둘 (2026-09-08 사용자 확정) — 로비 파티 카드 안에서 세로로, 위가 파티원 초대·아래가 혼자 세기 */
 .gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
