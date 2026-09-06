@@ -14,13 +14,17 @@ export const PAGE_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>벌금 현황판</title>
+<!-- 방송용 글꼴 (2026-09-08 사용자 확정) — 시스템 고딕으로는 어떤 형태를 씌워도
+     방송 그래픽으로 안 읽힙니다. 못 받아오면 조용히 아래 폴백으로 떨어집니다(§0 침묵). -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;600;700;800&display=swap">
 <style>
   :root{--ink:#f5f0e6; --gold:#e8c66a}
   *{margin:0; padding:0; box-sizing:border-box}
   /* 뷰포트에 고정해서 자릅니다 — 높이를 안 주면 overflow:hidden 이 확대 전 높이에서
      잘라, contain 으로 커진 판의 아래가 사라집니다 (OBS에서 그렇게 잘렸습니다) */
   html,body{background:transparent; overflow:hidden; width:100%; height:100%}
-  body{font-family:'Segoe UI','Malgun Gothic',sans-serif; color:var(--ink)}
+  body{font-family:'Gothic A1','Segoe UI','Malgun Gothic',sans-serif; color:var(--ink)}
 
   /* 글자색은 판 안에서 다시 풉니다 — body 에서 굳히면 테마가 .ov 의 --ink 를
      바꿔도 이미 늦어서, 밝은 판이 밝은 글자(안 보임)로 나옵니다 */
@@ -384,6 +388,62 @@ export const PAGE_HTML = `<!doctype html>
   html[data-line="1"][data-t="dark"] .ov{border:max(1px, .14vw) solid rgba(232,198,106,.55)}
   html[data-line="1"][data-t="light"] .ov{border:max(1px, .14vw) solid rgba(34,28,20,.5)}
 
+  /* ---- 기본 테마 = 막대 줄 (2026-09-08 사용자 확정) ----
+     판을 버리고 줄마다 각진 막대를 세웁니다. 막대 사이로 게임 화면이 비쳐서
+     불투명한데도 판보다 덜 가립니다. 머리는 두 조각 — 제목 블록과 금색 지표 블록.
+     1위는 막대를 채우지 않고 등수·이름만 금색입니다(사용자 확정). */
+  html[data-t="bars"] .ov{padding:0}
+  html[data-t="bars"] .ov-head{background:rgba(23,19,14,var(--bg,.9));
+    align-items:center; padding:1vw 1.6vw; margin-bottom:1.02vw}
+  html[data-t="bars"] .ov-head::after{display:none}
+  /* 제목을 판 왼쪽 끝으로 당기던 음수 여백은 블록 안에서는 제목을 바깥으로 밀어냅니다.
+     빈 등수·변동 칸은 없앱니다 — 이름 열이 flex:1 이라 뒤의 열은 그대로 맞습니다 */
+  html[data-t="bars"] .ov-head > .ov-rank,
+  html[data-t="bars"] .ov-head > .ov-move{display:none}
+  html[data-t="bars"] .ov-name-t, html[data-t="bars"] .ov-lobby-t{margin-left:0;
+    font-size:3.3vw; font-weight:700; letter-spacing:.05em}
+  /* 금색 블록 — 합계·지표 라벨·대기실 인원이 같은 자리에 섭니다. 왼쪽 크림색 띠는
+     box-shadow 라 자리를 안 먹습니다: 열 간격을 그대로 덮어서 칸 정렬이 안 틀어집니다 */
+  html[data-t="bars"] .ov-total, html[data-t="bars"] .ov-lobby-n{
+    background:var(--gold); color:#17130e; opacity:1; font-weight:800;
+    align-self:stretch; display:flex; align-items:center; justify-content:center;
+    margin:-1vw 0; padding:0 1.4vw; min-width:9.5vw;
+    box-shadow:-1.6vw 0 0 0 rgba(245,240,230,.75)}
+  html[data-t="bars"] .ov-total.as-lab{color:#17130e; opacity:1}
+  /* 오른쪽 끝까지 채우는 건 금색 블록이 머리줄의 마지막 칸일 때만입니다 (슬라이드 모드).
+     순액 열이 켜진 나란히 모드에서는 순액 머리가 끝이라, 여기서 여백을 먹으면 머리줄 전체가
+     1.6vw 밀려 열이 줄과 어긋납니다 (2026-09-08 실측: 머리 172만이 줄 금액보다 27px 오른쪽) */
+  html[data-t="bars"] .ov-head > .ov-total:last-child,
+  html[data-t="bars"] .ov-head > .ov-lobby-n:last-child{margin-right:-1.6vw}
+  html[data-t="bars"] .ov-chead, html[data-t="bars"] .ov-nethead{align-self:center}
+  /* 줄 = 막대. 사이 간격이 판 노릇을 합니다 */
+  html[data-t="bars"] .ov-row{background:rgba(20,17,14,var(--bg,.9)); border-radius:0;
+    padding:.85vw 1.6vw .85vw 0}
+  /* 간격은 막대 '사이'에만 둡니다 — 마지막 막대에 아래 여백을 달면 판(.ov)에 안쪽 여백이
+     없어서 그 여백이 판 밖으로 빠져나가고(마진 상쇄), fitBoard 가 그만큼 짧게 재서
+     맨 아래 막대가 잘렸습니다 (2026-09-08 실측: 836px 로 재고 실제는 840px) */
+  html[data-t="bars"] .ov-row + .ov-row{border-top:none; margin-top:.34vw}
+  html[data-t="bars"] .ov-rank{align-self:stretch; display:flex; align-items:center;
+    justify-content:center; background:rgba(8,7,6,.55); width:6.4vw; margin:-.85vw 0}
+  /* 대기실 빈 자리는 채우지 않고 점선만 — 이 앱에서 점선이 이미 뜻하는 것(빈 칸·빈 줄·
+     아직 아무도 없는 자리)과 말이 맞습니다. outline 은 자리를 안 먹어 막대 크기가 그대로입니다 */
+  html[data-t="bars"] .ov-lbrow.lb-empty{background:none;
+    outline:max(1px, .2vw) dashed rgba(245,240,230,.34);
+    outline-offset:calc(-1 * max(1px, .2vw))}
+  html[data-t="bars"] .ov-lbrow.lb-empty .ov-rank{background:none}
+  /* 점선은 막대당 하나입니다 — 테두리가 이미 '빈 자리'라고 말하는데 이름 칸에도 점선을 그으면
+     한 줄에 점선이 둘입니다. 판 테마에서는 반대로 이름 칸 점선만 있습니다 */
+  html[data-t="bars"] .ov-lbrow.lb-empty .ov-name::after{display:none}
+  /* 이름이 없으면 줄 상자가 등수 글자 높이로 주저앉아 빈 막대만 낮아집니다 —
+     보이지 않는 한 글자로 이름 칸의 줄 높이를 세웁니다 (2026-09-08 실측) */
+  html[data-t="bars"] .ov-lbrow.lb-empty .ov-name::before{content:"\\00a0"}
+  /* 대기실 줄은 번호·이름 두 칸뿐이라 벌금표보다 짧습니다 — 변동·금액 칸만큼 자리를 비워
+     폭을 맞춥니다. 시작하는 순간 판이 옆으로 안 벌어집니다 (2026-09-08 사용자 확정) */
+  html[data-t="bars"] .ov-lbrow::after{content:''; flex:none; width:16.7vw}
+  /* 발치 문구도 막대 하나 — 판이 없어져서 맨 글자로 두면 밝은 화면에서 사라집니다 */
+  html[data-t="bars"] .ov-lobby-note{background:rgba(23,19,14,var(--bg,.9));
+    margin-top:1.02vw; padding:.85vw 1.6vw; opacity:1; color:rgba(245,240,230,.78)}
+
   /* 미리보기 창에서만 — 투명한 자리를 체커보드로 표시합니다.
      중간 회색이라 밝은 글자·진한 글자 테마를 둘 다 판단할 수 있습니다. */
   /* overflow:hidden 의 잘라내는 기준이 html 박스라, 배율로 커진 판이 잘리지 않게 높이를 채웁니다 */
@@ -491,12 +551,12 @@ export const PAGE_HTML = `<!doctype html>
   /* fit=1 이면 미리보기 창입니다. 진짜 OBS 안에서는 절대 켜지지 않게 한 번 더 막습니다 */
   var isPreview = q.get("fit") === "1" && !window.obsstudio;
   if (isPreview) root.dataset.preview = "1";
-  /* 기본은 어디서든 읽히는 어두운 판. 주소에 직접 적은 테마가 있으면 그쪽이 우선 */
+  /* 기본은 어디서든 읽히는 막대 줄(bars). 주소에 직접 적은 테마가 있으면 그쪽이 우선 */
   var urlTheme = q.get("t");
   var urlBg = q.get("bg");
   var urlS = q.get("s");
   var urlLine = q.get("line"); // 헤어라인 (2026-09-06) — 주소에 적으면 그쪽이 우선
-  root.dataset.t = urlTheme || "dark";
+  root.dataset.t = urlTheme || "bars";
   if (urlLine != null) root.dataset.line = urlLine === "1" ? "1" : "0";
   var bg = parseInt(urlBg, 10);
   if (!isNaN(bg)) root.style.setProperty("--bg", Math.min(100, Math.max(0, bg)) / 100);
@@ -520,7 +580,7 @@ export const PAGE_HTML = `<!doctype html>
     if (!lk || typeof lk !== "object") return;
     if (fromAcct) acctLook = lk;
     else if (acctLook) return;
-    if (!urlTheme) root.dataset.t = typeof lk.t === "string" ? lk.t : "dark";
+    if (!urlTheme) root.dataset.t = typeof lk.t === "string" ? lk.t : "bars";
     if (urlLine == null) root.dataset.line = lk.line ? "1" : "0";
     if (urlBg == null && lk.bg != null)
       root.style.setProperty("--bg", Math.min(100, Math.max(0, lk.bg)) / 100);
@@ -2225,6 +2285,17 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 창 크기를 바꾸면 vw 가 달라져 판 크기도 달라집니다 — 그 즉시 다시 맞춥니다 */
   window.addEventListener("resize", fitBoard);
+
+  /* 방송용 글꼴은 네트워크로 옵니다 (2026-09-08) — 먼저 폴백 글꼴로 그려진 뒤 바뀌므로
+     그때 폭이 달라집니다. 다 받고 나서 칸 글자 크기와 배율을 한 번 다시 잽니다.
+     못 받으면 이 약속은 그냥 안 옵니다 — 화면은 폴백 글꼴 그대로입니다 */
+  if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+    document.fonts.ready.then(function () {
+      fitCheads();
+      fitLabel();
+      fitBoard();
+    });
+  }
 
   if (isDemo) startDemo();
   else { render(); boot(); }
