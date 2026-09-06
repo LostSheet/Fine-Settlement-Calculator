@@ -3695,13 +3695,13 @@ export default function GoldSettlement() {
     putRelay({ ...relayRef.current, boardOn: false });
     go(VIEW_LOBBY);
   };
-  /* 남이 앉아 있을 때만 묻습니다 — 혼자면 바로 (초안 문구) */
-  const askDisband = () => {
+  /* 대기실에서는 남이 앉아 있을 때만 묻고 혼자면 바로. 로비에서는(always) 판을 안 보고 누르는 것이라 늘 묻습니다 (2026-09-07 사용자; 문구 초안) */
+  const askDisband = (always) => {
     const others = seats.filter((s0, i) => i > 0 && s0.acct).length;
-    if (!others) return disband();
+    if (!others && !always) return disband();
     setAsk({
-      title: "파티를 해산할까요?",
-      body: "앉아 있는 파티원이 나가요.",
+      title: others ? "파티를 해산할까요?" : "판을 해산할까요?",
+      body: others ? "앉아 있는 파티원이 나가요." : "시작 전 판이 없어져요. 자리와 이름이 지워지고 항목과 단가만 남아요.",
       action: "해산",
       tone: "danger",
       onYes: disband,
@@ -7764,7 +7764,7 @@ export default function GoldSettlement() {
           hasParty={!!(auth && relay.room)}
           seated={seats.filter((s0) => s0.acct).length}
           cap={lobbyCap}
-          onDisband={askDisband}
+          onDisband={() => askDisband(true)} // 로비에서는 늘 한 번 묻습니다 (2026-09-07 사용자: 경고는 당연히)
           onEnter={boardOn ? () => go(VIEW_BOARD) : newBoard}
           seatedRoom={meCur && meSeat && meSeat.st === "ok" ? meCur : null}
           seatedLive={!!(meSeat && meSeat.round)}
@@ -8052,7 +8052,7 @@ export default function GoldSettlement() {
                 {ready ? (
                   <>
                     {/* [해산] (2026-09-06 모델) — 시작 전 판을 없애는 문. 남이 앉아 있으면 한 번 묻습니다 */}
-                    <button className="gs-btn gs-btn-ghost gs-lifebtn gs-endbtn" onClick={askDisband}>
+                    <button className="gs-btn gs-btn-ghost gs-lifebtn gs-endbtn" onClick={() => askDisband()}>
                       해산
                     </button>
                     {/* [시작]은 3초 주기로 느리게 빛납니다 (2026-09-06) — 시작 전의 유일한 움직임 */}
@@ -8865,9 +8865,15 @@ export default function GoldSettlement() {
                                     </svg>
                                   </button>
                                   <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
-                                    {/* 계정 닉만 — 줄 이름은 방장 장부의 것이라 여기 안 옵니다 (2026-09-06 사용자 지적) */}
-                                    <b>{(mem && mem.nick) || st.nick || (auth && st.acct === auth.id ? auth.nick : "") || ""}</b> {masked}
-                                    {off ? " · 연결 끊김" : ""}
+                                    {/* 계정 닉만 — 줄 이름은 방장 장부의 것이라 여기 안 옵니다 (2026-09-06 사용자 지적).
+                                        라벨을 달아 두 줄로 (2026-09-07 사용자 지정 문구: `원래 닉네임:` / `ID:`; (폐기) `{닉} {아이디}` 한 줄 — 무엇이 닉이고 아이디인지 안 읽혔다) */}
+                                    <span className="gs-tipline">
+                                      <i>원래 닉네임:</i> <b>{(mem && mem.nick) || st.nick || (auth && st.acct === auth.id ? auth.nick : "") || ""}</b>
+                                    </span>
+                                    <span className="gs-tipline">
+                                      <i>ID:</i> {masked}
+                                    </span>
+                                    {off && <span className="gs-tipline">연결 끊김</span>}
                                   </span>
                                 </span>
                               );
@@ -12393,11 +12399,10 @@ function LobbyHome({
                   {hasParty ? "파티원이 모이는 중이에요. 대기실에서 자리를 보고 시작해요." : "판을 만들어 뒀어요. 대기실에서 파티원을 모으거나 바로 시작해요."}
                 </p>
                 <div className="gs-lh-acts">
-                  {hasParty && (
-                    <button className="gs-btn gs-btn-ghost gs-lh-side" onClick={onDisband}>
-                      해산
-                    </button>
-                  )}
+                  {/* 시작 전이면 파티가 없어도 [해산] — 로비에서 판을 없애는 문 (2026-09-07 사용자). 로비에서는 늘 한 번 묻습니다 */}
+                  <button className="gs-btn gs-btn-ghost gs-lh-side" onClick={onDisband}>
+                    해산
+                  </button>
                   <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onEnter}>
                     대기실로
                   </button>
@@ -14966,6 +14971,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowtip{white-space:nowrap; letter-spacing:0; top:auto; bottom:calc(100% + 6px); left:0; transform:none; width:auto}
 .gs-stick:hover{z-index:3}
 .gs-rowtip b{color:var(--gold)}
+.gs-rowtip .gs-tipline{display:block; line-height:1.6}
+.gs-rowtip .gs-tipline i{font-style:normal; color:var(--ink-2); margin-right:2px}
 .gs-namecell .gs-in-name{margin-left:auto}
 /* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
    손잡이"라고 가릅니다. 선은 머리줄부터 바닥줄까지 칸마다 왼쪽 테두리로 이어집니다.
