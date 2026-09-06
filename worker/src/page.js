@@ -59,7 +59,7 @@ export const PAGE_HTML = `<!doctype html>
   .ov-cnum{width:6.4vw; flex:none; text-align:center; font-size:3.4vw;
     font-variant-numeric:tabular-nums; opacity:.9}
   .ov-cnum.rl{color:var(--ink)}
-  .ov-cnum.z{opacity:.16}
+  .ov-cnum.z{opacity:.3} /* 0 은 흐리게 보이되 읽힙니다 (2026-09-06: 빈칸 → 0) */
   /* 글자 크기는 fitCheads 가 칸에 맞춰 정합니다 (1.6~2.6vw). 여기 값은 그 전의 밑값 */
   .ov-chead{width:6.4vw; flex:none; text-align:center; font-size:1.6vw; opacity:.8;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -97,7 +97,7 @@ export const PAGE_HTML = `<!doctype html>
      판이 절반 폭이 되어 같은 면적에서 글자가 두 배가 됩니다. 값은 왼쪽으로 나가고 오른쪽에서 들어옵니다
      (표의 자연스러운 순서 항목 → 합계 → 순액 방향 — 사용자). 줄마다 30ms 씩 늦춰 물결처럼 */
   .ov-gold.as-cnt{color:var(--ink); opacity:.92}
-  .ov-gold.as-cnt.z{opacity:.16}
+  .ov-gold.as-cnt.z{opacity:.3}
   .ov-gold.as-net{color:var(--ink); opacity:.5}
   .ov-gold.as-net.plus{color:#6fb4ff; opacity:1}
   .ov-gold.as-net.minus{color:#ff7d6b; opacity:1}
@@ -633,10 +633,13 @@ export const PAGE_HTML = `<!doctype html>
       return;
     }
     setGoldW.tries = 0;
-    goldHW = Math.max(goldHW, w);
-    netHW = Math.max(netHW, nw);
-    box.style.setProperty("--goldw", goldHW + "px");
-    box.style.setProperty("--netw", netHW + "px");
+    /* vw 로 못 박습니다 — px 로 두면 창 크기가 바뀔 때 vw 글자만 커지고 칸은 그대로라 값이 판 밖으로 넘쳤습니다
+       (2026-09-06 사용자 지적: 순액 단계에서 −19만이 잘림). 래칫(최대값 유지)은 그대로 */
+    var vw1 = window.innerWidth / 100 || 1;
+    goldHW = Math.max(goldHW, w / vw1);
+    netHW = Math.max(netHW, nw / vw1);
+    box.style.setProperty("--goldw", goldHW.toFixed(3) + "vw");
+    box.style.setProperty("--netw", netHW.toFixed(3) + "vw");
   };
 
   /* 항목명 크기 — 칸(6.4vw)에 들어가는 최대 크기를 이름마다 재서 정합니다.
@@ -711,7 +714,7 @@ export const PAGE_HTML = `<!doctype html>
           : cols.map(function (c, ci) {
               var v = (r.c || [])[ci] || 0;
               return '<span class="ov-cnum' + (c.r ? ' rl' : '') + (v ? '' : ' z') + '">' +
-                (v ? esc(v) : '') + '</span>';
+                esc(v) + '</span>'; // 0회도 0으로 — 흐리게만 (2026-09-06 사용자: 비워 두지 않는다)
             }).join('') +
             (showSum ? slotHtml(r, { k: "sum" }, rc, showD, dAge, delay) : "") +
             (showNet
@@ -743,7 +746,7 @@ export const PAGE_HTML = `<!doctype html>
   var slotHtml = function (r, ph, rc, showD, dAge, delay) {
     if (ph.k === "item") {
       var v = (r.c || [])[ph.i] || 0;
-      return '<span class="ov-gold as-cnt' + (v ? '' : ' z') + '">' + (v ? esc(v) : '') + '</span>';
+      return '<span class="ov-gold as-cnt' + (v ? '' : ' z') + '">' + esc(v) + '</span>'; // 0회도 0으로 (사용자: 비워 두지 않는다)
     }
     if (ph.k === "net")
       return '<span class="ov-gold as-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +

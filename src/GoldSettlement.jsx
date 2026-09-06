@@ -10862,7 +10862,7 @@ function OvColsPreview({ cols, isOff, sumOn, netOn, slide, onItem, onKey }) {
       on: !isOff(c.id),
       why: "이 항목을 몇 번 했는지",
       hit: () => onItem(c.id),
-      val: (ri) => EX[ri].c[i % 3] || "",
+      val: (ri) => EX[ri].c[i % 3], // 0회도 0으로 — 흐리게만 (2026-09-06 사용자: 비워 두지 않는다)
       cls: "gs-ovp-c",
     })),
     {
@@ -11602,7 +11602,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
 /* 외형 — 오버레이 테마·방송 열·벌금 알림·룰렛 외형.
    창을 따로 두면 "주소는 여기, 생김새는 저기"로 갈려서 한 번에 못 끝냅니다.
    그래서 껍데기 없이 몸통만 내주고, 오버레이 공유 설정 창이 이걸 안에 답니다. */
-function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey }) {
+function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey }) {
   /* [테마 미리보기] 버튼은 폐지 (2026-09-05) — 카드 머리의 [오버레이 미리보기]가
      같은 일을 하고, 미리보기 문이 둘이면 뭐가 다른지부터 묻게 됩니다 */
   const pickLook = (lk) => putRelay({ ...relay, look: lk });
@@ -12940,6 +12940,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
             isOff={isOff}
             sumOn={sumOn}
             netOn={netOn}
+            slideOn={slideOn}
+            onOvSlide={onOvSlide}
             onOvItem={onOvItem}
             onOvKey={onOvKey}
           />
