@@ -8566,10 +8566,10 @@ export default function GoldSettlement() {
             )}
             {idBand.foot && (
               <div className="gs-idfoot">
-                <span>{idBand.foot.note}</span>
                 <button className="gs-btn gs-btn-sm gs-lbstart gs-idnext" onClick={idBand.foot.on}>
                   {idBand.foot.label}
                 </button>
+                <span>{idBand.foot.note}</span>
               </div>
             )}
           </div>
@@ -16114,7 +16114,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
    점선은 띠 안의 층을 가르되 띠를 쪼개지 않을 만큼만 */
 .gs-idfoot{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; padding-top:10px;
   border-top:1px dashed rgba(var(--gold-rgb),.28); font-size:12.5px; color:var(--ink-2)}
-.gs-idnext{margin-left:auto}
+/* .gs-lbstart 에 딸린 margin-left:auto 가 버튼을 오른쪽 끝으로 밉니다 — 여기선 목업대로 왼쪽입니다 (버그 기록 2026-09-08, 초대 덩이에서 한 번 겪음).
+   (폐기 2026-09-08, 같은 날) .gs-idnext{margin-left:auto} — 오른쪽 정렬 요청은 철회됐습니다 */
+.gs-idfoot .gs-idnext{margin-left:0}
 /* 판 기록 목록의 한 줄 — 배지·이름·날짜·파티원 전부·총액·[×] */
 .gs-hisrow{display:flex; align-items:flex-start; gap:10px; padding:10px 11px; margin-top:8px;
   border-radius:7px; background:rgba(var(--ink-rgb),.05);
