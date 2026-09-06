@@ -2712,6 +2712,70 @@ export default function GoldSettlement() {
   const [demoTopReady, setDemoTopReady] = useState(false);
   const demoARef = useRef(null);
   const demoBRef = useRef(null);
+  /* 불러오는 문구의 규칙 (2026-09-06 낮 사용자 확정): 350ms 안에 예시 앱이 준비되면 문구를 아예 안 보이고 바로 번져 들어오고,
+     문구가 떴으면 800ms 는 두고 걷습니다 — 읽히기 전에 사라지면 안내가 아니라 깜빡임. A(방장/독립 파티원)와 B(4장) 각각 */
+  const [demoOn, setDemoOn] = useState(false); // A iframe 이 보이는지 (ready 와는 별개 — 문구 최소 유지 때문)
+  const [demoLoadShown, setDemoLoadShown] = useState(false);
+  const demoLoadAt = useRef(0);
+  const demoReadyRef = useRef(false);
+  demoReadyRef.current = demoReady;
+  useEffect(() => {
+    if (!demoOpen || !demoSrc) return;
+    setDemoOn(false);
+    setDemoLoadShown(false);
+    demoLoadAt.current = 0;
+    /* 예시 앱이 뜨는 동안 부모 스레드가 막혀 타이머가 늦게 깨는데, 그때 준비 알림도 같은 줄에 서 있습니다 — 40ms 만 더 두고
+       그 사이 알림이 왔으면 문구 없이 (아니면 준비된 순간 문구가 떠서 800ms 를 괜히 붙듭니다) */
+    let t2 = 0;
+    const t = setTimeout(() => {
+      if (demoReadyRef.current) return; // 이미 준비됐으면 문구 없이
+      t2 = setTimeout(() => {
+        if (demoReadyRef.current) return;
+        setDemoLoadShown(true);
+        demoLoadAt.current = Date.now();
+      }, 40);
+    }, 350);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(t2);
+    };
+  }, [demoOpen, demoSrc]);
+  useEffect(() => {
+    if (!demoOpen || !demoReady || demoOn) return;
+    const wait = demoLoadAt.current ? Math.max(0, 800 - (Date.now() - demoLoadAt.current)) : 0;
+    const t = setTimeout(() => setDemoOn(true), wait);
+    return () => clearTimeout(t);
+  }, [demoOpen, demoReady, demoOn]);
+  const [demoTopOn, setDemoTopOn] = useState(false);
+  const [demoTopLoadShown, setDemoTopLoadShown] = useState(false);
+  const demoTopLoadAt = useRef(0);
+  const demoTopReadyRef = useRef(false);
+  demoTopReadyRef.current = demoTopReady;
+  useEffect(() => {
+    if (!demoTop) return;
+    setDemoTopOn(false);
+    setDemoTopLoadShown(false);
+    demoTopLoadAt.current = 0;
+    let t2 = 0;
+    const t = setTimeout(() => {
+      if (demoTopReadyRef.current) return;
+      t2 = setTimeout(() => {
+        if (demoTopReadyRef.current) return;
+        setDemoTopLoadShown(true);
+        demoTopLoadAt.current = Date.now();
+      }, 40);
+    }, 350);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(t2);
+    };
+  }, [demoTop]);
+  useEffect(() => {
+    if (!demoTop || !demoTopReady || demoTopOn) return;
+    const wait = demoTopLoadAt.current ? Math.max(0, 800 - (Date.now() - demoTopLoadAt.current)) : 0;
+    const t = setTimeout(() => setDemoTopOn(true), wait);
+    return () => clearTimeout(t);
+  }, [demoTop, demoTopReady, demoTopOn]);
   const startPartyCourse = () => {
     if (DEMO) return;
     setDemoReady(false);
@@ -2763,8 +2827,14 @@ export default function GoldSettlement() {
       if (e.origin !== window.location.origin || !e.data) return;
       if (e.data.gs === "party-demo-ready") {
         /* 어느 예시 앱이 그렸는지는 보낸 창으로 가립니다 */
-        if (demoBRef.current && e.source === demoBRef.current.contentWindow) setDemoTopReady(true);
-        else setDemoReady(true);
+        /* ref 는 즉시 — 문구 타이머가 렌더보다 먼저 깰 수 있어서 */
+        if (demoBRef.current && e.source === demoBRef.current.contentWindow) {
+          demoTopReadyRef.current = true;
+          setDemoTopReady(true);
+        } else {
+          demoReadyRef.current = true;
+          setDemoReady(true);
+        }
         return;
       }
       if (e.data.gs !== "party-demo") return;
@@ -2777,6 +2847,7 @@ export default function GoldSettlement() {
       }
       if (e.data.next === "host") {
         /* 4장이 끝났습니다 — B 를 번져 걷고 A 에게 이어 가라고 알립니다 */
+        setDemoTopOn(false);
         setDemoTopReady(false);
         setTimeout(() => setDemoTop(""), 450);
         try {
@@ -2805,17 +2876,19 @@ export default function GoldSettlement() {
     }, 150);
     return () => clearInterval(t);
   }, [coach]);
-  /* 예시 앱: 첫 그림을 그린 뒤 부모에게 알리고(그때 iframe 이 보입니다), 곧 첫 걸음 */
+  /* 예시 앱: 첫 그림을 그린 뒤 부모에게 알리고(그때 iframe 이 보입니다), 곧 첫 걸음.
+     알림은 타이머로 — rAF 는 탭이 안 보이면 아예 안 돌아서(2026-09-06 낮 운영 빌드 측정: 19.7초 뒤 도착, 그동안 8초 안전장치가 켬)
+     부모의 문구가 8초 동안 남았습니다. 번짐(.35초)이 있어 첫 그림을 굳이 기다릴 필요가 없습니다 */
   useEffect(() => {
     if (!DEMO) return;
-    const raf = requestAnimationFrame(() => {
+    const r = setTimeout(() => {
       try {
         if (window.parent && window.parent !== window) window.parent.postMessage({ gs: "party-demo-ready" }, window.location.origin);
       } catch (e) {}
-    });
+    }, 0);
     const t = setTimeout(() => partyStep(0), 900);
     return () => {
-      cancelAnimationFrame(raf);
+      clearTimeout(r);
       clearTimeout(t);
     };
   }, []);
@@ -9486,13 +9559,14 @@ export default function GoldSettlement() {
       {showSplitHelp && <SplitHelp onClose={() => setShowSplitHelp(false)} />}
       {demoOpen && (
         <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
-          {!demoReady && !demoTop && <p className="gs-demo-load">{demoLoad}</p>}
+          {/* 문구는 350ms 뒤에야, 그리고 떴으면 800ms 는 (위 규칙). 그 전엔 창만 번져 들어옵니다 */}
+          {demoLoadShown && !demoOn && !demoTop && <p className="gs-demo-load">{demoLoad}</p>}
           {/* 4장 파티원 예시를 얹는 동안엔 방장 예시 위에 작은 칩으로 */}
-          {demoTop && !demoTopReady && <p className="gs-demo-load gs-demo-load-over">{demoLoad}</p>}
+          {demoTop && demoTopLoadShown && !demoTopOn && <p className="gs-demo-load gs-demo-load-over">{demoLoad}</p>}
           {/* key — 해시만 바뀌면 같은 문서 안에서 이동할 뿐 다시 뜨지 않습니다. 새 iframe 이어야 예시가 새로 부팅합니다 */}
-          <iframe key={demoSrc} ref={demoARef} className={"gs-demo-frame" + (demoReady ? " on" : "")} title="처음부터 같이 해보기" src={demoSrc} />
+          <iframe key={demoSrc} ref={demoARef} className={"gs-demo-frame" + (demoOn ? " on" : "")} title="처음부터 같이 해보기" src={demoSrc} />
           {/* B — 방장 예시 위에 번져 나왔다가(4장) 끝나면 번져 사라집니다. A 는 그 밑에 그대로 */}
-          {demoTop && <iframe key={demoTop} ref={demoBRef} className={"gs-demo-frame gs-demo-top" + (demoTopReady ? " on" : "")} title="파티원 화면" src={demoTop} />}
+          {demoTop && <iframe key={demoTop} ref={demoBRef} className={"gs-demo-frame gs-demo-top" + (demoTopOn ? " on" : "")} title="파티원 화면" src={demoTop} />}
         </div>
       )}
       {/* 튜토리얼(예시 앱 안) — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이; 살피는 효과가 곧 다시 그림).
@@ -13440,12 +13514,14 @@ const HOST_STEPS = [
 ];
 /* 8장 = 파티원 튜토리얼 — 파티원 예시 앱에서 돕니다 */
 const MEMBER_STEPS = [
+  /* "이 화면"과 자수는 두 걸음 (2026-09-06 낮 사용자; (폐기) 한 걸음) */
+  { ch: 7, sel: ".gs-confbox", text: "들어온 파티원은 이 화면을 봐요. 자기 줄만 있어요.", action: "다음", lock: true, clear: true },
   {
     ch: 7,
     sel: ".gs-confcard-c2",
     text: (
       <>
-        들어온 파티원은 이 화면을 봐요. 자기 줄만 있어요. 이번 판에 죽었군요. 죽음 칸을 <MouseIcon side="left" /> 눌러 자수해 봐요.
+        이번 판에 죽었군요. 죽음 칸을 <MouseIcon side="left" /> 눌러 자수해 봐요.
       </>
     ),
     wait: "confess:c2",
@@ -13456,7 +13532,7 @@ const MEMBER_STEPS = [
     sel: ".gs-confcard-c2",
     text: (
       <>
-        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요.
+        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요. 30초 안에만 돼요.
       </>
     ),
     wait: "unconfess:c2",
@@ -13466,7 +13542,7 @@ const MEMBER_STEPS = [
     sel: ".gs-confcard-c1",
     text: (
       <>
-        되돌렸어요. 되돌리기는 30초 안에만 돼요. 이제 잡힘 칸을 <MouseIcon side="left" /> 눌러요.
+        되돌렸어요. 이제 잡힘 칸을 <MouseIcon side="left" /> 눌러요.
       </>
     ),
     wait: "confess:c1",
@@ -13480,12 +13556,14 @@ const MEMBER_STEPS = [
    독립 파티원 튜토리얼(MEMBER_STEPS)과 달리 OBS 걸음이 없고, 끝나면 방장 예시로 돌아갑니다. 문구는 초안 */
 const MEMBER_INHOST = [
   { ch: 3, sel: ".gs-invite", text: "실리안이 링크를 눌렀을 때 뜬 초대장이에요. 그땐 방장만 앉아 있었죠. [참여하기]를 눌러요.", wait: "join" },
+  /* "이 화면"과 자수는 두 걸음 (2026-09-06 낮 사용자; (폐기) 한 걸음에 `…자기 줄만 있어요. 이번 판에 죽었군요. 죽음 칸을 눌러 자수해 봐요.`) */
+  { ch: 3, sel: ".gs-confbox", text: "들어왔어요. 방장이 시작하면 이 화면이 떠요. 자기 줄만 있어요.", action: "다음", lock: true, clear: true },
   {
     ch: 3,
     sel: ".gs-confcard-c2",
     text: (
       <>
-        들어왔어요. 방장이 시작하면 이 화면이 떠요. 자기 줄만 있어요. 이번 판에 죽었군요. 죽음 칸을 <MouseIcon side="left" /> 눌러 자수해 봐요.
+        이번 판에 죽었군요. 죽음 칸을 <MouseIcon side="left" /> 눌러 자수해 봐요.
       </>
     ),
     wait: "confess:c2",
@@ -13496,7 +13574,7 @@ const MEMBER_INHOST = [
     sel: ".gs-confcard-c2",
     text: (
       <>
-        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요.
+        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요. 30초 안에만 돼요.
       </>
     ),
     wait: "unconfess:c2",
@@ -13506,7 +13584,7 @@ const MEMBER_INHOST = [
     sel: ".gs-confcard-c1",
     text: (
       <>
-        되돌렸어요. 되돌리기는 30초 안에만 돼요. 이제 잡힘 칸을 <MouseIcon side="left" /> 눌러요.
+        되돌렸어요. 이제 잡힘 칸을 <MouseIcon side="left" /> 눌러요.
       </>
     ),
     wait: "confess:c1",
@@ -14817,7 +14895,9 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-demo{position:fixed; inset:0; z-index:60; background:var(--kraft); display:grid; place-items:center}
 .gs-demo-load{margin:0; font-size:13px; color:var(--ink-2)}
 .gs-demo-load-over{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:2; padding:10px 16px; border-radius:6px; background:var(--paper); color:var(--ink); border:1px solid rgba(var(--gold-rgb),.6); box-shadow:0 8px 26px rgba(0,0,0,.35)}
-.gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block; opacity:0; transition:opacity .25s ease}
+.gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block; opacity:0; transition:opacity .35s ease} /* .25 → .35 (2026-09-06 낮) */
+.gs-demo{animation:gsDemoIn .2s ease} /* 창 자체도 번져 들어옵니다 — 문구 없이 열릴 때 빈 바탕이 툭 뜨지 않게 */
+@keyframes gsDemoIn{from{opacity:0}to{opacity:1}}
 .gs-demo-frame.on{opacity:1; z-index:3}
 .gs-demo-frame.gs-demo-top{z-index:5} /* 4장 파티원 예시 — 방장 예시(3)와 칩(4) 위. 번져 사라질 때도 위에 있어야 밑이 비쳐 보입니다 */
 .gs-demo-load-over{z-index:4}
