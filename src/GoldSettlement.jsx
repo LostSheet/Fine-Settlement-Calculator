@@ -7746,6 +7746,9 @@ export default function GoldSettlement() {
               </button>
             </div>
             <div className="gs-forksolo">
+              {/* 꼬리표는 이 단 전체에 붙습니다 (2026-09-08 사용자 확정 ②) — (폐기) 버튼 안 사각 뱃지 `기존 방식`:
+                  버튼이 옆으로 늘어나고 테두리 안에 테두리가 또 생겼다. (검토 후 폐기) 버튼 밑 한 줄 · 이름에 괄호 · 모서리 리본 */}
+              <span className="gs-seclab">기존 방식</span>
               {/* 사용자 지정 문구 그대로 (2026-09-08). (폐기) `혼자 세려면 부르지 않고 바로 시작해요. 방장이 다 입력하고, 내 방송 주소만 OBS에 넣으면 돼요.` */}
               <p className="gs-forklead">
                 파티원들이 앱을 안 쓰고, 방장이 전부 기록해요.
@@ -7755,7 +7758,6 @@ export default function GoldSettlement() {
               <div className="gs-lh-acts">
                 <button className="gs-btn gs-lifebtn gs-solobtn" onClick={askSoloBoard}>
                   혼자 세기
-                  <em className="gs-forkbadge">기존 방식</em>
                 </button>
               </div>
             </div>
@@ -17264,7 +17266,10 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 /* 판을 만드는 문 둘 (2026-09-08 사용자 확정) — 로비 파티 카드 안에서 세로로, 위가 파티원 초대·아래가 혼자 세기 */
 .gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
-.gs-forksolo{margin-top:16px; padding-top:15px; border-top:1px dashed rgba(var(--ink-rgb),.2)}
+/* 단 머리 라벨이 가름선을 겸합니다 (2026-09-08 확정 ②) — (폐기) 점선 border-top: 라벨 선과 겹쳐 선이 둘이 됐다 */
+.gs-forksolo{margin-top:18px}
+.gs-seclab{display:flex; align-items:center; gap:10px; margin:0 0 13px; color:var(--ink-2); font-size:11px; letter-spacing:.1em}
+.gs-seclab::before,.gs-seclab::after{content:""; flex:1; height:1px; background:rgba(var(--ink-rgb),.16)}
 .gs-forkways{display:block; margin:14px auto 0; font-size:12px}
 /* 판으로 돌아가는 토스트 (2026-09-08) — 스스로 사라지지 않고, 버튼이 있어 눌립니다 */
 .gs-backtoast{display:flex; align-items:center; gap:10px; text-align:left; pointer-events:auto;
@@ -17273,9 +17278,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-backtoast .gs-btn{flex:none}
 .gs-solobtn{display:inline-flex; align-items:center; gap:9px; background:transparent; border-color:rgba(var(--ink-rgb),.42); color:var(--ink)}
 .gs-solobtn:hover{border-color:var(--ink); background:rgba(var(--ink-rgb),.06)}
-/* 사각 뱃지 — 알약(칩)과 갈라 "옛 방식"이라는 꼬리표로 읽히게 (2026-09-07 밤 사용자 지정) */
-.gs-forkbadge{font-style:normal; font-size:10.5px; letter-spacing:.06em; color:var(--ink-2);
-  border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; padding:2px 6px; font-weight:400}
+/* (폐기 2026-09-08) .gs-forkbadge — 버튼 안 사각 뱃지. 꼬리표는 단 머리 라벨(.gs-seclab)로 옮겼습니다 */
 /* 오른쪽 위 튜토리얼 — 둥근 알약 + 말풍선 (2026-09-07 밤 사용자 확정 A안). OBS 의 직각·모니터와 갈립니다 */
 .gs-tutbtn{display:inline-flex; align-items:center; gap:7px; position:relative; height:34px; padding:0 14px 0 12px;
   border:1px solid rgba(var(--ink-rgb),.3); border-radius:99px; background:transparent; color:var(--ink-body);
