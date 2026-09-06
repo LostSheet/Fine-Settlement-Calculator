@@ -3910,6 +3910,8 @@ export default function GoldSettlement() {
   /* [혼자 세기] (2026-09-08 사용자 확정) — 판을 만들고, 그 판이 실제로 선 다음 렌더에서 바로 시작합니다.
      newBoard 직후에 startRound 를 부르면 아직 옛 자리(클로저)를 보므로 ref 로 한 박자 미룹니다 */
   const soloPending = useRef(false);
+  /* 이 판을 [혼자 세기]로 만들었는가 — 결과지의 [다음 판 만들기]가 같은 문으로 잇습니다 (2026-09-08) */
+  const soloRun = useRef(false);
   const askSoloBoard = () => {
     soloPending.current = true;
     askNewBoard();
@@ -3917,6 +3919,8 @@ export default function GoldSettlement() {
   /* 남의 파티에 앉은 채 새 판을 만들면 먼저 나갑니다 (방 하나 규칙, 2026-09-07). 문구 초안 */
   const askNewBoard = () => {
     if (readOnly) return;
+    /* askSoloBoard 가 세워 둔 깃발을 그대로 물려받습니다 — 이 문으로 직접 들어오면 파티 판입니다 */
+    soloRun.current = soloPending.current;
     if (!tutorialRef.current && seatedNow)
       return setAsk({
         title: seatedName + "에서 나가고 내 판을 만들까요?",
@@ -7217,6 +7221,23 @@ export default function GoldSettlement() {
     courseHit("genclose"); // 튜토리얼 7장 — 로비의 판 기록으로
     go(genView === justEnded || atLobby ? VIEW_LOBBY : VIEW_BOARD);
   };
+  /* [다음 판 만들기] (2026-09-08 사용자 확정 — 목업 B, 버튼은 줄 오른쪽) — 막 끝낸 결과지의 발치에만 섭니다.
+     앞 판과 같은 문으로 잇습니다: 파티였으면 대기실로, [혼자 세기]였으면 바로 벌금표로.
+     기록을 먼저 접어야 새 판 화면이 그 위에 덮이지 않습니다 */
+  const nextPending = useRef(false);
+  const nextRound = () => {
+    closeGenInner();
+    nextPending.current = true;
+  };
+  useEffect(() => {
+    if (!nextPending.current) return;
+    /* 기록이 다 접힌 다음에야 readOnly 가 풀립니다 (버그 기록 위) */
+    if (genView) return;
+    nextPending.current = false;
+    if (soloRun.current) askSoloBoard();
+    else askNewBoard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genView]);
   /* [닫기] — 끝난 파티 화면을 접고 이 브라우저의 내 장부로 갑니다.
      뷰어인지는 부트에서 정해지므로 주소에서 방을 떼고 다시 엽니다 */
   /* [들어가기] — 같은 문을 다시 지납니다 (2026-09-06). 입장을 다시 걸면 앉는 순간 소켓이 새로 붙어 새 판을 받습니다 */
@@ -7274,6 +7295,19 @@ export default function GoldSettlement() {
           ghost: genView === justEnded || atLobby,
           on: closeGen,
         },
+        /* 발치 한 줄 — 막 끝낸 판에만 (2026-09-08 확정 B). 판 기록을 그냥 들춰볼 때는 안 섭니다:
+           그때는 다음 판이 아니라 옛 결과를 보러 온 것입니다. 문구 초안 —
+           (사용자 지정 2026-09-08) 초대 링크 재사용 얘기는 안 합니다 */
+        foot:
+          genView === justEnded
+            ? {
+                label: "다음 판 만들기",
+                note: soloRun.current
+                  ? "항목과 단가는 그대로예요."
+                  : "항목과 단가는 그대로예요. 파티원은 다시 들어와야 해요.",
+                on: nextRound,
+              }
+            : null,
       };
     }
     if (ended) {
@@ -8506,6 +8540,10 @@ export default function GoldSettlement() {
                 </button>
               </span>
             </div>
+            {/* 막 끝낸 판의 발치 한 줄 (2026-09-08 사용자 확정 — 목업 B) — 말은 왼쪽, [다음 판 만들기]는 오른쪽 끝.
+                띠는 판 전체를 말하는 자리라 탭을 뭘 누르든 같은 자리에 있고, [닫기]와 떨어져 있어 갈림길로 안 읽힙니다.
+                (검토 후 폐기) 띠 오른쪽 [닫기] 옆 — 결과지를 열자마자 가장 큰 소리가 "다음 판"이 되고 말 붙일 자리가 없다.
+                (검토 후 폐기) 정산 장부 카드 발치(탭 셋 중 하나에만·표 여덟 줄 아래에 묻힘) · 화면 발치 고정 줄(없는 부품, 토스트와 자리 다툼) */}
             {/* 파티원은 줄이지 않습니다 — 날짜는 잘 잊어도 누구랑 했는지는 기억합니다 */}
             {idBand.mems.length > 0 && (
               <div className="gs-idmems">
@@ -8524,6 +8562,14 @@ export default function GoldSettlement() {
                     {n}
                   </span>
                 ))}
+              </div>
+            )}
+            {idBand.foot && (
+              <div className="gs-idfoot">
+                <span>{idBand.foot.note}</span>
+                <button className="gs-btn gs-btn-sm gs-lbstart gs-idnext" onClick={idBand.foot.on}>
+                  {idBand.foot.label}
+                </button>
               </div>
             )}
           </div>
@@ -16064,6 +16110,11 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-idmem-sep{font-style:normal; color:var(--ink-2); opacity:.7; margin:0 5px}
 .gs-idmem-host{color:var(--gold)}
 .gs-idmem-me{color:var(--blue)}
+/* 막 끝낸 판의 발치 한 줄 (2026-09-08 사용자 확정 B) — 말은 왼쪽, 버튼은 오른쪽 끝(사용자 지정).
+   점선은 띠 안의 층을 가르되 띠를 쪼개지 않을 만큼만 */
+.gs-idfoot{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; padding-top:10px;
+  border-top:1px dashed rgba(var(--gold-rgb),.28); font-size:12.5px; color:var(--ink-2)}
+.gs-idnext{margin-left:auto}
 /* 판 기록 목록의 한 줄 — 배지·이름·날짜·파티원 전부·총액·[×] */
 .gs-hisrow{display:flex; align-items:flex-start; gap:10px; padding:10px 11px; margin-top:8px;
   border-radius:7px; background:rgba(var(--ink-rgb),.05);
