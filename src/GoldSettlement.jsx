@@ -1205,7 +1205,7 @@ const maskUrl = (u) => {
 
 /* 디코용 복사 — 마스크드 링크 한 줄. 주소가 글자로 노출되지 않게 감싸 둡니다 */
 const inviteMsg = (hostNick, url) =>
-  `[🔔 ${hostNick}네 벌금 현황판 — 눌러서 참여](<${url}>)`;
+  `[🔔 ${hostNick}네 벌금 현황판 — 눌러서 참여](<${url}>)\n방송에 띄우려면 로그인해서 내 방송 주소를 OBS에 한 번만 넣어요.`; // 둘째 줄: 파티원이 링크를 열기 전에 봅니다 (2026-09-06 오후 사용자 확정)
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -11613,6 +11613,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
      전담하고, 서브 화면은 ← 로 돌아옵니다. "register" 로 열어도 랜딩부터 —
      어디서 열든 같은 첫 화면이라야 다음에 알아봅니다 (§3.11) */
   const [mode, setMode] = useState(tab === "login" ? "login" : tab === "guest" ? "guest" : "land");
+  const [showAcct, setShowAcct] = useState(false); // 아이디를 만들면 뭐가 달라져요? (2026-09-06 오후)
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [nick, setNick] = useState("");
@@ -11720,6 +11721,13 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
                 <em>어느 컴퓨터에서든 로그인해 같은 주소와 파티를 그대로 써요.</em>
               </button>
             </div>
+            {/* 둘의 차이는 여기서도 (2026-09-06 오후 사용자 확정) */}
+            <p className="gs-auth-line">
+              <button className="gs-auth-linkb" onClick={() => setShowAcct(true)}>
+                아이디를 만들면 뭐가 달라져요?
+              </button>
+            </p>
+            {showAcct && <AcctGuide onClose={() => setShowAcct(false)} />}
             <p className="gs-auth-line">
               이미 계정이 있어요 ·{" "}
               <button
@@ -12440,7 +12448,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
-  const [showGain, setShowGain] = useState(false); // 주소와 계정, 어떻게 돌아가요?
+  const [showGain, setShowGain] = useState(false); // 방송 주소, 한 번만 넣으면 돼요 (쓰는 방식 비교)
+  const [showAcct, setShowAcct] = useState(false); // 아이디를 만들면 뭐가 달라져요? (2026-09-06 오후)
   const [showObs, setShowObs] = useState(false); // 방송 중 유출 방지 — 기본 가림
   const [busy, setBusy] = useState("");
   /* 닉 바꾸기 — 계정 서랍에서 이리로 옮겨 왔습니다 (§5.7). 칸은 접어 둡니다 (§9-7):
@@ -12471,10 +12480,10 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
 
   useEffect(() => {
     // 가이드 창이 위에 떠 있으면 Esc 는 그쪽 몫입니다 — 한 번에 하나씩 닫힙니다
-    const onKey = (e) => e.key === "Escape" && !showGuide && !showGain && onClose();
+    const onKey = (e) => e.key === "Escape" && !showGuide && !showGain && !showAcct && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, showGuide, showGain]);
+  }, [onClose, showGuide, showGain, showAcct]);
 
   const copy2 = (kind, text) =>
     navigator.clipboard
@@ -12613,8 +12622,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
                 <span className="gs-obs-linetxt">
                   가입 없이 쓰는 중이에요 — 아이디를 정하면 다른 컴퓨터에서도 같은 주소를 쓸
                   수 있어요.{" "}
-                  <button className="gs-auth-linkb" onClick={() => setShowGain(true)}>
-                    방송 주소, 한 번만 넣으면 돼요
+                  {/* 게스트에게 필요한 건 "아이디를 만들면 뭐가 다른가" — 쓰는 방식 비교 창은 주소 상자 아래로 갔습니다 (2026-09-06 오후 사용자 확정) */}
+                  <button className="gs-auth-linkb" onClick={() => setShowAcct(true)}>
+                    아이디를 만들면 뭐가 달라져요?
                   </button>
                 </span>
                 <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onUpgrade}>
@@ -12780,6 +12790,16 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
 
           </>
         )}
+        {/* 구 방식(방장 주소 하나를 파티원 OBS에 다 넣기) 방장에게 — 로그인·주소 유무와 상관없이 늘 (2026-09-06 오후 사용자 확정:
+            두 창 모두 OBS 공유 설정 안에서, 자리는 달리). 문구 초안 */}
+        <div className="gs-obs-line gs-obs-waysline">
+          <span className="gs-obs-linetxt">
+            파티원도 각자 로그인해서 자기 주소를 받아 넣어요. 방장 주소 하나를 다 같이 넣던 방식과 뭐가 다른지는 여기에.
+          </span>
+          <button className="gs-auth-linkb gs-obs-lineact" onClick={() => setShowGain(true)}>
+            방송 주소, 한 번만 넣으면 돼요
+          </button>
+        </div>
 
         {/* 생김새도 여기서 — 주소와 생김새가 한 창에 있어야 한 번에 끝납니다.
             비로그인은 잠급니다 (2026-09-05 확정) — 주소가 없으면 꾸밀 화면도 아직
@@ -12832,6 +12852,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
         </InfoModal>
       )}
       {showGain && <GainGuide onClose={() => setShowGain(false)} />}
+      {showAcct && <AcctGuide onClose={() => setShowAcct(false)} />}
     </div>
   );
 }
@@ -13012,7 +13033,19 @@ function GainGuide({ onClose }) {
         자수도 돼요.
       </p>
 
-      <h4 className="gs-gain-h">게스트와 아이디</h4>
+    </InfoModal>
+  );
+}
+
+/* 게스트와 아이디의 차이 (2026-09-06 오후 사용자 확정: 한 창을 둘로 — 주소 하나의 장점은 게스트도 똑같이 누리니, 이 창은 "어디서 이어 쓰느냐"만).
+   문은 둘 — OBS 공유 설정의 게스트 계정 줄, 랜딩(게스트/가입 고르기). 제목·머리말은 초안. (폐기) 방송 주소 창의 끝 절 */
+function AcctGuide({ onClose }) {
+  return (
+    <InfoModal title="아이디를 만들면 뭐가 달라져요?" onClose={onClose} wide>
+      <p className="gs-gain-lead">
+        게스트든 아이디든 <b>내 방송용 주소</b>는 하나씩 나오고, 자수·참여·정산도 똑같아요. 다른 건{" "}
+        <b>어디서 이어 쓸 수 있느냐</b>예요.
+      </p>
       <div className="gs-gain-cols">
         <div className="gs-gain-col">
           <h4>게스트</h4>
