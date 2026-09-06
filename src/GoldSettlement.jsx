@@ -3005,6 +3005,7 @@ export default function GoldSettlement() {
      리스너는 첫 렌더의 클로저라 최신 tutConfess·걸음은 ref 로 봅니다 */
   const resumeRef = useRef(null);
   resumeRef.current = () => {
+    window.scrollTo(0, 0); // 돌아올 땐 맨 위부터 (2026-09-06 낮 사용자)
     tutConfess();
     partyStep((coachRef.current ? coachRef.current.step : 0) + 1);
   };
@@ -6564,6 +6565,15 @@ export default function GoldSettlement() {
           : roundLive
             ? "board"
             : null;
+  /* 화면이 바뀌면 스크롤은 맨 위로 (2026-09-06 낮 사용자: 시작하기를 누를 때, 파티원 화면에서 돌아올 때 등 전환 전부).
+     로비 · 결과지 · 파티원 탭 · 판(시작 전/진행 중) × 탭 — 이 열쇠가 바뀔 때만 */
+  const screenKey = showLobby ? "lobby" : genView ? "gen:" + tab : readOnly ? "v:" + tab : boardOn ? (roundLive ? "board:" : "ready:") + tab : "none";
+  const screenKeyRef = useRef(screenKey);
+  useEffect(() => {
+    if (screenKeyRef.current === screenKey) return;
+    screenKeyRef.current = screenKey;
+    window.scrollTo(0, 0);
+  }, [screenKey]);
   /* 파티원 첫 방문 — 자수 화면에 처음 왔을 때 1.5초 뒤 [?] 팝오버가 저절로 한 번 열립니다(브라우저당) (2026-09-06 사용자 확정) */
   useEffect(() => {
     if (DEMO || !readOnly || screenId !== "confess" || tutorial || obsOpen) return;
@@ -7960,7 +7970,7 @@ export default function GoldSettlement() {
                     </button>
                     {/* [시작]은 3초 주기로 느리게 빛납니다 (2026-09-06) — 시작 전의 유일한 움직임 */}
                     <button className="gs-btn gs-lifebtn gs-lbstart gs-glow" onClick={() => startRound(cols)}>
-                      시작
+                      시작하기
                     </button>
                   </>
                 ) : (
@@ -13466,7 +13476,7 @@ const HOST_STEPS = [
   { ch: 1, sel: ".gs-addcol", text: "이번엔 암살도 세 볼까요? 항목을 하나 더 만들어요.", wait: "addcol:open" },
   { ch: 1, sel: ".gs-modal .gs-coltype .gs-coltype-pick:first-child", text: "보통 항목을 골라요.", wait: "addcol:done", top: true },
   { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-col", text: "새 열이 생겼어요. 이름 칸에 암살이라고 적고 [다음].", action: "다음" },
-  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 10만이면 10. 적고 [다음]. 지우는 건 항목 이름 옆 ×.", action: "다음" },
+  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 10만이면 10. 적고 [다음]. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음" }, // 사용자 지정 문구 (2026-09-06 낮; (폐기) `지우는 건 항목 이름 옆 ×.`)
   { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true, enter: "colfix" },
   /* 3장 */
   { ch: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
@@ -13478,7 +13488,8 @@ const HOST_STEPS = [
      (폐기, 같은 날) 방장이 먼저 누르고 3초 뒤 실리안 자수가 오던 두 걸음 `올라갔죠? 파티원은 자기 줄을 자수 탭에서 직접 눌러요. 실리안이 지금 누르는 중…` · `실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.` */
   {
     ch: 4,
-    sel: ".gs-grid",
+    /* 표적은 방장 줄 — 표 전체를 잡으면 말풍선이 표 아래로 가서 돌아온 직후 화면이 내려갑니다(2026-09-06 낮: 복귀는 맨 위부터) */
+    sel: ".gs-grid tbody tr:first-child",
     text: (
       <>
         실리안이 자수한 잡힘 1회가 올라와 있죠? 방장은 칸을 직접 눌러요. <MouseIcon side="left" /> 누르면 1회, <MouseIcon side="right" /> 우클릭하면 되돌려요. 한번 눌러 보세요.
@@ -13490,7 +13501,7 @@ const HOST_STEPS = [
   /* (폐기 2026-09-06 낮) 룰렛 머리 가리키기 `룰렛 항목은 방장이 칸을 눌러 돌려요. 나온 숫자 × 단가가 벌금이에요.` — 사용자: 튜토리얼에서 룰렛은 뺌 */
   { ch: 4, sel: ".gs-rowi", text: "이름 옆 사람 아이콘. 줄을 옮기거나 파티에서 내보낼 땐 여기예요.", action: "다음", lock: true },
   /* 웨이는 이 걸음에 들어설 때 옵니다 (2026-09-06 낮; (폐기) 사람 아이콘 걸음에서 — 가리키기와 더미 움직임이 섞였다) */
-  { ch: 4, sel: ".gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", enter: "wei" },
+  { ch: 4, sel: ".gs-waitrow", text: "웨이가 늦게 왔어요. 진행 중에 들어온 사람은 방장이 직접 자리를 정해 줘야 해요. [자리 정하기]를 눌러요.", wait: "pick", enter: "wei" }, // (폐기 2026-09-06 낮) `…표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.` — 사용자: 이상함
   { ch: 4, sel: ".gs-modal .gs-waitpick .gs-seatopt:not(.gs-seatopt-new)", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
   /* 5장 — 쌓인 데이터로 봅니다 */
   /* after — 채우기가 끝나면(4.5초) 그제야 [다음]이 나타나고, 넘어가는 건 사용자 몫 (2026-09-06 낮 사용자: 템포; (폐기) 4.5초 뒤 자동) */
@@ -13509,7 +13520,7 @@ const HOST_STEPS = [
   { ch: 7, sel: ".gs-endbtn", text: "다 끝나면 여기예요.", wait: "endask" },
   { ch: 7, sel: ".gs-dialog .gs-btn:not(.gs-btn-ghost)", text: "결과지가 판 기록에 남아요. 끝낼게요.", wait: "ended", top: true },
   /* (폐기 2026-09-06, 같은 날) 결과지 머리 가리키기 `결과지예요. 파티원도 같은 걸 봐요.` — 사용자: 박스가 이상, 그냥 빼자 */
-  { ch: 7, sel: ".gs-mast .gs-btn-ghost", text: "닫으면 로비로 가요.", wait: "genclose" },
+  { ch: 7, sel: ".gs-mast .gs-btn-ghost", text: "닫으면 로비로 가요. 이 판은 판 기록에 남아요.", wait: "genclose" }, // 기록 언급 (2026-09-06 낮 사용자; (폐기) `닫으면 로비로 가요.`)
   { ch: 7, sel: ".gs-lh-recs", text: "끝난 판은 여기 남아요. 결과지를 다시 볼 수 있어요. 여기까지예요.", action: "다 봤어요", lock: true }, // (폐기 2026-09-06 낮) `…이제 들어온 파티원이 보는 화면을 볼게요.` [다음 장] → 8장
 ];
 /* 8장 = 파티원 튜토리얼 — 파티원 예시 앱에서 돕니다 */
@@ -13532,7 +13543,7 @@ const MEMBER_STEPS = [
     sel: ".gs-confcard-c2",
     text: (
       <>
-        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요. 30초 안에만 돼요.
+        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요. 되돌리기는 30초 안에만 할 수 있어요.
       </>
     ),
     wait: "unconfess:c2",
@@ -13555,7 +13566,7 @@ const MEMBER_STEPS = [
 /* 방장 튜토리얼 4장(파티원 화면) — 실리안이 링크를 눌렀을 때의 초대장부터, 자수와 정정까지만 (2026-09-06 낮 사용자: "초대의 룩 → 자수, 정정" 이 정도만).
    독립 파티원 튜토리얼(MEMBER_STEPS)과 달리 OBS 걸음이 없고, 끝나면 방장 예시로 돌아갑니다. 문구는 초안 */
 const MEMBER_INHOST = [
-  { ch: 3, sel: ".gs-invite", text: "실리안이 링크를 눌렀을 때 뜬 초대장이에요. 그땐 방장만 앉아 있었죠. [참여하기]를 눌러요.", wait: "join" },
+  { ch: 3, sel: ".gs-invite", text: "실리안이 링크를 열었을 때 뜬 초대장이에요. 그땐 방장만 앉아 있었죠. [참여하기]를 눌러요.", wait: "join" },
   /* "이 화면"과 자수는 두 걸음 (2026-09-06 낮 사용자; (폐기) 한 걸음에 `…자기 줄만 있어요. 이번 판에 죽었군요. 죽음 칸을 눌러 자수해 봐요.`) */
   { ch: 3, sel: ".gs-confbox", text: "들어왔어요. 방장이 시작하면 이 화면이 떠요. 자기 줄만 있어요.", action: "다음", lock: true, clear: true },
   {
@@ -13574,7 +13585,7 @@ const MEMBER_INHOST = [
     sel: ".gs-confcard-c2",
     text: (
       <>
-        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요. 30초 안에만 돼요.
+        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요. 되돌리기는 30초 안에만 할 수 있어요.
       </>
     ),
     wait: "unconfess:c2",
@@ -13630,6 +13641,8 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
   const [bh, setBh] = useState(0);
   const doneRef = useRef(onClose);
   doneRef.current = onClose;
+  const nextRef = useRef(onNext);
+  nextRef.current = onNext;
 
   /* 안내 중에는 대상 밖이 안 눌립니다. 화면 위에 판을 덮는 대신 문서에서 가로채는데,
      그래야 대상이 표처럼 크거나 여러 개여도 구멍을 뚫을 필요가 없습니다.
@@ -13644,13 +13657,21 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
     };
     const stop = (e) => {
       if (ok(e.target)) return;
+      /* 보기 걸음(잠긴 표적 + [다음])에서 표적을 누르면 [다음]과 같습니다 — 누르고 싶은 본능을 벌하지 않습니다 (2026-09-06 낮 사용자 확정).
+         원래 동작은 여전히 막힙니다 */
+      if (lock && action && e.type === "click" && e.target && e.target.closest && e.target.closest(sel)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (nextRef.current) nextRef.current();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
     };
     const kinds = ["mousedown", "mouseup", "click", "dblclick", "contextmenu"];
     kinds.forEach((k) => document.addEventListener(k, stop, true));
     return () => kinds.forEach((k) => document.removeEventListener(k, stop, true));
-  }, [block, lock, sel]);
+  }, [block, lock, sel, action]);
 
   useLayoutEffect(() => {
     const el = bubRef.current;
@@ -13747,8 +13768,9 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
           style={{ left: box.x - 6, top: box.y - 6, width: box.w + 12, height: box.h + 12 }}
         />
       )}
+      {/* 하기 걸음(표적을 눌러야 넘어감)만 테두리가 숨 쉽니다 — 보기·기다림 걸음은 가만히 (2026-09-06 낮 사용자 확정: 두 종류가 한눈에 갈리게) */}
       <div
-        className="gs-coach-ring"
+        className={"gs-coach-ring" + (!lock && !action ? " gs-coach-ring-act" : "")}
         style={{ left: box.x - 5, top: box.y - 5, width: box.w + 10, height: box.h + 10 }}
       />
       <div ref={bubRef} className={"gs-coach-bubble" + (up ? " up" : "")} style={{ left, top }}>
@@ -13769,6 +13791,8 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
               {action}
             </button>
           )}
+          {/* 하기 걸음 — 버튼 자리에 옅은 글씨로 (2026-09-06 낮 사용자 확정) */}
+          {!action && !lock && <em className="gs-coach-hint">직접 눌러 보세요</em>}
           {total && (
             <em className="gs-coach-step" aria-hidden="true">
               {step}/{total}
@@ -14931,8 +14955,10 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-demoband ~ .gs-sysbar{margin-top:0} /* 시스템 줄의 위 당김(-20px)은 띠가 없을 때의 것 — 사이에 <style> 이 있어 형제 선택자는 ~ */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach.gs-coach-top{z-index:55} /* 같이 해보기가 시트 안을 가리킬 때만 (2026-09-06) */
-.gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px;
-  pointer-events:none; animation:gs-coach-breathe 1.6s ease-in-out infinite}
+.gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px; pointer-events:none}
+/* 하기 걸음만 숨 쉽니다 + 옅은 후광 (2026-09-06 낮; (폐기) 모든 걸음이 숨 쉼) */
+.gs-coach-ring-act{animation:gs-coach-breathe 1.6s ease-in-out infinite; box-shadow:0 0 0 5px rgba(var(--gold-rgb),.16)}
+.gs-coach-hint{font-style:normal; font-size:12px; color:var(--gold); letter-spacing:.02em; padding:6px 0}
 @keyframes gs-coach-breathe{0%,100%{opacity:1} 50%{opacity:.45}}
 .gs-coach-bubble{position:fixed; width:300px; background:var(--paper); border:1px solid var(--gold);
   border-radius:2px; padding:13px 15px; box-shadow:0 14px 34px rgba(var(--shadow-rgb),.4)}
