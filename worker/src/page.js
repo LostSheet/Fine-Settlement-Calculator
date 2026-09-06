@@ -336,6 +336,12 @@ export const PAGE_HTML = `<!doctype html>
     border-radius:max(12px, 1.4vw)}
   html[data-t="light"] .ov{--ink:#221c14; --gold:#8a6415;
     background:rgba(248,244,236,var(--bg,.88)); border-radius:max(12px, 1.4vw)}
+  /* 헤어라인 (2026-09-06 사용자 확정) — 판 테두리 한 줄과 줄 사이 실선. 어두운 판엔 밝은 선, 밝은 판엔 어두운 선.
+     그 이상은 없습니다(사용자: 과한 건 별로). 판 없는 테마엔 두를 판이 없어 안 그립니다 */
+  html[data-line="1"][data-t="dark"] .ov{border:max(1px, .14vw) solid rgba(232,198,106,.55)}
+  html[data-line="1"][data-t="light"] .ov{border:max(1px, .14vw) solid rgba(34,28,20,.5)}
+  html[data-line="1"][data-t="dark"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(245,240,230,.1)}
+  html[data-line="1"][data-t="light"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(34,28,20,.12)}
 
   /* 미리보기 창에서만 — 투명한 자리를 체커보드로 표시합니다.
      중간 회색이라 밝은 글자·진한 글자 테마를 둘 다 판단할 수 있습니다. */
@@ -433,7 +439,9 @@ export const PAGE_HTML = `<!doctype html>
   var urlTheme = q.get("t");
   var urlBg = q.get("bg");
   var urlS = q.get("s");
+  var urlLine = q.get("line"); // 헤어라인 (2026-09-06) — 주소에 적으면 그쪽이 우선
   root.dataset.t = urlTheme || "dark";
+  if (urlLine != null) root.dataset.line = urlLine === "1" ? "1" : "0";
   var bg = parseInt(urlBg, 10);
   if (!isNaN(bg)) root.style.setProperty("--bg", Math.min(100, Math.max(0, bg)) / 100);
   var s = parseInt(urlS, 10);
@@ -448,6 +456,7 @@ export const PAGE_HTML = `<!doctype html>
     if (fromAcct) acctLook = lk;
     else if (acctLook) return;
     if (!urlTheme) root.dataset.t = typeof lk.t === "string" ? lk.t : "dark";
+    if (urlLine == null) root.dataset.line = lk.line ? "1" : "0";
     if (urlBg == null && lk.bg != null)
       root.style.setProperty("--bg", Math.min(100, Math.max(0, lk.bg)) / 100);
     if (urlS == null && lk.s != null) {

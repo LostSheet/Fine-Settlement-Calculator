@@ -898,7 +898,7 @@ function loadRelay() {
       ovsrc: v.ovsrc === "split" ? "split" : undefined,
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
-          ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25 }
+          ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25, line: v.look.line ? 1 : undefined }
           : { t: "dark", alpha: 25 },
       lookMig: v.lookMig ? 1 : undefined,
       /* 2026-09-06 모델 — 판 존재 표시, 프리셋 이름(시작 때 채움), 이어서 고른 판.
@@ -4537,7 +4537,8 @@ export default function GoldSettlement() {
 
   const lookOut = () => {
     const lk = relay.look || { t: "dark", alpha: 25 };
-    return isPanelLook(lk) ? { t: lk.t, bg: 100 - (lk.alpha ?? 25) } : { t: lk.t };
+    /* line(헤어라인)은 판 테마에만 실립니다 — 서버는 해석 없이 그대로 나릅니다 */
+    return isPanelLook(lk) ? { t: lk.t, bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) } : { t: lk.t };
   };
 
   /* 뷰어가 그대로 3탭을 그릴 수 있도록 표 전체를 보냅니다 (기록은 뺍니다) */
@@ -14040,6 +14041,9 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
 const LOOK_PRESETS = [
   { id: "goat", name: "어두운 판 (추천)", look: { t: "dark", alpha: 25 } },
   { id: "light25", name: "밝은 판", look: { t: "light", alpha: 25 } },
+  /* 헤어라인 (2026-09-06 사용자 확정) — 판 테두리 한 줄과 줄 사이 실선. 어두운 판엔 밝은 선, 밝은 판엔 어두운 선. 이름은 초안 */
+  { id: "goatline", name: "어두운 판 · 테두리", look: { t: "dark", alpha: 25, line: 1 } },
+  { id: "light25line", name: "밝은 판 · 테두리", look: { t: "light", alpha: 25, line: 1 } },
   { id: "clear", name: "판 없이 · 밝은 글자", look: { t: "clear" } },
   { id: "cleardark", name: "판 없이 · 진한 글자", look: { t: "cleardark" } },
 ];
@@ -14048,10 +14052,10 @@ const isPanelLook = (lk) => !!lk && (lk.t === "dark" || lk.t === "light");
 /* 서버가 읽는 키는 t·bg·s 셋뿐입니다 — 앱이 쓰는 alpha(판 투명도)와 bg 는 서로 뒤집힌 값입니다 */
 const lookIn = (srv) => {
   const a = srv && srv.bg != null ? 100 - Math.round(srv.bg) : 25;
-  return { t: srv.t, alpha: [0, 25, 50, 75, 100].includes(a) ? a : 25 };
+  return { t: srv.t, alpha: [0, 25, 50, 75, 100].includes(a) ? a : 25, line: srv.line ? 1 : undefined };
 };
 const sameLook = (a, b) =>
-  !!a && !!b && a.t === b.t && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
+  !!a && !!b && a.t === b.t && !!a.line === !!b.line && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
 
 function LookPicker({ look, onPick }) {
   const [more, setMore] = useState(false);
@@ -15259,7 +15263,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .sw-dark0 b{background:rgba(20,17,14,1); color:#f5f0e6}
 .sw-goat b{background:rgba(20,17,14,.75); color:#f5f0e6}
 .sw-light25 b{background:rgba(248,244,236,.75); color:#221c14}
-.sw-light25 b{background:rgba(248,244,236,.75); color:#221c14}
+.sw-goatline b{background:rgba(20,17,14,.75); color:#f5f0e6; box-shadow:0 0 0 1px rgba(232,198,106,.6)}
+.sw-light25line b{background:rgba(248,244,236,.75); color:#221c14; box-shadow:0 0 0 1px rgba(34,28,20,.55)}
 .sw-light0 b{background:rgba(248,244,236,1); color:#221c14}
 .sw-clear b{color:#f5f0e6; text-shadow:0 0 5px rgba(0,0,0,.95), 0 1px 2px rgba(0,0,0,.95)}
 .sw-cleardark b{color:#171310; text-shadow:0 0 5px rgba(255,255,255,.95), 0 1px 2px rgba(255,255,255,.95)}
