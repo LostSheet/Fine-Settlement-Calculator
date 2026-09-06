@@ -93,6 +93,20 @@ export const PAGE_HTML = `<!doctype html>
      판이 작아지지 않고, OBS 소스에 어차피 남던 여백을 대신 씁니다.
      잘리지 않게 fitBoard 가 그 튀어나온 만큼을 폭에 얹어서 배율을 잽니다. */
   .ov-row.zero{opacity:.5}
+  /* 슬라이드 모드 (2026-09-06 사용자 확정) — 항목 열과 순액을 늘어놓지 않고 합계 자리에서 번갈아 보여 줍니다.
+     판이 절반 폭이 되어 같은 면적에서 글자가 두 배가 됩니다. 값은 왼쪽으로 나가고 오른쪽에서 들어옵니다
+     (표의 자연스러운 순서 항목 → 합계 → 순액 방향 — 사용자). 줄마다 30ms 씩 늦춰 물결처럼 */
+  .ov-gold.as-cnt{color:var(--ink); opacity:.92}
+  .ov-gold.as-cnt.z{opacity:.16}
+  .ov-gold.as-net{color:var(--ink); opacity:.5}
+  .ov-gold.as-net.plus{color:#6fb4ff; opacity:1}
+  .ov-gold.as-net.minus{color:#ff7d6b; opacity:1}
+  .ov-total.as-lab{color:var(--ink); opacity:.88; font-weight:600; overflow:visible}
+  .sl-out{animation:ov-sl-out 260ms cubic-bezier(.4,0,.8,.4) both}
+  .sl-in{animation:ov-sl-in 260ms cubic-bezier(.2,.6,.3,1) both}
+  @keyframes ov-sl-out{from{transform:translateX(0); opacity:1} to{transform:translateX(-45%); opacity:0}}
+  @keyframes ov-sl-in{from{transform:translateX(45%); opacity:0} to{transform:translateX(0); opacity:1}}
+  @media (prefers-reduced-motion:reduce){ .sl-out,.sl-in{animation:none} }
 
   /* 벌금 알림 — 룰렛과 같은 결의 카드. 원판과 달리 글자 두 줄뿐이라 크게 잡을 필요가
      없어서, 소스 크기를 재지 않고 내용에 맞춰 세웁니다. */
@@ -473,6 +487,10 @@ export const PAGE_HTML = `<!doctype html>
                 ["포셔", 170000], ["히휴", 110000], ["눈가루", 90000], ["티모", 60000]];
   var board = null;   // [{n,g,c}] — 앱이 계산해서 보내줍니다
   var cols = [];      // [{t,r}] — 항목 열 머리
+  /* 슬라이드 모드 — 기본 켬(ovSlide === false 만 끔; 기존 사용자도 켜진 채 시작, 2026-09-06 사용자 확정).
+     phase 는 phaseList() 의 자리: 0 = 합계, 그다음 항목들, 끝에 순액. 합계 8초, 나머지 4초 */
+  var slideOn = true, phase = 0, slideTimer = null, sliding = false;
+  var SLIDE_SUM = 8000, SLIDE_HOLD = 4000, SLIDE_DUR = 260, SLIDE_STAG = 30;
   var showNet = true; // 순액 열을 켤지 (기본 켬)
   var showSum = true; // 합계 열을 켤지 (기본 켬). 끄면 증감 칩도 같이 빠집니다 —
                       // 금액을 안 보여 주면서 증감만 띄우면 읽을 수가 없어서요
@@ -601,9 +619,20 @@ export const PAGE_HTML = `<!doctype html>
       total += r.g || 0;
       w = Math.max(w, mw(probe, manShort(r.g)));
       nw = Math.max(nw, mw(nprobe, (r.d > 0 ? "+" : "") + manShort(r.d || 0)));
+      /* 슬라이드 모드는 횟수·순액도 같은 칸에 오므로 그 폭까지 처음부터 잽니다 — 판이 지표마다 숨 쉬지 않게 */
+      if (slideOn) {
+        (r.c || []).forEach(function (v) { if (v) w = Math.max(w, mw(probe, String(v))); });
+        w = Math.max(w, mw(probe, (r.d > 0 ? "+" : "") + manShort(r.d || 0)));
+      }
     });
     w = Math.max(w, mw(probe, manShort(total)));
     box.removeChild(wrap);
+    /* 첫 그림에서 자가 0으로 나오는 때가 있습니다(레이아웃 전) — 0 을 못 박지 말고 다음 프레임에 다시 잽니다 (2026-09-06 하네스에서 봄) */
+    if (!w) {
+      if ((setGoldW.tries = (setGoldW.tries || 0) + 1) <= 3) requestAnimationFrame(function () { setGoldW(rows); });
+      return;
+    }
+    setGoldW.tries = 0;
     goldHW = Math.max(goldHW, w);
     netHW = Math.max(netHW, nw);
     box.style.setProperty("--goldw", goldHW + "px");
@@ -677,27 +706,135 @@ export const PAGE_HTML = `<!doctype html>
           (showM ? delay(mAge) : "") + '>' +
           (showM ? (rc.mv > 0 ? "▲" : "▼") + Math.abs(rc.mv) : "") + '</span>' +
         '<span class="ov-name">' + esc(r.n) + '</span>' +
-        cols.map(function (c, ci) {
-          var v = (r.c || [])[ci] || 0;
-          return '<span class="ov-cnum' + (c.r ? ' rl' : '') + (v ? '' : ' z') + '">' +
-            (v ? esc(v) : '') + '</span>';
-        }).join('') +
-        (showSum
-          ? '<span class="ov-gold">' + manShort(r.g) +
-              '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
-                (showD ? delay(dAge) : "") + '>' +
-                (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>' +
-            '</span>'
-          : "") +
-        (showNet
-          ? '<span class="ov-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
-              (r.d > 0 ? "+" : "") + manShort(r.d) + '</span>'
-          : '') + '</div>';
+        (slideOn
+          ? slotHtml(r, phaseAt(phase), rc, showD, dAge, delay)
+          : cols.map(function (c, ci) {
+              var v = (r.c || [])[ci] || 0;
+              return '<span class="ov-cnum' + (c.r ? ' rl' : '') + (v ? '' : ' z') + '">' +
+                (v ? esc(v) : '') + '</span>';
+            }).join('') +
+            (showSum ? slotHtml(r, { k: "sum" }, rc, showD, dAge, delay) : "") +
+            (showNet
+              ? '<span class="ov-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
+                  (r.d > 0 ? "+" : "") + manShort(r.d) + '</span>'
+              : '')) + '</div>';
     }).join("");
 
     prev = {};
     list.forEach(function (r, i) { prev[rowKey(r)] = { g: r.g, rank: i + 1 }; });
     return html;
+  };
+
+  /* ---- 슬라이드 모드 (2026-09-06 사용자 확정) ----
+     합계 자리(.ov-gold)에서 합계 → 항목들 → 순액이 번갈아 나옵니다. 아무도 안 쓴 항목·전부 0인 순액은 건너뜁니다.
+     값이 바뀌면 먼저 합계로 미끄러져 돌아온 뒤 스와이프·순위 이동이 붙습니다 — "움직일 땐 합계, 조용할 땐 디테일".
+     카드·스와이프·룰렛·미착지 판이 있는 동안은 돌지 않습니다 */
+  var phaseList = function () {
+    var list = [{ k: "sum" }];
+    if (!slideOn || !board) return list;
+    cols.forEach(function (c, ci) {
+      if (board.some(function (r) { return ((r.c || [])[ci] || 0) > 0; })) list.push({ k: "item", i: ci });
+    });
+    if (showNet && board.some(function (r) { return (r.d || 0) !== 0; })) list.push({ k: "net" });
+    return list;
+  };
+  var phaseAt = function (i) { var l = phaseList(); return l[Math.min(i, l.length - 1)] || l[0]; };
+  /* 한 줄의 값 칸 — 지표에 따라 합계(스와이프·증감 칩 그대로)·횟수·순액. 나란히 모드의 합계 칸도 이걸 씁니다 */
+  var slotHtml = function (r, ph, rc, showD, dAge, delay) {
+    if (ph.k === "item") {
+      var v = (r.c || [])[ph.i] || 0;
+      return '<span class="ov-gold as-cnt' + (v ? '' : ' z') + '">' + (v ? esc(v) : '') + '</span>';
+    }
+    if (ph.k === "net")
+      return '<span class="ov-gold as-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
+        (r.d > 0 ? "+" : "") + manShort(r.d || 0) + '</span>';
+    return '<span class="ov-gold">' + manShort(r.g) +
+      '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
+        (showD ? delay(dAge) : "") + '>' +
+        (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>' +
+      '</span>';
+  };
+  /* 머리줄의 총액 자리 — 합계일 땐 총액, 항목일 땐 항목 이름, 순액일 땐 '순액' (사용자 확정: 총액 자리를 라벨 자리로) */
+  var headSlot = function (ph) {
+    if (ph.k === "item") {
+      var c = cols[ph.i] || {};
+      return '<span class="ov-total as-lab' + (c.r ? " rl" : "") + '">' +
+        (c.r ? '<i class="ov-rlmk">◎</i>' : "") + esc(c.t) + '</span>';
+    }
+    if (ph.k === "net") return '<span class="ov-total as-lab">순액</span>';
+    return '<span class="ov-total">' +
+      manShort((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0)) + '</span>';
+  };
+  /* 라벨이 칸보다 길면 글자를 줄입니다 (2.0~3.4vw) — 칸을 넓히면 판이 넓어져 배율이 떨어집니다 */
+  var fitLabel = function () {
+    var el = document.querySelector(".ov-total.as-lab");
+    if (!el) return;
+    el.style.fontSize = "";
+    var box = el.offsetWidth, need = el.scrollWidth; // 칸 폭은 실제 상자로 — --goldw 가 아직 없을 때도 맞습니다
+    if (box && need > box) el.style.fontSize = Math.max(2.0, (3.4 * box) / need).toFixed(2) + "vw";
+  };
+  /* 지표를 바꿉니다 — 값이 왼쪽으로 나가고(줄마다 30ms 늦게) 새 값이 오른쪽에서 들어옵니다 */
+  var slideTo = function (to, cb) {
+    var rows = ovBoard ? ovBoard.querySelectorAll(".ov-row") : [];
+    var n = rows.length;
+    var span = SLIDE_DUR + n * SLIDE_STAG;
+    sliding = true;
+    [].forEach.call(rows, function (row, i) {
+      var s0 = row.querySelector(".ov-gold");
+      if (s0) { s0.style.animationDelay = i * SLIDE_STAG + "ms"; s0.classList.add("sl-out"); }
+    });
+    var hd0 = document.querySelector(".ov-total");
+    if (hd0) hd0.classList.add("sl-out");
+    setTimeout(function () {
+      phase = to;
+      var ph = phaseAt(phase);
+      var byKey = {};
+      (board || []).forEach(function (r) { byKey[rowKey(r)] = r; });
+      var none = function () { return ""; };
+      [].forEach.call(rows, function (row, i) {
+        var r = byKey[row.getAttribute("data-k")];
+        var s1 = row.querySelector(".ov-gold");
+        if (!r || !s1) return;
+        var tmp = document.createElement("span");
+        tmp.innerHTML = slotHtml(r, ph, recent[rowKey(r)] || {}, false, Infinity, none);
+        var ns = tmp.firstChild;
+        ns.style.animationDelay = i * SLIDE_STAG + "ms";
+        ns.classList.add("sl-in");
+        s1.parentNode.replaceChild(ns, s1);
+      });
+      var old = document.querySelector(".ov-total");
+      if (old) {
+        var t2 = document.createElement("span");
+        t2.innerHTML = headSlot(ph);
+        var nh = t2.firstChild;
+        nh.classList.add("sl-in");
+        old.parentNode.replaceChild(nh, old);
+        fitLabel();
+      }
+      setTimeout(function () {
+        sliding = false;
+        [].forEach.call(document.querySelectorAll(".sl-in"), function (el) {
+          el.classList.remove("sl-in");
+          el.style.animationDelay = "";
+        });
+        if (cb) cb();
+      }, span);
+    }, span);
+  };
+  /* 다음 지표로 갈 시계 — 합계는 8초, 나머지는 4초. 연출 중이면 0.7초 뒤 다시 봅니다 */
+  var scheduleSlide = function () {
+    clearTimeout(slideTimer);
+    if (!slideOn || !ovBoard || !board || !board.length) return;
+    if (phaseList().length < 2) { phase = 0; return; }
+    var hold = phaseAt(phase).k === "sum" ? SLIDE_SUM : SLIDE_HOLD;
+    var tick = function () {
+      if (!slideOn || !ovBoard) return;
+      if (applying || fxCard || play || sliding || next) { slideTimer = setTimeout(tick, 700); return; }
+      var l2 = phaseList();
+      if (l2.length < 2) { phase = 0; return; }
+      slideTo((phase + 1) % l2.length, function () { pump(); scheduleSlide(); });
+    };
+    slideTimer = setTimeout(tick, hold);
   };
 
   var faceTimer = null; // 숫자 모드에서 글자가 바뀌는 타이머
@@ -1516,15 +1653,24 @@ export const PAGE_HTML = `<!doctype html>
      둘 다 세로 움직임이라 겹치면 무엇이 무엇인지 안 읽힙니다. */
   var settle = function () {
     if (!next) return;
-    var nb = next.board, nc = next.cols, nn = next.net, ns = next.sum;
+    if (sliding) return; // 지표가 미끄러지는 중 — 끝나면 pump 가 다시 부릅니다
+    if (slideOn && phase !== 0 && ovBoard) {
+      /* 값이 바뀌면 먼저 합계로 돌아옵니다 — 디테일 위에 스와이프가 얹히면 무엇이 바뀐 건지 안 읽힙니다 (2026-09-06 사용자 확정) */
+      applying = true;
+      clearTimeout(slideTimer);
+      slideTo(0, function () { applying = false; settle(); });
+      return;
+    }
+    var nb = next.board, nc = next.cols, nn = next.net, ns = next.sum, nsl = next.slide !== false;
     var sameCols = JSON.stringify(nc) === JSON.stringify(cols);
     var moves =
       mvMode === "swipe" && ovBoard && board && board.length && nb && nb.length &&
-      sameCols && nn === showNet && ns === showSum
+      sameCols && nn === showNet && ns === showSum && nsl === slideOn
         ? swipePlan(board, nb)
         : [];
     var done = function () {
-      board = nb; cols = nc; showNet = nn; showSum = ns;
+      board = nb; cols = nc; showNet = nn; showSum = ns; slideOn = nsl;
+      phase = 0; // 판이 앉으면 합계부터 다시 셉니다
       next = null;
       applying = false;
       render();
@@ -1655,17 +1801,21 @@ export const PAGE_HTML = `<!doctype html>
     document.getElementById("ovhead").innerHTML =
       '<span class="ov-rank"></span><span class="ov-move"></span>' +
       '<span class="ov-name-t">벌금 순위</span>' +
-      cols.map(function (c) {
-        return '<span class="ov-chead' + (c.r ? " rl" : "") + '">' +
-          (c.r ? '<i class="ov-rlmk">\u25ce</i>' : "") + esc(c.t) + "</span>";
-      }).join("") +
-      (showSum
-        ? '<span class="ov-total">' +
-          manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>"
-        : "") +
-      (showNet ? '<span class="ov-nethead">순액</span>' : "");
+      (slideOn
+        ? headSlot(phaseAt(phase)) // 슬라이드 모드 — 총액 자리가 지표 라벨 자리
+        : cols.map(function (c) {
+            return '<span class="ov-chead' + (c.r ? " rl" : "") + '">' +
+              (c.r ? '<i class="ov-rlmk">◎</i>' : "") + esc(c.t) + "</span>";
+          }).join("") +
+          (showSum
+            ? '<span class="ov-total">' +
+              manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>"
+            : "") +
+          (showNet ? '<span class="ov-nethead">순액</span>' : ""));
     fitCheads(); // 머리줄을 그린 뒤에 — 확대(fitBoard) 전에 크기를 정해야 합니다
+    fitLabel();
     fitBoard();
+    scheduleSlide();
   };
 
   /* 판을 소스에 contain 으로 앉힙니다 — 비율을 지키며 먼저 닿는 쪽까지 확대하고
@@ -1754,6 +1904,7 @@ export const PAGE_HTML = `<!doctype html>
             cols: st.cols || [],
             net: !(st.ovNet === false),
             sum: !(st.ovSum === false),
+            slide: !(st.ovSlide === false), // 슬라이드 모드 — 기본 켬
           };
           applyFxCfg(st);
           ingestFx(st.fx);

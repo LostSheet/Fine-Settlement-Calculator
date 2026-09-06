@@ -2671,6 +2671,16 @@ export default function GoldSettlement() {
       saveRelay(next);
       return next;
     });
+  /* 켬은 비움, 끔만 false — sum·net 과 같은 규칙. 슬라이드는 기본 켬이라 기존 사용자도 켜진 채 시작합니다 (2026-09-06 사용자 확정) */
+  const setOvFlag = (key, on) =>
+    setRelay((prev) => {
+      const ov = { ...(prev.ov || {}) };
+      if (on) delete ov[key];
+      else ov[key] = false;
+      const next = { ...prev, ov };
+      saveRelay(next);
+      return next;
+    });
   /* 항목 열 하나 — 꺼진 것만 ov.off 에 적습니다. 옛 'items 한 덩어리로 끔' 설정이
      남아 있으면, 지금 열 전부를 꺼진 상태로 펼쳐 놓고 그 위에서 뒤집습니다. */
   const toggleOvItem = (colId) =>
@@ -3949,6 +3959,7 @@ export default function GoldSettlement() {
       cols: acols.map((c) => ({ t: (c.name || "").trim() || "항목", r: isRoulette(c) ? 1 : 0 })),
       ovNet: ovShow().net,
       ovSum: ovShow().sum,
+      ovSlide: ovShow().slide,
       fx: [],
       fxSpd: fxOn(relay) ? "norm" : "off",
       mvMode: "swipe",
@@ -4487,6 +4498,7 @@ export default function GoldSettlement() {
       itemOff: (id) => legacyOff || off[id] === true,
       sum: ov.sum !== false,
       net: ov.net !== false,
+      slide: ov.slide !== false, // 슬라이드 모드 — 기본 켬, 기존 사용자도 (2026-09-06 사용자 확정)
     };
   };
   /* 머리(cols)와 줄(c)이 같은 목록을 써야 방송 표의 열이 안 어긋납니다 */
@@ -4542,6 +4554,7 @@ export default function GoldSettlement() {
     })),
     ovNet: ovShow().net,
     ovSum: ovShow().sum,
+    ovSlide: ovShow().slide, // 슬라이드 모드 (2026-09-06)
     /* 벌금이 붙을 때의 연출 — 카드 대기열과 그 설정 */
     fx: fxOut(),
     fxSpd: fxOn(relay) ? "norm" : "off",
@@ -10006,6 +10019,8 @@ export default function GoldSettlement() {
           isOff={(id) => ovShow().itemOff(id)}
           sumOn={ovShow().sum}
           netOn={ovShow().net}
+          slideOn={ovShow().slide}
+          onOvSlide={(on) => setOvFlag("slide", on)}
           onOvItem={toggleOvItem}
           onOvKey={toggleOvCol}
           onAskReissue={askObsReissue}
@@ -10832,7 +10847,7 @@ function Eye({ on }) {
    순위·이름에는 눈이 없습니다 — 판을 판으로 만드는 뼈대라 끄면 남는 게 없습니다.
    항목 열은 예전에 한 덩어리로만 껐는데, 어느 항목을 방송에 띄울지는 서기가 정하는 게
    맞다고 보고 열마다 풀었습니다. */
-function OvColsPreview({ cols, isOff, sumOn, netOn, onItem, onKey }) {
+function OvColsPreview({ cols, isOff, sumOn, netOn, slide, onItem, onKey }) {
   const [hint, setHint] = useState(null);
   /* 예시 숫자 — 실제 횟수가 아니라 "이 열이 이렇게 보인다"를 위한 자리표시입니다 */
   const EX = [
@@ -10876,6 +10891,76 @@ function OvColsPreview({ cols, isOff, sumOn, netOn, onItem, onKey }) {
     gridColumn: ce ? c + "/" + ce : String(c),
     gridRow: re ? r + "/" + re : String(r),
   });
+  /* 슬라이드 모드 미리보기 (2026-09-06 사용자 확정) — 합계 자리에서 항목·순액이 번갈아 나오는 것을 2초 간격으로 돌려 보여 줍니다.
+     끈 항목은 돌지 않아서, 눈을 끄면 그 자리가 빠지는 게 바로 보입니다. 합계는 늘 도는 자리라 눈이 없습니다 */
+  const cyc = slide ? zones.filter((z) => z.k === "sum" || z.on) : [];
+  const [ph, setPh] = useState(0);
+  useEffect(() => {
+    if (!slide || cyc.length < 2) return;
+    const t = setInterval(() => setPh((p) => p + 1), 2000);
+    return () => clearInterval(t);
+  }, [slide, cyc.length]);
+  if (slide) {
+    const cur = cyc[ph % Math.max(1, cyc.length)] || zones.find((z) => z.k === "sum");
+    const toggles = zones.filter((z) => z.k !== "sum");
+    return (
+      <div className="gs-ovprev" aria-label="방송 화면 예시">
+        <div
+          className="gs-ovp gs-ovp-slide"
+          style={{ gridTemplateColumns: "16px 20px minmax(52px,1fr) minmax(76px,auto)", gridTemplateRows: "repeat(6, auto)" }}
+        >
+          <span className="gs-ovp-band gs-ovp-always" style={at(1, 1, 4)}>
+            항상 나와요
+          </span>
+          <span className="gs-ovp-band gs-ovp-cyc" style={at(4, 1)}>
+            {toggles.map((z) => (
+              <button
+                key={z.k}
+                className={"gs-ovp-eye gs-ovp-eyel" + (z.on ? "" : " off")}
+                onClick={z.hit}
+                aria-pressed={z.on}
+                title={z.why}
+                aria-label={z.label + (z.on ? " 빼기" : " 넣기")}
+              >
+                <Eye on={z.on} />
+                <span>{z.label}</span>
+              </button>
+            ))}
+          </span>
+          <span className="gs-ovp-cell gs-ovp-title" style={at(1, 2, 4)}>
+            벌금 순위
+          </span>
+          <span key={"h" + ph} className={"gs-ovp-cell gs-ovp-h gs-ovp-sl" + (cur.k === "sum" ? " gs-ovp-g" : "")} style={at(4, 2)}>
+            {cur.head || cur.label}
+          </span>
+          <span className="gs-ovp-rule" style={at(1, 3, 5)} />
+          {EX.map((x, ri) => {
+            const v = cur.val(ri);
+            return (
+              <Fragment key={x.r}>
+                <span className={"gs-ovp-cell gs-ovp-rank" + (ri === 0 ? " top" : "")} style={at(1, 4 + ri)}>
+                  {x.r}
+                </span>
+                <span className={"gs-ovp-cell gs-ovp-mv" + (x.m[0] === "▲" ? " up" : x.m ? " down" : "")} style={at(2, 4 + ri)}>
+                  {x.m}
+                </span>
+                <span className={"gs-ovp-cell gs-ovp-nm" + (ri === 0 ? " top" : "")} style={at(3, 4 + ri)}>
+                  {x.n}
+                </span>
+                <span
+                  key={"v" + ph}
+                  className={"gs-ovp-cell gs-ovp-sl " + cur.cls + (v ? "" : " gs-ovp-z") + (cur.k === "net" ? (x.neg ? " neg" : " pos") : "")}
+                  style={at(4, 4 + ri)}
+                >
+                  {v}
+                </span>
+              </Fragment>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="gs-ovprev" aria-label="방송 화면 예시">
       <div
@@ -11534,15 +11619,36 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, onOvItem, onOv
         <LookPicker look={relay.look} onPick={pickLook} />
       </div>
       <div className="gs-obs-sec">
-        <h4 className="gs-obs-h">방송 화면에 넣을 열</h4>
+        {/* 항목 표시 방식 (2026-09-06 사용자 확정) — 슬라이드가 기본. 슬라이드는 항목 열과 순액을 늘어놓지 않고
+            합계 자리에서 번갈아 보여 줘서 판이 절반 폭이 됩니다. 라벨 '항목 표시 방식'은 사용자 지정, 선택지 이름 '슬라이드'·'나란히'는 초안 */}
+        <div className="gs-obs-lookhead">
+          <h4 className="gs-obs-h">방송 화면에 넣을 열</h4>
+          <div className="gs-modebar">
+            <span className="gs-caplab">항목 표시 방식</span>
+            <div className="gs-seg" role="group" aria-label="항목 표시 방식">
+              <button className={slideOn ? "on" : ""} onClick={() => onOvSlide(true)}>
+                슬라이드
+              </button>
+              <button className={slideOn ? "" : "on"} onClick={() => onOvSlide(false)}>
+                나란히
+              </button>
+            </div>
+          </div>
+        </div>
         <OvColsPreview
           cols={ovCols}
           isOff={isOff}
           sumOn={sumOn}
           netOn={netOn}
+          slide={slideOn}
           onItem={onOvItem}
           onKey={onOvKey}
         />
+        {slideOn && (
+          <p className="gs-unitnote gs-obs-note">
+            합계 8초, 항목과 순액 4초씩 번갈아 나와요. 판이 좁아지니 OBS에서 소스 크기를 한 번 다시 맞춰 주세요.
+          </p>
+        )}
       </div>
       <div className="gs-obs-sec">
         {/* 켬·끔을 제목 옆에 둡니다 — 그림이 곧 그 설정의 결과라, 스위치가 그림 아래에
@@ -12464,7 +12570,7 @@ function GenList({ gens, onOpen, onDrop }) {
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
    guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissue, castState, onNick, onLogout, onUpgrade, ovCols, isOff, sumOn, netOn, onOvItem, onOvKey, onClose, inviteRow }) {
+function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissue, castState, onNick, onLogout, onUpgrade, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey, onClose, inviteRow }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -15952,6 +16058,14 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ovp-h.gs-ovp-d{color:inherit; font-weight:400}
 .gs-ovp-rule{height:1px; background:rgba(255,255,255,.14); margin-bottom:3px}
 .gs-ovp-z{opacity:.18}
+/* 슬라이드 모드 미리보기 (2026-09-06) — 눈은 값 칸 위에 이름과 함께 한 줄, 값은 오른쪽에서 들어옵니다 */
+.gs-ovp-cyc{justify-content:flex-end; gap:5px; flex-wrap:wrap}
+.gs-ovp-eyel{gap:4px; padding:2px 7px 2px 5px; line-height:1; font-size:10px}
+.gs-ovp-eyel span{line-height:1}
+.gs-ovp-slide .gs-ovp-c{text-align:right}
+.gs-ovp-sl{animation:gs-ovp-sl .26s cubic-bezier(.2,.6,.3,1) both}
+@keyframes gs-ovp-sl{from{transform:translateX(40%); opacity:0} to{transform:translateX(0); opacity:1}}
+.gs-obs-note{margin:8px 0 0}
 .gs-ovp-dim{opacity:.3}
 /* 눈이 앉는 띠 — 열마다 하나씩, 못 끄는 자리에는 이유를 적어 둡니다 */
 .gs-ovp-band{display:flex; align-items:center; justify-content:center; padding:1px 0 7px;
