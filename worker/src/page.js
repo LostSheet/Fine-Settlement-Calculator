@@ -112,9 +112,12 @@ export const PAGE_HTML = `<!doctype html>
      없어서, 소스 크기를 재지 않고 내용에 맞춰 세웁니다. */
   /* 카드만 뜹니다 — 뒤를 어둡게 깔지 않습니다. 소스가 화면 모퉁이의 작은 상자라
      막을 깔면 그 상자 전체가 어두워질 뿐, 얻는 게 없습니다. */
-  #ovfx:not(:empty){position:fixed; inset:0; z-index:3; display:flex;
-    align-items:center; justify-content:center; padding:2%;
+  /* 카드는 한 칸에 겹쳐 쌓입니다(grid) — 다음 카드가 옛 카드 위에서 번져 나오고 옛 것은 그 뒤에 걷힙니다.
+     (폐기 2026-09-07) 컨테이너를 비웠다가 다시 채우던 것 — 카드 사이 0.2초 동안 뒤의 벌금판 글자가 비쳐 보여 부자연스러웠다(사용자) */
+  #ovfx:not(:empty){position:fixed; inset:0; z-index:3; display:grid;
+    place-items:center; padding:2%;
     pointer-events:none; animation:ov-spin-in .18s ease-out}
+  #ovfx > .ov-fx{grid-area:1/1}
   /* 평평하게 — 조명·광택 없이 색 하나와 얇은 테두리로만 */
   /* 룰렛 결과 카드 — 방금 본 바퀴의 것이라고 표시합니다 */
   .ov-fx.roul{border-color:rgba(220,174,94,.85)}
@@ -122,6 +125,19 @@ export const PAGE_HTML = `<!doctype html>
   .ov-fx{max-width:86%; text-align:center; color:#ece4d6; padding:3.4vw 6vw;
     border-radius:1.4vw; animation:ov-fx-in .2s cubic-bezier(.2,1.3,.4,1);
     background:#1b1611; border:.26vw solid rgba(220,174,94,.55)}
+  /* 카드가 이어질 땐 카드 한 장을 그대로 두고 속만 바꿉니다 (2026-09-07 사용자 확정: 카드는 한 장, 대신 다른 사건임을 알린다).
+     옛 글이 0.07초 사라진 뒤 새 글이 0.14초 나타나고(두 글이 겹치지 않음), 그 순간 카드가 4% 부풀며 테두리가 금색으로
+     번쩍합니다 — 그것이 "다른 건"이라는 신호. 글은 움직이지 않습니다(사용자: 글이 흐를 이유가 없다).
+     (폐기, 같은 날) 새 카드를 옛 카드 위에 내려앉히기 · 새 카드를 투명에서 겹치기 · 비웠다 채우기 — 겹치거나 판이 비쳤다 */
+  .ov-fx-body{display:block}
+  .ov-fx-body.fade{animation:ov-fx-fade .07s ease-in forwards}
+  .ov-fx-body.rise{animation:ov-fx-rise .14s ease-out}
+  @keyframes ov-fx-fade{to{opacity:0}}
+  @keyframes ov-fx-rise{from{opacity:0}}
+  .ov-fx.bump{animation:ov-fx-bump .28s ease-out}
+  @keyframes ov-fx-bump{
+    0%{transform:scale(1)} 35%{transform:scale(1.04); border-color:rgba(236,205,120,1); box-shadow:0 0 0 .6vw rgba(220,174,94,.28)}
+    100%{transform:scale(1); box-shadow:0 0 0 0 rgba(220,174,94,0)}}
   .ov-fx b{display:block; font-size:6.4vw; font-weight:700; line-height:1.1;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .ov-fx span{display:block; margin-top:1.2vw; font-size:4.2vw; opacity:.92;
@@ -130,6 +146,9 @@ export const PAGE_HTML = `<!doctype html>
   .ov-fx.up em{color:#8fd89b}
   .ov-fx.dn em{color:#e59a90}
   @keyframes ov-fx-in{from{opacity:0; transform:scale(.86)} to{opacity:1; transform:scale(1)}}
+  /* 마지막 카드는 번져 사라집니다 — 뚝 꺼지지 않게 (2026-09-07) */
+  .ov-fx.out{animation:ov-fx-out .17s ease-in forwards}
+  @keyframes ov-fx-out{to{opacity:0; transform:scale(.94)}}
 
   /* 금액 스와이프 — 오르면 위로, 깎이면 아래로. 가운데에 증감을 한 번 보여 주고 멈춥니다 */
   /* 두루마리 창 — 한 줄 높이만 남기고 나머지는 잘라 냅니다.
@@ -154,7 +173,8 @@ export const PAGE_HTML = `<!doctype html>
     75%{transform:translateY(-33.333%)} 100%{transform:translateY(0)}}
   @media (prefers-reduced-motion:reduce){
     .ov-mvreel.up,.ov-mvreel.dn{animation-duration:1ms}
-    .ov-fx{animation:none}
+    .ov-fx,.ov-fx.out,.ov-fx.bump,.ov-fx-body.rise{animation:none}
+    .ov-fx-body.fade{display:none}
   }
 
   /* 1위 — 금색 순위와 살짝 밝은 이름으로 초점을 만듭니다 */
@@ -1475,7 +1495,7 @@ export const PAGE_HTML = `<!doctype html>
   var OV_FREE_MS = 260;
   /* 도는 규칙 — 앱이 판에 실어 보냅니다. 여기 있는 값은 그게 안 왔을 때의 기본값이고,
      오면 갈아 끼웁니다. 복사본을 들고 있으면 한쪽만 고쳐도 눈치채기 어렵습니다. */
-  var OV_SPIN_AIM = 1.7, OV_TAIL = 0.72, OV_FACE_MS = 70;
+  var OV_SPIN_AIM = 1.7, OV_TAIL = 0.55, OV_FACE_MS = 70; // OV_TAIL: 곡선 x2 — 작을수록 뒤에서 오래 미끄러짐 (2026-09-07; (폐기) 0.72 급정거)
   var useSpinCfg = function (sp) {
     var c = sp && sp.cfg;
     if (!c) return;
@@ -1585,13 +1605,15 @@ export const PAGE_HTML = `<!doctype html>
     if (hs.length > 300) for (var h = 0; h < 150; h++) delete fxShown[hs[h]];
   };
 
-  var fxCardHtml = function (e) {
+  var fxCls = function (e) { return (e.g > 0 ? "up" : "dn") + (e.k === "roul" ? " roul" : ""); };
+  var fxBodyHtml = function (e, extra) {
     var up = e.g > 0;
-    return '<div class="ov-fx ' + (up ? "up" : "dn") + (e.k === "roul" ? " roul" : "") + '">' +
+    return '<div class="ov-fx-body' + (extra ? " " + extra : "") + '">' +
       "<b>" + esc(e.n) + "</b>" +
       "<span>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + ' <em>' + (up ? "+" : "\u2212") +
       manShort(Math.abs(e.g)) + "</em></span></div>";
   };
+  var fxCardHtml = function (e) { return '<div class="ov-fx ' + fxCls(e) + '">' + fxBodyHtml(e, "") + "</div>"; };
 
   var playCard = function (e) {
     fxShown[e.i] = 1;
@@ -1608,12 +1630,33 @@ export const PAGE_HTML = `<!doctype html>
        소스를 나눈 뜻이 "표는 작게, 룰렛은 크게"인데 거기에 카드가 끼면 화면 한복판을
        클릭마다 가립니다. 안 그리는 쪽도 시간은 똑같이 흘려서 두 소스의 판이
        같은 순간에 바뀌게 합니다. */
-    if (host && TYPE !== "spin") host.innerHTML = fxCardHtml(e);
+    if (host && TYPE !== "spin") {
+      var cur = host.querySelector(".ov-fx:not(.out)");
+      if (cur) {
+        /* 카드는 한 장 — 옛 글을 지운 뒤 새 글을 넣고, 카드를 한 번 부풀려 "다른 건"임을 알립니다 (2026-09-07 사용자 확정) */
+        var old = cur.querySelector(".ov-fx-body");
+        if (old) old.classList.add("fade");
+        setTimeout(function () {
+          if (!cur.parentNode) return;
+          cur.className = "ov-fx " + fxCls(e);
+          cur.innerHTML = fxBodyHtml(e, "rise");
+          void cur.offsetWidth; // 부풀림 애니메이션을 처음부터 다시
+          cur.classList.add("bump");
+        }, 70);
+      } else host.innerHTML = fxCardHtml(e);
+    }
     clearTimeout(fxTimer);
     fxTimer = setTimeout(function () {
       fxCard = null;
       var h = document.getElementById("ovfx");
-      if (h) h.innerHTML = "";
+      /* 다음 카드가 있으면 pump 가 그 위에 얹습니다. 없으면 마지막 카드를 번져 지웁니다 */
+      if (h && !fxQ.length) {
+        var last = h.lastElementChild;
+        if (last) {
+          last.classList.add("out");
+          setTimeout(function () { if (!fxCard && last.parentNode) last.parentNode.removeChild(last); }, 180);
+        }
+      }
       pump();
     }, hold);
   };

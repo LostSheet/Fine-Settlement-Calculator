@@ -462,12 +462,15 @@ const FREE_MS = 260;
 const SPIN_AIM = 1.7;
 /* 릴이 한 면을 보여 주는 시간. 멈추는 동안 이 간격이 늘어나며 감속을 보여 줍니다 */
 const FACE_MS = 70;
-/* 원판이 멈추는 동안 뻗는 꼬리의 길이(곡선의 x2). 방송 화면도 같은 값을 씁니다 */
-const SPIN_TAIL = 0.72;
+/* 원판이 멈추는 곡선의 x2. 작을수록 감속이 앞에서 끝나고 뒤에서 오래 미끄러집니다 — 크면 끝까지 빠르다가 마지막에 급정거합니다
+   (2026-09-07 수치 확인; (폐기) 0.72 — 남은 시간 2% 에 36°/s, 2026-09-05 "x2 가 꼬리 길이"라던 주석은 방향이 반대였음). 방송 화면도 같은 값 */
+const SPIN_TAIL = 0.55;
 /* 감속 '느긋하게' (2026-09-05, 룰렛 외형의 선택지) — 바퀴는 덜 돌고 꼬리는 길게: 끝에서 오래 미적여
    긴장을 늘립니다. 서기 원판과 방송 원판이 같은 값을 쓰도록 판(spin.ease)에 실어 보냅니다 */
-const spinAim = (sp) => (sp && sp.ease === "gentle" ? 1.4 : SPIN_AIM);
-const spinTail = (sp) => (sp && sp.ease === "gentle" ? 0.9 : SPIN_TAIL);
+/* 기본은 느긋하게 (2026-09-07 사용자 확정) — 보통은 spin.ease:"normal" 로만 켭니다. (폐기) 기본 보통, "gentle" 로 느긋하게 */
+const spinGentle = (sp) => !(sp && sp.ease === "normal");
+const spinAim = (sp) => (spinGentle(sp) ? 1.4 : SPIN_AIM);
+const spinTail = (sp) => (spinGentle(sp) ? 0.4 : SPIN_TAIL); // 느긋하게는 더 앞에서 감속을 끝내 오래 미끄러짐 — (폐기) 0.9: 남은 2% 에 315°/s 로 급정거
 /* 멈추는 동안 면이 바뀌는 간격 — 지수로 늘리는 것은 속도가 지수로 줄어드는 것과 같습니다.
    원판 곡선과 같은 성격이라, 원판과 릴이 같은 판에서 같은 속도감으로 섭니다.
    p 는 멈추기 시작한 뒤 흐른 비율입니다. */
@@ -893,7 +896,7 @@ function loadRelay() {
       /* epic 이 빠져 있어서 '아주 느리게'를 골라도 새로고침하면 되돌아갔습니다 */
       spd: v.spd in SPINS ? v.spd : undefined,
       spinLook: v.spinLook === "num" || v.spinLook === "wheel" ? v.spinLook : undefined,
-      spinEase: v.spinEase === "gentle" ? "gentle" : undefined,
+      spinEase: v.spinEase === "normal" ? "normal" : undefined, // 옛 "gentle" 은 이제 기본이라 비움 (2026-09-07)
       wheelTheme: v.wheelTheme === "vegas" ? "vegas" : undefined,
       ovsrc: v.ovsrc === "split" ? "split" : undefined,
       look:
@@ -901,6 +904,7 @@ function loadRelay() {
           ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25, line: v.look.line ? 1 : undefined }
           : { t: "dark", alpha: 25 },
       lookMig: v.lookMig ? 1 : undefined,
+      lookMig2: v.lookMig2 ? 1 : undefined, // 2026-09-07 외형 기본값 강제 적용 표시
       /* 2026-09-06 모델 — 판 존재 표시, 프리셋 이름(시작 때 채움), 이어서 고른 판.
          (버그 기록) 여기서 안 받아 줘서 새로고침하면 판이 없는 걸로 돌아갔다 */
       boardOn: v.boardOn ? true : undefined,
@@ -912,6 +916,23 @@ function loadRelay() {
     if (!out.lookMig) {
       out.spinLook = undefined;
       out.lookMig = 1;
+      try {
+        window.localStorage.setItem(RELAY_KEY, JSON.stringify(out));
+      } catch (e2) {}
+    }
+    /* 외형 기본값 강제 적용 (2026-09-07 사용자 확정: 다음 배포에 모든 사용자) — 슬라이드 켬 · 알림 켬 · 감속 느긋하게 · 원판 · 새틴.
+       한 번만, 표시를 남깁니다. 그 뒤 고른 것은 그대로. 끈 항목(ov.off)·합계·순액은 건드리지 않습니다 */
+    if (!out.lookMig2) {
+      out.spinLook = undefined;
+      out.wheelTheme = undefined;
+      out.spinEase = undefined;
+      out.fx = undefined;
+      if (out.ov) {
+        const o = { ...out.ov };
+        delete o.slide;
+        out.ov = Object.keys(o).length ? o : undefined;
+      }
+      out.lookMig2 = 1;
       try {
         window.localStorage.setItem(RELAY_KEY, JSON.stringify(out));
       } catch (e2) {}
@@ -5947,7 +5968,7 @@ export default function GoldSettlement() {
       look: spinShape(relay),
       theme: wheelTheme(relay),
       spd: spinSpd(relay),
-      ease: relay.spinEase === "gentle" ? "gentle" : undefined,
+      ease: relay.spinEase === "normal" ? "normal" : "gentle", // 기본 느긋하게 (2026-09-07)
       rowId: row.id,
       colId: col.id,
       who: seatName(row, rows.indexOf(row)),
@@ -11710,14 +11731,14 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
           <span className="gs-caplab">감속</span>
           <div className="gs-seg" role="group" aria-label="감속">
             <button
-              className={relay.spinEase === "gentle" ? "" : "on"}
-              onClick={() => putRelay({ ...relay, spinEase: undefined })}
+              className={relay.spinEase === "normal" ? "on" : ""}
+              onClick={() => putRelay({ ...relay, spinEase: "normal" })}
             >
               보통
             </button>
             <button
-              className={relay.spinEase === "gentle" ? "on" : ""}
-              onClick={() => putRelay({ ...relay, spinEase: "gentle" })}
+              className={relay.spinEase === "normal" ? "" : "on"}
+              onClick={() => putRelay({ ...relay, spinEase: undefined })}
             >
               느긋하게
             </button>
