@@ -12053,6 +12053,11 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
       </div>
       <div className="gs-obs-sec">
         <h4 className="gs-obs-h">룰렛 외형</h4>
+        {/* 룰렛만 방장 것을 따릅니다 (2026-09-07 사용자 확정) — 원판·감속은 판이 시작될 때
+            방장 설정이 얼려 실려서 파티원 화면과 방송이 다 같은 것을 봅니다. 그래서 여기서
+            고른 값은 내가 방장인 판에서만 나갑니다. 나머지 외형은 계정마다 제각각입니다.
+            문구 초안 */}
+        <p className="gs-unitnote gs-obs-note">룰렛은 방장 것을 따라가요 — 내가 방장일 때만 적용돼요.</p>
         {/* 감속 (2026-09-05) — 끝에서 꼬리를 길게 끌어 긴장을 늘립니다. 다음 판부터 적용.
             자리는 룰렛 외형 머리 바로 아래 (2026-09-06 사용자 지적 — 원판 고르기 밑에 붙어 있으면 딴 설정처럼 보였다).
             (폐기 2026-09-06) `느긋하게는 끝에서 오래 미적여요.` — 사용자: 워딩이 별로 */}
@@ -12086,11 +12091,13 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
               step="1"
               value={spinGlideOf(relay)}
               onChange={(e) => putRelay({ ...relay, spinGlide: Number(e.target.value) })}
-              aria-label="끝에서 미끄러지는 길이"
+              aria-label="감속"
             />
             <span className="gs-glide-l">길게</span>
           </label>
-          <span className="gs-unitnote">끝에서 미끄러지는 길이예요. 다음 판부터.</span>
+          {/* 문구 초안 (2026-09-07) — (폐기 같은 날) `끝에서 미끄러지는 길이예요.`
+              곡선 배분만 바꾸던 시절의 말이라, 감속 자체가 약해지는 지금과 안 맞습니다 */}
+          <span className="gs-unitnote">천천히 감속할수록 오래 돌아요. 다음 판부터.</span>
         </div>
         <SpinLookPicker
           value={spinShape(relay)}

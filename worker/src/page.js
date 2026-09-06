@@ -545,17 +545,19 @@ export const PAGE_HTML = `<!doctype html>
   var play = null;      // 방송이 제 시계로 재생하는 상태
   var spinTimer = null; // 도는 글자
   var stepTimer = null; // 다음 걸음
-  /* 속도는 판마다 옵니다. 앱·방송·파티원 화면이 같은 속도로 돌아야 따로 놀지 않습니다 */
+  /* 결과를 보여 주고 넘어가는 시간. 도는 시간(OV_ROLL)은 여기 없습니다 — 방장의 감속에서
+     나와 판(cfg.roll)에 실려 옵니다 (2026-09-07). 앱·방송·파티원 화면이 같은 시간을 써야
+     원판이 서는 순간과 결과가 뜨는 순간이 화면마다 안 어긋납니다. */
   var SPINS = {
-    fast: { roll: 2200, hold: 700, end: 1100 },
-    normal: { roll: 4200, hold: 1100, end: 1500 },
-    slow: { roll: 7000, hold: 1500, end: 1900 },
-    epic: { roll: 10000, hold: 1800, end: 2200 },
+    fast: { hold: 700, end: 1100 },
+    normal: { hold: 1100, end: 1500 },
+    slow: { hold: 1500, end: 1900 },
+    epic: { hold: 1800, end: 2200 },
   };
-  var OV_ROLL = 2200, OV_HOLD = 1200, OV_END = 1700;
+  var OV_ROLL = 9250, OV_HOLD = 1200, OV_END = 1700; // cfg 가 안 왔을 때의 기본 감속(슬라이더 30)
   var useSpeed = function (sp) {
     var v = SPINS[(sp && sp.spd) || "normal"] || SPINS.normal;
-    OV_ROLL = v.roll; OV_HOLD = v.hold; OV_END = v.end;
+    OV_HOLD = v.hold; OV_END = v.end;
   };
   var prev = {};      // 이름 → {g, rank} — 증감과 순위 변동을 재는 기준점
   /* 이름 → 최근 변화와 그 시각. 다른 사람이 벌금을 먹어도 내 표시가 사라지지 않게
@@ -1495,18 +1497,20 @@ export const PAGE_HTML = `<!doctype html>
   var OV_FREE_MS = 260;
   /* 도는 규칙 — 앱이 판에 실어 보냅니다. 여기 있는 값은 그게 안 왔을 때의 기본값이고,
      오면 갈아 끼웁니다. 복사본을 들고 있으면 한쪽만 고쳐도 눈치채기 어렵습니다. */
-  var OV_SPIN_AIM = 1.7, OV_TAIL = 0.55, OV_FACE_MS = 70; // OV_TAIL: 곡선 x2 — 작을수록 뒤에서 오래 미끄러짐 (2026-09-07; (폐기) 0.72 급정거)
+  var OV_FACE_MS = 70;
   var useSpinCfg = function (sp) {
     var c = sp && sp.cfg;
     if (!c) return;
     if (c.free > 0) OV_FREE_MS = c.free;
-    if (c.aim > 0) OV_SPIN_AIM = c.aim;
-    if (c.tail > 0) OV_TAIL = c.tail;
+    /* 도는 시간은 방장의 감속에서 나옵니다 (2026-09-07) — 룰렛은 방장 것이라
+       내 계정 외형과 상관없이 이 값을 그대로 씁니다 */
+    if (c.roll > 0) OV_ROLL = c.roll;
     if (c.face > 0) OV_FACE_MS = c.face;
   };
-  /* 멈추는 동안 면이 바뀌는 간격 — 앱의 faceGap 과 같은 식입니다 */
+  /* 멈추는 동안 면이 바뀌는 간격 — 앱의 faceGap 과 같은 식입니다 (등감속의 역수) */
+  var OV_FACE_CAP = 12;
   var faceGap = function (p) {
-    return Math.round(OV_FACE_MS * Math.pow(6, Math.min(1, Math.max(0, p))));
+    return Math.round(OV_FACE_MS / Math.max(1 - Math.min(1, Math.max(0, p)), 1 / OV_FACE_CAP));
   };
 
   /* 당첨 칸이 12시 바늘 아래로 오도록 원판을 돌립니다.
@@ -1538,21 +1542,22 @@ export const PAGE_HTML = `<!doctype html>
     var off = (((seed >>> 7) % 1000) / 1000 - 0.5) * arc * 0.72;
     /* 이 자리가 바늘 밑으로 오는, 지금보다 앞에 있는 첫 각도 */
     var seat = from + ((((-(seg.mid + off) - from) % 360) + 360) % 360);
-    /* 목표 배속에서 나오는 바퀴 수 — 판마다 ±1 바퀴 흔듭니다 */
+    /* 등감속이면 도는 거리는 "지금 속도로 그 시간 갔을 거리"의 절반입니다 (2026-09-07).
+       칸 자리에 앉히려고 한 바퀴 단위로 스냅하고, 그 어긋남이 판마다 다르게 서는 맛이 됩니다.
+       앱과 같은 씨앗·같은 식이라 두 화면이 같은 자리에 같은 시간에 섭니다. */
     var v0 = (360 / OV_FREE_MS) * OV_ROLL;
-    var base = Math.max(1, Math.round(v0 / (OV_SPIN_AIM * 360)));
-    var turns = Math.max(1, base + ((seed % 3) - 1));
+    var turns = Math.max(1, Math.round((v0 / 2 - (seat - from)) / 360));
     var target = seat + turns * 360;
     wheelRot = target;
 
     var D = Math.max(1, target - from);
-    /* 처음 기울기 s0 를 갖고 끝에서 0 이 되는 곡선 (x1, s0·x1, x2, 1).
-       x1 을 줄여야 s0 를 3 넘게 키울 수 있습니다 — y1 이 1 을 넘으면 목표를 지나쳤다
-       되돌아오고, 그건 원판이 뒤로 감기는 것으로 보입니다. */
-    var s0 = Math.min(2.4, Math.max(1.3, v0 / D));
-    var x1 = Math.min(0.5, 0.96 / s0);
+    /* 등감속 곡선은 y = 2t − t², 3차 베지어로 (1/3, 2/3, 2/3, 1) 로 딱 떨어집니다.
+       스냅 때문에 처음 기울기 s0 가 2 에서 조금 벗어나므로 x1 만 거기 맞춰 다시 잡습니다 —
+       그래야 돌던 속도에서 이음매 없이 이어집니다. y1 은 2/3 라 되감길 일이 없습니다. */
+    var s0 = v0 / D;
+    var x1 = Math.min(0.9, Math.max(0.1, 0.667 / s0));
     var cz = wasFree
-      ? "cubic-bezier(" + x1.toFixed(3) + "," + (s0 * x1).toFixed(3) + "," + OV_TAIL + ",1)"
+      ? "cubic-bezier(" + x1.toFixed(3) + ",.667,.667,1)"
       : "cubic-bezier(.35,0,.28,1)"; // 멈춰 있다 다시 도는 판
 
     /* 시작 각도를 전환 없이 먼저 못 박고, 강제로 한 번 계산시킨 뒤 목표를 줍니다.
