@@ -1422,6 +1422,8 @@ const BURST_MAX = 8;
 const IDLE_BACK_MS = 30 * 1000;
 /* 자수로 바뀐 칸이 번쩍이고 말풍선이 떠 있는 시간 */
 const CONFESS_FX_MS = 2000;
+/* 자수 되돌리기 창 — 서버의 CONFESS_UNDO_MS 와 같은 숫자 (§3.6). 카드의 되돌리기 칩이 이 창을 셉니다 (2026-09-07) */
+const CONFESS_UNDO_MS = 30 * 1000;
 
 function loadSaved() {
   if (typeof window === "undefined") return null;
@@ -5311,6 +5313,29 @@ export default function GoldSettlement() {
   const denyInvite = (iv) => setInvHide((prev) => ({ ...prev, [iv.from]: iv.t || 1 }));
   /* 지금 보여 줄 초대 — 서버가 신선한 것만 싣고, 거절한 것은 여기서 뺍니다 */
   const liveInvites = invites.filter((x) => x && invHide[x.from] !== (x.t || 1));
+  /* 되돌리기 칩 (2026-09-07 사용자 확정) — 항목마다 {n, t}: 서버가 200 을 준 순간 서버 규칙 그대로 적습니다.
+     새로 누르면 t=지금(30초가 다시 차고), 창 안의 −1 은 n 을 하나 줄입니다. 칩은 n>0 이고 창 안일 때만 서고 0.5초마다 다시 셉니다 */
+  const cfRef = useRef({});
+  const [, setCfTick] = useState(0);
+  const noteCf = (colId, dir) => {
+    const now = Date.now();
+    const cf = cfRef.current[colId] || { n: 0, t: 0 };
+    cfRef.current[colId] =
+      dir > 0 ? { n: (now - cf.t > CONFESS_UNDO_MS ? 0 : cf.n) + 1, t: now } : { n: Math.max(0, cf.n - 1), t: cf.t };
+    setCfTick((t) => t + 1);
+  };
+  const cfLeft = (colId) => {
+    const cf = cfRef.current[colId];
+    if (!cf || cf.n <= 0) return 0;
+    return Math.max(0, CONFESS_UNDO_MS - (Date.now() - cf.t));
+  };
+  useEffect(() => {
+    if (!confessTab) return;
+    const id = setInterval(() => {
+      if (Object.keys(cfRef.current).some((k) => cfLeft(k) > 0)) setCfTick((t) => t + 1);
+    }, 500);
+    return () => clearInterval(id);
+  }, [confessTab]);
   /* 자수 — 낙관 갱신을 하지 않습니다. 방장이 장부에 적고 푸시로 돌아온 것만 화면에 뜹니다 */
   const sendConfess = (rowId, colId, dir) => {
     if (!auth || !liveRoom) return;
@@ -5322,12 +5347,14 @@ export default function GoldSettlement() {
       /* 파티원 예시 — 서버 없이 내 줄만 움직입니다. 같이 해보기 9걸음(누르기) */
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, counts: { ...r.counts, [colId]: String(Math.max(0, num(r.counts[colId]) + dir)) } } : r)));
       if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
+      noteCf(colId, dir);
       if (tutorialRef.current) tutHit((dir > 0 ? "confess:" : "unconfess:") + colId); // 파티원 튜토리얼 1·3·4걸음
       return;
     }
     roomApi
       .confess(auth.token, liveRoom, rowId, colId, dir)
       .then(() => {
+        noteCf(colId, dir);
         /* 되돌린 본인에게도 한 줄 — 숫자만 줄면 "잘못 눌렀나"가 됩니다 (2026-09-05, §8 초안) */
         if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
       })
@@ -8449,6 +8476,20 @@ export default function GoldSettlement() {
                             <em>회</em>
                           </span>
                           <span className={"gs-confgold2" + (gold > 0 ? "" : " zero")}>{man(gold)}</span>
+                          {/* 되돌리기 칩 (2026-09-07 사용자: 30초 타이머가 안 보이고, 연타를 정정할 수 있다는 걸 알려야 한다) —
+                              되돌릴 수 있는 개수와 남은 초, 아래 막대. 새로 누르면 30초가 다시 찹니다(서버 규칙과 동일). 문구 초안 */}
+                          {(() => {
+                            const left = cfLeft(c.id);
+                            if (!left) return null;
+                            const cf = cfRef.current[c.id];
+                            return (
+                              <span className="gs-confundo" role="status">
+                                <span aria-hidden="true">↶</span>
+                                <b>+{cf.n}</b> 되돌리기 · {Math.ceil(left / 1000)}초
+                                <i className="gs-confundo-bar" style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }} aria-hidden="true" />
+                              </span>
+                            );
+                          })()}
                         </>
                       )}
                     </button>
@@ -17157,6 +17198,12 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   color:var(--ink-2); margin-left:3px}
 .gs-confn.zero{color:rgba(var(--ink-rgb),.32)}
 .gs-conflock{font-size:11px; color:var(--ink-2); margin-top:8px}
+/* 되돌리기 칩 (2026-09-07) — 개수·남은 초·막대. 카드(버튼) 안의 표시일 뿐 따로 눌리지 않습니다 */
+.gs-confundo{position:relative; display:inline-flex; align-items:center; gap:6px; margin-top:10px; padding:4px 10px 5px 8px;
+  border:1px solid rgba(var(--gold-rgb),.6); border-radius:99px; font-size:12px; line-height:1.3; color:var(--ink);
+  background:rgba(var(--gold-rgb),.08); overflow:hidden; white-space:nowrap}
+.gs-confundo b{color:var(--gold); font-family:var(--mono); font-weight:600}
+.gs-confundo-bar{position:absolute; left:0; bottom:0; height:2px; background:var(--gold)}
 /* 자수 탭은 파티원의 기본 화면이라, 탭 줄에서도 금색으로 먼저 눈에 듭니다 */
 .gs-tab-confess{border-color:rgba(var(--gold-rgb),.55)}
 .gs-tab-confess.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
