@@ -17160,8 +17160,8 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-recruit .gs-invcode{flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap}
 /* 두 줄 묶음을 풀어 한 줄에 무게 순서대로 (2026-09-08) — 안 그러면 '새로 발급'이 코드 칩 뒤에 끼어 둘째 자리에 섭니다. 이 CSS 는 템플릿 문자열 안이라 주석에도 백틱을 쓰면 거기서 끊깁니다 */
 .gs-recruit .gs-invcode-l1,.gs-recruit .gs-invcode-l2{display:contents}
-.gs-recruit .gs-invlinkbtn{order:1}
-.gs-recruit .gs-invcode-chip{order:2}
+.gs-recruit .gs-invcode-chip{order:1}
+.gs-recruit .gs-invlinkbtn{order:2}
 .gs-recruit .gs-invdiscbtn{order:3}
 .gs-recruit .gs-invcodebtn{order:4}
 .gs-recruit .gs-invcode-renew{order:5}
