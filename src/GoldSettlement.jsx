@@ -16530,9 +16530,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-acts{display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px; position:relative}
 /* 롤 로비처럼 (2026-09-07 사용자 확정) — 제목 줄 오른쪽 끝 작은 [× 해산], 상자 전체가 문. (폐기) .gs-lh-side 왼쪽 유령 [해산] */
 .gs-lh-box{position:relative}
-.gs-lh-x{position:absolute; top:8px; right:10px; border:0; background:transparent; font:inherit; font-size:12px; letter-spacing:0; color:var(--ink-2); cursor:pointer; padding:2px 5px; border-radius:3px}
+.gs-lh-x{position:absolute; top:8px; right:10px; border:1px solid rgba(var(--ink-rgb),.42); background:transparent; font:inherit; font-size:12px; letter-spacing:0; color:var(--ink-2); cursor:pointer; padding:3px 9px; border-radius:4px} /* 테두리 있는 작은 버튼 — 상자 안에서 눌리는 것임을 보인다 (2026-09-07 사용자) */
 .gs-lh-x span{font-size:14px; line-height:1; margin-right:2px}
-.gs-lh-x:hover{color:#e59a90; background:rgba(229,154,144,.1)}
+.gs-lh-x:hover{color:#e59a90; border-color:rgba(229,154,144,.7); background:rgba(229,154,144,.1)}
 .gs-lh-go{cursor:pointer; transition:border-color .15s, background .15s}
 .gs-lh-go:hover{border-color:rgba(var(--gold-rgb),.75); background:rgba(var(--gold-rgb),.05)}
 .gs-lh-go:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
