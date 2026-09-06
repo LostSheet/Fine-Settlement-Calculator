@@ -6364,7 +6364,9 @@ export default function GoldSettlement() {
   /* 항목 유형 — 보통(카운터)과 룰렛. 룰렛은 단가에 나온 숫자를 곱해 벌금이 붙습니다. */
   const addCol = (type) => {
     if (readOnly) return;
-    const col = { id: "c" + seq.current++, name: "", price: "10,000" };
+    /* 예시 앱에서 처음 더하는 열은 ctut — 튜토리얼이 그 열의 이름·단가 칸을 가리킵니다 */
+    const id = tutorialRef.current && !cols.some((c) => c.id === "ctut") ? "ctut" : "c" + seq.current++;
+    const col = { id, name: "", price: "10,000" };
     if (type === "roulette") {
       col.type = "roulette";
       col.faces = ROULETTE_KEYS.slice();
@@ -6373,6 +6375,7 @@ export default function GoldSettlement() {
     setCols((prev) => [...prev, col]);
     setAddColOpen(false);
     if (type === "roulette") setRouletteCfg(col.id);
+    courseHit("addcol:done"); // 튜토리얼 2장
   };
   const delCol = (id) => {
     if (readOnly) return;
@@ -8489,7 +8492,13 @@ export default function GoldSettlement() {
                   <th className="gs-addcolh">
                     {/* 도움말을 따로 두지 않고 버튼 자체에 얹습니다 */}
                     <span className="gs-tip">
-                      <button className="gs-addcol" onClick={() => setAddColOpen(true)}>
+                      <button
+                        className="gs-addcol"
+                        onClick={() => {
+                          courseHit("addcol:open"); // 튜토리얼 2장
+                          setAddColOpen(true);
+                        }}
+                      >
                         + 항목
                       </button>
                       <span className="gs-tip-body" role="tooltip">
@@ -13290,7 +13299,11 @@ const HOST_STEPS = [
   { ch: 0, sel: ".gs-lh-newbtn", text: "먼저 판을 만들어요. 파티원을 부르는 건 그다음이에요.", wait: "newboard" },
   /* 2장 — 가리키기만, 예시에서 고치게 하진 않습니다 */
   { ch: 1, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
-  { ch: 1, sel: ".gs-addcol", text: "항목은 여기서 늘려요. 지우는 건 항목 이름 옆 ×.", action: "다음", lock: true },
+  /* 항목 추가는 직접 (2026-09-06 사용자 확정) — [+ 항목] → 보통 항목 → 새 열의 이름·단가를 적음. 새 열 id 는 예시에서 ctut 로 고정해 가리킵니다 */
+  { ch: 1, sel: ".gs-addcol", text: "이번엔 낙사도 세 볼까요? 항목을 하나 더 만들어요.", wait: "addcol:open" },
+  { ch: 1, sel: ".gs-modal .gs-coltype .gs-coltype-pick:first-child", text: "보통 항목을 골라요. 룰렛은 나중에.", wait: "addcol:done", top: true },
+  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-col", text: "새 열이 생겼어요. 이름 칸에 낙사라고 적고 [다음].", action: "다음" },
+  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 2만이면 2. 적고 [다음]. 지우는 건 항목 이름 옆 ×.", action: "다음" },
   { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true },
   /* 3장 */
   { ch: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
