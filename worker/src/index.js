@@ -151,7 +151,7 @@ export default {
     // 방 API
     const api = p.match(
       new RegExp(
-        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end|look)$`
+        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end|look|invite-arm)$`
       )
     );
     if (api) {
@@ -974,10 +974,13 @@ export class Room {
     const st = await S.get("state");
     return !!(st && st.roundId && !st.end);
   }
-  /* 코드는 방장이 앱을 열어 둔 동안(서기 소켓) 살아 있고, 마지막 서기 소켓이 끊기면 10분 뒤 만료입니다 (2026-09-06).
-     (폐기) 발급 뒤 10분 고정 — 20분 모으다 보면 링크가 죽어 다시 붙여야 했다 */
+  /* 코드의 시계는 방장이 [디코 메시지 복사]를 누른 때부터 10분입니다 (2026-09-08 사용자 확정).
+     방을 만든 순간이 아닙니다 — 방장은 항목을 정리하다 한참 뒤에 부르고, 그 사이가 깎이면 안 됩니다.
+     아직 안 뿌린 코드(armed:false)는 아무도 모르므로 입장에도 안 씁니다.
+     (폐기 2026-09-08) 서기 소켓이 붙어 있는 동안 무한 연장 — 방송 내내 안 죽어서 유출되면 그 판 내내 살아 있었다.
+     (폐기 2026-09-06) 발급 뒤 10분 고정 — 20분 모으다 보면 링크가 죽어 다시 붙여야 했다 */
   inviteOk(inv, now) {
-    return !!inv && (this.scribeOn() || (inv.exp || 0) > now);
+    return !!inv && !!inv.armed && (inv.exp || 0) > now;
   }
 
   async members() {
@@ -1211,12 +1214,16 @@ export class Room {
     if (path === "/invite" && req.method === "GET") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
       const inv = await S.get("invite");
-      return json({ invite: this.inviteOk(inv, now) ? inv : null });
+      /* 방장에게는 아직 안 뿌린 코드도 보여야 메시지를 만들 수 있습니다 (2026-09-08) —
+         입장 판정만 inviteOk 가 맡습니다. 뿌린 뒤 죽은 코드는 null 로 줘서 새로 나게 합니다 */
+      const live = !!inv && (!inv.armed || (inv.exp || 0) > now);
+      return json({ invite: live ? inv : null });
     }
     // 초대 재발급 — 옛 코드는 그 자리에서 무효, 기존 멤버는 무영향
     if (path === "/invite" && req.method === "POST") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
-      const invite = { code: rid(8), exp: now + INVITE_MS };
+      /* 시계는 아직 안 돕니다 (2026-09-08) — 복사할 때 /invite-arm 이 켭니다 */
+      const invite = { code: rid(8), exp: 0, armed: false };
       await S.put("invite", invite);
       /* 코드만으로 찾아오는 길 (§3.0 로비 입장칸) — 계정부 색인에 한 줄. 유효는 방이 판단하므로 색인은 넉넉히 */
       try {
@@ -1224,6 +1231,25 @@ export class Room {
       } catch (e) {
         /* 색인이 안 돼도 초대 자체는 살아 있습니다 — 주소 붙여넣기는 색인 없이 됩니다 */
       }
+      return json({ invite });
+    }
+
+    /* 시계 켜기 (2026-09-08 사용자 확정) — 방장이 [디코 메시지 복사]를 누른 순간이 부르는 순간입니다.
+       다시 누르면 다시 10분입니다: 늦게 오는 사람에게 다시 보내는 김에 되살아납니다.
+       진짜 무효화는 [새로 발급](POST /invite)이 맡습니다 */
+    if (path === "/invite-arm" && req.method === "POST") {
+      if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
+      let inv = await S.get("invite");
+      if (!inv || !inv.code) {
+        inv = { code: rid(8), exp: 0, armed: false };
+        try {
+          await this.toAccounts("/code-index", { code: inv.code, room: await this.roomId(req), exp: now + INVITE_INDEX_MS });
+        } catch (e) {
+          /* 색인이 안 돼도 링크로 들어오는 길은 삽니다 */
+        }
+      }
+      const invite = { ...inv, armed: true, exp: now + INVITE_MS };
+      await S.put("invite", invite);
       return json({ invite });
     }
 
@@ -1630,10 +1656,8 @@ export class Room {
     if (!a || a.k !== "scribe") return;
     if (!this.scribeOn(ws)) {
       this.bcast({ kind: "presence", scribeOn: false }, (w) => w !== ws);
-      /* 마지막 서기 소켓이 끊겼습니다 — 코드는 여기서부터 10분 뒤에 만료됩니다 (2026-09-06) */
-      const S = this.ctx.storage;
-      const inv = await S.get("invite");
-      if (inv) await S.put("invite", { ...inv, exp: Math.max(inv.exp || 0, Date.now() + INVITE_MS) });
+      /* (폐기 2026-09-08) 서기 소켓이 끊긴 시점부터 10분을 다시 세던 것 — 코드의 시계는 이제
+         방장이 복사한 때부터만 돕니다. 앱을 닫는 것은 부르는 일과 상관이 없습니다 */
     }
   }
 

@@ -891,7 +891,7 @@ const savePresets = (l) => {
 
 function loadRelay() {
   if (typeof window === "undefined") return { on: false };
-  if (DEMO) return { on: false, look: { t: "dark", alpha: 25 } }; // 예시 앱엔 방이 없습니다
+  if (DEMO) return { on: false, look: { t: "bars", alpha: 10 } }; // 예시 앱엔 방이 없습니다
   try {
     const v = JSON.parse(window.localStorage.getItem(RELAY_KEY) || "null");
     if (!v || typeof v !== "object") throw 0;
@@ -916,10 +916,11 @@ function loadRelay() {
       ovsrc: v.ovsrc === "split" ? "split" : undefined,
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
-          ? { t: v.look.t, alpha: [0, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25, line: v.look.line ? 1 : undefined }
-          : { t: "dark", alpha: 25 },
+          ? { t: v.look.t, alpha: [0, 10, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25, line: v.look.line ? 1 : undefined }
+          : { t: "bars", alpha: 10 },
       lookMig: v.lookMig ? 1 : undefined,
       lookMig2: v.lookMig2 ? 1 : undefined, // 2026-09-07 외형 기본값 강제 적용 표시
+      lookMig3: v.lookMig3 ? 1 : undefined, // 2026-09-08 기본 테마를 막대 줄로 강제 적용한 표시
       /* 2026-09-06 모델 — 판 존재 표시, 프리셋 이름(시작 때 채움), 이어서 고른 판.
          (버그 기록) 여기서 안 받아 줘서 새로고침하면 판이 없는 걸로 돌아갔다 */
       boardOn: v.boardOn ? true : undefined,
@@ -952,9 +953,19 @@ function loadRelay() {
         window.localStorage.setItem(RELAY_KEY, JSON.stringify(out));
       } catch (e2) {}
     }
+    /* 기본 테마를 막대 줄로 강제 적용 (2026-09-08 사용자 확정: 기존 유저도 이걸로 덮어씌운다).
+       한 번만, 표시를 남깁니다 — 그 뒤에 어두운 판·밝은 판으로 되돌린 사람은 그대로 남습니다.
+       판이 없어지면서 가로세로 비가 바뀌므로 OBS 소스를 한 번 다시 잡아야 합니다(창에 안내 한 줄) */
+    if (!out.lookMig3) {
+      out.look = { t: "bars", alpha: 10 };
+      out.lookMig3 = 1;
+      try {
+        window.localStorage.setItem(RELAY_KEY, JSON.stringify(out));
+      } catch (e2) {}
+    }
     return out;
   } catch (e) {
-    return { on: false, look: { t: "dark", alpha: 25 } };
+    return { on: false, look: { t: "bars", alpha: 10 } };
   }
 }
 function saveRelay(v) {
@@ -1140,6 +1151,9 @@ const roomApi = {
     ),
   /* 지금 코드 (2026-09-06) — 살아 있으면 그대로, 죽었으면 null. 부팅과 새 판 만들기가 씁니다 */
   inviteNow: (token, roomId) => callApi(`/api/r/${roomId}/invite`, { token }).then((r) => r.invite || null),
+  /* 코드의 시계 켜기 (2026-09-08 사용자 확정) — 부르는 순간(= 복사)부터 10분입니다 */
+  armInvite: (token, roomId) =>
+    callApi(`/api/r/${roomId}/invite-arm`, { method: "POST", body: {}, token }).then((r) => r.invite || null),
   /* 정산 끝내기·해산 — 판이 없어집니다 (2026-09-06 모델) */
   end: (token, roomId) => callApi(`/api/r/${roomId}/end`, { method: "POST", body: {}, token }),
   /* 외형을 고쳤다고 내 오버레이에 알립니다 (2026-09-07) — 서버는 그 계정의 소켓에만 그대로 넘깁니다 */
@@ -4782,7 +4796,7 @@ export default function GoldSettlement() {
   };
 
   const lookOut = () => {
-    const lk = relay.look || { t: "dark", alpha: 25 };
+    const lk = relay.look || { t: "bars", alpha: 10 };
     /* line(헤어라인)은 판 테마에만 실립니다 — 서버는 해석 없이 그대로 나릅니다 */
     const base = isPanelLook(lk)
       ? { t: lk.t, bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) }
@@ -7955,7 +7969,9 @@ export default function GoldSettlement() {
               새로 발급
             </button>
             {/* 유출 주의 (2026-09-08 사용자: 복사 버튼 주변에) — 링크가 방송에 보이면 시청자가 들어옵니다. 문구 초안 */}
-            <span className="gs-invwarn">파티원에게만 보내요. 링크가 새면 아무나 들어와요.</span>
+            {/* (폐기 2026-09-08) `파티원에게만 보내요. 링크가 새면 아무나 들어와요.` — 만료를 말하게 되면서
+                유출 주의와 수명을 한 줄에 담습니다. 남은 시간은 안 셉니다 (사용자 지정: 어떤 타이머도 두지 않는다) */}
+            <span className="gs-invwarn">파티원에게만 보내요. 링크는 복사한 때부터 10분이에요.</span>
           </div>
           <div className="gs-invcode-l2">
             {/* [링크 복사]가 주 버튼입니다 (2026-09-08 사용자). (폐기, 하루 전) [디코 메시지 복사]가 금색 주 버튼 */}
@@ -7989,8 +8005,18 @@ export default function GoldSettlement() {
                   tutHit("link");
                   return;
                 }
+                /* 복사가 곧 부르는 순간입니다 (2026-09-08 사용자 확정) — 여기서부터 10분.
+                   클립보드부터 쓰고 서버는 뒤로 흘려보냅니다: 왕복을 기다렸다 쓰면 브라우저가 붙여넣기를 막습니다 */
                 copy(inviteMsg(auth.nick, hostInvite.url), "inv");
                 if (!lobbyOn) startParty();
+                if (auth && relay.room)
+                  roomApi
+                    .armInvite(auth.token, relay.room)
+                    .then((inv) => {
+                      if (inv && inv.code)
+                        putRelay({ ...relayRef.current, invite: { code: inv.code, exp: inv.exp } });
+                    })
+                    .catch(() => {});
               }}
             >
               {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
@@ -12309,6 +12335,11 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
         <div className="gs-obs-lookhead">
           <h4>오버레이 테마</h4>
         </div>
+        {/* 기본이 막대로 바뀌면서 판의 가로세로 비가 달라집니다 — 슬라이드 모드를 켤 때와 같은
+            종류의 안내입니다(그쪽 문구를 따랐습니다). 문구는 초안 */}
+        <p className="gs-obs-looknote">
+          기본은 판 없이 줄마다 막대예요 — 막대 사이로 게임 화면이 비쳐요. 판 모양이 바뀌니 OBS에서 소스 크기를 한 번 다시 맞춰 주세요.
+        </p>
         <LookPicker look={relay.look} onPick={pickLook} />
       </div>
       <div className="gs-obs-sec">
@@ -14755,25 +14786,25 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
 }
 
 /* 검증된 오버레이 조합 — 칩의 사선 배경(밝은/어두운 화면 반반) 위에 실제 모습을 미리 보여줍니다 */
-/* 2×3 격자 — 윗줄은 어두운 계열(밝은 화면에 강함), 아랫줄은 밝은 계열(어두운 화면에 강함).
-   열은 [반투명 판 | 판 | 판 없이]로 통일. 왼쪽 위가 기본값입니다. */
-/* 앞의 둘만 펼쳐 두고 나머지는 접습니다. 판의 진하기는 아래 투명도가 맡으므로
-   '판'과 '판·반투명'을 따로 두지 않습니다. */
+/* 표면에 셋 — 기본 · 어두운 판 · 밝은 판 (2026-09-08 사용자 확정). 판 없는 두 테마는 접힙니다.
+   '기본'은 판을 버리고 줄마다 각진 막대를 세우는 형태입니다(막대 사이로 화면이 비칩니다).
+   판의 진하기는 아래 투명도가 맡으므로 '판'과 '판·반투명'을 따로 두지 않습니다.
+   (폐기 2026-09-08) 어두운 판 · 테두리 / 밝은 판 · 테두리 — 헤어라인은 두를 판이 있어야
+   뜻이 있는데, 기본이 막대가 되면서 표면에서 밀렸습니다. 판 테마의 `line` 자체는 남아 있습니다 */
 const LOOK_PRESETS = [
-  { id: "goat", name: "어두운 판 (추천)", look: { t: "dark", alpha: 25 } },
+  { id: "bars", name: "기본", look: { t: "bars", alpha: 10 } },
+  { id: "goat", name: "어두운 판", look: { t: "dark", alpha: 25 } },
   { id: "light25", name: "밝은 판", look: { t: "light", alpha: 25 } },
-  /* 헤어라인 (2026-09-06 사용자 확정) — 판 테두리 한 줄과 줄 사이 실선. 어두운 판엔 밝은 선, 밝은 판엔 어두운 선. 이름은 초안 */
-  { id: "goatline", name: "어두운 판 · 테두리", look: { t: "dark", alpha: 25, line: 1 } },
-  { id: "light25line", name: "밝은 판 · 테두리", look: { t: "light", alpha: 25, line: 1 } },
   { id: "clear", name: "판 없이 · 밝은 글자", look: { t: "clear" } },
   { id: "cleardark", name: "판 없이 · 진한 글자", look: { t: "cleardark" } },
 ];
-const LOOK_OPEN = 2; // 처음부터 보이는 개수
-const isPanelLook = (lk) => !!lk && (lk.t === "dark" || lk.t === "light");
+const LOOK_OPEN = 3; // 처음부터 보이는 개수
+/* 투명도를 조절할 수 있는 테마 — 바탕이 있는 것들입니다. 막대 테마는 막대마다 바탕이 있어 같이 듭니다 */
+const isPanelLook = (lk) => !!lk && (lk.t === "dark" || lk.t === "light" || lk.t === "bars");
 /* 서버가 읽는 키는 t·bg·s 셋뿐입니다 — 앱이 쓰는 alpha(판 투명도)와 bg 는 서로 뒤집힌 값입니다 */
 const lookIn = (srv) => {
   const a = srv && srv.bg != null ? 100 - Math.round(srv.bg) : 25;
-  return { t: srv.t, alpha: [0, 25, 50, 75, 100].includes(a) ? a : 25, line: srv.line ? 1 : undefined };
+  return { t: srv.t, alpha: [0, 10, 25, 50, 75, 100].includes(a) ? a : 25, line: srv.line ? 1 : undefined };
 };
 const sameLook = (a, b) =>
   !!a && !!b && a.t === b.t && !!a.line === !!b.line && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
@@ -14809,7 +14840,8 @@ function LookPicker({ look, onPick }) {
       <div className={"gs-lookalpha" + (isPanelLook(look) ? "" : " off")}>
         <span className="gs-caplab">배경 투명도</span>
         <div className="gs-seg gs-seg-sm" role="group" aria-label="배경 투명도">
-          {[0, 25, 50, 75, 100].map((a) => (
+          {/* 10 은 기본(막대) 테마의 기본값 90% 자리입니다 (2026-09-08) — 판 테마에서도 씁니다 */}
+          {[0, 10, 25, 50, 75, 100].map((a) => (
             <button
               key={a}
               disabled={!isPanelLook(look)}
@@ -16001,10 +16033,12 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lookswatch b{font-weight:600; font-size:11px; letter-spacing:.04em; padding:3px 10px;
   border-radius:6px; white-space:nowrap}
 .sw-dark0 b{background:rgba(20,17,14,1); color:#f5f0e6}
+/* 기본(막대) — 각진 막대에 오른쪽 금색 블록. 각짐과 금색 블록이 이 테마를 가르는 두 가지입니다.
+   box-shadow 로 블록을 붙이면 칩 글자를 건드리지 않고도 형태가 보입니다 (2026-09-08) */
+.sw-bars b{background:rgba(20,17,14,.9); color:#f5f0e6; border-radius:0;
+  box-shadow:3px 0 0 0 rgba(245,240,230,.75), 8px 0 0 0 #e8c66a}
 .sw-goat b{background:rgba(20,17,14,.75); color:#f5f0e6}
 .sw-light25 b{background:rgba(248,244,236,.75); color:#221c14}
-.sw-goatline b{background:rgba(20,17,14,.75); color:#f5f0e6; box-shadow:0 0 0 1px rgba(232,198,106,.6)}
-.sw-light25line b{background:rgba(248,244,236,.75); color:#221c14; box-shadow:0 0 0 1px rgba(34,28,20,.55)}
 .sw-light0 b{background:rgba(248,244,236,1); color:#221c14}
 .sw-clear b{color:#f5f0e6; text-shadow:0 0 5px rgba(0,0,0,.95), 0 1px 2px rgba(0,0,0,.95)}
 .sw-cleardark b{color:#171310; text-shadow:0 0 5px rgba(255,255,255,.95), 0 1px 2px rgba(255,255,255,.95)}
