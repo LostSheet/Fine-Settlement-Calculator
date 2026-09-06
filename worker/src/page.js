@@ -434,6 +434,15 @@ export const PAGE_HTML = `<!doctype html>
   .ov-lbrow.lb-empty .ov-name::after{content:''; position:absolute; left:0; right:30%; top:50%;
     border-top:.18vw dashed currentColor; opacity:.28}
   .ov-lbrow.lb-empty .ov-rank{opacity:.34}
+  /* 발치 문구 — 아래에서 올라오고 위로 걷힙니다. 점은 자리를 늘 차지해 글이 흔들리지 않습니다 */
+  .ov-lobby-note{overflow:hidden}
+  .ov-note-in{display:inline-block; transition:transform .24s ease, opacity .24s ease}
+  .ov-note-in.out{transform:translateY(-.7em); opacity:0}
+  .ov-note-in.in{animation:ov-note-up .28s ease-out}
+  .ov-note-tx{font-weight:inherit}
+  .ov-dots{font-style:normal; display:inline-block; width:1.6em; text-align:left}
+  @keyframes ov-note-up{from{transform:translateY(.7em); opacity:0} to{transform:none; opacity:1}}
+  @media (prefers-reduced-motion:reduce){ .ov-note-in{transition:none} .ov-note-in.in{animation:none} }
 
   @media (prefers-reduced-motion:reduce){ .ov-row{transition:none} }
 </style>
@@ -650,6 +659,39 @@ export const PAGE_HTML = `<!doctype html>
   var name = "";
   var dead = false;   // 판을 볼 수 없는 상태 — 침묵이 기본입니다
   var lobby = null;   // 로비가 열려 있는 동안만. 순위표 대신 대기실을 그립니다
+  /* 대기실 발치 문구의 두 타이머 — 점(0.42초)과 말 바꾸기(4.2초). 대기실이 사라지면 스스로 멈춥니다 */
+  var lobDotT = null, lobRotT = null, lobDot = 0, lobIdx = 0, lobList = [];
+  function lobNoteStop() {
+    clearInterval(lobDotT); clearInterval(lobRotT);
+    lobDotT = null; lobRotT = null;
+  }
+  function lobNotes(list) {
+    var same = lobList.length === list.length && lobList.every(function (x, i) { return x === list[i]; });
+    if (same && lobDotT) return; // 판만 다시 그린 것 — 돌던 문구는 그대로
+    lobNoteStop();
+    lobList = list; lobIdx = 0; lobDot = 0;
+    lobDotT = setInterval(function () {
+      var d = document.querySelector(".ov-dots");
+      if (!d) { lobNoteStop(); return; }
+      lobDot = (lobDot + 1) % 4;
+      d.textContent = new Array(lobDot + 1).join(".");
+    }, 420);
+    if (list.length < 2) return;
+    lobRotT = setInterval(function () {
+      var box = document.querySelector(".ov-note-in");
+      if (!box) { lobNoteStop(); return; }
+      box.classList.add("out");
+      setTimeout(function () {
+        var tx = box.querySelector(".ov-note-tx");
+        if (!tx) return;
+        lobIdx = (lobIdx + 1) % lobList.length;
+        tx.textContent = lobList[lobIdx];
+        box.classList.remove("out");
+        box.classList.add("in");
+        setTimeout(function () { box.classList.remove("in"); }, 280);
+      }, 240);
+    }, 4200);
+  }
 
   /* 앱과 같은 만 단위 표기 */
   var man = function (g) {
@@ -1858,6 +1900,8 @@ export const PAGE_HTML = `<!doctype html>
       drawPlay();
       return;
     }
+    /* 발치 문구 (2026-09-08 사용자): 점이 . .. ... 로 늘고, 몇 초마다 다음 말이 아래에서 올라옵니다.
+       판을 다시 그릴 때마다 타이머를 새로 걸지 않도록 같은 말 묶음이면 그대로 둡니다 */
     /* 로비가 열려 있으면 대기실입니다 — 아직 판이 없으니 순위표를 그릴 게 없습니다 */
     if (lobby) {
       ovBoard = null;
@@ -1880,15 +1924,21 @@ export const PAGE_HTML = `<!doctype html>
           '<span class="ov-name">' + (lx && lx.n ? esc(lx.n) : "") + "</span></div>";
       }
       var lleft = lcap - llist.length;
-      var lnote = !llist.length ? "파티원을 기다려요" : lleft <= 0 ? "곧 시작해요" : lleft + "자리 남았어요";
+      /* 두 말이 번갈아 섭니다 (2026-09-08 사용자) — 자리 수는 사실, 모이는 중은 상태. 꽉 차면 한 마디만 */
+      var lnotes = lleft <= 0
+        ? ["곧 시작해요"]
+        : [!llist.length ? "파티원을 기다려요" : lleft + "자리 남았어요", "모이는 중이에요"];
       app.innerHTML =
         '<div class="ov"><div class="ov-head"><span class="ov-lobby-t">대기실</span>' +
         '<span class="ov-lobby-n">' + ln + "/" + lcap + "</span></div>" +
         lrows +
-        '<div class="ov-lobby-note">' + lnote + "</div></div>";
+        '<div class="ov-lobby-note"><span class="ov-note-in"><b class="ov-note-tx">' + esc(lnotes[0]) +
+        "</b><i class='ov-dots'></i></span></div></div>";
+      lobNotes(lnotes);
       fitBoard();
       return;
     }
+    lobNoteStop();
     /* 미리보기 창인데 그릴 판이 없습니다 (2026-09-05, §4.4) — 체커보드만 뜨면 "고장인가"가 되고,
        이 창은 테마를 고르는 자리이기도 해서 예시 판을 지금 외형으로 그립니다. 리본이 예시임을 말합니다.
        OBS 안(isPreview 거짓)에서는 절대 안 그립니다 — 방송에 예시가 새면 안 됩니다 */
