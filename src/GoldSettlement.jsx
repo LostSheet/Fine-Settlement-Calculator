@@ -2585,6 +2585,8 @@ export default function GoldSettlement() {
      그 방 명단에 있고(§1: 정산 끝내기는 아무도 안 내보냅니다), 그 방에서 판이 다시
      열리면 돌아갈 문이 있어야 합니다. {room} */
   const [backCard, setBackCard] = useState(null);
+  /* 쓰는 방식 비교 창 (GainGuide) — OBS 공유 설정 안에만 있던 것을 로비 파티 카드에서도 엽니다 (2026-09-08 사용자) */
+  const [waysOpen, setWaysOpen] = useState(false);
   /* 보관된 초대 (방 하나 규칙, 2026-09-07) — 내 판이 있을 때 받은 초대. 판을 끝내거나 해산한 뒤 허브에서 [참여하기] */
   const [pendingJoin, setPendingJoin] = useState(() => {
     try {
@@ -5575,6 +5577,33 @@ export default function GoldSettlement() {
       kinds.forEach((k) => window.removeEventListener(k, arm, { capture: true }));
     };
   }, [confessTab, tab]);
+  /* 진행 중인 내 판을 두고 로비·기록에 있으면 30초 뒤 판으로 돌아옵니다 (2026-09-08 사용자 — 파티원의 자수 복귀와 같은 규칙).
+     아무 조작이 있으면 다시 30초. 띠에 남은 초와 [벌금판으로 돌아가기]를 같이 답니다 */
+  const [hostBackIn, setHostBackIn] = useState(null);
+  useEffect(() => {
+    if (!liveAway || tutorial) {
+      setHostBackIn(null);
+      return;
+    }
+    let id = null;
+    let due = 0;
+    const arm = () => {
+      clearTimeout(id);
+      due = Date.now() + IDLE_BACK_MS;
+      setHostBackIn(Math.ceil(IDLE_BACK_MS / 1000));
+      id = setTimeout(() => goBoard(), IDLE_BACK_MS);
+    };
+    const tick = setInterval(() => setHostBackIn(Math.max(0, Math.ceil((due - Date.now()) / 1000))), 500);
+    const kinds = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"];
+    kinds.forEach((k) => window.addEventListener(k, arm, { passive: true, capture: true }));
+    arm();
+    return () => {
+      clearTimeout(id);
+      clearInterval(tick);
+      kinds.forEach((k) => window.removeEventListener(k, arm, { capture: true }));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveAway, tutorial]);
   /* 내 줄과 내 벌금 — 자수 카드 위에 적습니다 */
   const myRow = confessTab && you.rowId ? rows.find((x) => x.id === you.rowId) : null;
   const myGold = myRow ? itemGold(myRow) : 0;
@@ -7659,6 +7688,10 @@ export default function GoldSettlement() {
                 </button>
               </div>
             </div>
+            {/* 두 방식이 뭐가 다른지 (2026-09-08 사용자) — OBS 공유 설정 안의 그 창(GainGuide)을 여기서도 엽니다 */}
+            <button className="gs-auth-linkb gs-forkways" onClick={onWays}>
+              두 방식이 뭐가 달라요?
+            </button>
           </div>
           {/* 비밀 파티 입장 문법 — 주소를 그대로 붙여넣어도, 코드 8자만 쳐도 들어가진다. 같은 말은 한 번만 (2026-09-07 사용자) */}
           <JoinBox onJoin={joinByCode} />
@@ -8203,6 +8236,20 @@ export default function GoldSettlement() {
       {/* 대기실은 헤더 아래를 통째로 덮습니다 (§3-3) — 탭 줄과 마스트 버튼이 같이 보이면
           모이는 화면인지 벌금표인지 눈이 못 가릅니다.
           무효·만료 초대도 같습니다 — 볼 판이 없는데 탭 줄만 서 있으면 안 됩니다 */}
+      {/* 진행 중인 판을 두고 나온 동안의 띠 (2026-09-08 사용자) — 남은 초와 돌아가는 문. 문구 초안 */}
+      {liveAway && !tutorial && (
+        <div className="gs-guestbar gs-backbar">
+          <div className="gs-slip" role="status">
+            <span className="gs-slip-msg">
+              <em className="gs-livechip-dot" aria-hidden="true" /> 진행 중인 판이 있어요 —{" "}
+              <b>{hostBackIn == null ? 30 : hostBackIn}초</b> 뒤 벌금판으로 돌아가요.
+            </span>
+            <button className="gs-btn gs-btn-sm gs-slip-act gs-lbstart" onClick={goBoard}>
+              벌금판으로 돌아가기
+            </button>
+          </div>
+        </div>
+      )}
       {/* ── 로비 (홈, §3.0) ── */}
       {showLobby && (
         <LobbyHome
@@ -8215,8 +8262,10 @@ export default function GoldSettlement() {
           onSettings={() => setObsOpen(true)}
           onLogin={() => openAuth("register", () => setObsOpen(true))} // 로그인 뒤 OBS 창 — 거기서 주소를 받습니다 (2026-09-07 사용자)
           onUpgrade={() => setUpOpen({})}
+          onWays={() => setWaysOpen(true)}
           hub={partyHub("lobby")}
-          tutLine={!readOnly && !boardOn && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
+          // 판이 있든 없든 ×를 누를 때까지 그대로 (2026-09-08 사용자). (폐기) !boardOn — 판을 만들면 사라지고 해산하면 다시 나서 기형적이었다
+          tutLine={!readOnly && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
           onTut={startPartyCourse}
           onDropTut={() => {
             coachDone("partyAsk");
@@ -10729,6 +10778,7 @@ export default function GoldSettlement() {
           onDone={() => setAsk(null)}
         />
       )}
+      {waysOpen && <GainGuide onClose={() => setWaysOpen(false)} />}
       {share !== null && (
         <TextShare
           text={share}
@@ -12757,6 +12807,7 @@ function LobbyHome({
   onSettings,
   onLogin,
   onUpgrade,
+  onWays,
   hub,
   gens,
   onOpenGen,
@@ -17039,6 +17090,10 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
 .gs-forksolo{margin-top:16px; padding-top:15px; border-top:1px dashed rgba(var(--ink-rgb),.2)}
+.gs-forkways{display:block; margin:14px auto 0; font-size:12px}
+.gs-backbar{margin-bottom:2px}
+.gs-backbar .gs-slip{border-color:rgba(var(--gold-rgb),.5); background:rgba(var(--gold-rgb),.07)}
+.gs-backbar .gs-slip-msg b{font-family:var(--mono); color:var(--gold)}
 .gs-solobtn{display:inline-flex; align-items:center; gap:9px; background:transparent; border-color:rgba(var(--ink-rgb),.42); color:var(--ink)}
 .gs-solobtn:hover{border-color:var(--ink); background:rgba(var(--ink-rgb),.06)}
 /* 사각 뱃지 — 알약(칩)과 갈라 "옛 방식"이라는 꼬리표로 읽히게 (2026-09-07 밤 사용자 지정) */
