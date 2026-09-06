@@ -12392,25 +12392,20 @@ function LobbyHome({
                   "시작 전"
                 )}
               </h4>
-              <div className="gs-lh-box gs-lh-go" role="button" tabIndex={0} onClick={onEnter} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEnter()}>
-                {/* [× 해산]은 상자 안 우상단 (2026-09-07 사용자 지정 자리 — 롤 로비처럼). 상자 자체가 문이라 여기 클릭은 상자로 안 번집니다. 늘 한 번 묻습니다 */}
-                <button
-                  className="gs-lh-x"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDisband();
-                  }}
-                  aria-label="판 해산"
-                >
+              {/* [× 해산]은 상자 우상단에 겹치되 상자의 형제입니다 — 자식이면 ×에 올린 호버가 상자 전체로 번졌다 (2026-09-07 사용자). 늘 한 번 묻습니다 */}
+              <div className="gs-lh-boxwrap">
+                <div className="gs-lh-box gs-lh-go" role="button" tabIndex={0} onClick={onEnter} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEnter()}>
+                  <p className="gs-lh-facts">
+                    대기실 {seated} / {cap} 앉음
+                  </p>
+                  <p className="gs-lh-names">
+                    {seatNames && seatNames.length ? seatNames.filter(Boolean).join(" · ") : "아직 아무도 없어요"}
+                  </p>
+                  <span className="gs-lh-goto">대기실로 ›</span>
+                </div>
+                <button className="gs-lh-x" onClick={onDisband} aria-label="판 해산">
                   <span aria-hidden="true">×</span> 해산
                 </button>
-                <p className="gs-lh-facts">
-                  대기실 {seated} / {cap} 앉음
-                </p>
-                <p className="gs-lh-names">
-                  {seatNames && seatNames.length ? seatNames.filter(Boolean).join(" · ") : "아직 아무도 없어요"}
-                </p>
-                <span className="gs-lh-goto">대기실로 ›</span>
               </div>
             </>
           )}
@@ -16527,7 +16522,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-box .gs-lh-facts + .gs-lh-sub{margin-top:4px}
 .gs-lh-acts{display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px; position:relative}
 /* 롤 로비처럼 (2026-09-07 사용자 확정) — 제목 줄 오른쪽 끝 작은 [× 해산], 상자 전체가 문. (폐기) .gs-lh-side 왼쪽 유령 [해산] */
-.gs-lh-box{position:relative}
+.gs-lh-boxwrap{position:relative}
 .gs-lh-x{position:absolute; top:8px; right:10px; border:1px solid rgba(var(--ink-rgb),.42); background:transparent; font:inherit; font-size:12px; letter-spacing:0; color:var(--ink-2); cursor:pointer; padding:3px 9px; border-radius:4px} /* 테두리 있는 작은 버튼 — 상자 안에서 눌리는 것임을 보인다 (2026-09-07 사용자) */
 .gs-lh-x span{font-size:14px; line-height:1; margin-right:2px}
 .gs-lh-x:hover{color:#e59a90; border-color:rgba(229,154,144,.7); background:rgba(229,154,144,.1)}
