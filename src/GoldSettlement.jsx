@@ -7649,65 +7649,69 @@ export default function GoldSettlement() {
            문이 안 서서 대기실 표시(lobby.open)를 켤 길이 여기 말고는 없습니다.
            (폐기 2026-09-05, 당일) 가린 주소 한 줄 + [디코용 복사] 하나 — 무엇을 어디에 붙이라는 건지 안 읽혔다 */
         <div className="gs-invcode">
-          {/* 2안 (2026-09-07 사용자: 오른쪽 끝 글자 링크는 가시성·사용성이 떨어지고 룩이 구리다) — 스트리머가 실제로 쓰는 디코 메시지가
-              주 버튼으로 맨 앞, 코드는 칩 하나(가린 채·눈), 코드 복사·링크 복사는 뒤에 유령으로, 새로 발급은 줄 끝 작은 글자.
-              (폐기, 같은 날) `초대 코드` 라벨 + 22px 코드 한 줄 + 아래 줄 [코드 복사][링크 복사] 디코 메시지 복사 … 새로 발급(오른쪽 끝) */}
-          <button
-            className="gs-btn gs-btn-sm gs-lbstart gs-invdiscbtn"
-            onClick={() => {
-              copy(inviteMsg(auth.nick, hostInvite.url), "inv");
-              if (!lobbyOn) startParty();
-            }}
-          >
-            {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
-          </button>
-          <span className="gs-invcode-chip">
-            <b className="gs-invcode-b">
-              {revealInv ? hostInvite.code.slice(0, 4) + " " + hostInvite.code.slice(4) : "•••• ••••"}
-            </b>
+          {/* 두 줄 고정 (2026-09-07 밤 사용자: 한 줄 flex-wrap 은 `새로 발급`이 혼자 다음 줄로 떨어졌다) — 1줄 코드 칩 + 새로 발급, 2줄 동작 셋(디코 메시지가 주 버튼).
+              (폐기, 같은 날) 한 줄 [디코 메시지 복사][코드 칩][코드 복사][링크 복사] 새로 발급 — 좁으면 마지막 것만 떨어졌다.
+              (폐기, 같은 날 낮) `초대 코드` 라벨 + 22px 코드 한 줄 + 아래 줄 [코드 복사][링크 복사] 디코 메시지 복사 … 새로 발급(오른쪽 끝) */}
+          <div className="gs-invcode-l1">
+            <span className="gs-invcode-chip">
+              <b className="gs-invcode-b">
+                {revealInv ? hostInvite.code.slice(0, 4) + " " + hostInvite.code.slice(4) : "•••• ••••"}
+              </b>
+              <button
+                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
+                onClick={() => setRevealInv((v) => !v)}
+                aria-label={revealInv ? "가리기" : "보기"}
+                title={revealInv ? "가리기" : "보기"}
+              >
+                <Eye on={revealInv} />
+              </button>
+            </span>
             <button
-              className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
-              onClick={() => setRevealInv((v) => !v)}
-              aria-label={revealInv ? "가리기" : "보기"}
-              title={revealInv ? "가리기" : "보기"}
+              className="gs-swaplink gs-invcode-renew"
+              onClick={() => {
+                newInvite();
+                if (!lobbyOn) startParty();
+              }}
             >
-              <Eye on={revealInv} />
+              새로 발급
             </button>
-          </span>
-          <button
-            className="gs-btn gs-btn-sm gs-btn-ghost"
-            onClick={() => {
-              copy(hostInvite.code, "invcode");
-              if (!lobbyOn) startParty();
-            }}
-          >
-            {flash === "invcode" ? "복사했어요" : "코드 복사"}
-          </button>
-          <button
-            className="gs-btn gs-btn-sm gs-btn-ghost gs-invlinkbtn"
-            onClick={() => {
-              if (tutorialRef.current) {
-                /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
-                setFlash("invurl");
-                setTimeout(() => setFlash(""), 1500);
-                tutHit("link");
-                return;
-              }
-              copy(hostInvite.url, "invurl");
-              if (!lobbyOn) startParty();
-            }}
-          >
-            {flash === "invurl" ? "복사했어요" : "링크 복사"}
-          </button>
-          <button
-            className="gs-swaplink gs-invcode-renew"
-            onClick={() => {
-              newInvite();
-              if (!lobbyOn) startParty();
-            }}
-          >
-            새로 발급
-          </button>
+          </div>
+          <div className="gs-invcode-l2">
+            <button
+              className="gs-btn gs-btn-sm gs-lbstart gs-invdiscbtn"
+              onClick={() => {
+                copy(inviteMsg(auth.nick, hostInvite.url), "inv");
+                if (!lobbyOn) startParty();
+              }}
+            >
+              {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
+            </button>
+            <button
+              className="gs-btn gs-btn-sm gs-btn-ghost gs-invlinkbtn"
+              onClick={() => {
+                if (tutorialRef.current) {
+                  /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
+                  setFlash("invurl");
+                  setTimeout(() => setFlash(""), 1500);
+                  tutHit("link");
+                  return;
+                }
+                copy(hostInvite.url, "invurl");
+                if (!lobbyOn) startParty();
+              }}
+            >
+              {flash === "invurl" ? "복사했어요" : "링크 복사"}
+            </button>
+            <button
+              className="gs-btn gs-btn-sm gs-btn-ghost"
+              onClick={() => {
+                copy(hostInvite.code, "invcode");
+                if (!lobbyOn) startParty();
+              }}
+            >
+              {flash === "invcode" ? "복사했어요" : "코드 복사"}
+            </button>
+          </div>
         </div>
       )}
     </>
@@ -8102,7 +8106,7 @@ export default function GoldSettlement() {
           onCopy={copy}
           flash={flash}
           onSettings={() => setObsOpen(true)}
-          onLogin={() => openAuth("register")}
+          onLogin={() => openAuth("register", () => setObsOpen(true))} // 로그인 뒤 OBS 창 — 거기서 주소를 받습니다 (2026-09-07 사용자)
           onUpgrade={() => setUpOpen({})}
           hub={partyHub("lobby")}
           tutLine={!readOnly && !boardOn && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
@@ -9198,6 +9202,12 @@ export default function GoldSettlement() {
                                   <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
                                     {/* 계정 닉만 — 줄 이름은 방장 장부의 것이라 여기 안 옵니다 (2026-09-06 사용자 지적).
                                         라벨을 달아 두 줄로 (2026-09-07 사용자 지정 문구: `원래 닉네임:` / `ID:`; (폐기) `{닉} {아이디}` 한 줄 — 무엇이 닉이고 아이디인지 안 읽혔다) */}
+                                    {/* 방장 줄은 첫 줄에 `방장` (2026-09-07 사용자: 금색은 좋은데 호버하면 방장이라고 떠야 한다) */}
+                                    {i === 0 && (
+                                      <span className="gs-tipline">
+                                        <b>방장</b>
+                                      </span>
+                                    )}
                                     <span className="gs-tipline">
                                       <i>원래 닉네임:</i> <b>{(mem && mem.nick) || st.nick || (auth && st.acct === auth.id ? auth.nick : "") || ""}</b>
                                     </span>
@@ -9234,6 +9244,7 @@ export default function GoldSettlement() {
                           ) : (
                           <input
                             className={"gs-in gs-in-name" + (dupName(row.id, row.name) ? " gs-dup" : "")}
+                            size={Math.max(3, [...String((ready ? (seats.find((k) => k.id === row.id) || {}).name || "" : row.name) || ANON(i))].length + 1)}
                             /* 준비 상태에서는 자리의 이름이 원본입니다 (§3.1) — 빈 자리는 빈 칸으로
                                보여 자리표시가 뜨고, 고치면 자리에 적힙니다. 줄은 자리를 따라옵니다 */
                             value={ready ? (seats.find((k) => k.id === row.id) || {}).name || "" : row.name}
@@ -12687,12 +12698,14 @@ function LobbyHome({
               )}
             </>
           ) : (
-            <p className="gs-lh-note gs-lh-loginnote">
-              파티원을 부르거나 방송에 띄우려면 로그인이 필요해요 — 게스트로도 돼요.{" "}
-              <button className="gs-auth-linkb" onClick={onLogin}>
-                로그인
+            <>
+              {/* 문 하나 (2026-09-07 사용자 지정 라벨) — 시작하기 랜딩(게스트·가입·로그인)을 열고, 끝나면 OBS 공유 창이 떠서 거기서 주소를 받습니다.
+                  (폐기, 같은 날) 안내 한 줄 + 글자 `로그인` — 문이 안 보였다. 버튼 밑에 따로 `로그인`을 두는 것도 폐기(사용자: 버튼이 곧 로그인인데 이상하다) */}
+              <button className="gs-btn gs-lifebtn gs-lbstart gs-lh-getaddr" onClick={onLogin}>
+                로그인하여 방송용 주소 받기
               </button>
-            </p>
+              <p className="gs-lh-note gs-lh-loginnote">파티원을 부르거나 방송에 띄우려면 계정이 필요해요 — 게스트로도 돼요. 벌금만 셀 거면 필요 없어요.</p>
+            </>
           )}
         </div>
         {/* 판 기록의 집 (§3.0) — 내 판과 참여한 판이 이름표를 달고 섭니다. 없어도 카드는 섭니다 (2026-09-07) */}
@@ -15178,7 +15191,12 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   padding-right:6px !important; color:var(--gold); white-space:nowrap}
 
 /* 이름 칸은 이름만 — 손잡이는 오른쪽 끝 도구 열에 삽니다 */
-.gs-namecell{display:flex; align-items:center; gap:4px}
+.gs-namecell{display:flex; align-items:center; gap:4px; justify-content:flex-end;
+  min-width:calc(var(--namech, 6) * 1.02 * 15px)} /* 열 폭은 셀이 — 입력칸은 글자만큼만 (2026-09-07) */
+.gs-grid-count .gs-namecell{min-width:calc(var(--namech, 6) * 1.02 * 25px)}
+.gs-grid-narrow .gs-namecell{min-width:calc(var(--namech, 6) * 1.02 * 27px)}
+.gs-namecell .gs-drag{margin-right:auto} /* 레버는 왼쪽 끝 그대로 (사용자: 현행 유지) */
+.gs-namecell .gs-name-ro{width:auto}
 /* ≡ 손잡이 — 옅게 있다가 호버에 진해집니다. 끌고 지나는 줄엔 놓일 쪽에 금색 선 */
 .gs-drag{cursor:grab; color:var(--ink-2); font-size:15px; line-height:1; padding:0 3px; user-select:none; opacity:.5; flex:none; touch-action:none}
 .gs-drag:hover{opacity:1; color:var(--ink)}
@@ -15208,11 +15226,11 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowtip b{color:var(--gold)}
 .gs-rowtip .gs-tipline{display:block; line-height:1.6}
 .gs-rowtip .gs-tipline i{font-style:normal; color:var(--ink-2); margin-right:2px}
-.gs-namecell .gs-in-name{margin-left:auto}
+.gs-namecell .gs-in-name{margin-left:0; min-width:0; width:auto; flex:0 1 auto; field-sizing:content}
 /* 아바타는 닉네임 바로 왼쪽에 (2026-09-07 사용자 확정) — 레버는 왼쪽 끝 그대로, 오른쪽 묶음(아바타·이름)이 이름 열 오른쪽에 붙습니다.
    방장 아바타는 금색으로 강조. (폐기) 아바타가 레버 옆에 서고 이름만 오른쪽으로 밀리던 배치 — 방장 줄엔 레버가 없어 아바타 열이 어긋났다 */
-.gs-namecell .gs-rowmeta{margin-left:auto}
-.gs-namecell .gs-rowmeta ~ .gs-in-name{margin-left:0}
+.gs-namecell .gs-rowmeta{margin-left:0}
+/* (폐기 2026-09-07 밤) .gs-rowmeta{margin-left:auto} + 입력칸 100% — 아바타가 입력칸 왼쪽 끝에, 글자는 오른쪽 끝에 서서 멀리 떨어졌다(사용자 재지적) */
 .gs-rowi-host{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
    손잡이"라고 가릅니다. 선은 머리줄부터 바닥줄까지 칸마다 왼쪽 테두리로 이어집니다.
@@ -16844,7 +16862,8 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-easebar{margin-top:12px}
 /* 초대 — 코드가 주인공 (⑥) */
 /* 초대 한 덩이 (2안, 2026-09-07) — 주 버튼 · 코드 칩 · 유령 둘 · 작은 글자, 왼쪽에 모여 한 줄(좁으면 줄바꿈). (폐기) 라벨 줄 + 22px 코드 + 오른쪽 끝 글자 링크 */
-.gs-invcode{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.gs-invcode{display:flex; flex-direction:column; align-items:flex-start; gap:8px} /* 두 줄 고정 (2026-09-07 밤) */
+.gs-invcode-l1,.gs-invcode-l2{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 .gs-invcode-chip{display:inline-flex; align-items:center; gap:4px; padding:2px 4px 2px 12px; border:1px solid rgba(var(--gold-rgb),.5); border-radius:4px; background:rgba(0,0,0,.18)}
 .gs-invcode-b{font-family:var(--mono); font-size:15px; letter-spacing:.2em; color:var(--gold); line-height:1}
 .gs-invcode-renew{margin-left:2px; font-weight:400; color:var(--ink-2); text-decoration:underline}
@@ -16864,6 +16883,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-hub-pending b{color:var(--ink)}
 .gs-hub-pending-r{margin-left:auto; display:flex; gap:8px}
 .gs-lh-norec{padding:16px}
+.gs-lh-getaddr{width:100%; margin-top:2px}
 .gs-lh-hubh{margin-bottom:10px}
 /* 판 중 파티 줄 (⑤) */
 .gs-recruit-live{display:flex; align-items:center; gap:12px; padding:10px 16px}
