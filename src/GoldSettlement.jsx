@@ -9448,7 +9448,7 @@ export default function GoldSettlement() {
                               /* 진행 중에 나간 사람의 줄 — 벌금이 붙은 장부 줄이라 남지만, 사람은 없습니다 (§3.4) */
                               if (st && !st.acct && st.left && roundLive)
                                 return (
-                                  <span className="gs-rowmeta gs-rowmeta-tag">
+                                  <span className="gs-rowmeta">
                                     <span className="gs-lb-tag gs-lb-tag-left">퇴장</span>
                                   </span>
                                 );
@@ -15638,9 +15638,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 아바타는 닉네임 바로 왼쪽에 (2026-09-07 사용자 확정) — 레버는 왼쪽 끝 그대로, 오른쪽 묶음(아바타·이름)이 이름 열 오른쪽에 붙습니다.
    방장 아바타는 금색으로 강조. (폐기) 아바타가 레버 옆에 서고 이름만 오른쪽으로 밀리던 배치 — 방장 줄엔 레버가 없어 아바타 열이 어긋났다 */
 .gs-namecell .gs-rowmeta{margin:0} /* 옛 margin-right:auto 잔재가 아바타를 왼쪽 끝으로 밀었다 (실측 100px, 2026-09-07 밤) */
-/* 퇴장 태그는 아바타가 아닙니다 (2026-09-08 사용자: 기존 룩이 좋았는데) — 이름에 딱 붙는 것은 아바타의 규칙이고,
-   태그는 옛 자리인 칸 왼쪽에 섭니다. 위 규칙과 같은 무게라 한 단 더 얹어 확실히 이깁니다 */
-.gs-namecell .gs-rowmeta.gs-rowmeta-tag{margin-right:auto}
+/* (폐기 2026-09-08, 같은 날 목업 뒤) .gs-rowmeta-tag{margin-right:auto} — 퇴장 태그를 칸 왼쪽 옛 자리로 되돌린 규칙.
+   목업 여섯을 놓고 보니 걸린 것은 자리가 아니라 채운 덩이였습니다. 자리는 이름 옆 그대로 두고 칩에서 채움만 뺍니다 (사용자 확정) */
 /* (폐기 2026-09-07 밤) .gs-rowmeta{margin-left:auto} + 입력칸 100% — 아바타가 입력칸 왼쪽 끝에, 글자는 오른쪽 끝에 서서 멀리 떨어졌다(사용자 재지적) */
 .gs-rowi-host{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
@@ -17447,7 +17446,10 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-name-ro .gs-name-ph{color:rgba(var(--ink-rgb),.32); font-weight:400}
 .gs-livechip-ready{border-color:rgba(var(--gold-rgb),.55)}
 /* 표준화 (2026-09-05): 나감 태그 · 옮기기 · 초대장 이름 · 로비 비로그인 · 자리표시 이름 */
-.gs-lb-tag-left{border-style:dashed; color:var(--ink-2)}
+/* 유령 칩 (2026-09-08 사용자 확정, 목업 ③) — 채움을 빼고 점선 테두리와 글자만. 점선은 이 앱에서 이미
+   "빈 칸 · 빈 줄 · 아직 아무도 없는 자리"를 뜻하므로 나간 자리와 말이 맞습니다.
+   (폐기) 채운 칩 + 두께 없는 dashed — 아바타 자리에 서니 이 표에서 가장 진한 덩이가 되어 깨진 아바타로 읽혔다 */
+.gs-lb-tag-left{background:transparent; border:1px dashed rgba(var(--ink-rgb),.34); color:var(--ink-2)}
 .gs-strip-move{margin-left:auto; font-size:12px}
 .gs-invite-typed{color:var(--ink-2); font-weight:400}
 .gs-lh-loginnote{margin-top:14px}
