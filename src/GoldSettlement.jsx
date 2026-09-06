@@ -16082,6 +16082,8 @@ tr.gs-row-arrive th.gs-stick{box-shadow:inset 3px 0 0 var(--gold)}
 /* 물건 셋·상태 셋 (2026-09-06): 로비 얼굴 · 헤더 칩 · [시작] 글로우 · 시작 전 이름 칸 · 퇴장 태그 */
 /* 2026-09-06 밤: 헤더 초대 코드 팝오버 · 전부 비우기 · 이어서 칩 */
 .gs-invwrap{position:relative; display:inline-flex}
+/* [?] 팝오버 감싸개 — 이게 없으면 팝오버 기준이 페이지 전체가 되어 맨 아래에 그려짐 (2026-09-06 운영에서 발견) */
+.gs-helpwrap{position:relative; display:inline-flex}
 .gs-invbtn{display:inline-flex; align-items:center; gap:6px; height:32px; padding-top:0; padding-bottom:0}
 .gs-invbtn.on{border-color:rgba(var(--gold-rgb),.6); color:var(--gold)}
 .gs-invpop{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:min(440px, 92vw); background:var(--paper);
