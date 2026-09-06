@@ -442,11 +442,13 @@ const faceNum = (k) => (k === PASS || isMultKey(k) ? 0 : Number(k) || 0);
 const isNumKey = (k) => k !== PASS && !isMultKey(k);
 /* 도는 속도. 방송은 뜸을 들여야 재미가 사는 쪽이라 기본을 넉넉히 잡았습니다.
    roll 은 한 번 도는 시간, hold 는 멈춘 값을 보여 주는 시간입니다. */
+/* 결과를 보여 주고 넘어가는 시간. 도는 시간(roll)은 여기 없습니다 — 감속에서 나오니까요
+   (2026-09-07). 표가 남은 건 옛 저장값 `spd` 를 아직 읽어서고, 고르는 UI 는 없습니다. */
 const SPINS = {
-  fast: { roll: 2200, hold: 700, end: 1100, label: "빠르게" },
-  normal: { roll: 4200, hold: 1100, end: 1500, label: "보통" },
-  slow: { roll: 7000, hold: 1500, end: 1900, label: "느리게" },
-  epic: { roll: 10000, hold: 1800, end: 2200, label: "아주 느리게" },
+  fast: { hold: 700, end: 1100, label: "빠르게" },
+  normal: { hold: 1100, end: 1500, label: "보통" },
+  slow: { hold: 1500, end: 1900, label: "느리게" },
+  epic: { hold: 1800, end: 2200, label: "아주 느리게" },
 };
 /* 기본은 느리게 — 방송은 뜸을 들여야 재미가 삽니다 */
 const spinSpeed = (k) => SPINS[k] || SPINS.slow;
@@ -454,38 +456,36 @@ const spinSpeed = (k) => SPINS[k] || SPINS.slow;
    감속 곡선은 이 속도에서 그대로 이어받게 계산하므로, 여기만 바꾸면 전체가 따라옵니다.
    방송(page.js)의 ov-w-free 와 같은 값이라 서기 화면과 오버레이가 같은 속도로 돕니다. */
 const FREE_MS = 260;
-/* 멈출 때 "처음 속도 ÷ 평균 속도". 이 값이 클수록 앞이 빠르고 뒤가 길지만,
-   대신 누른 직후에 속도가 확 꺾입니다 — 그게 급제동으로 보입니다.
-   1.7 이면 한동안 돌던 속도를 거의 그대로 유지하다가 서서히 내려앉습니다.
-   곡선의 처음 기울기는 돌던 속도와 같아야 하므로(안 그러면 멈추는 순간 툭 떨어집니다)
-   이 값이 곧 바퀴 수를 정합니다 — 작을수록 더 많이 돕니다. */
-const SPIN_AIM = 1.7;
 /* 릴이 한 면을 보여 주는 시간. 멈추는 동안 이 간격이 늘어나며 감속을 보여 줍니다 */
 const FACE_MS = 70;
-/* 원판이 멈추는 곡선의 x2. 작을수록 감속이 앞에서 끝나고 뒤에서 오래 미끄러집니다 — 크면 끝까지 빠르다가 마지막에 급정거합니다
-   (2026-09-07 수치 확인; (폐기) 0.72 — 남은 시간 2% 에 36°/s, 2026-09-05 "x2 가 꼬리 길이"라던 주석은 방향이 반대였음). 방송 화면도 같은 값 */
-const SPIN_TAIL = 0.55;
-/* 감속 '느긋하게' (2026-09-05, 룰렛 외형의 선택지) — 바퀴는 덜 돌고 꼬리는 길게: 끝에서 오래 미적여
-   긴장을 늘립니다. 서기 원판과 방송 원판이 같은 값을 쓰도록 판(spin.ease)에 실어 보냅니다 */
-/* 감속은 슬라이더 0~100 (2026-09-07 사용자 확정: 슬라이더 + 프리셋 보통·느긋하게·직접, 슬라이더를 만지면 직접).
-   곡선 x2 는 지수로 갑니다 — 0 이 .62, 100 이 .15, 절반이 .30 (사용자: 선형이 아니라 로그·지수 느낌으로, 극단도 되게).
-   보통 10(x2 .53) · 느긋하게 30(.40), 기본 30. 바퀴 수(aim)는 고정 — 슬라이더는 뒤에서 미끄러지는 길이만 바꿉니다.
-   x2 ≤ .62 라 어느 값이든 급정거는 안 납니다(남은 2% 에 20°/s 이하). 판(spin.glide)에 실어 서기 원판과 방송 원판이 같은 값.
-   (폐기, 같은 날) 선형 .62→.32 + aim 1.7→1.3, 프리셋 25/75 · 그 전의 spinEase 두 단 */
+/* 감속은 슬라이더 0~100 하나가 정합니다 (2026-09-07 사용자 확정, 규칙 재정립).
+   도는 동안의 속도는 균일하고(FREE_MS) 커스텀이 없습니다 — 고를 수 있는 건 감속뿐입니다.
+   **총 시간이라는 입력은 없습니다.** 서는 데 걸리는 시간도 바퀴 수도 감속에서 나오는 결과입니다.
+   슬라이더는 서는 시간에 선형입니다 — 0 이 2.5초(감속 554°/s², 5바퀴), 100 이 25초(55°/s², 48바퀴).
+   눈금이 고르게 느려지라고 시간 축에 선형으로 둡니다(감속도에 선형이면 오른쪽 끝만 폭발합니다).
+   보통 10(4.8초) · 느긋하게 30(9.3초), 기본 30.
+   (폐기 2026-09-07) 곡선 x2 를 지수로 흔들던 슬라이더(.62→.15)와 SPIN_AIM·SPIN_TAIL.
+   7초 고정 안에서 배분만 바꾸던 것이라 오른쪽으로 갈수록 "느리게"가 아니라 "일찍 다 와서
+   기어감"이 됐습니다 — 마지막 2초에 도는 각이 357°(왼쪽 끝)에서 68°(오른쪽 끝)로 줄었습니다.
+   감속의 세기 자체는 못 바꾸는 축이었습니다. */
 const GLIDE_NORMAL = 10;
 const GLIDE_GENTLE = 30;
 const GLIDE_DEFAULT = 30;
-const GLIDE_X2_HI = 0.62;
-const GLIDE_X2_LO = 0.15;
+const GLIDE_MS_LO = 2500;
+const GLIDE_MS_HI = 25000;
 const spinGlideOf = (r) => (r && Number.isFinite(r.spinGlide) ? Math.max(0, Math.min(100, r.spinGlide)) : GLIDE_DEFAULT);
 const isPresetGlide = (r) => spinGlideOf(r) === GLIDE_NORMAL || spinGlideOf(r) === GLIDE_GENTLE;
-const glideOfSp = (sp) => (sp && Number.isFinite(sp.glide) ? Math.max(0, Math.min(100, sp.glide)) : GLIDE_DEFAULT) / 100;
-const spinAim = () => SPIN_AIM;
-const spinTail = (sp) => GLIDE_X2_HI * Math.pow(GLIDE_X2_LO / GLIDE_X2_HI, glideOfSp(sp));
-/* 멈추는 동안 면이 바뀌는 간격 — 지수로 늘리는 것은 속도가 지수로 줄어드는 것과 같습니다.
-   원판 곡선과 같은 성격이라, 원판과 릴이 같은 판에서 같은 속도감으로 섭니다.
-   p 는 멈추기 시작한 뒤 흐른 비율입니다. */
-const faceGap = (p) => Math.round(FACE_MS * Math.pow(6, Math.min(1, Math.max(0, p))));
+/* 슬라이더 값 → 서는 데 걸리는 시간. 판이 시작될 때 한 번 재서 판(spin.roll)에 얼려 싣습니다 —
+   서기 원판·사람 원판·파티원 원판·방송 원판이 전부 이 한 값을 씁니다 (룰렛은 방장 것). */
+const glideMs = (g) => Math.round(GLIDE_MS_LO + ((GLIDE_MS_HI - GLIDE_MS_LO) * Math.max(0, Math.min(100, g))) / 100);
+const spinRoll = (sp) => (sp && sp.roll > 0 ? sp.roll : glideMs(GLIDE_DEFAULT));
+/* 멈추는 동안 면이 바뀌는 간격 — 원판과 같은 등감속입니다. 속도가 (1−p) 로 줄어드니
+   간격은 그 역수로 벌어집니다. 원판과 릴이 같은 판에서 같은 속도감으로 서야 해서요.
+   끝에서 무한대로 가지 않게 상한을 둡니다(마지막 한 칸은 어차피 결과가 차지합니다).
+   p 는 멈추기 시작한 뒤 흐른 비율입니다.
+   (폐기 2026-09-07) 지수 6^p — 곡선이 지수였을 때 그 성격에 맞춘 것이었습니다 */
+const FACE_CAP = 12;
+const faceGap = (p) => Math.round(FACE_MS / Math.max(1 - Math.min(1, Math.max(0, p)), 1 / FACE_CAP));
 /* 판 번호에서 뽑는 씨앗 — 같은 판이면 어느 화면에서 보든 같게 흔들려야 합니다 */
 const seedOf = (v) => {
   const t = String(v || "");
@@ -7426,17 +7426,19 @@ export default function GoldSettlement() {
   const seatedCount = seats.filter((s0) => s0.acct).length;
   const hasPartyNow = !!(auth && relay.room);
   /* 칩 얼굴 — 지금 내가 속한 방 하나. 뷰어(파티원)는 그 파티, 방장 앱은 앉은 남의 파티 > 내 판 > 없음 */
+  /* A안 (2026-09-07 사용자 확정): 역할 한 마디가 앞에 — `● 방장 · 진행 중` / `● 방장 · 모집 중 n/정원` / `● 파티원 · {방장}네 파티`. 닉은 허브 머리가 맡는다.
+     (폐기, 같은 날) `● 진행 중 · 내 판` · `● {방장}네 파티 · 진행 중` — 내가 누군지(신분)가 없었다 */
   const hubFace = viewer
     ? guestPlaying || guestWaiting
-      ? { dot: true, text: (ownerNick ? ownerNick + "네 파티" : "파티") + " · " + (vlobby ? "시작 전" : "진행 중") }
+      ? { dot: true, text: "파티원 · " + (ownerNick ? ownerNick + "네 파티" : "파티") }
       : null
     : seatedNow && !boardOn
-      ? { dot: true, text: seatedName + " · " + (meSeat.round ? "진행 중" : "시작 전") }
+      ? { dot: true, text: "파티원 · " + seatedName }
       : roundLive
-        ? { dot: true, text: "진행 중 · 내 판" }
+        ? { dot: true, text: (hasPartyNow ? "방장 · " : "") + "진행 중" + (hasPartyNow ? "" : " · 내 판") }
         : boardOn
           ? hasPartyNow
-            ? { dot: true, text: "모집 중 · 내 판 " + seatedCount + "/" + lobbyCap }
+            ? { dot: true, text: "방장 · 모집 중 " + seatedCount + "/" + lobbyCap }
             : { dot: false, text: "시작 전 · 내 판" }
           : { dot: false, text: "파티 없음" };
   const partyHub = (where) => {
@@ -7452,6 +7454,27 @@ export default function GoldSettlement() {
       </div>
     );
     const names = (list) => (list.length ? list.join(" · ") : "아직 아무도 없어요");
+    /* 머리 (2026-09-07 사용자 확정) — 팝오버(판 화면)는 아바타·닉·역할 뱃지·상태 한 줄: 계정 카드가 없는 화면이라 내가 누군지 여기서 말한다.
+       로비 카드는 역할·상태만 — 바로 옆 계정 카드가 나를 말하니 "나"는 한 화면에 한 번(사용자: 칩=허브인데 로비에선 중복) */
+    const myNick = (viewer && you && you.nick) || (auth && auth.nick) || "";
+    const head = (dot, text, role) =>
+      where === "pop" && auth ? (
+        <div className="gs-hub-me">
+          <Ava id={auth.id} nick={myNick} size={30} host={role === "방장"} />
+          <b>{myNick}</b>
+          {role && <span className={"gs-rolebadge" + (role === "방장" ? "" : " gs-rolebadge-dim")}>{role}</span>}
+          <span className="gs-hub-st">
+            {dot && <em className="gs-livechip-dot" aria-hidden="true" />}
+            {text}
+          </span>
+        </div>
+      ) : (
+        <h4 className={"gs-lbcard-h" + (dot ? " gs-lh-facet" : "")}>
+          {dot && <em className="gs-livechip-dot" aria-hidden="true" />}
+          {role ? role + " · " : ""}
+          {text}
+        </h4>
+      );
     /* 보관된 초대 — 어느 얼굴에서든 맨 위 한 줄 (초안) */
     const pending =
       !viewer && pendingJoin ? (
@@ -7477,10 +7500,7 @@ export default function GoldSettlement() {
           : rows.filter((r) => (rows2v.find((x) => x.rowId === r.id) || {}).a).map((r) => seatName(r, rows.indexOf(r)));
       return (
         <>
-          <h4 className="gs-lbcard-h gs-lh-facet">
-            <em className="gs-livechip-dot" aria-hidden="true" />
-            {ownerNick ? ownerNick + "네 파티" : "파티"} · {vlobby ? "시작 전" : "진행 중"}
-          </h4>
+          {head(true, <>{ownerNick ? ownerNick + "네 파티" : "파티"} · {vlobby ? "시작 전" : "진행 중"}</>, "파티원")}
           <div className="gs-lh-box">
             <p className="gs-lh-facts">
               {list.length}명{myRow ? " · 내 벌금 " + man(myGold) : ""}
@@ -7500,10 +7520,7 @@ export default function GoldSettlement() {
       return (
         <>
           {pending}
-          <h4 className="gs-lbcard-h gs-lh-facet">
-            <em className="gs-livechip-dot" aria-hidden="true" />
-            {seatedName} · {meSeat.round ? "진행 중" : "시작 전"}
-          </h4>
+          {head(true, <>{seatedName} · {meSeat.round ? "진행 중" : "시작 전"}</>, "파티원")}
           <div className="gs-lh-boxwrap">
             {goBox(
               "",
@@ -7542,7 +7559,7 @@ export default function GoldSettlement() {
               </button>
             </div>
           )}
-          <h4 className="gs-lbcard-h">파티 없음</h4>
+          {head(false, "파티 없음", null)}
           <div className="gs-lh-box empty">
             <p className="gs-lh-sub">{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
             <div className="gs-lh-acts">
@@ -7575,10 +7592,7 @@ export default function GoldSettlement() {
       return (
         <>
           {pending}
-          <h4 className="gs-lbcard-h gs-lh-facet">
-            <em className="gs-livechip-dot" aria-hidden="true" />
-            진행 중 · <b>{roundName || defaultRoundName()}</b>
-          </h4>
+          {head(true, <>진행 중 · <b>{roundName || defaultRoundName()}</b></>, hasPartyNow ? "방장" : null)}
           {/* (폐기 2026-09-07 사용자) `판을 두고 나온 상태예요 — 파티원은 그대로 셀 수 있어요.` — 로비를 보는 건 나간 게 아니다 */}
           {goBox(
             "live",
@@ -7601,16 +7615,7 @@ export default function GoldSettlement() {
     return (
       <>
         {pending}
-        <h4 className="gs-lbcard-h gs-lh-facet">
-          {hasPartyNow ? (
-            <>
-              <em className="gs-livechip-dot" aria-hidden="true" />
-              모집 중
-            </>
-          ) : (
-            "시작 전"
-          )}
-        </h4>
+        {head(hasPartyNow, hasPartyNow ? "모집 중" : "시작 전", hasPartyNow ? "방장" : null)}
         <div className="gs-lh-boxwrap">
           {goBox(
             "",
@@ -9187,17 +9192,14 @@ export default function GoldSettlement() {
                                       방장 줄(1번)은 표시만. (폐기) 파란 원의 i, 도구칸의 사람 버튼 */}
                                   <button
                                     type="button"
-                                    className={"gs-rowi" + (i === 0 ? " gs-rowi-host" : "")}
+                                    className={"gs-rowi gs-rowi-ava" + (i === 0 ? " gs-rowi-host" : "")}
                                     aria-label={i === 0 ? "방장" : "이 줄의 사람"}
                                     aria-haspopup={i > 0 ? "dialog" : undefined}
                                     onClick={i > 0 && auth && relay.room ? () => setRowPerson(row.id) : undefined}
+                                    style={{ "--h": avaHue(st.acct) }}
                                   >
-                                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                                      <g fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <circle cx="8" cy="5.2" r="2.7" />
-                                        <path d="M2.8 14c.6-3 2.5-4.6 5.2-4.6s4.6 1.6 5.2 4.6" />
-                                      </g>
-                                    </svg>
+                                    {/* 글자 원 (2026-09-07 사용자 확정 ③) — 로비·허브와 한 벌. (폐기) 사람 아이콘 svg */}
+                                    {avaChar((mem && mem.nick) || st.nick || (auth && st.acct === auth.id ? auth.nick : ""))}
                                   </button>
                                   <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
                                     {/* 계정 닉만 — 줄 이름은 방장 장부의 것이라 여기 안 옵니다 (2026-09-06 사용자 지적).
@@ -12585,6 +12587,27 @@ function InviteCard({ inv, onAccept, onDeny }) {
    조용한 문이고, 앉은 파티가 있으면 복귀 줄이 주인공입니다. 채우는 게 아니라 밀도입니다:
    카드 속은 실데이터 요약이고, 첫 방문(백지)은 문 둘만 크고 나머지는 비웁니다.
    문구는 §8 초안 — 화면에서 보고 확정합니다 */
+/* 아바타 (2026-09-07 사용자 확정 ③) — 글자 원 + 계정마다 다른 색(아이디 해시 → 색상), 방장은 금테.
+   로비 계정 카드(36px)·허브 머리(30px)·OBS 창 계정 줄(30px)·표의 줄(20px)이 한 벌. (폐기) 로비 30px 어두운 글자 원 .gs-acct-ava 와 표의 사람 아이콘 —
+   같은 사람이 두 얼굴이었고, 큰 닉 옆에서 죽어 보였다(사용자). 로비 계정 카드의 아바타는 "나"라 역할을 달지 않는다 */
+const avaHue = (id) => {
+  let h = 7;
+  for (const ch of String(id || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % 360;
+};
+const avaChar = (nick) => [...String(nick || "").trim()][0] || "?";
+function Ava({ id, nick, size, host, className }) {
+  return (
+    <i
+      className={"gs-ava" + (host ? " gs-ava-host" : "") + (className ? " " + className : "")}
+      style={{ "--h": avaHue(id), width: size, height: size, fontSize: Math.round(size * 0.44) }}
+      aria-hidden="true"
+    >
+      {avaChar(nick)}
+    </i>
+  );
+}
+
 /* 참여 칸 — 허브 안의 작은 부품 (입력값만 제 것) */
 function JoinBox({ onJoin }) {
   const [code, setCode] = useState("");
@@ -12658,7 +12681,7 @@ function LobbyHome({
             <>
               {/* 계정 줄 — 설정(닉·로그아웃·아이디 만들기)은 오버레이 공유 설정 창(§5.7)이 집이고, 로비는 진열대입니다 */}
               <div className="gs-lh-acct">
-                <i className="gs-acct-ava">{(auth.nick || "?").slice(0, 1)}</i>
+                <Ava id={auth.id} nick={auth.nick} size={36} />
                 <b className="gs-lh-nick">{auth.nick}</b>
                 {auth.anon ? (
                   <span className="gs-acct-badge">게스트</span>
@@ -12952,7 +12975,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
             {/* 계정 줄은 제목 바로 아래입니다 (2026-09-05 확정) — 맨 아래에 두면 아무도
                 못 봅니다. 닉이 곧 벌금판의 내 이름이라 "내가 누구로 있는지"가 먼저입니다 */}
             <div className="gs-acct-row">
-              <i className="gs-acct-ava" aria-hidden="true">{(auth.nick || "?").slice(0, 1)}</i>
+              <Ava id={auth.id} nick={auth.nick} size={30} />
               <b className="gs-acct-nick2">{auth.nick}</b>
               {auth.anon ? (
                 <span className="gs-acct-badge">게스트</span>
@@ -16884,6 +16907,20 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-hub-pending-r{margin-left:auto; display:flex; gap:8px}
 .gs-lh-norec{padding:16px}
 .gs-lh-getaddr{width:100%; margin-top:2px}
+/* 아바타 한 벌 (2026-09-07 ③) — 글자 원, 계정 색(--h), 방장 금테 */
+.gs-ava{font-style:normal; border-radius:50%; display:inline-grid; place-items:center; flex:none; line-height:1;
+  font-family:'Gowun Batang',serif; font-weight:700; color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border:1px solid rgba(var(--ink-rgb),.2)}
+.gs-ava-host{border-color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
+.gs-rowi-ava{width:20px; height:20px; font-family:'Gowun Batang',serif; font-weight:700; font-size:10px; line-height:1;
+  color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border-color:rgba(var(--ink-rgb),.2)}
+.gs-rowmeta:hover .gs-rowi-ava,.gs-rowi-ava:focus-visible{color:#fff; border-color:rgba(var(--gold-rgb),.9)}
+/* 허브 머리 — 팝오버의 나 한 줄 */
+.gs-hub-me{display:flex; align-items:center; gap:8px; margin:0 0 12px; padding-bottom:10px; border-bottom:1px solid rgba(var(--ink-rgb),.14)}
+.gs-hub-me b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
+.gs-rolebadge{font-size:11px; padding:2px 7px; border:1px solid rgba(var(--gold-rgb),.6); color:var(--gold); border-radius:3px; letter-spacing:.06em; flex:none}
+.gs-rolebadge-dim{border-color:rgba(var(--ink-rgb),.3); color:var(--ink-2)}
+.gs-hub-st{margin-left:auto; color:var(--ink-2); font-size:12.5px; display:inline-flex; align-items:center; gap:6px; text-align:right}
+.gs-hub-st b{color:var(--ink); font-weight:600}
 .gs-lh-hubh{margin-bottom:10px}
 /* 판 중 파티 줄 (⑤) */
 .gs-recruit-live{display:flex; align-items:center; gap:12px; padding:10px 16px}
