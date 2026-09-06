@@ -10905,7 +10905,7 @@ function OvColsPreview({ cols, isOff, sumOn, netOn, slide, onItem, onKey }) {
     const cur = cyc[ph % Math.max(1, cyc.length)] || zones.find((z) => z.k === "sum");
     const toggles = zones.filter((z) => z.k !== "sum");
     return (
-      <div className="gs-ovprev" aria-label="방송 화면 예시">
+      <div className="gs-ovprev gs-ovprev-slide" aria-label="방송 화면 예시">
         <div
           className="gs-ovp gs-ovp-slide"
           style={{ gridTemplateColumns: "16px 20px minmax(52px,1fr) minmax(76px,auto)", gridTemplateRows: "repeat(6, auto)" }}
@@ -12373,26 +12373,28 @@ function LobbyHome({
               {/* 시작 전·모집 중 (2026-09-06 모델) — 로비엔 내가 없는 동안 움직이는 것만: 앉은 수와 문 둘. 항목·단가는 대기실
                   표 머리가 말합니다. (폐기 2026-09-06) 판 이름·항목 칩·`자리 n/8`·`열어서 [시작]을 누르면 세기 시작해요.`·
                   `지난 판 '…'은 끝났어요 — 결과는 판 기록에.`·[벌금판 열기] — 판이 늘 있다는 전제의 얼굴이었다 */}
+              {/* 대기실 인원은 두 얼굴 다 상자 안 사실 줄에 (2026-09-07 사용자: 시작 전에도 인원을 알려야 하고 UI 가 밀리면 안 된다).
+                  (폐기) 모집 중 제목 옆 칩 `n / 정원 앉음` — 상태가 바뀌면 제목 줄이 늘어났다. [해산]은 왼쪽에 따로 앉혀 가운데 버튼이 안 밀립니다 */}
               <h4 className="gs-lbcard-h gs-lh-facet">
                 {hasParty ? (
                   <>
                     <em className="gs-livechip-dot" aria-hidden="true" />
                     모집 중
-                    <span className="gs-lh-cnt">
-                      {seated} / {cap} 앉음
-                    </span>
                   </>
                 ) : (
                   "시작 전"
                 )}
               </h4>
               <div className="gs-lh-box">
+                <p className="gs-lh-facts">
+                  대기실 {seated} / {cap} 앉음
+                </p>
                 <p className="gs-lh-sub">
                   {hasParty ? "파티원이 모이는 중이에요. 대기실에서 자리를 보고 시작해요." : "판을 만들어 뒀어요. 대기실에서 파티원을 모으거나 바로 시작해요."}
                 </p>
                 <div className="gs-lh-acts">
                   {hasParty && (
-                    <button className="gs-btn gs-btn-ghost" onClick={onDisband}>
+                    <button className="gs-btn gs-btn-ghost gs-lh-side" onClick={onDisband}>
                       해산
                     </button>
                   )}
@@ -16078,12 +16080,14 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ovp-rule{height:1px; background:rgba(255,255,255,.14); margin-bottom:3px}
 .gs-ovp-z{opacity:.18}
 /* 슬라이드 모드 미리보기 (2026-09-06) — 눈은 값 칸 위에 이름과 함께 한 줄, 값은 오른쪽에서 들어옵니다 */
+/* 슬라이드 미리보기는 가로로 안 굴립니다 — 값이 오른쪽에서 들어올 때 몇 px 넘쳐 스크롤바가 번쩍였다 (2026-09-06 사용자: 정신 사납다) */
+.gs-ovprev-slide{overflow-x:hidden}
 .gs-ovp-cyc{justify-content:flex-end; gap:5px; flex-wrap:wrap}
 .gs-ovp-eyel{gap:4px; padding:2px 7px 2px 5px; line-height:1; font-size:10px}
 .gs-ovp-eyel span{line-height:1}
 .gs-ovp-slide .gs-ovp-c{text-align:right}
 .gs-ovp-sl{animation:gs-ovp-sl .26s cubic-bezier(.2,.6,.3,1) both}
-@keyframes gs-ovp-sl{from{transform:translateX(40%); opacity:0} to{transform:translateX(0); opacity:1}}
+@keyframes gs-ovp-sl{from{transform:translateX(14px); opacity:0} to{transform:translateX(0); opacity:1}}
 .gs-obs-note{margin:8px 0 0}
 .gs-ovp-dim{opacity:.3}
 /* 눈이 앉는 띠 — 열마다 하나씩, 못 끄는 자리에는 이유를 적어 둡니다 */
@@ -16512,7 +16516,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-box .gs-lh-facts{margin:0}
 .gs-lh-box .gs-lh-sub{margin:0}
 .gs-lh-box .gs-lh-facts + .gs-lh-sub{margin-top:4px}
-.gs-lh-acts{display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px}
+.gs-lh-acts{display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px; position:relative}
+.gs-lh-side{position:absolute; left:0; top:50%; transform:translateY(-50%)} /* [해산] — 가운데 버튼을 안 밀고 왼쪽에 (2026-09-07) */
 .gs-lh-back{margin-bottom:14px}
 .gs-lh-join{display:flex; gap:8px; margin-top:8px}
 .gs-lh-in{flex:1 1 auto; min-width:0}
