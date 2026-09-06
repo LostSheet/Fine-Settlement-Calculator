@@ -8227,23 +8227,6 @@ export default function GoldSettlement() {
         {!simple && (
           <div className="gs-tablebar">
             {/* [전부 비우기] — 표 바로 위 (2026-09-06 사용자 지정). 숫자만 비웁니다. 판을 닫는 [정산 끝내기]와 층이 다릅니다 */}
-            {!readOnly && roundLive && (
-              <span className="gs-tip">
-                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
-                      <path d="M6.6 6.2l3.4 3.4" />
-                      <path d="M7 13.6h7" />
-                    </g>
-                  </svg>
-                  전부 비우기
-                </button>
-                <span className="gs-tip-body gs-tip-l" role="tooltip">
-                  이름과 항목은 그대로 두고 <b>숫자만</b> 비워요. 장부 기록에 <b>비움</b>으로 남아요.
-                </span>
-              </span>
-            )}
             {ready || guestLobby ? (
               /* 준비 상태 — 복사할 숫자가 없습니다. 방장의 안내는 자리 띠가 대신하고(2026-09-05), 파티원은 대기실 수 (§5.3) */
               ready && auth && !guestLobby ? null : (
@@ -8261,14 +8244,33 @@ export default function GoldSettlement() {
               </p>
               )
             ) : (
-              <>
-                <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />
-                <p className="gs-cellnote">
-                  칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-                  우클릭하면 1회 빠져요.
-                </p>
-              </>
+              <p className="gs-cellnote">
+                칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
+                우클릭하면 1회 빠져요.
+              </p>
             )}
+            {/* 읽는 것은 왼쪽, 하는 것은 오른쪽 끝 (§9). (2026-09-06 사용자: [채팅 공유용 복사]가 한가운데 떠 있어 이상하다 —
+                세 아이를 space-between 으로 벌려 놓아 가운데 것이 떠 있었다) */}
+            <span className="gs-tablebar-r">
+              {!readOnly && roundLive && (
+                <span className="gs-tip">
+                  <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
+                        <path d="M6.6 6.2l3.4 3.4" />
+                        <path d="M7 13.6h7" />
+                      </g>
+                    </svg>
+                    전부 비우기
+                  </button>
+                  <span className="gs-tip-body gs-tip-l" role="tooltip">
+                    이름과 항목은 그대로 두고 <b>숫자만</b> 비워요. 장부 기록에 <b>비움</b>으로 남아요.
+                  </span>
+                </span>
+              )}
+              {!(ready || guestLobby) && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
+            </span>
           </div>
         )}
 
@@ -13957,14 +13959,14 @@ const CSS = `
   --mono:'Cutive Mono',monospace;
   /* 무대 폭 — 시스템 줄·마스트·카드·로비가 전부 이 한 줄을 씁니다. 수명 동사
      ([시작]과 [정산 끝내기]·[중단])가 같은 우상단 모서리에 서는 조건입니다 (§3.4) */
-  --stage:1200px; /* 2026-09-06 사용자 확정: 안전 영역 1200. 창이 더 좁아도 줄이지 않고 가로 스크롤 */
+  --stage:1080px;
   font-family:'IBM Plex Sans KR',system-ui,sans-serif;
   color:var(--ink); background:var(--kraft);
   background-image:
     radial-gradient(120% 80% at 15% 0%, rgba(var(--lift-rgb),.16), transparent 55%),
     repeating-linear-gradient(92deg, rgba(var(--tex-rgb),.035) 0 1px, transparent 1px 5px),
     repeating-linear-gradient(4deg, rgba(var(--tex-rgb),.03) 0 1px, transparent 1px 7px);
-  padding:20px 20px 60px; min-height:100vh; min-width:calc(var(--stage) + 40px);
+  padding:20px 20px 60px; min-height:100vh;
   -webkit-font-smoothing:antialiased;
   /* 한국어는 어절 안에서 끊지 않는 편이 자연스럽습니다 */
   word-break:keep-all; overflow-wrap:break-word;
@@ -14069,6 +14071,11 @@ const CSS = `
 .gs-viewseg .gs-tip + .gs-tip button{border-left:1px solid rgba(var(--ink-rgb),.3)}
 /* 탭 화면은 카드가 하나뿐이라 사이 여백을 조금 좁힙니다 */
 .gs-tabbed .gs-card,.gs-tabbed .gs-mail{margin-top:14px}
+@media (max-width:640px){
+  .gs-tab{font-size:13px; padding:7px 10px 8px}
+  .gs-tab.on{padding:9px 12px 10px}
+  .gs-mastside{gap:8px}
+}
 /* 카드 */
 .gs-card{background:var(--paper); border:1px solid var(--kraft-dk); padding:20px 18px 22px;
   margin-top:22px; box-shadow:0 1px 0 rgba(var(--lift-rgb),.4) inset, 0 6px 18px rgba(var(--shadow-rgb),.13)}
@@ -14205,6 +14212,10 @@ const CSS = `
 @keyframes gs-tipin{from{opacity:0} to{opacity:1}}
 @media (prefers-reduced-motion:reduce){ .gs-tip-body{animation:none !important} }
 /* 좁은 화면에서는 표가 가로로 잘리므로, 폭을 줄이고 잘리지 않는 쪽으로 폅니다 */
+@media (max-width:640px){
+  .gs-tip-body{width:min(176px,54vw)}
+  .gs-tip-body:not(.gs-tip-r){left:-6px; transform:none}
+}
 
 /* 항목 열과 기타 사이의 좁은 열. 아래쪽 '+ 인원 추가' 와 같은 조용한 텍스트 버튼입니다 */
 .gs-addcolh{width:72px; padding:0 6px !important}
@@ -14279,6 +14290,10 @@ const CSS = `
    높이는 화면을 따라 늘어나 방송 중 전광판 역할을 합니다. */
 .gs-memo-ta{margin-top:10px; min-height:max(460px, calc(100vh - 420px)); font-size:15px;
   line-height:2.06; white-space:pre-wrap}
+@media (max-width:820px){
+  .gs-split{grid-template-columns:minmax(0,1fr)}
+  .gs-memo-ta{min-height:180px}
+}
 
 /* 간단 모드 단위 라디오 */
 .gs-unitbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 15px;
@@ -14832,6 +14847,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-gain-scenecap b{color:var(--ink); font-weight:600}
 .gs-gain-col h4 .gs-gain-tag{margin-left:6px; vertical-align:middle}
 .gs-gain-cols{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media (max-width:680px){.gs-gain-cols{grid-template-columns:1fr}}
 .gs-gain-col{border:1px solid rgba(var(--ink-rgb),.2); border-radius:4px; padding:14px;
   background:rgba(var(--lift-rgb),.28)}
 .gs-gain-col h4{margin:0; font-size:14px; color:var(--ink); font-weight:700}
@@ -15097,7 +15113,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 표 윗줄 — 왼쪽 조작법, 오른쪽 채팅 복사 */
 .gs-tablebar{display:flex; align-items:flex-end; justify-content:space-between; gap:12px;
   margin-bottom:16px}
-.gs-tablebar .gs-cellnote{margin-bottom:8px}
+.gs-tablebar .gs-cellnote{margin:0 0 8px}
+.gs-tablebar-r{display:flex; align-items:center; gap:8px; margin-left:auto}
 /* 창 머리 — 제목은 왼쪽, X는 항상 오른쪽 위. 본문만 스크롤됩니다 */
 /* 창 머리 한 벌 — 오버레이 공유 설정 창과 같은 얼굴입니다 (2026-09-05) */
 .gs-dialog-head{display:flex; align-items:center; gap:14px; flex:none;
@@ -15246,11 +15263,57 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   display:grid; place-items:center; transform:rotate(-14deg); opacity:.42;
   mix-blend-mode:multiply; pointer-events:none}
 .gs-mark span{font-family:'Gowun Batang',serif; font-size:13px; color:var(--red); letter-spacing:.1em}
+@media (max-width:520px){
+  .gs-mark{display:none}
+  .gs-env-body{padding:15px 14px}
+  .gs-stamp{width:70px}
+}
 
 /* ---- 좁은 화면: 누르려고 옆으로 밀지 않게 ----
    벌금표에서 입력에 쓰는 열(이름 + 항목)만 한 화면에 넣습니다.
    합계와 기타는 파생·부가라서 스크롤 뒤에 있어도 입력에 지장이 없습니다.
    글씨가 작아지는 건 감수합니다 — 여기는 읽는 화면이 아니라 누르는 화면입니다. */
+@media (max-width:560px){
+  .gs-card{padding:13px 9px 15px}
+  /* 이름 열 */
+  .gs-stick{min-width:64px; padding-right:5px !important}
+  .gs-nm{font-size:15px}
+  .gs-grid .gs-stick .gs-in{font-size:14px}
+  /* 항목 열 */
+  .gs-colh{min-width:62px; padding:0 2px !important}
+  .gs-colh-top{font-size:14px}
+  .gs-colh-price{font-size:10px}
+  .gs-hitwrap{padding:3px 2px}
+  .gs-hit{min-height:46px; padding:4px 2px}
+  .gs-hit-num{min-width:3ch; font-size:17px}
+  .gs-hit-num em{font-size:10px; margin-left:2px}
+  .gs-hit-ghost{font-size:15px}
+  /* 파생·부가 열은 좁게 */
+  .gs-sumh{min-width:52px; padding-right:2px !important}
+  .gs-sumcell{font-size:12px}
+  .gs-disc,.gs-disch{padding:0 3px !important}
+  .gs-addcolh,.gs-addcolcell{padding:0 2px !important}
+  /* 열 폭을 정하는 건 min-width 가 아니라 이 입력칸들입니다 */
+  .gs-grid-count .gs-in-name{font-size:16px; padding:6px 0; width:62px}
+  .gs-grid-narrow .gs-in-name{font-size:18px; padding:8px 0}
+  .gs-grid-count .gs-in-col{font-size:15px; padding:3px 0}
+  .gs-in-col{width:44px}
+  .gs-namecell{gap:2px}
+  .gs-toolh,.gs-toolcell{padding:0 2px 0 5px !important}
+  /* 데스크톱에서 깔아 둔 최소 폭들이 좁은 화면에서는 표를 밀어냅니다 */
+  .gs-grid{min-width:0}
+  .gs-grid-count .gs-stick{min-width:96px}
+  .gs-grid-count .gs-colh,.gs-grid-count .gs-disch{min-width:62px}
+  .gs-grid-count .gs-sumcell{font-size:13px; min-width:5ch}
+  .gs-grid-count td.gs-disc,.gs-grid-count th.gs-disch{width:76px; min-width:76px; max-width:76px}
+  .gs-grid-count .gs-in-col{font-size:15px; font-weight:700; padding:3px 0}
+  .gs-grid-count .gs-in-name{font-size:16px; width:52px}
+  .gs-colh-price{font-size:9px}
+  .gs-in-col{width:34px; min-width:0}
+  /* 시스템 줄이 넘쳐서 사용법 물음표가 잘리던 것 — 넘치면 줄을 바꿉니다 */
+  .gs-sysbar-in{flex-wrap:wrap; row-gap:6px}
+  .gs-grid-count .gs-colh,.gs-grid-count .gs-disch{min-width:56px}
+}
 
 .gs-empty{background:var(--paper); border:1px dashed var(--kraft-dk); padding:34px 22px; text-align:center}
 .gs-empty p{margin:0; font-family:'Gowun Batang',serif; font-size:17px}
@@ -15709,6 +15772,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   .gs-press{animation:none}
   .gs-press-bar{animation:none; transform:scaleX(1)}
 }
+@media (max-width:640px){ .gs-press{right:10px; bottom:10px; width:min(360px,calc(100vw - 20px))} }
 .gs-toast{position:fixed; left:50%; bottom:max(18px,4vh); transform:translateX(-50%);
   z-index:70; max-width:min(560px,92vw); padding:12px 18px; border-radius:6px;
   background:var(--paper,#2a2320); color:var(--ink); font-size:13.5px; line-height:1.65;
@@ -15850,6 +15914,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-bento{display:grid; grid-template-columns:minmax(0,1.18fr) minmax(0,1fr); gap:15px;
   align-items:start; max-width:var(--stage); margin:14px auto 0}
 .gs-bento-l{display:flex; flex-direction:column; gap:15px; min-width:0}
+@media (max-width:900px){ .gs-bento{grid-template-columns:1fr} }
 .gs-lbcard{border:1px solid rgba(var(--ink-rgb),.2); border-radius:9px; background:var(--paper);
   padding:14px 15px 16px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.16)}
 .gs-lbcard-h{margin:0 0 10px; font-size:12px; letter-spacing:.1em; color:var(--ink-2);
@@ -16377,6 +16442,7 @@ tr.gs-waitrow td,tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted r
   font-weight:400; word-break:break-all; text-align:right}
 .gs-room-btns{display:flex; align-items:center; gap:10px; margin-top:11px}
 .gs-room-end{margin-left:auto}
+@media (max-width:640px){ .gs-roompanel{width:min(320px,calc(100vw - 40px))} }
 /* ── 파티 서랍 — 신청·함께한 사람·초대 링크·파티원이 방 칩 안에 모입니다 (§3.1) ── */
 .gs-roompanel-host{width:320px}
 .gs-room-sec{margin-top:11px; padding-top:11px; border-top:1px solid rgba(var(--ink-rgb),.14)}
