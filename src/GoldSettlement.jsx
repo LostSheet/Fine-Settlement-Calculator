@@ -12391,12 +12391,19 @@ function LobbyHome({
                 ) : (
                   "시작 전"
                 )}
-                {/* 로비의 [해산]은 늘 한 번 묻습니다 (2026-09-07 사용자: 경고는 당연히) */}
-                <button className="gs-lh-x" onClick={onDisband} aria-label="판 해산">
-                  <span aria-hidden="true">×</span> 해산
-                </button>
               </h4>
               <div className="gs-lh-box gs-lh-go" role="button" tabIndex={0} onClick={onEnter} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEnter()}>
+                {/* [× 해산]은 상자 안 우상단 (2026-09-07 사용자 지정 자리 — 롤 로비처럼). 상자 자체가 문이라 여기 클릭은 상자로 안 번집니다. 늘 한 번 묻습니다 */}
+                <button
+                  className="gs-lh-x"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDisband();
+                  }}
+                  aria-label="판 해산"
+                >
+                  <span aria-hidden="true">×</span> 해산
+                </button>
                 <p className="gs-lh-facts">
                   대기실 {seated} / {cap} 앉음
                 </p>
@@ -16522,7 +16529,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-box .gs-lh-facts + .gs-lh-sub{margin-top:4px}
 .gs-lh-acts{display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px; position:relative}
 /* 롤 로비처럼 (2026-09-07 사용자 확정) — 제목 줄 오른쪽 끝 작은 [× 해산], 상자 전체가 문. (폐기) .gs-lh-side 왼쪽 유령 [해산] */
-.gs-lh-x{margin-left:auto; border:0; background:transparent; font:inherit; font-size:12px; letter-spacing:0; color:var(--ink-2); cursor:pointer; padding:2px 4px; border-radius:3px}
+.gs-lh-box{position:relative}
+.gs-lh-x{position:absolute; top:8px; right:10px; border:0; background:transparent; font:inherit; font-size:12px; letter-spacing:0; color:var(--ink-2); cursor:pointer; padding:2px 5px; border-radius:3px}
 .gs-lh-x span{font-size:14px; line-height:1; margin-right:2px}
 .gs-lh-x:hover{color:#e59a90; background:rgba(229,154,144,.1)}
 .gs-lh-go{cursor:pointer; transition:border-color .15s, background .15s}
