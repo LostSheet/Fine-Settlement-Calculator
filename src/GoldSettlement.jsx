@@ -3306,7 +3306,7 @@ export default function GoldSettlement() {
   }, []);
   const [nameEdit, setNameEdit] = useState(false); // 마스트의 판 이름 편집 중
   const [gensOpen, setGensOpen] = useState(false); // 판 기록 창
-  const [revealInv, setRevealInv] = useState(false); // 모집 카드의 초대 링크 가림 해제
+  /* (폐기 2026-09-08) revealInv — 초대 코드는 이제 펴지지 않습니다. 복사로만 옮깁니다 (사용자: 시청자가 알면 난리가 난다) */
   const [capDraft, setCapDraft] = useState(null); // 인원 수 숫자 칸 — 떠날 때 확정
   const [justEnded, setJustEnded] = useState(null); // 방금 끝낸 판의 기록 이름 — 결과 화면 경유
   /* 인원 수 숫자 칸 — 치는 동안은 그대로 두고, 떠나거나 엔터일 때 확정합니다.
@@ -7832,18 +7832,11 @@ export default function GoldSettlement() {
               (폐기, 같은 날) 한 줄 [디코 메시지 복사][코드 칩][코드 복사][링크 복사] 새로 발급 — 좁으면 마지막 것만 떨어졌다.
               (폐기, 같은 날 낮) `초대 코드` 라벨 + 22px 코드 한 줄 + 아래 줄 [코드 복사][링크 복사] 디코 메시지 복사 … 새로 발급(오른쪽 끝) */}
           <div className="gs-invcode-l1">
+            {/* 코드는 펴지 않습니다 (2026-09-08 사용자 확정) — 화면이 방송에 잡히면 시청자가 그대로 읽고 들어옵니다.
+                옮기는 길은 [코드 복사]뿐입니다. (폐기) 눈 버튼으로 잠깐 펴 보기 — 펴는 순간이 곧 노출이고, 통화로 불러 주는 것도 같은 노출입니다 */}
             <span className="gs-invcode-chip">
-              <b className="gs-invcode-b">
-                {revealInv ? hostInvite.code.slice(0, 4) + " " + hostInvite.code.slice(4) : "•••• ••••"}
-              </b>
-              <button
-                className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
-                onClick={() => setRevealInv((v) => !v)}
-                aria-label={revealInv ? "가리기" : "보기"}
-                title={revealInv ? "가리기" : "보기"}
-              >
-                <Eye on={revealInv} />
-              </button>
+              <span className="gs-caplab">초대 코드</span>
+              <b className="gs-invcode-b">•••• ••••</b>
             </span>
             <button
               className="gs-swaplink gs-invcode-renew"
@@ -17147,7 +17140,8 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 /* 초대 한 덩이 (2안, 2026-09-07) — 주 버튼 · 코드 칩 · 유령 둘 · 작은 글자, 왼쪽에 모여 한 줄(좁으면 줄바꿈). (폐기) 라벨 줄 + 22px 코드 + 오른쪽 끝 글자 링크 */
 .gs-invcode{display:flex; flex-direction:column; align-items:flex-start; gap:8px} /* 두 줄 고정 (2026-09-07 밤) */
 .gs-invcode-l1,.gs-invcode-l2{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-.gs-invcode-chip{display:inline-flex; align-items:center; gap:4px; padding:2px 4px 2px 12px; border:1px solid rgba(var(--gold-rgb),.5); border-radius:4px; background:rgba(0,0,0,.18)}
+.gs-invcode-chip{display:inline-flex; align-items:center; gap:8px; padding:5px 12px; border:1px solid rgba(var(--gold-rgb),.5); border-radius:4px; background:rgba(0,0,0,.18)}
+.gs-invcode-chip .gs-caplab{margin:0}
 .gs-invcode-b{font-family:var(--mono); font-size:15px; letter-spacing:.2em; color:var(--gold); line-height:1}
 .gs-invcode-renew{margin-left:2px; font-weight:400; color:var(--ink-2); text-decoration:underline}
 .gs-invcode-renew:hover{color:var(--gold)}
