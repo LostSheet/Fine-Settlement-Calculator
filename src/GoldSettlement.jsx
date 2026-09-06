@@ -984,6 +984,9 @@ const DEMO = (() => {
 const DEMO_MEMBER = DEMO && /(^|&)member(=|&|$)/.test(window.location.hash.replace(/^#/, ""));
 /* 방장 튜토리얼의 8장(파티원 화면)으로 뜬 파티원 예시 앱 — 띠에 장 점을 그립니다. 없으면 독립 파티원 튜토리얼 */
 /* 방장 튜토리얼 4장(파티원 화면)으로 뜬 파티원 예시 — 초대장부터 시작해 자수·정정까지만 보고 방장 예시로 돌아갑니다 (2026-09-06 낮 사용자 확정 "1안"; (폐기) ch8 = 맨 끝 8장) */
+/* #demo&solo — 혼자 쓰기 튜토리얼 (2026-09-07 밤 사용자 확정): 파티원을 부르지 않는 사람이 벌금표를 쓰고,
+   정산 결과를 파티원에게 넘기고, 내 방송 주소를 OBS 에 넣는 데까지. 방장 예시와 같은 앱이고 걸음만 다릅니다 */
+const DEMO_SOLO = DEMO && /(^|&)solo(=|&|$)/.test(window.location.hash.replace(/^#/, ""));
 const DEMO_CH4 = DEMO_MEMBER && /(^|&)ch4(=|&|$)/.test(window.location.hash.replace(/^#/, ""));
 /* 예시 앱의 판 기록·장부 슬롯 — 저장소 대신 메모리 (7장 끝내기가 결과지·판 기록을 여기서 읽습니다) */
 const DEMO_STORE = {};
@@ -2887,6 +2890,16 @@ export default function GoldSettlement() {
     setDemoSrc(demoBase + "#demo&t=" + Date.now()); // t 는 같은 주소로 다시 열어도 새로 뜨게
     setDemoOpen(true);
   };
+  /* 혼자 쓰기 튜토리얼 (2026-09-07 밤 사용자 확정) — 파티원을 부르지 않는 사람의 길 */
+  const startSoloCourse = () => {
+    if (DEMO) return;
+    setDemoReady(false);
+    setDemoLoad("튜토리얼을 시작하는 중이에요.");
+    setDemoTop("");
+    setDemoTopReady(false);
+    setDemoSrc(demoBase + "#demo&solo&t=" + Date.now());
+    setDemoOpen(true);
+  };
   /* 파티원 튜토리얼 — 파티원 예시 앱 하나로 (2026-09-06 사용자 확정: [?]에서 둘 중 고름, 어디서든) */
   const startMemberTour = () => {
     if (DEMO) return;
@@ -2912,7 +2925,7 @@ export default function GoldSettlement() {
     setDemoOpen(false);
     coachDone("partyAsk");
     setTutAsk(false);
-    if (done) coachDone(kind === "member" ? "mtour" : "party");
+    if (done) coachDone(kind === "member" ? "mtour" : kind === "solo" ? "solo" : "party");
   };
   useEffect(() => {
     if (!demoOpen) return;
@@ -3129,7 +3142,7 @@ export default function GoldSettlement() {
       try {
         /* done: true = 다 봄, "member" = 방장 부분 끝, 파티원 화면으로, false = 그만둠 */
         /* next: "member" = 방장 예시 3장 끝, 파티원 예시(4장)를 위에 얹어 달라 / "host" = 파티원 예시 4장 끝, 방장 예시로 돌아가 달라 */
-        window.parent.postMessage({ gs: "party-demo", done: done === true, next: done === "member" ? "member" : done === "host" ? "host" : null, kind: DEMO_MEMBER && !DEMO_CH4 ? "member" : "host" }, window.location.origin);
+        window.parent.postMessage({ gs: "party-demo", done: done === true, next: done === "member" ? "member" : done === "host" ? "host" : null, kind: DEMO_SOLO ? "solo" : DEMO_MEMBER && !DEMO_CH4 ? "member" : "host" }, window.location.origin);
       } catch (e) {}
       return;
     }
@@ -7792,7 +7805,7 @@ export default function GoldSettlement() {
           const inCh = TOUR_FLOW.filter((x) => x.ch === ch);
           const shown = inCh.filter((x) => x.wait !== "auto");
           const cur = st ? Math.max(1, shown.indexOf(st) + 1 || inCh.slice(0, inCh.indexOf(st) + 1).filter((x) => x.wait !== "auto").length) : 0;
-          const dots = soloMember ? shown.length : TOUR_CHAPTERS.length;
+          const dots = soloMember ? shown.length : FLOW_CHAPTERS.length;
           const now = soloMember ? cur - 1 : ch;
           return (
             <div className="gs-demoband" role="status" aria-label="튜토리얼 진행">
@@ -7802,7 +7815,7 @@ export default function GoldSettlement() {
                 ))}
               </span>
               <span className="gs-tourlabel">
-                {soloMember ? "파티원 튜토리얼" : ch + 1 + "장 " + TOUR_CHAPTERS[ch]}
+                {soloMember ? "파티원 튜토리얼" : ch + 1 + "장 " + FLOW_CHAPTERS[ch]}
                 {st ? " · " + cur + "/" + shown.length : ""}
               </span>
               {/* 나가는 길을 띠에 명시 (2026-09-06 낮 사용자 지정 문구). ✕·Esc 도 그대로. 띠는 걸음 막 위라 늘 눌리고,
@@ -7922,6 +7935,8 @@ export default function GoldSettlement() {
                   {[
                     { k: "host", name: "방장 튜토리얼", role: "판을 열고 파티원을 부르는 사람", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
                     { k: "member", name: "파티원 튜토리얼", role: "초대를 받은 사람", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
+                    /* 혼자 쓰기 (2026-09-07 밤 사용자 확정) — 대기실의 [혼자 세기]와 짝입니다. 되짚을 자리가 여기입니다 */
+                    { k: "solo", name: "혼자 쓰기", role: "파티원을 부르지 않는 사람", sub: SOLO_CHAPTERS.length + "장 · 벌금표부터 방송 주소까지", seen: coachSeen("solo"), go: startSoloCourse },
                   ]
                     .sort((a, b) => (a.k === recKey ? -1 : b.k === recKey ? 1 : 0))
                     .map((r) => (
@@ -14208,7 +14223,36 @@ const MEMBER_INHOST = [
   },
   { ch: 3, sel: ".gs-confcard-c1", text: "올라갔어요. 이제 방장 화면으로 돌아가서 볼게요.", lock: true, action: "방장 화면으로" },
 ];
-const TOUR_FLOW = DEMO_CH4 ? MEMBER_INHOST : DEMO_MEMBER ? MEMBER_STEPS : HOST_STEPS;
+/* 혼자 쓰기 (2026-09-07 밤 사용자 확정) — "벌금표 쓰는 법이랑, OBS 열어서, 뭐를 파티원들에게 공유해야 하는지도 코치마크 가이드로".
+   파티원을 부르는 3·4장이 없는 대신, 정산 결과를 넘기는 길(우편·채팅 복사)을 한 장으로 세웠습니다. 문구는 전부 초안 */
+const SOLO_CHAPTERS = ["판 만들기", "벌금 세기", "정산 나누기", "방송에 띄우기"];
+const SOLO_STEPS = [
+  { ch: 0, sel: ".gs-lh-newbtn", text: "판부터 만들어요. 파티원을 부르지 않아도 판은 똑같아요.", wait: "newboard" },
+  { ch: 0, sel: ".gs-solobtn", text: "초대는 건너뛰어요. [혼자 세기]를 누르면 바로 벌금표로 가요.", wait: "start" },
+  { ch: 1, sel: ".gs-grid tbody tr:nth-child(2) .gs-in-name", text: "파티원 이름은 방장이 직접 적어요. 비워 두면 (모험가2)로 나가요.", action: "다음", lock: true },
+  {
+    ch: 1,
+    sel: ".gs-grid tbody tr:first-child",
+    text: (
+      <>
+        칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" /> 우클릭하면 되돌려요. 한번 눌러 보세요.
+      </>
+    ),
+    wait: "press",
+  },
+  { ch: 1, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
+  { ch: 1, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true },
+  { ch: 2, sel: ".gs-tab-ledger", text: "다 셌으면 정산 장부예요. 누가 얼마 내고 얼마 받는지 나와요.", wait: "tab:ledger", clear: true },
+  { ch: 2, sel: ".gs-tab-mail", text: "게임 우편으로 보낼 내용이에요. 파티원에게 넘길 건 이거예요.", wait: "tab:mail", clear: true },
+  { ch: 2, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
+  { ch: 2, sel: ".gs-copybtn", text: "디코에 붙일 한 줄 요약은 여기서 복사해요. 파티원에게는 이 둘만 주면 돼요.", action: "다음 장", lock: true },
+  { ch: 3, sel: ".gs-obsbtn", text: "방송에도 띄울 수 있어요. 여기예요.", wait: "obs" },
+  { ch: 3, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
+  { ch: 3, sel: ".gs-modal .gs-obs-addrbox", text: "이 주소는 OBS 브라우저 소스에 넣는 것이지, 파티원에게 주는 게 아니에요. 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "다 봤어요", top: true },
+];
+const TOUR_FLOW = DEMO_SOLO ? SOLO_STEPS : DEMO_CH4 ? MEMBER_INHOST : DEMO_MEMBER ? MEMBER_STEPS : HOST_STEPS;
+/* 장 이름도 코스마다 (2026-09-07 밤) */
+const FLOW_CHAPTERS = DEMO_SOLO ? SOLO_CHAPTERS : TOUR_CHAPTERS;
 /* 파티원 예시의 판 — 방장 예시가 끝난 시점 그대로 */
 const TUT_ROWS = (host) => [
   { id: "r1", name: host, counts: { c1: "1" }, extras: [] },
