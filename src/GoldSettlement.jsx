@@ -7901,6 +7901,13 @@ export default function GoldSettlement() {
             <button
               className="gs-btn gs-btn-sm gs-lbstart gs-invdiscbtn"
               onClick={() => {
+                if (tutorialRef.current) {
+                  /* 같이 해보기 3장 — 보내는 건 저희가 대신합니다 (2026-09-08: [링크 복사]에서 이 버튼으로 옮겼습니다) */
+                  setFlash("inv");
+                  setTimeout(() => setFlash(""), 1500);
+                  tutHit("link");
+                  return;
+                }
                 copy(inviteMsg(auth.nick, hostInvite.url), "inv");
                 if (!lobbyOn) startParty();
               }}
@@ -14243,7 +14250,7 @@ const HOST_STEPS = [
   { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 10만이면 10. 적고 [다음]. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음" }, // 사용자 지정 문구 (2026-09-06 낮; (폐기) `지우는 건 항목 이름 옆 ×.`)
   { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true, enter: "colfix" },
   /* 3장 */
-  { ch: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
+  { ch: 2, sel: ".gs-invdiscbtn", text: "디코 메시지를 복사해서 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" }, // (폐기 2026-09-08) 표적 .gs-invlinkbtn·`초대 링크를 복사해서…` — 창구를 디코 메시지 하나로 좁히며 [링크 복사]가 닫혔다
   { ch: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto", after: "다음" }, // 둘이 앉으면 [다음] — (폐기 2026-09-06 낮) 5.4초 뒤 자동
   { ch: 2, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
   /* 4장 파티원 화면 — 이 걸음에 들어서면 부모가 파티원 예시 앱을 위에 얹습니다. 돌아오면(party-demo-resume) 실리안의 잡힘 1이 올라오고 다음 걸음 */
