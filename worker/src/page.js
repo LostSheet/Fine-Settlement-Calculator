@@ -50,7 +50,8 @@ export const PAGE_HTML = `<!doctype html>
   /* 순위와 변동은 글자 크기가 달라서, 기준선 대신 줄 한가운데에 맞춥니다 */
   /* 이름과 순위는 어느 경우에도 또렷합니다 (2026-09-07 사용자). 흐림은 값 칸이 말합니다 —
      줄 전체를 흐리게 하면 "아직 안 낸 사람"이라는 말이 이름과 등수까지 지워 버립니다.
-     (폐기 2026-09-07) 순위 opacity .68 · `.ov-row.zero{opacity:.5}` */
+     (폐기 2026-09-07) 순위 opacity .68 · 줄 전체 .ov-row.zero 의 opacity .5
+     — 이 파일은 통째로 템플릿 문자열이라 주석에도 백틱을 쓰면 거기서 문자열이 끊깁니다 */
   .ov-rank{width:5.2vw; font-size:3.6vw; font-variant-numeric:tabular-nums;
     flex:none; align-self:center; text-align:center}
   /* 순위 변동 자리 — 비어 있어도 폭을 차지해서 이름 열이 밀리지 않습니다 */
