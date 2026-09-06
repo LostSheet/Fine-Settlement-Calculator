@@ -467,10 +467,16 @@ const FACE_MS = 70;
 const SPIN_TAIL = 0.55;
 /* 감속 '느긋하게' (2026-09-05, 룰렛 외형의 선택지) — 바퀴는 덜 돌고 꼬리는 길게: 끝에서 오래 미적여
    긴장을 늘립니다. 서기 원판과 방송 원판이 같은 값을 쓰도록 판(spin.ease)에 실어 보냅니다 */
-/* 기본은 느긋하게 (2026-09-07 사용자 확정) — 보통은 spin.ease:"normal" 로만 켭니다. (폐기) 기본 보통, "gentle" 로 느긋하게 */
-const spinGentle = (sp) => !(sp && sp.ease === "normal");
-const spinAim = (sp) => (spinGentle(sp) ? 1.4 : SPIN_AIM);
-const spinTail = (sp) => (spinGentle(sp) ? 0.4 : SPIN_TAIL); // 느긋하게는 더 앞에서 감속을 끝내 오래 미끄러짐 — (폐기) 0.9: 남은 2% 에 315°/s 로 급정거
+/* 감속은 슬라이더 0~100 (2026-09-07 사용자 확정: 슬라이더 + 프리셋). 프리셋 보통 25 · 느긋하게 75, 기본 75.
+   값이 클수록 바퀴는 적고(aim 1.7→1.3) 곡선 x2 는 작아져(0.62→0.32) 뒤에서 오래 미끄러집니다. 어느 값이든 급정거는 안 납니다(x2 ≤ .62).
+   판(spin.glide)에 실어 보내 서기 원판과 방송 원판이 같은 값을 씁니다. (폐기, 같은 날) spinEase "normal"/"gentle" 두 단 */
+const GLIDE_NORMAL = 25;
+const GLIDE_GENTLE = 75;
+const GLIDE_DEFAULT = 75;
+const spinGlideOf = (r) => (r && Number.isFinite(r.spinGlide) ? Math.max(0, Math.min(100, r.spinGlide)) : GLIDE_DEFAULT);
+const glideOfSp = (sp) => (sp && Number.isFinite(sp.glide) ? Math.max(0, Math.min(100, sp.glide)) : GLIDE_DEFAULT) / 100;
+const spinAim = (sp) => 1.7 - 0.4 * glideOfSp(sp);
+const spinTail = (sp) => 0.62 - 0.3 * glideOfSp(sp);
 /* 멈추는 동안 면이 바뀌는 간격 — 지수로 늘리는 것은 속도가 지수로 줄어드는 것과 같습니다.
    원판 곡선과 같은 성격이라, 원판과 릴이 같은 판에서 같은 속도감으로 섭니다.
    p 는 멈추기 시작한 뒤 흐른 비율입니다. */
@@ -896,7 +902,7 @@ function loadRelay() {
       /* epic 이 빠져 있어서 '아주 느리게'를 골라도 새로고침하면 되돌아갔습니다 */
       spd: v.spd in SPINS ? v.spd : undefined,
       spinLook: v.spinLook === "num" || v.spinLook === "wheel" ? v.spinLook : undefined,
-      spinEase: v.spinEase === "normal" ? "normal" : undefined, // 옛 "gentle" 은 이제 기본이라 비움 (2026-09-07)
+      spinGlide: Number.isFinite(v.spinGlide) ? Math.max(0, Math.min(100, v.spinGlide)) : undefined, // 감속 슬라이더 (2026-09-07)
       wheelTheme: v.wheelTheme === "vegas" ? "vegas" : undefined,
       ovsrc: v.ovsrc === "split" ? "split" : undefined,
       look:
@@ -925,7 +931,7 @@ function loadRelay() {
     if (!out.lookMig2) {
       out.spinLook = undefined;
       out.wheelTheme = undefined;
-      out.spinEase = undefined;
+      out.spinGlide = undefined;
       out.fx = undefined;
       if (out.ov) {
         const o = { ...out.ov };
@@ -1793,7 +1799,28 @@ export default function GoldSettlement() {
       const rest = hashText(hp);
       window.history.replaceState(null, "", pathname + search + (rest ? "#" + rest : ""));
     }
-    if ((liveRoom && !own) || obsToken) {
+    /* 방 하나 규칙 (2026-09-07 사용자 확정: 파티원은 [나가기], 방장은 [정산 끝내기]로만 판을 떠난다) — 이 브라우저에 내 판이 있으면
+       남의 초대 링크를 뷰어로 열지 않습니다. 초대를 보관한 채 내 앱으로 들어가 시작 전이면 [해산하고 가기], 진행 중이면 [끝내러 가기]를 묻습니다.
+       코드 사실: 남의 파티 화면에 들어가면 내 판의 서기 소켓이 끊겨 파티원 자수가 막히고, 계정의 현재 방이 바뀌어 방송용 주소가 남의 판을 비춘다 */
+    let held = false;
+    if (liveRoom && !own && !obsToken && !DEMO && canOwnUrl && typeof window !== "undefined") {
+      const rel = loadRelay();
+      const sv = loadSaved();
+      const hasBoard = !!rel.boardOn || !!(sv && sv.roundLive && Array.isArray(sv.rows) && sv.rows.length);
+      if (hasBoard) {
+        try {
+          localStorage.setItem("goldSettlement.pendingJoin", JSON.stringify({ room: liveRoom, code: readJoinCode() || "", t: Date.now() }));
+        } catch (e) {}
+        const hp = hashParams();
+        hp.delete(LIVE_KEY);
+        hp.delete(JOIN_KEY);
+        const { pathname, search } = window.location;
+        const rest = hashText(hp);
+        window.history.replaceState(null, "", pathname + search + (rest ? "#" + rest : ""));
+        held = true;
+      }
+    }
+    if ((liveRoom && !own && !held) || obsToken) {
       /* 같은 방의 마지막 판이 담겨 있으면 그것으로 앉힙니다 — 새로고침했다고
          정산이 사라지면 안 됩니다. 연결이 살아 있으면 곧 새 판이 덮어씁니다. */
       const kept = liveRoom ? loadLastLive() : null;
@@ -2541,6 +2568,36 @@ export default function GoldSettlement() {
      그 방 명단에 있고(§1: 정산 끝내기는 아무도 안 내보냅니다), 그 방에서 판이 다시
      열리면 돌아갈 문이 있어야 합니다. {room} */
   const [backCard, setBackCard] = useState(null);
+  /* 보관된 초대 (방 하나 규칙, 2026-09-07) — 내 판이 있을 때 받은 초대. 판을 끝내거나 해산한 뒤 허브에서 [참여하기] */
+  const [pendingJoin, setPendingJoin] = useState(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("goldSettlement.pendingJoin") || "null");
+      return v && v.room ? v : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const dropPendingJoin = () => {
+    setPendingJoin(null);
+    try {
+      localStorage.removeItem("goldSettlement.pendingJoin");
+    } catch (e) {}
+  };
+  /* 보관된 초대로 갑니다 — 초대장을 거쳐 들어가게 gs-joinok 은 안 남깁니다 */
+  const goPendingJoin = () => {
+    const p = pendingJoin;
+    if (!p || typeof window === "undefined") return;
+    dropPendingJoin();
+    saveLastLive(null);
+    const h = LIVE_KEY + "=" + p.room + (p.code ? "&" + JOIN_KEY + "=" + p.code : "");
+    if (canOwnUrl && window.location.hash.replace(/^#/, "") !== h) {
+      window.location.hash = h;
+      return;
+    }
+    const { pathname, search } = window.location;
+    window.history.replaceState(null, "", pathname + search + "#" + h);
+    window.location.reload();
+  };
   /* 끝난 판 — 방장이 공유를 껐거나, 판이 새로 시작됐거나, 내가 빠졌습니다.
      화면을 비우지 않고 마지막으로 받은 판을 그대로 보여 줍니다(정산은 판이 끝난 뒤에 하니까). */
   const [ended, setEnded] = useState(false);
@@ -3119,10 +3176,13 @@ export default function GoldSettlement() {
   const readyAway = !readOnly && !roundLive && !!(relay && relay.boardOn) && (showLobby || !!genView);
   /* 파티원도 자기가 방에 있다는 표시 (2026-09-06 사용자: 자동 복귀 대신) — 판 화면이 아닐 때 같은 칩 */
   const memberAway = !readOnly && (showLobby || !!genView) && !!meCur && !!(meSeat && meSeat.st === "ok");
-  const memberPartyName = (() => {
-    const k = memberAway ? loadLastLive() : null;
+  /* 서버가 아는 내 자리 — 남의 파티에 앉아 있는지 (2026-09-07: 허브·칩·새 판 만들기 물음이 씁니다) */
+  const seatedNow = !!(meCur && meSeat && meSeat.st === "ok");
+  const seatedName = (() => {
+    const k = seatedNow ? loadLastLive() : null;
     return k && k.room === meCur && k.host ? k.host + "네 파티" : "참여 중인 파티";
   })();
+  const memberPartyName = seatedName;
   /* 화면 이동은 전부 여기로 (2026-09-05) — 주소에 적고 history 에 한 장 얹으면 hashchange 가 화면을
      정합니다. 뷰어에서 로비·판으로 가면 파티 열쇠가 걷혀 모드가 갈리므로 그 핸들러가 다시 엽니다.
      주소를 못 가지는 환경(iframe)에서는 상태만 바꿉니다 */
@@ -3292,7 +3352,9 @@ export default function GoldSettlement() {
       m.cur &&
       seat &&
       seat.st === "ok" &&
-      arrival.current
+      arrival.current &&
+      /* 내 판이 있으면 남의 파티로 잡아채지 않습니다 (방 하나 규칙, 2026-09-07) — 허브가 두 곳을 다 보여 줍니다 */
+      !boardOnRef.current
     ) {
       arrival.current = false;
       /* 방장은 자기 방 명단(members)에 없어 seat 가 비므로, 이 조건은 남의 방에 앉은 사람만 통과합니다 —
@@ -3715,6 +3777,51 @@ export default function GoldSettlement() {
     boardOnRef.current = false;
     putRelay({ ...relayRef.current, boardOn: false });
     go(VIEW_LOBBY);
+  };
+  /* 방 하나 규칙 (2026-09-07 사용자 확정) — 보관된 초대로 가려면: 진행 중이면 [정산 끝내기]가 먼저(끝내러 가기), 시작 전이면 [해산하고 가기]. 문구 초안 */
+  const askLeaveForJoin = () => {
+    if (!pendingJoin) return;
+    if (roundLive)
+      return setAsk({
+        title: "진행 중인 내 판을 끝내야 갈 수 있어요",
+        body: "[정산 끝내기]를 누르면 결과지가 기록에 남고 판이 닫혀요. 초대는 파티 허브에 보관해 둘게요.",
+        action: "끝내러 가기",
+        onYes: () => go(VIEW_BOARD),
+      });
+    if (boardOn)
+      return setAsk({
+        title: "내 판을 해산하고 초대받은 파티로 갈까요?",
+        body: "시작 전 판이 없어져요. 자리와 이름이 지워지고 항목과 단가만 남아요.",
+        action: "해산하고 가기",
+        tone: "danger",
+        onYes: () => {
+          disband();
+          goPendingJoin();
+        },
+      });
+    goPendingJoin();
+  };
+  /* 부팅 때 보관된 초대가 있으면 바로 묻습니다 — 링크를 눌렀는데 아무 일도 없으면 안 됩니다 */
+  useEffect(() => {
+    if (readOnly || tutorial || !pendingJoin) return;
+    askLeaveForJoin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  /* 남의 파티에 앉은 채 새 판을 만들면 먼저 나갑니다 (방 하나 규칙, 2026-09-07). 문구 초안 */
+  const askNewBoard = () => {
+    if (readOnly) return;
+    if (!tutorialRef.current && seatedNow)
+      return setAsk({
+        title: seatedName + "에서 나가고 내 판을 만들까요?",
+        body: meSeat && meSeat.round ? "그 파티의 내 자리가 비어요. 벌금은 줄에 남아요." : "그 파티의 내 자리가 비어요.",
+        action: "나가고 만들기",
+        tone: "danger",
+        onYes: async () => {
+          await leaveFromLobby();
+          newBoard();
+        },
+      });
+    newBoard();
   };
   /* 대기실에서는 남이 앉아 있을 때만 묻고 혼자면 바로. 로비에서는(always) 판을 안 보고 누르는 것이라 늘 묻습니다 (2026-09-07 사용자; 문구 초안) */
   const askDisband = (always) => {
@@ -5968,7 +6075,7 @@ export default function GoldSettlement() {
       look: spinShape(relay),
       theme: wheelTheme(relay),
       spd: spinSpd(relay),
-      ease: relay.spinEase === "normal" ? "normal" : "gentle", // 기본 느긋하게 (2026-09-07)
+      glide: spinGlideOf(relay), // 감속 슬라이더 값 0~100 (2026-09-07)
       rowId: row.id,
       colId: col.id,
       who: seatName(row, rows.indexOf(row)),
@@ -7269,6 +7376,211 @@ export default function GoldSettlement() {
     ) : null;
   /* 초대 링크 한 줄 (§3.1) — 모집 카드와 판 중 [초대 링크] 창이 같은 조각을 씁니다 (2026-09-05).
      살아 있는 초대만 옵니다 (§9) — 죽은 링크가 떠 있는 상태를 아예 안 만듭니다 */
+  /* ── 파티 허브 (2026-09-07 사용자 확정) — 생성·참여·나가기·해산·초대가 한 곳. 헤더 칩의 팝오버와 로비 2열 카드가 같은 내용 ── */
+  const seatNamesNow = seats.filter((s0) => s0.acct).map((s0) => s0.name || s0.nick || "").filter(Boolean);
+  const seatedCount = seats.filter((s0) => s0.acct).length;
+  const hasPartyNow = !!(auth && relay.room);
+  /* 칩 얼굴 — 지금 내가 속한 방 하나. 뷰어(파티원)는 그 파티, 방장 앱은 앉은 남의 파티 > 내 판 > 없음 */
+  const hubFace = viewer
+    ? guestPlaying || guestWaiting
+      ? { dot: true, text: (ownerNick ? ownerNick + "네 파티" : "파티") + " · " + (vlobby ? "시작 전" : "진행 중") }
+      : null
+    : seatedNow && !boardOn
+      ? { dot: true, text: seatedName + " · " + (meSeat.round ? "진행 중" : "시작 전") }
+      : roundLive
+        ? { dot: true, text: "진행 중 · 내 판" }
+        : boardOn
+          ? hasPartyNow
+            ? { dot: true, text: "모집 중 · 내 판 " + seatedCount + "/" + lobbyCap }
+            : { dot: false, text: "시작 전 · 내 판" }
+          : { dot: false, text: "파티 없음" };
+  const partyHub = (where) => {
+    const goBox = (cls, onGo, inner) => (
+      <div
+        className={"gs-lh-box gs-lh-go" + (cls ? " " + cls : "")}
+        role="button"
+        tabIndex={0}
+        onClick={onGo}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onGo()}
+      >
+        {inner}
+      </div>
+    );
+    const names = (list) => (list.length ? list.join(" · ") : "아직 아무도 없어요");
+    /* 보관된 초대 — 어느 얼굴에서든 맨 위 한 줄 (초안) */
+    const pending =
+      !viewer && pendingJoin ? (
+        <div className="gs-hub-pending" role="status">
+          <span>
+            <b>받은 초대</b>가 기다려요.
+          </span>
+          <span className="gs-hub-pending-r">
+            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={dropPendingJoin}>
+              지우기
+            </button>
+            <button className="gs-btn gs-btn-sm gs-lbstart" onClick={askLeaveForJoin}>
+              참여하기
+            </button>
+          </span>
+        </div>
+      ) : null;
+    if (viewer) {
+      /* 파티원 — 앉은 사람·내 벌금·[파티 나가기]. (폐기 2026-09-07) 빵부스러기 줄의 [파티 나가기] */
+      const list =
+        vlobby && vlobby.names
+          ? vlobby.names.filter((x) => x.live).map((x) => x.n)
+          : rows.filter((r) => (rows2v.find((x) => x.rowId === r.id) || {}).a).map((r) => seatName(r, rows.indexOf(r)));
+      return (
+        <>
+          <h4 className="gs-lbcard-h gs-lh-facet">
+            <em className="gs-livechip-dot" aria-hidden="true" />
+            {ownerNick ? ownerNick + "네 파티" : "파티"} · {vlobby ? "시작 전" : "진행 중"}
+          </h4>
+          <div className="gs-lh-box">
+            <p className="gs-lh-facts">
+              {list.length}명{myRow ? " · 내 벌금 " + man(myGold) : ""}
+            </p>
+            <p className="gs-lh-names">{names(list)}</p>
+            <div className="gs-lh-acts">
+              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={leaveRoom}>
+                파티 나가기
+              </button>
+            </div>
+          </div>
+        </>
+      );
+    }
+    if (seatedNow && !boardOn) {
+      /* 남의 파티에 앉은 채 (내 판 없음) — 돌아가기·나가기 */
+      return (
+        <>
+          {pending}
+          <h4 className="gs-lbcard-h gs-lh-facet">
+            <em className="gs-livechip-dot" aria-hidden="true" />
+            {seatedName} · {meSeat.round ? "진행 중" : "시작 전"}
+          </h4>
+          <div className="gs-lh-boxwrap">
+            {goBox(
+              "",
+              () => enterRoom(meCur, { push: true }),
+              <>
+                <p className="gs-lh-sub">{meSeat.round ? "파티가 진행 중이에요." : "방장이 시작하길 기다려요."}</p>
+                <span className="gs-lh-goto">돌아가기 ›</span>
+              </>
+            )}
+            <button className="gs-lh-x" onClick={askLeaveFromLobby} aria-label="파티 나가기">
+              나가기
+            </button>
+          </div>
+        </>
+      );
+    }
+    if (!boardOn) {
+      /* 판 없음 — 새 판 만들기와 참여 칸. 시작 전에 해산당한 쪽지도 여기 (초안) */
+      return (
+        <>
+          {pending}
+          {disbandNote && !seatedNow && (
+            <div className="gs-note" role="status">
+              <span>
+                <b>{disbandNote.host ? disbandNote.host + "네 파티" : "파티"}</b>가 해산됐어요.
+              </span>
+              <button className="gs-note-x" onClick={dropDisbandNote} aria-label="닫기">
+                ×
+              </button>
+            </div>
+          )}
+          <h4 className="gs-lbcard-h">파티 없음</h4>
+          <div className="gs-lh-box empty">
+            <p className="gs-lh-sub">{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
+            <div className="gs-lh-acts">
+              <button className={"gs-btn gs-lifebtn gs-lh-newbtn " + (auth ? "gs-btn-ghost" : "gs-lbstart")} onClick={askNewBoard}>
+                + 새 판 만들기
+              </button>
+            </div>
+          </div>
+          {/* 비밀 파티 입장 문법 — 주소를 그대로 붙여넣어도, 코드 8자만 쳐도 들어가진다. 같은 말은 한 번만 (2026-09-07 사용자) */}
+          <JoinBox onJoin={joinByCode} />
+        </>
+      );
+    }
+    const own = seatedNow ? (
+      /* 규칙 이전에 생긴 상태(남의 파티 착석 + 내 판) — 판은 그대로 문이 있고, 파티 줄 하나만 덧붙입니다 */
+      <p className="gs-hub-own">
+        <em className="gs-livechip-dot" aria-hidden="true" />
+        {seatedName} · {meSeat.round ? "진행 중" : "시작 전"}
+        <button className="gs-auth-linkb" onClick={() => enterRoom(meCur, { push: true })}>
+          돌아가기
+        </button>
+        <button className="gs-auth-linkb" onClick={askLeaveFromLobby}>
+          나가기
+        </button>
+      </p>
+    ) : null;
+    if (roundLive) {
+      const filled = seats.filter((x) => x.acct || ((x.name || "").trim() && !isFillName(x.name)));
+      const sinceMin = roundSinceMin();
+      return (
+        <>
+          {pending}
+          <h4 className="gs-lbcard-h gs-lh-facet">
+            <em className="gs-livechip-dot" aria-hidden="true" />
+            진행 중 · <b>{roundName || defaultRoundName()}</b>
+          </h4>
+          {/* (폐기 2026-09-07 사용자) `판을 두고 나온 상태예요 — 파티원은 그대로 셀 수 있어요.` — 로비를 보는 건 나간 게 아니다 */}
+          {goBox(
+            "live",
+            goBoard,
+            <>
+              <p className="gs-lh-facts">
+                {filled.length}명 · 벌금 {man(rows.reduce((a, r) => a + itemGold(r), 0))}
+                {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
+              </p>
+              {seatNamesNow.length > 0 && <p className="gs-lh-names">{seatNamesNow.join(" · ")}</p>}
+              <span className="gs-lh-goto">벌금판으로 ›</span>
+            </>
+          )}
+          {own}
+          {hasPartyNow && where !== "board" && <div className="gs-hub-inv">{inviteLine()}</div>}
+        </>
+      );
+    }
+    /* 시작 전·모집 중 — 롤식 상자(상자 전체가 대기실 문, 우상단 [× 해산]) + 초대 한 덩이 */
+    return (
+      <>
+        {pending}
+        <h4 className="gs-lbcard-h gs-lh-facet">
+          {hasPartyNow ? (
+            <>
+              <em className="gs-livechip-dot" aria-hidden="true" />
+              모집 중
+            </>
+          ) : (
+            "시작 전"
+          )}
+        </h4>
+        <div className="gs-lh-boxwrap">
+          {goBox(
+            "",
+            goBoard,
+            <>
+              {/* `앉음` 라벨은 뺐습니다 (2026-09-07 사용자) */}
+              <p className="gs-lh-facts">
+                대기실 {seatedCount}/{lobbyCap}
+              </p>
+              <p className="gs-lh-names">{names(seatNamesNow)}</p>
+              <span className="gs-lh-goto">대기실로 ›</span>
+            </>
+          )}
+          <button className="gs-lh-x" onClick={() => askDisband(true)} aria-label="판 해산">
+            <span aria-hidden="true">×</span> 해산
+          </button>
+        </div>
+        {own}
+        {hasPartyNow && <div className="gs-hub-inv">{inviteLine()}</div>}
+      </>
+    );
+  };
   const inviteLine = () => (
     <>
       {!hostInvite ? (
@@ -7285,8 +7597,19 @@ export default function GoldSettlement() {
            문이 안 서서 대기실 표시(lobby.open)를 켤 길이 여기 말고는 없습니다.
            (폐기 2026-09-05, 당일) 가린 주소 한 줄 + [디코용 복사] 하나 — 무엇을 어디에 붙이라는 건지 안 읽혔다 */
         <div className="gs-invcode">
-          <div className="gs-invcode-row">
-            <span className="gs-caplab">초대 코드</span>
+          {/* 2안 (2026-09-07 사용자: 오른쪽 끝 글자 링크는 가시성·사용성이 떨어지고 룩이 구리다) — 스트리머가 실제로 쓰는 디코 메시지가
+              주 버튼으로 맨 앞, 코드는 칩 하나(가린 채·눈), 코드 복사·링크 복사는 뒤에 유령으로, 새로 발급은 줄 끝 작은 글자.
+              (폐기, 같은 날) `초대 코드` 라벨 + 22px 코드 한 줄 + 아래 줄 [코드 복사][링크 복사] 디코 메시지 복사 … 새로 발급(오른쪽 끝) */}
+          <button
+            className="gs-btn gs-btn-sm gs-lbstart gs-invdiscbtn"
+            onClick={() => {
+              copy(inviteMsg(auth.nick, hostInvite.url), "inv");
+              if (!lobbyOn) startParty();
+            }}
+          >
+            {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
+          </button>
+          <span className="gs-invcode-chip">
             <b className="gs-invcode-b">
               {revealInv ? hostInvite.code.slice(0, 4) + " " + hostInvite.code.slice(4) : "•••• ••••"}
             </b>
@@ -7298,52 +7621,41 @@ export default function GoldSettlement() {
             >
               <Eye on={revealInv} />
             </button>
-          </div>
-          <div className="gs-invcode-acts">
-            <button
-              className="gs-btn gs-btn-sm"
-              onClick={() => {
-                copy(hostInvite.code, "invcode");
-                if (!lobbyOn) startParty();
-              }}
-            >
-              {flash === "invcode" ? "복사했어요" : "코드 복사"}
-            </button>
-            <button
-              className="gs-btn gs-btn-sm gs-invlinkbtn"
-              onClick={() => {
-                if (tutorialRef.current) {
-                  /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
-                  setFlash("invurl");
-                  setTimeout(() => setFlash(""), 1500);
-                  tutHit("link");
-                  return;
-                }
-                copy(hostInvite.url, "invurl");
-                if (!lobbyOn) startParty();
-              }}
-            >
-              {flash === "invurl" ? "복사했어요" : "링크 복사"}
-            </button>
-            <button
-              className="gs-swaplink"
-              onClick={() => {
-                copy(inviteMsg(auth.nick, hostInvite.url), "inv");
-                if (!lobbyOn) startParty();
-              }}
-            >
-              {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
-            </button>
-            <button
-              className="gs-swaplink gs-invcode-renew"
-              onClick={() => {
-                newInvite();
-                if (!lobbyOn) startParty();
-              }}
-            >
-              새로 발급
-            </button>
-          </div>
+          </span>
+          <button
+            className="gs-btn gs-btn-sm gs-btn-ghost"
+            onClick={() => {
+              copy(hostInvite.code, "invcode");
+              if (!lobbyOn) startParty();
+            }}
+          >
+            {flash === "invcode" ? "복사했어요" : "코드 복사"}
+          </button>
+          <button
+            className="gs-btn gs-btn-sm gs-btn-ghost gs-invlinkbtn"
+            onClick={() => {
+              if (tutorialRef.current) {
+                /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
+                setFlash("invurl");
+                setTimeout(() => setFlash(""), 1500);
+                tutHit("link");
+                return;
+              }
+              copy(hostInvite.url, "invurl");
+              if (!lobbyOn) startParty();
+            }}
+          >
+            {flash === "invurl" ? "복사했어요" : "링크 복사"}
+          </button>
+          <button
+            className="gs-swaplink gs-invcode-renew"
+            onClick={() => {
+              newInvite();
+              if (!lobbyOn) startParty();
+            }}
+          >
+            새로 발급
+          </button>
         </div>
       )}
     </>
@@ -7411,64 +7723,29 @@ export default function GoldSettlement() {
           {!inviteGate && (
             <span className="gs-sysscreen">{genView ? "판 기록" : showLobby ? "로비" : "벌금판"}</span>
           )}
-          {/* (폐기 2026-09-05) 파티 칩(`내 파티 · n명 ●`·`{방장}네 파티`)과 파티 서랍 — 사람 일은 줄의
-              사람 버튼(§3.2)이, 판 중 초대 링크는 도구줄의 [초대 링크]가, 인원은 모집 카드가, 파티원의
-              나가기는 빵부스러기 줄이 맡는다. 서랍은 표와 떨어져 있어 "어느 줄"을 이름으로만 고르게 했다 */}
-          {/* 판을 두고 나온 표시 (§3.0, 2026-09-05) — 로비·기록 어디서든 진행 중인 내 판으로 돌아가는 문 */}
-          {liveAway && (
-            <button className="gs-livechip" onClick={goBoard}>
-              <em className="gs-livechip-dot" aria-hidden="true" />
-              진행 중 · 돌아가기
-            </button>
-          )}
-          {/* 시작 전 판도 같은 칩 (2026-09-06 모델: 판이 있는데 판 화면이 아닐 때) — 파티가 있으면 모집 중, 비로그인 판은 시작 전 */}
-          {memberAway && (
-            <button className="gs-livechip" onClick={() => enterRoom(meCur, { push: true })}>
-              <em className="gs-livechip-dot" aria-hidden="true" />
-              {memberPartyName} · 돌아가기
-            </button>
-          )}
-          {readyAway && (
-            <button className="gs-livechip gs-livechip-ready" onClick={goBoard}>
-              {auth && relay.room ? (
-                <>
-                  <em className="gs-livechip-dot" aria-hidden="true" />
-                  모집 중 · 대기실로
-                </>
-              ) : (
-                "시작 전 · 대기실로"
+          {/* 파티 칩 하나 (2026-09-07 사용자 확정: 헤더 리뉴얼 — 방은 하나) — 지금 내가 속한 방 하나만 말하고, 누르면 파티 허브.
+              로비에서는 없습니다(로비 2열이 같은 허브). (폐기, 같은 날) liveAway·memberAway·readyAway 세 칩 — 내 판 모집 중 + 남의 파티 착석이면 둘이 나란히 섰다.
+              (폐기 2026-09-05) 파티 칩(`내 파티 · n명 ●`·`{방장}네 파티`)과 파티 서랍 */}
+          {hubFace && !showLobby && !inviteGate && (
+            <span className="gs-invwrap gs-hubwrap" ref={invWrapRef}>
+              <button
+                className={"gs-livechip gs-hubchip" + (hubFace.dot ? "" : " gs-hubchip-off") + (invOpen ? " on" : "")}
+                onClick={() => setInvOpen((v) => !v)}
+                aria-haspopup="dialog"
+                aria-expanded={invOpen}
+              >
+                {hubFace.dot && <em className="gs-livechip-dot" aria-hidden="true" />}
+                {hubFace.text}
+              </button>
+              {invOpen && (
+                <div className="gs-invpop gs-hubpop" role="dialog" aria-label="파티 허브">
+                  {partyHub("pop")}
+                </div>
               )}
-            </button>
+            </span>
           )}
-          {/* 판 기록은 로비 히어로의 아이콘 하나로 갔습니다 (§3.1) — 판 중에 지난 판을
-              볼 일이 거의 없어서(정산 비교는 판이 끝난 뒤, 항목·단가는 지금 판에 있습니다)
-              헤더에서 뺍니다 */}
           <div className="gs-sysbar-r">
-            {/* 방장의 문 하나 — 초대 코드 (2026-09-06 사용자: 공유 창 안은 숨겨져 있다). 판이 있을 때만 서고,
-                팝오버에 코드·복사 셋·새로 발급. 시작 전 모집 카드는 같은 코드를 크게 비추는 자리 */}
-            {!readOnly && auth && relay.room && boardOn && (
-              <span className="gs-invwrap" ref={invWrapRef}>
-                <button
-                  className={"gs-btn gs-btn-ghost gs-invbtn" + (invOpen ? " on" : "")}
-                  onClick={() => setInvOpen((v) => !v)}
-                  aria-haspopup="dialog"
-                  aria-expanded={invOpen}
-                >
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M6.6 9.4a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-1 1" />
-                      <path d="M9.4 6.6a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l1-1" />
-                    </g>
-                  </svg>
-                  초대 코드
-                </button>
-                {invOpen && (
-                  <div className="gs-invpop" role="dialog" aria-label="초대 코드">
-                    {inviteLine()}
-                  </div>
-                )}
-              </span>
-            )}
+            {/* (폐기 2026-09-07) 헤더 [초대 코드] 버튼과 팝오버 — 파티 허브로 흡수 (사용자 확정: 헤더는 허브 칩과 OBS 둘) */}
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리. 버튼은 이것 하나고(§5.7)
                 비로그인도 이 문으로 들어갑니다 — 주소 발급은 창 안 [내 방송용 주소
                 받기]가 대문을 엽니다. 얼굴은 고정 라벨 + 송출 점: 상태어는 창 첫 줄과
@@ -7774,34 +8051,14 @@ export default function GoldSettlement() {
           flash={flash}
           onSettings={() => setObsOpen(true)}
           onLogin={() => openAuth("register")}
-          roundName={roundName}
-          cols={cols}
-          seats={seats}
-          roundLive={roundLive}
-          liveGold={rows.reduce((a, r) => a + itemGold(r), 0)}
-          sinceMin={roundSinceMin()}
-          lastGen={gensList().find((g) => !g.host || g.host === g.me) || null}
-          made={boardMade}
-          boardOn={boardOn}
-          hasParty={!!(auth && relay.room)}
-          seated={seats.filter((s0) => s0.acct).length}
-          seatNames={seats.filter((s0) => s0.acct).map((s0) => s0.name || s0.nick || "")}
-          cap={lobbyCap}
-          onDisband={() => askDisband(true)} // 로비에서는 늘 한 번 묻습니다 (2026-09-07 사용자: 경고는 당연히)
-          onEnter={boardOn ? () => go(VIEW_BOARD) : newBoard}
-          seatedRoom={meCur && meSeat && meSeat.st === "ok" ? meCur : null}
-          seatedLive={!!(meSeat && meSeat.round)}
-          onReturn={(room) => enterRoom(room, { push: true })}
-          onLeaveParty={askLeaveFromLobby}
+          onUpgrade={() => setUpOpen({})}
+          hub={partyHub("lobby")}
           tutLine={!readOnly && !boardOn && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
           onTut={startPartyCourse}
           onDropTut={() => {
             coachDone("partyAsk");
             setTutAsk(false);
           }}
-          note={disbandNote}
-          onDropNote={dropDisbandNote}
-          onJoin={joinByCode}
           gens={gensList()}
           onOpenGen={openGen}
           onDropGen={askDropGen}
@@ -7945,12 +8202,7 @@ export default function GoldSettlement() {
             <button className="gs-crumb" onClick={goLobby}>
               <span aria-hidden="true">‹</span> 로비
             </button>
-            {/* 나가기는 세 곳에서 같은 버튼 (2026-09-06) — 로비·대기실·판 안 */}
-            {readOnly && (guestPlaying || guestWaiting) && (
-              <button className="gs-swaplink" onClick={leaveRoom}>
-                파티 나가기
-              </button>
-            )}
+            {/* (폐기 2026-09-07) 빵부스러기 줄의 [파티 나가기] — 파티 허브(헤더 칩)가 나가기의 집 (사용자 확정: 탈퇴는 허브에) */}
           </div>
         )}
         <div className="gs-mastrow">
@@ -8217,28 +8469,18 @@ export default function GoldSettlement() {
             {/* 머리가 "초대를 냈는지"를 말합니다 (2026-09-05 목업 확정): 모집 중 · 남은 시간 · 앉은 수.
                 (폐기, 당일) 제목 `파티원 모으기` + 이름 적힌 칸까지 센 수 — 초대가 나갔는지 안 읽혔다 */}
             <h4 className="gs-lbcard-h gs-recruit-head">
-              {/* 남은 시간은 없습니다 (2026-09-06) — 코드는 방장이 앱을 열어 둔 동안 삽니다 */}
+              {/* 남은 시간은 없습니다 (2026-09-06) — 코드는 방장이 앱을 열어 둔 동안 삽니다. `앉음` 라벨은 뺐습니다 (2026-09-07 사용자) */}
               <span className="gs-recruit-live">
                 <i className="gs-livechip-dot" aria-hidden="true" /> 모집 중
               </span>
               <span className="gs-lbroster-n">
-                {seatSum.on} / {lobbyCap} 앉음
+                {seatSum.on}/{lobbyCap}
               </span>
             </h4>
-            {/* 읽는 순서 (2026-09-05 ⑥): 머리(모집 중·앉은 수) → 코드 한 줄 → 조용한 링크 → 들어오려는 사람 → 게스트 안내 */}
+            {/* 대기실에 있는 사람은 이름으로 (2026-09-07 사용자: 1/8 이 아니라 사람을 보여 달라) */}
+            <p className="gs-recruit-who">{seatNamesNow.length ? seatNamesNow.join(" · ") : "아직 아무도 없어요"}</p>
+            {/* 읽는 순서: 머리 → 사람 → 초대 한 덩이. (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로 */}
             <div className="gs-lbsec gs-recruit-code">{inviteLine()}</div>
-            {/* (폐기 2026-09-06) 카드 안의 들어오려는 사람 목록 — 카드는 문, 사람은 표(표 아래 줄) */}
-            {/* 게스트 방장 — 문턱이 아니라 안내 한 줄 (§3.11). 방장은 파티의 앵커라 브라우저 저장소를 잃으면
-                방을 되찾을 길이 없습니다. 맨 아래 작은 글자로 (2026-09-05 ⑥) */}
-            {auth.anon && (
-              <p className="gs-lb-note gs-recruit-guest">
-                게스트로 연 파티는 이 브라우저에 묶여 있어요 —{" "}
-                <button className="gs-auth-linkb" onClick={() => setUpOpen({})}>
-                  아이디를 정하면
-                </button>{" "}
-                어디서든 이어요.
-              </p>
-            )}
           </div>
         </section>
       )}
@@ -11727,23 +11969,37 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
         {/* 감속 (2026-09-05) — 끝에서 꼬리를 길게 끌어 긴장을 늘립니다. 다음 판부터 적용.
             자리는 룰렛 외형 머리 바로 아래 (2026-09-06 사용자 지적 — 원판 고르기 밑에 붙어 있으면 딴 설정처럼 보였다).
             (폐기 2026-09-06) `느긋하게는 끝에서 오래 미적여요.` — 사용자: 워딩이 별로 */}
+        {/* 감속 = 프리셋 둘 + 슬라이더 (2026-09-07 사용자 확정). 슬라이더는 끝에서 미끄러지는 길이, 프리셋은 그 위의 두 자리 */}
         <div className="gs-modebar gs-easebar">
           <span className="gs-caplab">감속</span>
-          <div className="gs-seg" role="group" aria-label="감속">
+          <div className="gs-seg" role="group" aria-label="감속 프리셋">
             <button
-              className={relay.spinEase === "normal" ? "on" : ""}
-              onClick={() => putRelay({ ...relay, spinEase: "normal" })}
+              className={spinGlideOf(relay) === GLIDE_NORMAL ? "on" : ""}
+              onClick={() => putRelay({ ...relay, spinGlide: GLIDE_NORMAL })}
             >
               보통
             </button>
             <button
-              className={relay.spinEase === "normal" ? "" : "on"}
-              onClick={() => putRelay({ ...relay, spinEase: undefined })}
+              className={spinGlideOf(relay) === GLIDE_GENTLE ? "on" : ""}
+              onClick={() => putRelay({ ...relay, spinGlide: GLIDE_GENTLE })}
             >
               느긋하게
             </button>
           </div>
-          <span className="gs-unitnote">느긋하게는 끝에서 천천히 멈춰요.</span>
+          <label className="gs-glide">
+            <span className="gs-glide-l">짧게</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={spinGlideOf(relay)}
+              onChange={(e) => putRelay({ ...relay, spinGlide: Number(e.target.value) })}
+              aria-label="끝에서 미끄러지는 길이"
+            />
+            <span className="gs-glide-l">길게</span>
+          </label>
+          <span className="gs-unitnote">끝에서 미끄러지는 길이예요. 다음 판부터.</span>
         </div>
         <SpinLookPicker
           value={spinShape(relay)}
@@ -12248,13 +12504,33 @@ function InviteCard({ inv, onAccept, onDeny }) {
    조용한 문이고, 앉은 파티가 있으면 복귀 줄이 주인공입니다. 채우는 게 아니라 밀도입니다:
    카드 속은 실데이터 요약이고, 첫 방문(백지)은 문 둘만 크고 나머지는 비웁니다.
    문구는 §8 초안 — 화면에서 보고 확정합니다 */
+/* 참여 칸 — 허브 안의 작은 부품 (입력값만 제 것) */
+function JoinBox({ onJoin }) {
+  const [code, setCode] = useState("");
+  const submit = () => {
+    if (code.trim()) onJoin(code);
+  };
+  return (
+    <div className="gs-lh-join">
+      <input
+        className="gs-in gs-lh-in"
+        value={code}
+        placeholder="초대 코드나 초대 주소를 붙여넣어요"
+        onChange={(e) => setCode(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        aria-label="초대 코드나 초대 주소"
+      />
+      <button className="gs-btn" onClick={submit} disabled={!code.trim()}>
+        참여하기
+      </button>
+    </div>
+  );
+}
+
+/* 로비 두 열 (2026-09-07 사용자 확정: 헤더 리뉴얼) — 1열은 계정 카드와 기록 카드가 위아래로, 2열은 파티 허브(헤더 칩과 같은 내용).
+   (폐기, 같은 날) 왼쪽 한 카드에 계정·주소·내 판이 함께, 오른쪽에 `파티 참여` 카드와 기록 카드 — 아바타와 기록이 한 카드일 이유가 없었고(사용자),
+   내 판·파티 참여·헤더 칩 셋이 같은 일을 따로 말했다. 기록은 없어도 카드가 선다(`아직 기록이 없어요`, 초안) */
 function LobbyHome({
-  boardOn,
-  hasParty,
-  seated,
-  seatNames,
-  cap,
-  onDisband,
   auth,
   obsUrl,
   showObs,
@@ -12263,22 +12539,8 @@ function LobbyHome({
   flash,
   onSettings,
   onLogin,
-  roundName,
-  cols,
-  seats,
-  roundLive,
-  liveGold,
-  sinceMin,
-  lastGen,
-  made,
-  onEnter,
-  seatedRoom,
-  onLeaveParty,
-  note,
-  onDropNote,
-  seatedLive,
-  onReturn,
-  onJoin,
+  onUpgrade,
+  hub,
   gens,
   onOpenGen,
   onDropGen,
@@ -12287,24 +12549,12 @@ function LobbyHome({
   onTut,
   onDropTut,
 }) {
-  const [code, setCode] = useState("");
-  /* 자리표시 (모험가N)은 빈 칸입니다 — 판 중엔 자리 이름에도 그 글자가 들어가 있어 걸러 셉니다 */
-  const filled = seats.filter((x) => x.acct || ((x.name || "").trim() && !isFillName(x.name)));
-  /* 남의 계정이 붙은 자리가 있어야 파티입니다 — 혼자 판의 진행 중 얼굴은 파티원 얘기를 안 합니다 */
-  const party = !!auth && seats.some((x) => x.acct && x.acct !== auth.id);
-  /* 복귀 줄의 파티 이름 — 마지막으로 받은 판이 그 방의 것이면 방장 닉을 압니다 */
-  const kept = seatedRoom ? loadLastLive() : null;
-  const partyName =
-    kept && kept.room === seatedRoom && kept.host ? kept.host + "네 파티" : "참여 중인 파티";
   /* 누적 한 줄 — 기록 카드 발치, 로컬 집계 (§3.0) */
   const total = gens.reduce((a, g) => a + (g.gold || 0), 0);
-  const submit = () => {
-    if (code.trim()) onJoin(code);
-  };
   return (
     <section className="gs-lobbyhome" aria-label="로비">
       {/* 같이 해보기 권유 (2026-09-06 사용자 확정) — 초대 없이 들어온 모든 사용자에게 한 번, 헤더 아래·두 카드 위 띠.
-          [됐어요]로 접으면 [?]에만 남습니다. 문구는 초안. (폐기, 같은 날) 내 판 카드 안 [+ 새 판 만들기] 바로 위 — 공지가 아니라 새 판 UI 의 일부처럼 읽혔다 */}
+          [됐어요]로 접으면 [?]에만 남습니다. 문구는 초안 */}
       {tutLine && (
         <div className="gs-tutline" role="status">
           <span>
@@ -12322,10 +12572,10 @@ function LobbyHome({
       )}
       <div className="gs-lobbyhome-col">
         <div className="gs-card gs-lh-me">
+          <h4 className="gs-lbcard-h">계정</h4>
           {auth ? (
             <>
-              {/* 계정 줄 — 설정(닉·로그아웃·아이디 만들기)은 오버레이 공유 설정 창(§5.7)이 집이고,
-                  로비는 진열대입니다 */}
+              {/* 계정 줄 — 설정(닉·로그아웃·아이디 만들기)은 오버레이 공유 설정 창(§5.7)이 집이고, 로비는 진열대입니다 */}
               <div className="gs-lh-acct">
                 <i className="gs-acct-ava">{(auth.nick || "?").slice(0, 1)}</i>
                 <b className="gs-lh-nick">{auth.nick}</b>
@@ -12355,86 +12605,18 @@ function LobbyHome({
                   </button>
                 </div>
               )}
-            </>
-          ) : null}
-          {auth && <hr className="gs-lh-rule" />}
-          {/* 내 판 카드의 세 얼굴 (§3.0, 2026-09-05) — 상태가 제목이다: 진행 중(두고 나온 판) / 시작 전 / 백지.
-              (폐기, 당일) 제목 `내 판` + 작은 `진행 중` 뱃지 — "두고 나왔다"도 "시작 전이다"도 안 읽혔다.
-              문구는 §8 초안 */}
-          {/* 네 얼굴, 한 뼈대 (2026-09-06 사용자: 왼쪽 UI 일관성) — 제목은 상태, 그 아래 상자 하나에 사실 한 줄·설명 한 줄·버튼 줄.
-              빈 판만 점선 상자, 두고 나온 진행 중만 금테. (폐기, 같은 날) 백지만 점선 상자·가운데 정렬이고 나머지는 맨 버튼이 왼쪽에 서던 것.
-              제목 `판 없음`과 설명 문구는 초안 */}
-          {!made ? (
-            <>
-              <h4 className="gs-lbcard-h">판 없음</h4>
-              <div className="gs-lh-box empty">
-                {/* 처음에도, 끝내기·해산 뒤에도 같은 얼굴 (2026-09-06) — "아직"은 끝낸 뒤엔 안 맞아서 뺌 (초안) */}
-                <p className="gs-lh-sub">{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
-                <div className="gs-lh-acts">
-                  <button className={"gs-btn gs-lifebtn gs-lh-newbtn " + (auth ? "gs-btn-ghost" : "gs-lbstart")} onClick={onEnter}>
-                    + 새 판 만들기
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : roundLive ? (
-            <>
-              <h4 className="gs-lbcard-h gs-lh-facet">
-                <em className="gs-livechip-dot" aria-hidden="true" />
-                진행 중 · <b>{roundName || defaultRoundName()}</b>
-              </h4>
-              {/* 상자 전체가 문 (2026-09-07 사용자: 롤 로비처럼 — 선 영역 전체로 복귀). 버튼 대신 발치에 `벌금판으로 ›` */}
-              <div className="gs-lh-box live gs-lh-go" role="button" tabIndex={0} onClick={onEnter} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEnter()}>
-                <p className="gs-lh-facts">
-                  {filled.length}명 · 벌금 {man(liveGold || 0)}
-                  {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
+              {/* 게스트 안내는 여기 (2026-09-07; (폐기) 대기실 모집 카드 발치) — 방장은 파티의 앵커라 브라우저 저장소를 잃으면 방을 되찾을 길이 없습니다 (§3.11) */}
+              {auth.anon && (
+                <p className="gs-lh-note">
+                  게스트 계정은 이 브라우저에 묶여 있어요 —{" "}
+                  <button className="gs-auth-linkb" onClick={onUpgrade}>
+                    아이디를 정하면
+                  </button>{" "}
+                  어디서든 이어요.
                 </p>
-                <p className="gs-lh-sub">
-                  판을 두고 나온 상태예요 —{" "}
-                  {party ? "파티원은 그대로 셀 수 있어요." : "숫자는 그대로 남아 있어요."}
-                </p>
-                <span className="gs-lh-goto">벌금판으로 ›</span>
-              </div>
+              )}
             </>
           ) : (
-            <>
-              {/* 시작 전·모집 중 (2026-09-06 모델) — 로비엔 내가 없는 동안 움직이는 것만: 앉은 수와 문 둘. 항목·단가는 대기실
-                  표 머리가 말합니다. (폐기 2026-09-06) 판 이름·항목 칩·`자리 n/8`·`열어서 [시작]을 누르면 세기 시작해요.`·
-                  `지난 판 '…'은 끝났어요 — 결과는 판 기록에.`·[벌금판 열기] — 판이 늘 있다는 전제의 얼굴이었다 */}
-              {/* 대기실 인원은 두 얼굴 다 상자 안 사실 줄에 (2026-09-07 사용자: 시작 전에도 인원을 알려야 하고 UI 가 밀리면 안 된다).
-                  (폐기) 모집 중 제목 옆 칩 `n / 정원 앉음` — 상태가 바뀌면 제목 줄이 늘어났다. [해산]은 왼쪽에 따로 앉혀 가운데 버튼이 안 밀립니다 */}
-              {/* 롤 로비처럼 (2026-09-07 사용자 확정): 제목 줄 오른쪽 끝 [× 해산], 상자 전체가 대기실로 가는 문, 상자 안엔 대기실 인원 수와 앉은 사람 이름.
-                  (폐기, 같은 날) 상자 왼쪽에 큰 유령 [해산] + 가운데 [대기실로] — 보조 동작이 주 버튼과 무게가 같았다. 문구는 초안 */}
-              <h4 className="gs-lbcard-h gs-lh-facet">
-                {hasParty ? (
-                  <>
-                    <em className="gs-livechip-dot" aria-hidden="true" />
-                    모집 중
-                  </>
-                ) : (
-                  "시작 전"
-                )}
-              </h4>
-              {/* [× 해산]은 상자 우상단에 겹치되 상자의 형제입니다 — 자식이면 ×에 올린 호버가 상자 전체로 번졌다 (2026-09-07 사용자). 늘 한 번 묻습니다 */}
-              <div className="gs-lh-boxwrap">
-                <div className="gs-lh-box gs-lh-go" role="button" tabIndex={0} onClick={onEnter} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEnter()}>
-                  <p className="gs-lh-facts">
-                    대기실 {seated} / {cap} 앉음
-                  </p>
-                  <p className="gs-lh-names">
-                    {seatNames && seatNames.length ? seatNames.filter(Boolean).join(" · ") : "아직 아무도 없어요"}
-                  </p>
-                  <span className="gs-lh-goto">대기실로 ›</span>
-                </div>
-                <button className="gs-lh-x" onClick={onDisband} aria-label="판 해산">
-                  <span aria-hidden="true">×</span> 해산
-                </button>
-              </div>
-            </>
-          )}
-          {/* 비로그인의 권유는 만들기 뒤에 한 줄로 (2026-09-05 ③) — 먼저 판을 만들고, 주소는 판 안의 공유 설정에서.
-              (폐기, 당일) 카드 머리의 권유 슬립 + [시작하기] — 첫 화면에서 로그인부터 요구하는 그림이었다 */}
-          {!auth && (
             <p className="gs-lh-note gs-lh-loginnote">
               파티원을 부르거나 방송에 띄우려면 로그인이 필요해요 — 게스트로도 돼요.{" "}
               <button className="gs-auth-linkb" onClick={onLogin}>
@@ -12443,74 +12625,37 @@ function LobbyHome({
             </p>
           )}
         </div>
+        {/* 판 기록의 집 (§3.0) — 내 판과 참여한 판이 이름표를 달고 섭니다. 없어도 카드는 섭니다 (2026-09-07) */}
+        <div className="gs-card gs-lh-recs">
+          <h4 className="gs-lbcard-h">
+            기록{gens.length > 0 && <span className="gs-lbroster-n">{gens.length}</span>}
+          </h4>
+          {gens.length > 0 ? (
+            <>
+              <GenList gens={gens.slice(0, 3)} onOpen={onOpenGen} onDrop={onDropGen} />
+              <div className="gs-lh-recfoot">
+                <span className="gs-lh-stat">
+                  여태 <b>{gens.length}판</b> · 벌금 <b>{man(total)}</b>
+                </span>
+                {gens.length > 3 && (
+                  <button className="gs-auth-linkb" onClick={onAllGens}>
+                    전체 보기
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="gs-lh-box empty gs-lh-norec">
+              <p className="gs-lh-sub">아직 기록이 없어요. 판을 끝내면 결과지가 여기 남아요.</p>
+            </div>
+          )}
+        </div>
       </div>
       <div className="gs-lobbyhome-col">
-        <div className="gs-card">
-          <h4 className="gs-lbcard-h">파티 참여</h4>
-          {/* 복귀 줄 — 앉은 사람이 로비에 있는 건 일부러 들른 잠깐이라 돌아가는 문이 잘 보여야 합니다 */}
-          {/* 시작 전에 해산당했으면 쪽지 하나 (2026-09-06) — ×를 눌러야 없어집니다 (초안) */}
-          {note && !seatedRoom && (
-            <div className="gs-note" role="status">
-              <span>
-                <b>{note.host ? note.host + "네 파티" : "파티"}</b>가 해산됐어요.
-              </span>
-              <button className="gs-note-x" onClick={onDropNote} aria-label="닫기">
-                ×
-              </button>
-            </div>
-          )}
-          {seatedRoom && (
-            <div className="gs-slip gs-slip-green gs-lh-back" role="status">
-              <span className="gs-slip-msg">
-                <em className="gs-livechip-dot" aria-hidden="true" /> <b>{partyName}</b> · {seatedLive ? "진행 중" : "시작 전"}
-              </span>
-              {/* 나가기는 세 곳에서 같은 버튼 (2026-09-06) — 로비·대기실·판 안 */}
-              <button className="gs-btn gs-btn-sm gs-btn-ghost gs-slip-act" onClick={onLeaveParty}>
-                나가기
-              </button>
-              <button className="gs-btn gs-btn-sm gs-slip-act" onClick={() => onReturn(seatedRoom)}>
-                돌아가기
-              </button>
-            </div>
-          )}
-          {/* 비밀 파티 입장 문법 — 주소를 그대로 붙여넣어도, 코드 8자만 쳐도 들어가진다 */}
-          {/* 같은 말은 한 번만 (2026-09-07 사용자: 카드에 똑같은 내용이 세 번) — 위 라벨과 아래 안내 줄을 걷고 입력칸의 안내문만 남깁니다.
-              (폐기) `초대 코드나 초대 주소` 라벨 · `초대 링크나 코드를 받으면 여기 붙여넣어 들어가요.` 안내 줄 */}
-          <div className="gs-lh-join">
-            <input
-              className="gs-in gs-lh-in"
-              value={code}
-              placeholder="초대 코드나 초대 주소를 붙여넣어요"
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              aria-label="초대 코드나 초대 주소"
-            />
-            <button className="gs-btn" onClick={submit} disabled={!code.trim()}>
-              참여하기
-            </button>
-          </div>
-          {/* (폐기 2026-09-05) 함께한 파티원 칩 줄(노크 문) — 함께한 사람 UI 를 통째로 걷었다 (§3.3).
-              재합류는 멤버십 유지와 초대 링크가 맡는다 */}
+        <div className="gs-card gs-lh-hub">
+          <h4 className="gs-lbcard-h gs-lh-hubh">파티</h4>
+          {hub}
         </div>
-        {/* 판 기록의 집 (§3.0) — 내 판과 참여한 판이 이름표를 달고 섭니다. 없으면 카드도 없습니다 */}
-        {gens.length > 0 && (
-          <div className="gs-card gs-lh-recs">
-            <h4 className="gs-lbcard-h">
-              판 기록<span className="gs-lbroster-n">{gens.length}</span>
-            </h4>
-            <GenList gens={gens.slice(0, 3)} onOpen={onOpenGen} onDrop={onDropGen} />
-            <div className="gs-lh-recfoot">
-              <span className="gs-lh-stat">
-                여태 <b>{gens.length}판</b> · 벌금 <b>{man(total)}</b>
-              </span>
-              {gens.length > 3 && (
-                <button className="gs-auth-linkb" onClick={onAllGens}>
-                  전체 보기
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </section>
   );
@@ -15188,6 +15333,11 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-mouse{vertical-align:-4px; margin:0 1px}
 /* 코치마크 — 처음 한 번, 금테 말풍선이 자리를 가리킵니다 */
 /* [?]의 점과 사용법 메뉴 (2026-09-06) */
+/* 감속 슬라이더 (2026-09-07) — 프리셋 오른쪽, 안내문은 줄바꿈 */
+.gs-easebar{flex-wrap:wrap}
+.gs-glide{display:flex; align-items:center; gap:8px; flex:1 1 220px; min-width:220px}
+.gs-glide input[type=range]{flex:1; min-width:120px; accent-color:var(--gold); cursor:pointer}
+.gs-glide-l{font-size:11.5px; color:var(--ink-2); white-space:nowrap}
 .gs-helpbtn{position:relative}
 .gs-qdot{position:absolute; right:4px; top:4px; width:7px; height:7px; border-radius:50%; background:var(--gold)}
 .gs-guide-list{display:flex; flex-direction:column}
@@ -16623,10 +16773,28 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-invmodal .gs-lbsec{margin-top:12px}
 .gs-easebar{margin-top:12px}
 /* 초대 — 코드가 주인공 (⑥) */
-.gs-invcode-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
-.gs-invcode-b{font-family:var(--mono); font-size:22px; letter-spacing:.14em; color:var(--gold); line-height:1}
-.gs-invcode-acts{display:flex; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap}
-.gs-invcode-renew{margin-left:auto}
+/* 초대 한 덩이 (2안, 2026-09-07) — 주 버튼 · 코드 칩 · 유령 둘 · 작은 글자, 왼쪽에 모여 한 줄(좁으면 줄바꿈). (폐기) 라벨 줄 + 22px 코드 + 오른쪽 끝 글자 링크 */
+.gs-invcode{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.gs-invcode-chip{display:inline-flex; align-items:center; gap:4px; padding:2px 4px 2px 12px; border:1px solid rgba(var(--gold-rgb),.5); border-radius:4px; background:rgba(0,0,0,.18)}
+.gs-invcode-b{font-family:var(--mono); font-size:15px; letter-spacing:.2em; color:var(--gold); line-height:1}
+.gs-invcode-renew{margin-left:2px; font-weight:400; color:var(--ink-2); text-decoration:underline}
+.gs-invcode-renew:hover{color:var(--gold)}
+.gs-invdiscbtn{white-space:nowrap}
+.gs-recruit-who{margin:6px 0 12px; font-size:14px; color:var(--ink); line-height:1.6}
+/* 파티 허브 (2026-09-07) — 헤더 칩의 팝오버와 로비 2열 카드 */
+.gs-hubchip{margin-left:12px}
+.gs-hubchip.on{background:rgba(var(--gold-rgb),.22)}
+.gs-hubchip-off{border-color:rgba(var(--ink-rgb),.3); background:transparent; color:var(--ink-2)}
+.gs-hubchip-off:hover{background:rgba(var(--ink-rgb),.06)}
+.gs-hubpop{left:0; right:auto; width:min(480px, 92vw); padding:14px 16px 16px}
+.gs-hubpop .gs-lbcard-h{margin-top:0}
+.gs-hub-inv{margin-top:12px; padding-top:12px; border-top:1px dashed rgba(var(--ink-rgb),.18)}
+.gs-hub-own{margin:10px 0 0; font-size:12.5px; color:var(--ink-body); display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.gs-hub-pending{display:flex; align-items:center; gap:10px; padding:10px 12px; margin:0 0 12px; border:1px solid rgba(var(--gold-rgb),.5); background:rgba(var(--gold-rgb),.06); font-size:12.5px; color:var(--ink-body)}
+.gs-hub-pending b{color:var(--ink)}
+.gs-hub-pending-r{margin-left:auto; display:flex; gap:8px}
+.gs-lh-norec{padding:16px}
+.gs-lh-hubh{margin-bottom:10px}
 /* 판 중 파티 줄 (⑤) */
 .gs-recruit-live{display:flex; align-items:center; gap:12px; padding:10px 16px}
 .gs-recruit-livehead{font-size:13px; color:var(--ink-body)}
