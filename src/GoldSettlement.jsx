@@ -3845,17 +3845,6 @@ export default function GoldSettlement() {
   /* [혼자 세기] (2026-09-08 사용자 확정) — 판을 만들고, 그 판이 실제로 선 다음 렌더에서 바로 시작합니다.
      newBoard 직후에 startRound 를 부르면 아직 옛 자리(클로저)를 보므로 ref 로 한 박자 미룹니다 */
   const soloPending = useRef(false);
-  useEffect(() => {
-    if (!soloPending.current) return;
-    if (roundLive) {
-      soloPending.current = false;
-      return;
-    }
-    if (!boardOn) return;
-    soloPending.current = false;
-    startRound(cols);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardOn, roundLive]);
   const askSoloBoard = () => {
     soloPending.current = true;
     askNewBoard();
@@ -6883,6 +6872,19 @@ export default function GoldSettlement() {
   const boardOn = roundLive || !!(relay && relay.boardOn);
   boardOnRef.current = boardOn;
   const boardMade = boardOn;
+  /* [혼자 세기]가 만든 판이 서면 그 다음 렌더에서 바로 시작합니다 — boardOn 선언 뒤에 걸어야 합니다
+     (버그 기록 2026-09-08: 선언 앞에 두어 TDZ 로 앱이 죽었다. 되돌리기 칩 때와 같은 실수) */
+  useEffect(() => {
+    if (!soloPending.current) return;
+    if (roundLive) {
+      soloPending.current = false;
+      return;
+    }
+    if (!boardOn) return;
+    soloPending.current = false;
+    startRound(cols);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardOn, roundLive]);
   /* 지금 화면 (2026-09-06) — 화면별 사용법과 [?] 메뉴의 "지금 이 화면"이 봅니다 */
   const recMember = readOnly && !genView;
   const recKey = recMember ? "member" : "host";
