@@ -17188,7 +17188,8 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-invdiscbtn{order:3}
 .gs-invcodebtn{order:4}
 .gs-invcode-renew{order:5}
-.gs-invwarn{order:6; flex-basis:100%; font-size:11.5px; color:var(--ink-2); line-height:1.6}
+.gs-invwarn{order:6; flex-basis:100%; font-size:11.5px; color:var(--ink-2); line-height:1.6; margin-top:2px}
+.gs-invcode .gs-lbstart{margin-left:0}
 .gs-invcode-chip{display:inline-flex; align-items:center; gap:8px; padding:5px 12px; border:1px solid rgba(var(--gold-rgb),.5); border-radius:4px; background:rgba(0,0,0,.18)}
 .gs-invcode-chip .gs-caplab{margin:0}
 .gs-invcode-b{font-family:var(--mono); font-size:15px; letter-spacing:.2em; color:var(--gold); line-height:1}
