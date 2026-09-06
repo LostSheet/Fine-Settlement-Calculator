@@ -3383,29 +3383,78 @@ export default function GoldSettlement() {
      자리 = { 이름, 붙은 계정, 기억된 아이디 }. 연결이 판의 행이 아니라 자리에 살아서
      판이 갈려도 연결이 안 끊어집니다. 닉네임 매칭 재연결은 폐기했습니다. */
   const putSeats = (next) => setSeats(typeof next === "function" ? next : () => next);
-  /* ≡ 손잡이 — 이름 왼쪽을 끌어 줄 순서를 바꿉니다 (2026-09-06 오후 사용자 요청). 방장 줄(1번)은 손잡이도 없고 그 위로 놓을 수도 없습니다.
-     파티원 화면엔 없습니다. 줄과 자리는 같은 id 로 묶여 있어 둘 다 같은 순서로 돌립니다 — 저장·중계·오버레이는 줄 순서를 그대로 따릅니다 */
-  const dragRowRef = useRef(null);
-  const [dragOver, setDragOver] = useState(null); // {id, after} — 끌고 지나는 줄과 위/아래
-  const reorderById = (list, from, targetId, after) => {
-    const fi = list.findIndex((x) => x.id === from);
-    const ti = list.findIndex((x) => x.id === targetId);
-    if (fi < 1 || ti < 1) return list;
-    const arr = list.slice();
-    const [item] = arr.splice(fi, 1);
-    let to = arr.findIndex((x) => x.id === targetId) + (after ? 1 : 0);
-    if (to < 1) to = 1;
-    arr.splice(to, 0, item);
-    return arr;
+  /* ≡ 손잡이 — 이름 왼쪽을 끌어 줄 순서를 바꿉니다 (2026-09-06 오후 사용자 요청; 같은 날 실시간으로). 방장 줄(1번)은 손잡이도 없고 그 위로 놓을 수도 없습니다.
+     파티원 화면엔 없습니다. 끄는 동안은 DOM 의 transform 만 만지고(다른 줄이 미끄러져 자리를 비킴), 놓을 때 한 번 상태를 바꿉니다 —
+     포인터마다 다시 그리면 앱 전체가 다시 그려져 무겁습니다. 줄과 자리는 같은 id 라 둘 다 같은 순서로 돌립니다.
+     (폐기, 같은 날) HTML5 draggable + 놓일 자리 금색 선 — 사용자: 투박하다 */
+  const dragRef = useRef(null); // {id, from, to, y0, h, els, mid}
+  const [dragTick, setDragTick] = useState(0); // 놓은 뒤 DOM 이 새 순서로 바뀌면 transform 을 걷는 신호
+  const dragRows = () => (gridRef.current ? [...gridRef.current.querySelectorAll("tbody > tr[data-row]")] : []);
+  const dragClear = () => {
+    dragRows().forEach((el) => {
+      el.style.transform = "";
+      el.classList.remove("gs-dragging");
+    });
+    if (gridRef.current) gridRef.current.classList.remove("gs-drag-live");
   };
-  const dropRow = (targetId, after) => {
-    const from = dragRowRef.current;
-    dragRowRef.current = null;
-    setDragOver(null);
-    if (!from || from === targetId) return;
-    setRows((prev) => reorderById(prev, from, targetId, after));
-    putSeats((prev) => reorderById(prev, from, targetId, after));
+  const dragStart = (e, id) => {
+    if (readOnly || (e.pointerType === "mouse" && e.button !== 0)) return;
+    const els = dragRows();
+    const from = els.findIndex((el) => el.dataset.row === id);
+    if (from < 1) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (x) {}
+    const h = els[from].getBoundingClientRect().height;
+    /* 각 줄의 원래 가운데 — 끄는 동안 다른 줄은 transform 으로 움직이니 원래 자리를 기억해 둡니다 */
+    const mid = els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return r.top + r.height / 2;
+    });
+    dragRef.current = { id, from, to: from, y0: e.clientY, h, els, mid };
+    gridRef.current.classList.add("gs-drag-live");
+    els[from].classList.add("gs-dragging");
   };
+  const dragMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dy = e.clientY - d.y0;
+    d.els[d.from].style.transform = "translateY(" + dy + "px)";
+    const center = d.mid[d.from] + dy;
+    /* 잡은 줄의 가운데보다 위에 있는 다른 줄 수 + 1(방장 줄) = 놓일 자리 */
+    let to = 1;
+    for (let i = 1; i < d.els.length; i++) if (i !== d.from && d.mid[i] < center) to++;
+    d.to = to;
+    for (let i = 1; i < d.els.length; i++) {
+      if (i === d.from) continue;
+      const shift = d.from < i && i <= to ? -d.h : to <= i && i < d.from ? d.h : 0;
+      d.els[i].style.transform = shift ? "translateY(" + shift + "px)" : "";
+    }
+  };
+  const dragEnd = () => {
+    const d = dragRef.current;
+    if (!d) return;
+    dragRef.current = null;
+    if (d.to === d.from) return dragClear();
+    const ids = d.els.map((el) => el.dataset.row);
+    const [moved] = ids.splice(d.from, 1);
+    ids.splice(d.to, 0, moved);
+    /* 새 순서로 — 목록에 없는 것(자리 없는 줄 등)은 뒤에 원래 순서대로 */
+    const byIds = (list) => {
+      const pos = new Map(ids.map((k, i) => [k, i]));
+      return list
+        .map((x, i) => [x, pos.has(x.id) ? pos.get(x.id) : ids.length + i])
+        .sort((a, b) => a[1] - b[1])
+        .map(([x]) => x);
+    };
+    setRows(byIds);
+    putSeats(byIds);
+    setDragTick((t) => t + 1); // DOM 이 새 순서로 그려진 직후 transform 을 걷습니다(useLayoutEffect) — 그려지기 전에 걷으면 한 프레임 튑니다
+  };
+  useLayoutEffect(() => {
+    dragClear();
+  }, [dragTick]);
   const seatName2 = (s, i) => (s && (s.name || "").trim()) || ANON(i);
   /* 자리 하나 = 판의 줄 하나. 줄 id 가 자리 id 그대로라 판이 갈려도 자격이 따라옵니다 */
   const rowsFromSeats = (list) =>
@@ -8735,32 +8784,10 @@ export default function GoldSettlement() {
                         /* 파티원 화면에서 내 줄 — 이름부터 금색이라 어디를 눌러야 하는지 바로 보입니다 */
                         (you && you.rowId === row.id && readOnly ? " gs-myrow" : "") +
                         /* 방금 앉은 줄 — 3초 금색 (§3.1, 2026-09-05) */
-                        (ready && arrived[row.id] ? " gs-row-arrive" : "") +
-                        /* 끌고 지나는 줄 — 놓일 자리를 금색 선으로 */
-                        (dragOver && dragOver.id === row.id ? (dragOver.after ? " gs-dragover-bot" : " gs-dragover-top") : "")
+                        (ready && arrived[row.id] ? " gs-row-arrive" : "")
                       }
                       onClick={
                         spin && spin.phase === "pick" ? () => pickPassTarget(row) : undefined
-                      }
-                      onDragOver={
-                        !readOnly && i > 0
-                          ? (e) => {
-                              if (!dragRowRef.current) return;
-                              e.preventDefault();
-                              const r = e.currentTarget.getBoundingClientRect();
-                              const after = e.clientY > r.top + r.height / 2;
-                              setDragOver((p) => (p && p.id === row.id && p.after === after ? p : { id: row.id, after }));
-                            }
-                          : undefined
-                      }
-                      onDrop={
-                        !readOnly && i > 0
-                          ? (e) => {
-                              e.preventDefault();
-                              const r = e.currentTarget.getBoundingClientRect();
-                              dropRow(row.id, e.clientY > r.top + r.height / 2);
-                            }
-                          : undefined
                       }
                       data-row={row.id}
                     >
@@ -8770,20 +8797,12 @@ export default function GoldSettlement() {
                           {!readOnly && i > 0 && (
                             <span
                               className="gs-drag"
-                              draggable="true"
                               title="끌어서 줄 순서 바꾸기"
                               aria-label="줄 순서 바꾸기"
-                              onDragStart={(e) => {
-                                dragRowRef.current = row.id;
-                                e.dataTransfer.effectAllowed = "move";
-                                try {
-                                  e.dataTransfer.setData("text/plain", row.id);
-                                } catch (x) {}
-                              }}
-                              onDragEnd={() => {
-                                dragRowRef.current = null;
-                                setDragOver(null);
-                              }}
+                              onPointerDown={(e) => dragStart(e, row.id)}
+                              onPointerMove={dragMove}
+                              onPointerUp={dragEnd}
+                              onPointerCancel={dragEnd}
                             >
                               ≡
                             </span>
@@ -13768,7 +13787,7 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
       e.preventDefault();
       e.stopPropagation();
     };
-    const kinds = ["mousedown", "mouseup", "click", "dblclick", "contextmenu"];
+    const kinds = ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "contextmenu"];
     kinds.forEach((k) => document.addEventListener(k, stop, true));
     return () => kinds.forEach((k) => document.removeEventListener(k, stop, true));
   }, [block, lock, sel, action]);
@@ -14794,11 +14813,14 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 이름 칸은 이름만 — 손잡이는 오른쪽 끝 도구 열에 삽니다 */
 .gs-namecell{display:flex; align-items:center; gap:4px}
 /* ≡ 손잡이 — 옅게 있다가 호버에 진해집니다. 끌고 지나는 줄엔 놓일 쪽에 금색 선 */
-.gs-drag{cursor:grab; color:var(--ink-2); font-size:15px; line-height:1; padding:0 3px; user-select:none; opacity:.5; flex:none}
+.gs-drag{cursor:grab; color:var(--ink-2); font-size:15px; line-height:1; padding:0 3px; user-select:none; opacity:.5; flex:none; touch-action:none}
 .gs-drag:hover{opacity:1; color:var(--ink)}
 .gs-drag:active{cursor:grabbing}
-tr.gs-dragover-top > th,tr.gs-dragover-top > td{box-shadow:inset 0 2px 0 var(--gold)}
-tr.gs-dragover-bot > th,tr.gs-dragover-bot > td{box-shadow:inset 0 -2px 0 var(--gold)}
+/* 끄는 동안 — 잡은 줄은 손을 따라오고(전환 없음, 위로 띄움), 다른 줄은 미끄러져 자리를 비킵니다 (2026-09-06 오후 실시간) */
+.gs-grid.gs-drag-live tbody > tr{transition:transform .16s ease}
+.gs-grid.gs-drag-live tbody > tr.gs-dragging{transition:none; position:relative; z-index:3}
+tr.gs-dragging > th,tr.gs-dragging > td{background:var(--paper); box-shadow:0 6px 18px rgba(0,0,0,.28)}
+tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 줄의 신분 표시 — 이름 칸 왼쪽 빈자리 (§3.1). 이름은 오른쪽 끝에 그대로 붙습니다 */
 .gs-rowmeta{margin-right:auto; flex:none; display:inline-flex; align-items:center; gap:4px; padding-left:4px}
 /* i 하나 — 사람이 앉은 줄. 호버(title)에 닉 · 아이디. 끊긴 사람은 흐려집니다.
