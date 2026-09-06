@@ -14257,7 +14257,6 @@ const SOLO_STEPS = [
   { ch: 2, sel: ".gs-tab-ledger", text: "다 셌으면 정산 장부예요. 누가 얼마 내고 얼마 받는지 나와요.", wait: "tab:ledger", clear: true },
   { ch: 2, sel: ".gs-tab-mail", text: "게임 우편으로 보낼 내용이에요. 파티원에게 넘길 건 이거예요.", wait: "tab:mail", clear: true },
   { ch: 2, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
-  { ch: 2, sel: ".gs-copybtn", text: "디코에 붙일 한 줄 요약은 여기서 복사해요. 파티원에게는 이 둘만 주면 돼요.", action: "다음 장", lock: true },
   { ch: 3, sel: ".gs-obsbtn", text: "방송에도 띄울 수 있어요. 여기예요.", wait: "obs" },
   { ch: 3, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
   { ch: 3, sel: ".gs-modal .gs-obs-addrbox", text: "이 주소는 OBS 브라우저 소스에 넣는 것이지, 파티원에게 주는 게 아니에요. 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "다 봤어요", top: true },
