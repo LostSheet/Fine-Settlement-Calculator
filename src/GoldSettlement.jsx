@@ -8853,8 +8853,8 @@ export default function GoldSettlement() {
                                       방장 줄(1번)은 표시만. (폐기) 파란 원의 i, 도구칸의 사람 버튼 */}
                                   <button
                                     type="button"
-                                    className="gs-rowi"
-                                    aria-label="이 줄의 사람"
+                                    className={"gs-rowi" + (i === 0 ? " gs-rowi-host" : "")}
+                                    aria-label={i === 0 ? "방장" : "이 줄의 사람"}
                                     aria-haspopup={i > 0 ? "dialog" : undefined}
                                     onClick={i > 0 && auth && relay.room ? () => setRowPerson(row.id) : undefined}
                                   >
@@ -14971,6 +14971,11 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowtip .gs-tipline{display:block; line-height:1.6}
 .gs-rowtip .gs-tipline i{font-style:normal; color:var(--ink-2); margin-right:2px}
 .gs-namecell .gs-in-name{margin-left:auto}
+/* 아바타는 닉네임 바로 왼쪽에 (2026-09-07 사용자 확정) — 레버는 왼쪽 끝 그대로, 오른쪽 묶음(아바타·이름)이 이름 열 오른쪽에 붙습니다.
+   방장 아바타는 금색으로 강조. (폐기) 아바타가 레버 옆에 서고 이름만 오른쪽으로 밀리던 배치 — 방장 줄엔 레버가 없어 아바타 열이 어긋났다 */
+.gs-namecell .gs-rowmeta{margin-left:auto}
+.gs-namecell .gs-rowmeta ~ .gs-in-name{margin-left:0}
+.gs-rowi-host{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
    손잡이"라고 가릅니다. 선은 머리줄부터 바닥줄까지 칸마다 왼쪽 테두리로 이어집니다.
    세는 손이 오가는 카운터 칸에서 가장 먼 자리라 오클릭 여지도 가장 적습니다. */
