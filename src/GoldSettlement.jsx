@@ -9448,7 +9448,7 @@ export default function GoldSettlement() {
                               /* 진행 중에 나간 사람의 줄 — 벌금이 붙은 장부 줄이라 남지만, 사람은 없습니다 (§3.4) */
                               if (st && !st.acct && st.left && roundLive)
                                 return (
-                                  <span className="gs-rowmeta">
+                                  <span className="gs-rowmeta gs-rowmeta-tag">
                                     <span className="gs-lb-tag gs-lb-tag-left">퇴장</span>
                                   </span>
                                 );
@@ -15638,6 +15638,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 아바타는 닉네임 바로 왼쪽에 (2026-09-07 사용자 확정) — 레버는 왼쪽 끝 그대로, 오른쪽 묶음(아바타·이름)이 이름 열 오른쪽에 붙습니다.
    방장 아바타는 금색으로 강조. (폐기) 아바타가 레버 옆에 서고 이름만 오른쪽으로 밀리던 배치 — 방장 줄엔 레버가 없어 아바타 열이 어긋났다 */
 .gs-namecell .gs-rowmeta{margin:0} /* 옛 margin-right:auto 잔재가 아바타를 왼쪽 끝으로 밀었다 (실측 100px, 2026-09-07 밤) */
+/* 퇴장 태그는 아바타가 아닙니다 (2026-09-08 사용자: 기존 룩이 좋았는데) — 이름에 딱 붙는 것은 아바타의 규칙이고,
+   태그는 옛 자리인 칸 왼쪽에 섭니다. 위 규칙과 같은 무게라 한 단 더 얹어 확실히 이깁니다 */
+.gs-namecell .gs-rowmeta.gs-rowmeta-tag{margin-right:auto}
 /* (폐기 2026-09-07 밤) .gs-rowmeta{margin-left:auto} + 입력칸 100% — 아바타가 입력칸 왼쪽 끝에, 글자는 오른쪽 끝에 서서 멀리 떨어졌다(사용자 재지적) */
 .gs-rowi-host{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
