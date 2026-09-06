@@ -3021,7 +3021,12 @@ export default function GoldSettlement() {
     setRoundLive(false);
     setPaused(null);
     setMembers([]);
-    putSeats((prev) => prev.filter((s0, i) => i === 0 && !!s0.acct));
+    /* 혼자 쓰기는 방장 닉을 안 씁니다 (2026-09-08 사용자) — 첫 줄부터 예시 이름입니다 */
+    putSeats((prev) =>
+      prev
+        .filter((s0, i) => i === 0 && !!s0.acct)
+        .map((s0) => (DEMO_SOLO ? { ...s0, name: TUT_SOLO_NAMES[0], named: true } : s0))
+    );
     setLobbyCap(4);
     setLobbyOn(true);
     boardOnRef.current = true;
@@ -3098,6 +3103,40 @@ export default function GoldSettlement() {
       setMembers((p) => [...p, ...extras.filter((e) => !p.some((x) => x.acct === e.acct)).map((e) => ({ acct: e.acct, nick: e.nick, st: "ok", rowId: e.id, on: true }))]);
     }, tick());
   };
+  /* 혼자 쓰기의 채우기 (2026-09-08 사용자 확정) — 여덟 줄을 예시 이름과 숫자로 한 번에 채웁니다.
+     방장 튜토리얼의 tutSeed 와 달리 파티원 자수가 없어서(혼자 쓰는 판) 줄을 통째로 세웁니다.
+     숫자는 옛 예시(DEFAULT_PEOPLE) 그대로라 정산 장부·보낼 우편 예시가 어긋나지 않습니다 */
+  const tutSoloSeed = () => {
+    const c3 = cols.find((c) => c.id === "ctut"); // 2장에서 만든 항목이 있으면 셋째 열도 채웁니다
+    const made = [];
+    setRows((prev) => {
+      const next = [];
+      for (let i = 0; i < 8; i++) {
+        const base = prev[i] || { id: "r" + seq.current++, counts: {}, extras: [] };
+        const [, w1, w2, w3] = DEFAULT_PEOPLE[i];
+        made.push({ id: base.id, name: TUT_SOLO_NAMES[i] });
+        next.push({
+          ...base,
+          name: TUT_SOLO_NAMES[i],
+          counts: {
+            c1: w1 ? String(w1) : "",
+            c2: w2 ? String(w2) : "",
+            ...(c3 && w3 ? { ctut: String(w3) } : {}),
+          },
+          extras: [],
+        });
+      }
+      return next;
+    });
+    /* 자리도 줄에 맞춰 여덟 — 첫 자리(방장 계정)는 그대로 두고 이름만 예시로 */
+    putSeats((prev) =>
+      made.map((m, i) => {
+        const old = prev[i];
+        return old ? { ...old, id: m.id, name: m.name, named: true } : { id: m.id, name: m.name, acct: null, mem: null, named: true };
+      })
+    );
+    setLobbyCap(8);
+  };
   /* 걸음에 들어설 때 하는 일 — 웨이 도착(4장 사람 아이콘 걸음), 판 채우기(5장 머리) */
   const tutEntered = useRef(-1);
   useEffect(() => {
@@ -3113,6 +3152,7 @@ export default function GoldSettlement() {
       tutArrive(2);
       say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
     }
+    if (st.enter === "soloseed") partyT(tutSoloSeed, 300);
     if (st.enter === "seed") {
       partyT(tutSeed, 300);
       partyT(() => setCoach((c) => (c && c.kind === "party" ? { ...c, ready: true } : c)), 4500); // 채우기 끝 → [다음] 등장 (서른여덟 번 누르는 데 1.5초, 넷 더 앉히고, 한 박자)
@@ -14295,12 +14335,20 @@ const MEMBER_INHOST = [
 ];
 /* 혼자 쓰기 (2026-09-07 밤 사용자 확정) — "벌금표 쓰는 법이랑, OBS 열어서, 뭐를 파티원들에게 공유해야 하는지도 코치마크 가이드로".
    파티원을 부르는 3·4장이 없는 대신, 정산 결과를 넘기는 길(우편·채팅 복사)을 한 장으로 세웠습니다. 문구는 전부 초안 */
-const SOLO_CHAPTERS = ["판 만들기", "벌금 세기", "정산 나누기", "방송에 띄우기"];
+const SOLO_CHAPTERS = ["판 만들기", "이름과 항목", "벌금 세기", "정산 나누기", "방송에 띄우기"];
 const SOLO_STEPS = [
   { ch: 0, sel: ".gs-solobtn", text: "파티원을 부르지 않을 거예요. [혼자 세기]를 누르면 판을 만들고 바로 벌금표로 가요.", wait: "start" },
+  /* 2장 — 이름 안내까지는 방장 튜토리얼과 같고(사용자), 그다음 단가와 항목 추가 */
   { ch: 1, sel: ".gs-grid tbody tr:nth-child(2) .gs-in-name", text: "파티원 이름은 방장이 직접 적어요. 비워 두면 (모험가2)로 나가요.", action: "다음", lock: true },
+  { ch: 1, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
+  { ch: 1, sel: ".gs-addcol", text: "항목도 더 만들 수 있어요. 눌러 볼까요?", wait: "addcol:open" },
+  { ch: 1, sel: ".gs-modal .gs-coltype .gs-coltype-pick:first-child", text: "그냥 세는 항목이에요. 룰렛은 방장이 돌리는 항목이고요.", wait: "addcol:done", top: true },
+  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-col", text: "이름을 적어요. 예를 들면 암살.", action: "다음" },
+  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 10만이면 10. 적고 [다음]. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음 장", enter: "colfix" },
+  /* 3장 — 여덟 명이 한 판 돌았다고 치고 채웁니다 (2026-09-08 사용자: 이후 8인 기준, 이걸로 증감·장부·우편을 본다) */
+  { ch: 2, sel: ".gs-grid", text: "여덟이 한 판 돌았다고 칠게요…", lock: true, wait: "auto", after: "다음", enter: "soloseed" },
   {
-    ch: 1,
+    ch: 2,
     sel: ".gs-grid tbody tr:first-child",
     text: (
       <>
@@ -14309,14 +14357,13 @@ const SOLO_STEPS = [
     ),
     wait: "press",
   },
-  { ch: 1, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
-  { ch: 1, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true },
-  { ch: 2, sel: ".gs-tab-ledger", text: "다 셌으면 정산 장부예요. 누가 얼마 내고 얼마 받는지 나와요.", wait: "tab:ledger", clear: true },
-  { ch: 2, sel: ".gs-tab-mail", text: "게임 우편으로 보낼 내용이에요. 파티원에게 넘길 건 이거예요.", wait: "tab:mail", clear: true },
-  { ch: 2, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
-  { ch: 3, sel: ".gs-obsbtn", text: "방송에도 띄울 수 있어요. 여기예요.", wait: "obs" },
-  { ch: 3, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
-  { ch: 3, sel: ".gs-modal .gs-obs-addrbox", text: "이 주소는 OBS 브라우저 소스에 넣는 것이지, 파티원에게 주는 게 아니에요. 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "다 봤어요", top: true },
+  { ch: 2, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true },
+  { ch: 3, sel: ".gs-tab-ledger", text: "다 셌으면 정산 장부예요. 누가 얼마 내고 얼마 받는지 나와요.", wait: "tab:ledger", clear: true },
+  { ch: 3, sel: ".gs-tab-mail", text: "게임 우편으로 보낼 내용이에요. 파티원에게 넘길 건 이거예요.", wait: "tab:mail", clear: true },
+  { ch: 3, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
+  { ch: 4, sel: ".gs-obsbtn", text: "방송에도 띄울 수 있어요. 여기예요.", wait: "obs" },
+  { ch: 4, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
+  { ch: 4, sel: ".gs-modal .gs-obs-addrbox", text: "이 주소는 OBS 브라우저 소스에 넣는 것이지, 파티원에게 주는 게 아니에요. 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "다 봤어요", top: true },
 ];
 const TOUR_FLOW = DEMO_SOLO ? SOLO_STEPS : DEMO_CH4 ? MEMBER_INHOST : DEMO_MEMBER ? MEMBER_STEPS : HOST_STEPS;
 /* 장 이름도 코스마다 (2026-09-07 밤) */
@@ -14335,6 +14382,9 @@ const TUT_MEMBERS = [
 ];
 /* 5장에 더 들어오는 넷 — 숫자는 옛 예시(DEFAULT_PEOPLE) 뒤 넷 그대로, 이름은 사용자 지정 8인 라벨(2026-09-06:
    니나브 웨이 실리안 샨디 아제나 이난나 바훈투르 카단)에서 아직 안 쓴 것 순서대로. 방장 줄까지 여덟이라 카단은 뺍니다(사용자 확정) */
+/* 혼자 쓰기 예시의 여덟 (2026-09-08 사용자 확정) — 사용자 지정 8인 라벨 그대로, 방장 줄까지 예시 이름이라 카단이 들어옵니다.
+   방장 튜토리얼과 달리 방장 닉네임을 쓰지 않습니다(사용자) */
+const TUT_SOLO_NAMES = ["니나브", "웨이", "실리안", "샨디", "아제나", "이난나", "바훈투르", "카단"];
 const TUT_EXTRA = [
   { acct: "shandi", nick: "샨디" },
   { acct: "azena", nick: "아제나" },
