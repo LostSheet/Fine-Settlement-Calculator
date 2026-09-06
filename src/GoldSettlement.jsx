@@ -7205,6 +7205,11 @@ export default function GoldSettlement() {
                 {soloMember ? "파티원 튜토리얼" : ch + 1 + "장 " + TOUR_CHAPTERS[ch]}
                 {st ? " · " + cur + "/" + shown.length : ""}
               </span>
+              {/* 나가는 길을 띠에 명시 (2026-09-06 낮 사용자 지정 문구). ✕·Esc 도 그대로. 띠는 걸음 막 위라 늘 눌리고,
+                  4장 파티원 예시에서 눌러도 부모가 전체를 닫습니다 */}
+              <button className="gs-btn gs-btn-sm gs-btn-ghost gs-tourquit" onClick={() => endPartyCourse(false)}>
+                튜토리얼 나가기
+              </button>
             </div>
           );
         })()}
@@ -14816,6 +14821,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 띠는 스크롤해도 늘 보입니다 — sticky, 걸음 막(48) 위·모달(50) 아래 (2026-09-06 낮 사용자: 상단 N장 인디케이터가 항상 보이게) */
 .gs-demoband{position:sticky; top:0; z-index:49; margin:-20px -20px 0; padding:9px 20px; display:flex; align-items:center; justify-content:center; gap:18px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
 .gs-tourdots{display:flex; align-items:center}
+.gs-tourquit{position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:12px; padding:3px 10px} /* 띠 오른쪽 [튜토리얼 나가기] */
 .gs-tourdot{position:relative; width:10px; height:10px; border-radius:50%; border:1.5px solid var(--gold); background:transparent; box-sizing:border-box}
 .gs-tourdot + .gs-tourdot{margin-left:26px}
 .gs-tourdot + .gs-tourdot::before{content:""; position:absolute; right:100%; top:50%; width:26px; height:1.5px; margin-top:-.75px; background:rgba(var(--gold-rgb),.55)}
