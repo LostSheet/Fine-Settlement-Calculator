@@ -2842,6 +2842,7 @@ export default function GoldSettlement() {
       partyT(() => tutArrive(1), 3400);
       partyT(() => partyStep(next + 1), 5400);
     }
+    if (what === "confess:c2") partyT(() => partyStep(next + 1), 2200); // 올라갔어요 → 아, 잡힌 거였어요
     if (what === "press") {
       /* 누름 → (3초) 실리안 자수 + 그 말풍선 → (4초) 룰렛 걸음. 웨이는 사람 아이콘 걸음에 들어설 때 옵니다 */
       partyT(() => {
@@ -4993,7 +4994,7 @@ export default function GoldSettlement() {
       /* 파티원 예시 — 서버 없이 내 줄만 움직입니다. 같이 해보기 9걸음(누르기) */
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, counts: { ...r.counts, [colId]: String(Math.max(0, num(r.counts[colId]) + dir)) } } : r)));
       if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
-      if (tutorialRef.current && dir > 0) tutHit("confess");
+      if (tutorialRef.current) tutHit((dir > 0 ? "confess:" : "unconfess:") + colId); // 파티원 튜토리얼 1·3·4걸음
       return;
     }
     roomApi
@@ -7274,7 +7275,7 @@ export default function GoldSettlement() {
                   <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
                   {[
                     { k: "host", name: "방장 튜토리얼", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
-                    { k: "member", name: "파티원 튜토리얼", sub: MEMBER_STEPS.length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
+                    { k: "member", name: "파티원 튜토리얼", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
                   ]
                     .sort((a, b) => (a.k === recKey ? -1 : b.k === recKey ? 1 : 0))
                     .map((r) => (
@@ -7890,7 +7891,7 @@ export default function GoldSettlement() {
                   return (
                     <button
                       key={c.id}
-                      className={"gs-confcard" + (lock ? " gs-confcard-off" : "")}
+                      className={"gs-confcard gs-confcard-" + c.id + (lock ? " gs-confcard-off" : "")}
                       disabled={lock}
                       onClick={() => !lock && sendConfess(myRow.id, c.id, 1)}
                       onContextMenu={(e) => {
@@ -13335,15 +13336,35 @@ const HOST_STEPS = [
 const MEMBER_STEPS = [
   {
     ch: 7,
-    sel: ".gs-confcard",
+    sel: ".gs-confcard-c2",
     text: (
       <>
-        들어온 파티원은 이 화면을 봐요. 자기 줄만 있고, 칸을 <MouseIcon side="left" /> 누르면 1회, <MouseIcon side="right" /> 우클릭하면 되돌려요. 한번 눌러 보세요.
+        들어온 파티원은 이 화면을 봐요. 자기 줄만 있어요. 이번 판에 죽었군요. 죽음 칸을 <MouseIcon side="left" /> 눌러 자수해 봐요.
       </>
     ),
-    wait: "confess",
+    wait: "confess:c2",
   },
-  { ch: 7, sel: ".gs-confcard", text: "방장 벌금판에 바로 올라갔어요. 되돌리기는 30초 안에만 돼요.", action: "다음", lock: true },
+  { ch: 7, sel: ".gs-confcard-c2", text: "방장 벌금판에 바로 올라갔어요.", lock: true, wait: "auto" },
+  {
+    ch: 7,
+    sel: ".gs-confcard-c2",
+    text: (
+      <>
+        아, 잡힌 거였어요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요.
+      </>
+    ),
+    wait: "unconfess:c2",
+  },
+  {
+    ch: 7,
+    sel: ".gs-confcard-c1",
+    text: (
+      <>
+        되돌렸어요. 되돌리기는 30초 안에만 돼요. 이제 잡힘 칸을 <MouseIcon side="left" /> 눌러요.
+      </>
+    ),
+    wait: "confess:c1",
+  },
   { ch: 7, sel: ".gs-tab-sheet", text: "방장 표는 여기서 봐요. 정산 장부와 보낼 우편도 같이 보여요.", action: "다음", lock: true },
   { ch: 7, sel: ".gs-obsbtn", text: "내 방송에도 이 판을 띄울 수 있어요. 여기서요.", wait: "obs" },
   { ch: 7, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
@@ -13362,12 +13383,13 @@ const TUT_MEMBERS = [
   { acct: "ninav", nick: "니나브" },
   { acct: "wei", nick: "웨이" },
 ];
-/* 5장에 더 들어오는 넷 — 옛 예시(DEFAULT_PEOPLE) 뒤 넷의 이름과 숫자를 그대로 */
+/* 5장에 더 들어오는 넷 — 숫자는 옛 예시(DEFAULT_PEOPLE) 뒤 넷 그대로, 이름은 사용자 지정 8인 라벨(2026-09-06:
+   니나브 웨이 실리안 샨디 아제나 이난나 바훈투르 카단)에서 아직 안 쓴 것 순서대로. 방장 줄까지 여덟이라 카단은 남습니다 */
 const TUT_EXTRA = [
-  { acct: "zukini", nick: DEFAULT_PEOPLE[4][0] },
-  { acct: "posher", nick: DEFAULT_PEOPLE[5][0] },
-  { acct: "timo", nick: DEFAULT_PEOPLE[6][0] },
-  { acct: "ida", nick: DEFAULT_PEOPLE[7][0] },
+  { acct: "shandi", nick: "샨디" },
+  { acct: "azena", nick: "아제나" },
+  { acct: "inanna", nick: "이난나" },
+  { acct: "bahuntur", nick: "바훈투르" },
 ];
 /* 로비 권유 줄의 대상 — 초대 없이 들어온 사람. 초대 링크로 들어온 적이 있으면(코드 기억) 파티원이라 안 권합니다 */
 const cameByInvite = () => {
