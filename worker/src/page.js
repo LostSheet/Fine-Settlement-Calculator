@@ -425,9 +425,15 @@ export const PAGE_HTML = `<!doctype html>
      열 없는 대기실에서는 제목을 판 밖으로 밀어냅니다 */
   .ov-lobby-t{flex:1; min-width:6vw; font-size:4.2vw; font-weight:600; letter-spacing:.03em;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .ov-lobby{font-size:4.2vw; font-weight:600; line-height:1.35; padding:.9vw .4vw .2vw;
-    max-width:72vw}
-  .ov-lobby-note{font-size:2.6vw; opacity:.66; padding:.2vw .4vw .3vw}
+  /* (폐기 2026-09-08) .ov-lobby — 이름을 한 줄로 잇던 자리 */
+  .ov-lobby-n{font-size:3vw; font-weight:600; opacity:.8; font-variant-numeric:tabular-nums; flex:none}
+  .ov-lobby-note{font-size:2.6vw; opacity:.66; padding:.5vw .4vw .1vw}
+  /* 대기실 줄 — 벌금표의 .ov-row 를 그대로 쓰고, 빈 자리와 아직 안 들어온 사람만 다르게 (2026-09-08 사용자 확정 B안) */
+  .ov-lbrow .ov-name{position:relative}
+  .ov-lbrow.lb-typed .ov-name{opacity:.55}
+  .ov-lbrow.lb-empty .ov-name::after{content:''; position:absolute; left:0; right:30%; top:50%;
+    border-top:.18vw dashed currentColor; opacity:.28}
+  .ov-lbrow.lb-empty .ov-rank{opacity:.34}
 
   @media (prefers-reduced-motion:reduce){ .ov-row{transition:none} }
 </style>
@@ -1858,15 +1864,28 @@ export const PAGE_HTML = `<!doctype html>
       prev = {};
       recent = {};
       root.dataset.notice = "0";
-      var lnames = (lobby.names || []).map(function (x) {
-        return esc(x && x.n ? x.n : "");
-      }).join(" · ");
-      var ln = lobby.n != null ? lobby.n : (lobby.names || []).length;
+      /* 줄을 정원만큼 미리 그립니다 (2026-09-08 사용자 확정 B안) — 빈 줄은 점선 자리, 이름만 적힌 줄은 흐리게,
+         들어온 사람은 또렷하게. 뼈대(.ov-row + 번호 + 이름)와 판 테두리·머리줄 선·글자 크기는 벌금표와 같은 것을 씁니다 —
+         시작하는 순간 판은 그대로 있고 줄 내용만 바뀝니다. 방장을 금색으로 따로 칠하지는 않습니다(사용자).
+         (폐기 2026-09-08) 이름을 가운뎃점으로 이어 한 줄로 — 누가 들어왔고 몇 자리가 비었는지가 안 보였다 */
+      var llist = lobby.names || [];
+      var lcap = lobby.cap || 8;
+      var ln = lobby.n != null ? lobby.n : llist.length;
+      var lrows = "";
+      for (var li = 0; li < lcap; li++) {
+        var lx = llist[li];
+        lrows +=
+          '<div class="ov-row ov-lbrow' + (lx ? (lx.live ? "" : " lb-typed") : " lb-empty") + '">' +
+          '<span class="ov-rank">' + (li + 1) + "</span>" +
+          '<span class="ov-name">' + (lx && lx.n ? esc(lx.n) : "") + "</span></div>";
+      }
+      var lleft = lcap - llist.length;
+      var lnote = !llist.length ? "파티원을 기다려요" : lleft <= 0 ? "곧 시작해요" : lleft + "자리 남았어요";
       app.innerHTML =
-        '<div class="ov"><div class="ov-head"><span class="ov-lobby-t">대기실 ' +
-        ln + "/" + (lobby.cap || 8) + "</span></div>" +
-        '<div class="ov-lobby">' + lnames + "</div>" +
-        '<div class="ov-lobby-note">모이는 중이에요…</div></div>';
+        '<div class="ov"><div class="ov-head"><span class="ov-lobby-t">대기실</span>' +
+        '<span class="ov-lobby-n">' + ln + "/" + lcap + "</span></div>" +
+        lrows +
+        '<div class="ov-lobby-note">' + lnote + "</div></div>";
       fitBoard();
       return;
     }
