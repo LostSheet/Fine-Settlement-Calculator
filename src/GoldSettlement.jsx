@@ -10242,7 +10242,8 @@ export default function GoldSettlement() {
           </div>
           <ul className="gs-press-rows">
             {burstRows.map((e) => (
-              <li key={e.id}>
+              /* 왼쪽 색 띠 — 늘면 붉게, 정정(줄면) 푸르게 (2026-09-07 사용자: 정정 칩과 부호 색만으로는 구분이 약하다) */
+              <li key={e.id} className={e.delta < 0 ? "dn" : "up"}>
                 {/* 왼쪽 눈금 — 위에서 아래로 시간이 흐릅니다. 방금 것과 아까 것이 한눈에 갈립니다 */}
                 <span className="gs-press-ago">
                   {Math.max(0, Math.floor((burstNow - e.t) / 1000))}초 전
@@ -16184,7 +16185,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-press-head{display:flex; align-items:baseline; gap:5px}
 .gs-press-head b{color:var(--ink); font-weight:600; font-family:var(--mono); font-size:13.5px}
 .gs-press-rows{list-style:none; margin:0; padding:0}
-.gs-press-rows li{display:flex; align-items:center; gap:9px; padding:9px 14px; min-height:38px}
+.gs-press-rows li{display:flex; align-items:center; gap:9px; padding:9px 14px 9px 11px; min-height:38px;
+  border-left:3px solid var(--red)} /* 색 띠 — 늘면 붉게, 정정은 푸르게 (2026-09-07 사용자) */
+.gs-press-rows li.dn{border-left-color:var(--blue)}
 .gs-press-rows li + li{border-top:1px dotted rgba(var(--ink-rgb),.13)}
 .gs-press-rows b{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px; color:var(--ink)}
 .gs-press-rows i{font-style:normal; font-size:14.5px; color:var(--ink-body)}
