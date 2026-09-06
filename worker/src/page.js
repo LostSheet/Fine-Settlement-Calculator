@@ -356,12 +356,24 @@ export const PAGE_HTML = `<!doctype html>
     border-radius:max(12px, 1.4vw)}
   html[data-t="light"] .ov{--ink:#221c14; --gold:#8a6415;
     background:rgba(248,244,236,var(--bg,.88)); border-radius:max(12px, 1.4vw)}
-  /* 헤어라인 (2026-09-06 사용자 확정) — 판 테두리 한 줄과 줄 사이 실선. 어두운 판엔 밝은 선, 밝은 판엔 어두운 선.
-     그 이상은 없습니다(사용자: 과한 건 별로). 판 없는 테마엔 두를 판이 없어 안 그립니다 */
+  /* 밝은 판의 청·적·녹 (2026-09-07 사용자 지적) — 어두운 판 것을 그대로 쓰던 색들은 크림색 바탕에서
+     떠 버려 안 읽혔습니다. 개인 합계의 황색(--gold #8a6415)과 같은 무게로 낮춥니다 —
+     셋 다 이 바탕에서 명도대비 4.8~4.9 로, 황색의 4.7 과 한 가족입니다 */
+  html[data-t="light"]{--up:#2f7a4d; --dn:#b8462f; --net-up:#2c6ea4}
+  html[data-t="light"] .ov-net.plus, html[data-t="light"] .ov-gold.as-net.plus{color:var(--net-up)}
+  html[data-t="light"] .ov-net.minus, html[data-t="light"] .ov-gold.as-net.minus{color:var(--dn)}
+  html[data-t="light"] .ov-delta.plus, html[data-t="light"] .ov-move.up,
+  html[data-t="light"] .ov-mvreel.up > i.d{color:var(--up)}
+  html[data-t="light"] .ov-delta.minus, html[data-t="light"] .ov-move.down,
+  html[data-t="light"] .ov-mvreel.dn > i.d{color:var(--dn)}
+  /* 줄 사이 실선은 판 테마의 기본입니다 (2026-09-07 사용자 확정) — 예전엔 테두리 테마에만 있었습니다.
+     어두운 판엔 밝은 선, 밝은 판엔 어두운 선. 판 없는 테마엔 그을 판이 없어 안 그립니다 */
+  html[data-t="dark"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(245,240,230,.1)}
+  html[data-t="light"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(34,28,20,.12)}
+  /* 헤어라인 (2026-09-06 사용자 확정) — 이제 판을 두르는 바깥 선만 맡습니다.
+     그 이상은 없습니다(사용자: 과한 건 별로) */
   html[data-line="1"][data-t="dark"] .ov{border:max(1px, .14vw) solid rgba(232,198,106,.55)}
   html[data-line="1"][data-t="light"] .ov{border:max(1px, .14vw) solid rgba(34,28,20,.5)}
-  html[data-line="1"][data-t="dark"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(245,240,230,.1)}
-  html[data-line="1"][data-t="light"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(34,28,20,.12)}
 
   /* 미리보기 창에서만 — 투명한 자리를 체커보드로 표시합니다.
      중간 회색이라 밝은 글자·진한 글자 테마를 둘 다 판단할 수 있습니다. */
