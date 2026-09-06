@@ -2805,6 +2805,7 @@ export default function GoldSettlement() {
   /* newBoard 의 로컬 부분만 — 로비를 열지도 코드를 내지도 않습니다. 정원 4, 이름은 예시 파티 */
   const tutNewBoard = () => {
     setRoundName("예시 파티");
+    setCols(DEFAULT_COLS.filter((c) => !isRoulette(c))); // 튜토리얼 판은 잡힘·죽음 둘로 시작 — 룰렛은 튜토리얼에서 뺌 (2026-09-06 낮 사용자)
     setLog([]);
     setUndoSnap(null);
     setMemoFreeze(null);
@@ -2844,12 +2845,11 @@ export default function GoldSettlement() {
     }
     if (what === "confess:c2") partyT(() => partyStep(next + 1), 2200); // 올라갔어요 → 아, 잡힌 거였어요
     if (what === "press") {
-      /* 누름 → (3초) 실리안 자수 + 그 말풍선 → (4초) 룰렛 걸음. 웨이는 사람 아이콘 걸음에 들어설 때 옵니다 */
+      /* 누름 → (3초) 실리안 자수 + 그 말풍선([다음]으로 넘김 — 2026-09-06 낮 사용자: 템포; (폐기) 4초 뒤 자동). 웨이는 사람 아이콘 걸음에 들어설 때 옵니다 */
       partyT(() => {
         tutConfess();
         partyStep(next + 1);
       }, 3000);
-      partyT(() => partyStep(next + 2), 7000);
     }
   };
   /* 5장 머리 — 한 판 돌았다고 치고 표를 채웁니다. 숫자는 옛 벌금판 예시(DEFAULT_PEOPLE)를 이름만 바꿔 그대로:
@@ -2859,6 +2859,7 @@ export default function GoldSettlement() {
   const tutSeed = () => {
     const c1 = cols.find((c) => c.id === "c1");
     const c2 = cols.find((c) => c.id === "c2");
+    const c3 = cols.find((c) => c.id === "ctut"); // 2장에서 만든 암살 열 — 옛 예시의 셋째 열(10만)이라 숫자를 그대로 씁니다
     if (!c1 || !c2) return;
     const host = rows[0];
     const rowOf = (acct) => {
@@ -2875,12 +2876,14 @@ export default function GoldSettlement() {
     const tick = () => (t += 40);
     targets.forEach(([row, acct], i) => {
       if (!row) return;
-      const [, want1, want2] = DEFAULT_PEOPLE[i];
+      const [, want1, want2, want3] = DEFAULT_PEOPLE[i];
       const more1 = Math.max(0, want1 - num(row.counts.c1));
       const more2 = Math.max(0, want2 - num(row.counts.c2));
+      const more3 = c3 ? Math.max(0, want3 - num(row.counts.ctut)) : 0;
       const hit = (col) => (acct ? () => applyConfess(row.id, col.id, 1) : () => pressCell(row, col, 1));
       for (let k = 0; k < more1; k++) partyT(hit(c1), tick());
       for (let k = 0; k < more2; k++) partyT(hit(c2), tick());
+      for (let k = 0; k < more3; k++) partyT(hit(c3), tick());
     });
     /* 넷이 더 — 자리·줄·명단을 한 번에 함수형으로 더합니다. seatMember/applyConfess 는 이 렌더의 rows 를 닫아 둔 클로저라
        타이머에서 잇달아 부르면 서로를 덮습니다(첫 시도의 사고). 새 줄의 숫자는 바로 적습니다 — 캐시가 없어 표가 그대로 셉니다 */
@@ -2889,7 +2892,7 @@ export default function GoldSettlement() {
       putSeats((prev) => [...prev, ...extras.map((e) => ({ id: e.id, name: e.nick, acct: e.acct, mem: e.acct, named: false, nick: e.nick }))]);
       setRows((prev) => [
         ...prev,
-        ...extras.map((e) => ({ id: e.id, name: e.nick, counts: { c1: e.want[1] ? String(e.want[1]) : "", c2: e.want[2] ? String(e.want[2]) : "" }, extras: [] })),
+        ...extras.map((e) => ({ id: e.id, name: e.nick, counts: { c1: e.want[1] ? String(e.want[1]) : "", c2: e.want[2] ? String(e.want[2]) : "", ...(c3 && e.want[3] ? { ctut: String(e.want[3]) } : {}) }, extras: [] })),
       ]);
       setMembers((p) => [...p, ...extras.filter((e) => !p.some((x) => x.acct === e.acct)).map((e) => ({ acct: e.acct, nick: e.nick, st: "ok", rowId: e.id, on: true }))]);
     }, tick());
@@ -2901,13 +2904,16 @@ export default function GoldSettlement() {
     tutEntered.current = coach.step;
     const st = TOUR_FLOW[coach.step];
     if (!st) return;
+    /* 2장을 떠날 때 — 이름·단가를 안 적고 지나왔으면 암살·10만으로 채웁니다. 5장 채우기 직전에 하면 그 렌더의 타이머 클로저가
+       옛 단가(1만)를 써서 실리안의 암살 2회가 2만으로 잡혔습니다(첫 시도의 사고) */
+    if (st.enter === "colfix") setCols((prev) => prev.map((c) => (c.id === "ctut" ? { ...c, name: c.name || "암살", price: c.price === "10,000" ? "100,000" : c.price } : c)));
     if (st.enter === "wei") {
       tutArrive(2);
       say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
     }
     if (st.enter === "seed") {
       partyT(tutSeed, 300);
-      partyT(() => partyStep(coach.step + 1), 4500); // 서른여덟 번 누르는 데 1.5초, 넷 더 앉히고, 그 뒤 한 박자
+      partyT(() => setCoach((c) => (c && c.kind === "party" ? { ...c, ready: true } : c)), 4500); // 채우기 끝 → [다음] 등장 (서른여덟 번 누르는 데 1.5초, 넷 더 앉히고, 한 박자)
     }
   }, [coach]);
   /* 예시 앱: 끝(다 봤든 ✕·Esc·[그만두기]든) — 부모에게 알리고 부모가 창을 닫습니다. 부모 없이 열렸으면 보통 앱으로 */
@@ -4551,8 +4557,9 @@ export default function GoldSettlement() {
   useEffect(() => {
     if (!readOnly || liveRoom !== DEMO_ROOM) return;
     if (DEMO_MEMBER) {
-      /* 파티원 예시 — 방장 예시와 같은 판(방장·실리안·니나브·웨이, 잡힘 1회씩), 숫자는 누른 만큼만 움직입니다 */
-      setCols(DEFAULT_COLS);
+      /* 파티원 예시 — 방장 예시와 같은 판(방장·실리안·니나브·웨이, 잡힘 1회씩), 숫자는 누른 만큼만 움직입니다.
+         열은 방장이 2장에서 만든 뒤와 같게 잡힘·죽음·암살 — 룰렛 없음 (2026-09-06 낮 사용자) */
+      setCols([...DEFAULT_COLS.filter((c) => !isRoulette(c)), { id: "ctut", name: "암살", price: "100,000" }]);
       setRows(TUT_ROWS(realNick() || "방장"));
       setFeePercent("5");
       setUnit("10000");
@@ -7117,6 +7124,23 @@ export default function GoldSettlement() {
       )}
     </>
   );
+  /* 표가 무대보다 넓어지면 카드가 표 폭만큼 커지고 스크롤은 창이 합니다 (2026-09-06 낮 사용자: 표 안 스크롤보다 알아보기 쉽다).
+     CSS 만으론 안 됐습니다 — 크롬이 표의 고유 폭을 셀 min-width 없이 재서 max-content/fit-content 가 안 커졌고 인라인 width 도 안 먹었다.
+     그래서 표를 잠깐 auto 로 두고 잰 폭을 카드의 min-width 로 줍니다. 열이 줄면 min-width 를 걷고 다시 잽니다 */
+  const sheetBoxRef = useRef(null);
+  const gridRef = useRef(null);
+  useLayoutEffect(() => {
+    const card = sheetBoxRef.current;
+    const tbl = gridRef.current;
+    if (!card || !tbl) return;
+    const inner = tbl.parentElement && tbl.parentElement.parentElement; // .gs-scroll 의 부모 = 카드 안쪽 폭
+    card.style.minWidth = "";
+    tbl.style.width = "auto";
+    const need = tbl.offsetWidth;
+    tbl.style.width = "";
+    const room = inner ? inner.clientWidth : card.clientWidth;
+    if (need > room + 1) card.style.minWidth = need + (card.offsetWidth - room) + "px";
+  }, [cols, simple, readOnly, tab, view, unit]);
   return (
     <div className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
       {DEMO &&
@@ -7276,16 +7300,24 @@ export default function GoldSettlement() {
               {helpOpen && !DEMO && (
                 <div className="gs-invpop gs-helppop" role="dialog" aria-label="튜토리얼">
                   <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
+                  {/* 행 = 이름 + 칩(추천·봤어요) + 역할 한 줄 + 서브, 오른쪽에 [보기]/[다시 보기] (2026-09-06 낮 사용자: 시인성·역할 설명).
+                      역할 문구 — 파티원은 사용자 지정, 방장은 초안. (폐기, 같은 날) 한 줄에 이름·서브·버튼 안 `추천` */}
                   {[
-                    { k: "host", name: "방장 튜토리얼", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
-                    { k: "member", name: "파티원 튜토리얼", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
+                    { k: "host", name: "방장 튜토리얼", role: "판을 열고 파티원을 부르는 사람", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
+                    { k: "member", name: "파티원 튜토리얼", role: "초대를 받은 사람", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
                   ]
                     .sort((a, b) => (a.k === recKey ? -1 : b.k === recKey ? 1 : 0))
                     .map((r) => (
-                      <div key={r.k} className="gs-helprow">
-                        <b>{r.name}</b>
-                        <span className="gs-guide-n">{r.sub}</span>
-                        {r.seen && <span className="gs-guide-seen">봤어요</span>}
+                      <div key={r.k} className={"gs-helprow" + (r.k === recKey ? " gs-helprow-rec" : "")}>
+                        <div className="gs-helprow-main">
+                          <div className="gs-helprow-top">
+                            <b>{r.name}</b>
+                            {r.k === recKey && <em className="gs-rec">추천</em>}
+                            {r.seen && <span className="gs-helpseen">봤어요</span>}
+                          </div>
+                          <p className="gs-helprow-role">{r.role}</p>
+                          <p className="gs-helprow-sub">{r.sub}</p>
+                        </div>
                         <button
                           className={"gs-btn gs-btn-sm" + (r.k === recKey ? "" : " gs-btn-ghost")}
                           onClick={() => {
@@ -7293,8 +7325,7 @@ export default function GoldSettlement() {
                             r.go();
                           }}
                         >
-                          {r.k === recKey && <em className="gs-rec">추천</em>}
-                          {r.seen ? "다시" : "보기"}
+                          {r.seen ? "다시 보기" : "보기"}
                         </button>
                       </div>
                     ))}
@@ -8208,7 +8239,7 @@ export default function GoldSettlement() {
 
         {/* 내용 상자 — 정산 장부·보낼 우편과 같은 뼈대입니다.
             머리줄(제목·모드)은 상자 밖에 두어 세 탭의 윗부분이 한 줄로 맞습니다 */}
-        <div className="gs-card gs-sheetbox">
+        <div className="gs-card gs-sheetbox" ref={sheetBoxRef}>
 
         {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다.
             방장이 메모장으로 바꾸면 자수 탭이 없어지므로(보통 항목이 없습니다) 뒷말도 같이
@@ -8393,6 +8424,7 @@ export default function GoldSettlement() {
         )}
         <div className="gs-scroll">
           <table
+            ref={gridRef}
             className={"gs-grid" + (simple ? " gs-grid-narrow" : " gs-grid-count")}
             /* 이름 열 폭 — 여섯 글자를 기본으로 두고, 그보다 긴 이름이 있으면 거기 맞춥니다.
                한글은 글자 하나가 대략 1em 이라 글자 수를 그대로 폭으로 씁니다. */
@@ -9429,7 +9461,7 @@ export default function GoldSettlement() {
             key={"party:" + coach.step}
             sel={TOUR_FLOW[coach.step].sel}
             text={TOUR_FLOW[coach.step].text}
-            action={TOUR_FLOW[coach.step].action}
+            action={TOUR_FLOW[coach.step].action || (coach.ready ? TOUR_FLOW[coach.step].after : undefined)}
             block
             lock={!!TOUR_FLOW[coach.step].lock}
             center={!!TOUR_FLOW[coach.step].center}
@@ -9988,7 +10020,7 @@ export default function GoldSettlement() {
         </div>
       )}
       {toast && (
-        <div className={"gs-toast" + (coach && coach.kind === "party" ? " gs-toast-coach" : "")} role="status" key={toast.t}>
+        <div className="gs-toast" role="status" key={toast.t}>
           {toast.msg}
         </div>
       )}
@@ -13301,11 +13333,12 @@ const HOST_STEPS = [
   /* 2장 — 가리키기만, 예시에서 고치게 하진 않습니다 */
   { ch: 1, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
   /* 항목 추가는 직접 (2026-09-06 사용자 확정) — [+ 항목] → 보통 항목 → 새 열의 이름·단가를 적음. 새 열 id 는 예시에서 ctut 로 고정해 가리킵니다 */
-  { ch: 1, sel: ".gs-addcol", text: "이번엔 낙사도 세 볼까요? 항목을 하나 더 만들어요.", wait: "addcol:open" },
-  { ch: 1, sel: ".gs-modal .gs-coltype .gs-coltype-pick:first-child", text: "보통 항목을 골라요. 룰렛은 나중에.", wait: "addcol:done", top: true },
-  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-col", text: "새 열이 생겼어요. 이름 칸에 낙사라고 적고 [다음].", action: "다음" },
-  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 2만이면 2. 적고 [다음]. 지우는 건 항목 이름 옆 ×.", action: "다음" },
-  { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true },
+  /* 더하는 항목은 암살 10만 (2026-09-06 낮 사용자; (폐기, 같은 날) 낙사 2만) — 옛 벌금판 예시의 셋째 열이라 5장 숫자가 그대로 맞습니다 */
+  { ch: 1, sel: ".gs-addcol", text: "이번엔 암살도 세 볼까요? 항목을 하나 더 만들어요.", wait: "addcol:open" },
+  { ch: 1, sel: ".gs-modal .gs-coltype .gs-coltype-pick:first-child", text: "보통 항목을 골라요.", wait: "addcol:done", top: true },
+  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-col", text: "새 열이 생겼어요. 이름 칸에 암살이라고 적고 [다음].", action: "다음" },
+  { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 10만이면 10. 적고 [다음]. 지우는 건 항목 이름 옆 ×.", action: "다음" },
+  { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true, enter: "colfix" },
   /* 3장 */
   { ch: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
   { ch: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto" },
@@ -13322,13 +13355,14 @@ const HOST_STEPS = [
     wait: "press",
   },
   { ch: 3, sel: ".gs-grid", text: "올라갔죠? 파티원은 자기 줄을 자수 탭에서 직접 눌러요. 실리안이 지금 누르는 중…", lock: true, wait: "auto" },
-  { ch: 3, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
-  { ch: 3, sel: ".gs-grid thead .gs-rcbtn", text: "룰렛 항목은 방장이 칸을 눌러 돌려요. 나온 숫자 × 단가가 벌금이에요.", action: "다음", lock: true },
+  { ch: 3, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, action: "다음" }, // (폐기 2026-09-06 낮) 4초 뒤 자동 — 사용자: 템포
+  /* (폐기 2026-09-06 낮) 룰렛 머리 가리키기 `룰렛 항목은 방장이 칸을 눌러 돌려요. 나온 숫자 × 단가가 벌금이에요.` — 사용자: 튜토리얼에서 룰렛은 뺌 */
   { ch: 3, sel: ".gs-rowi", text: "이름 옆 사람 아이콘. 줄을 옮기거나 파티에서 내보낼 땐 여기예요.", action: "다음", lock: true, enter: "wei" },
   { ch: 3, sel: ".gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick" },
   { ch: 3, sel: ".gs-modal .gs-waitpick .gs-seatopt:not(.gs-seatopt-new)", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
   /* 5장 — 쌓인 데이터로 봅니다 */
-  { ch: 4, sel: ".gs-grid", text: "한 판 돌았다고 칠게요… 넷이 더 들어와 여덟이 됐어요.", lock: true, wait: "auto", enter: "seed" },
+  /* after — 채우기가 끝나면(4.5초) 그제야 [다음]이 나타나고, 넘어가는 건 사용자 몫 (2026-09-06 낮 사용자: 템포; (폐기) 4.5초 뒤 자동) */
+  { ch: 4, sel: ".gs-grid", text: "한 판 돌았다고 칠게요… 넷이 더 들어와 여덟이 됐어요.", lock: true, wait: "auto", after: "다음", enter: "seed" },
   /* 정산 내역이 어두운 막에 가리면 안 됩니다 — 이 장은 막 없이 (2026-09-06 사용자) */
   { ch: 4, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료와 나누는 방식도 여기서 정해요.", wait: "tab:ledger", clear: true },
   { ch: 4, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. 디코에 붙일 글도 여기서 복사해요.", wait: "tab:mail", clear: true },
@@ -13467,11 +13501,12 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
        표적과 그 아래 말풍선 자리(약 130px)가 다 보이면 그대로 둡니다. (폐기, 같은 날) center 옵션 — 스크롤이 튄다(사용자) */
     if (first) {
       const r = first.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const need = Math.min(r.height + 130, vh - 32);
+      /* 화면 아래 110px 은 토스트 자리 — 말풍선이 거기 앉으면 토스트에 가립니다(2026-09-06 낮 사용자). 토스트를 옮기는 대신 말풍선이 비킵니다 */
+      const bottom = window.innerHeight - 110;
+      const need = Math.min(r.height + 130, bottom - 32);
       let dy = 0;
       if (r.top < 16) dy = r.top - 16;
-      else if (r.top + need > vh) dy = Math.min(r.top - 16, r.top + need - vh);
+      else if (r.top + need > bottom) dy = Math.min(r.top - 16, r.top + need - bottom);
       if (dy) window.scrollBy(0, dy);
     }
     let raf = 0;
@@ -14283,8 +14318,9 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-caplab{font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
 
 /* 벌금표 */
-/* overflow-x:auto 는 세로도 함께 잘라내므로, 테두리가 들어갈 만큼 안쪽 여백을 둡니다 */
-.gs-scroll{overflow-x:auto; margin:-6px; padding:6px}
+/* 표는 제 폭대로 서고 스크롤은 뷰포트가 합니다 (2026-09-06 낮 사용자: 표 안 스크롤보다 창 가로 스크롤이 훨씬 알아보기 쉽다).
+   열이 많아 표가 무대보다 넓어지면 카드(.gs-sheetbox)가 표 폭만큼 커지고 페이지가 가로로 넘칩니다. (폐기, 같은 날) .gs-scroll{overflow-x:auto; margin:-6px; padding:6px} — 표 안 가로 스크롤, 오른쪽 열·합이 잘려 보였다 */
+.gs-scroll{overflow:visible}
 .gs-grid{border-collapse:separate; border-spacing:0; width:100%; min-width:600px}
 /* 금액만 모드는 3열뿐이라 가로 스크롤이 필요 없습니다 */
 .gs-grid-narrow{min-width:0}
@@ -14697,13 +14733,21 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-tourdot.done{background:var(--gold)}
 .gs-tourdot.now{width:16px; height:16px; background:var(--gold); box-shadow:0 0 0 3px rgba(var(--gold-rgb),.25)}
 .gs-tourlabel{font-weight:600; color:var(--ink)}
-.gs-helppop{width:min(400px, 92vw)}
-.gs-helppop-h{margin:0 0 8px; font-size:13.5px; color:var(--ink); font-weight:700}
-.gs-helprow{display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px dotted rgba(var(--ink-rgb),.2); font-size:13px}
-.gs-helprow b{font-family:'Gowun Batang',serif; font-size:14px; color:var(--ink); white-space:nowrap}
-.gs-helprow .gs-btn{margin-left:auto; white-space:nowrap}
-.gs-rec{font-style:normal; font-size:10.5px; letter-spacing:.08em; margin-right:6px; opacity:.85}
+/* [?] 팝오버 (2026-09-06 낮 손질) — 행마다 이름·칩·역할·서브를 세로로, 칩은 테두리 있는 라벨로 (사용자: 시인성) */
+.gs-helppop{width:min(460px, 92vw)}
+.gs-helppop-h{margin:0 0 6px; font-size:14.5px; color:var(--ink); font-weight:700}
+.gs-helprow{display:flex; align-items:center; gap:14px; padding:12px 0; border-top:1px dotted rgba(var(--ink-rgb),.2)}
+.gs-helprow-main{display:flex; flex-direction:column; gap:3px; min-width:0}
+.gs-helprow-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.gs-helprow b{font-family:'Gowun Batang',serif; font-size:15px; color:var(--ink); white-space:nowrap}
+.gs-helprow-role{margin:0; font-size:13px; color:var(--ink); line-height:1.5}
+.gs-helprow-sub{margin:0; font-size:12.5px; color:var(--ink-body); line-height:1.5}
+.gs-helprow .gs-btn{margin-left:auto; white-space:nowrap; flex:none}
+.gs-rec{font-style:normal; font-size:11px; letter-spacing:.06em; color:var(--gold); border:1px solid rgba(var(--gold-rgb),.7); padding:1px 6px; border-radius:2px; line-height:1.5}
+.gs-helpseen{font-size:11px; letter-spacing:.04em; color:var(--ink-body); border:1px solid rgba(var(--ink-rgb),.35); padding:1px 6px; border-radius:2px; line-height:1.5}
+.gs-helppop .gs-guide-foot{font-size:12.5px; color:var(--ink-body)}
 .gs-pressing{padding-bottom:300px}
+.gs-coaching{padding-bottom:200px} /* 예시 앱 바닥 여백 — 표 아래 말풍선을 토스트 자리 위로 올릴 스크롤 여지 (2026-09-06 낮) */
 .gs-coaching .gs-press{display:none} /* 같이 해보기 걸음이 떠 있는 동안 — 표 아래 줄의 [자리 정하기]를 덮었음 (2026-09-06) */ /* '방금 바뀐' 카드(고정, 아래 오른쪽)가 표 끝 줄의 버튼을 덮지 않게 내려 볼 여지 (2026-09-06) */
 .gs-demoband ~ .gs-sysbar{margin-top:0} /* 시스템 줄의 위 당김(-20px)은 띠가 없을 때의 것 — 사이에 <style> 이 있어 형제 선택자는 ~ */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
@@ -15618,8 +15662,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 알림 한 줄 — 화면 아래에 잠깐 떴다 사라집니다. 누를 것이 없어 조작을 안 막습니다 */
 /* 토스트 안에서 누를 수 있는 말 — 토스트는 클릭을 안 받게 두고(밑의 표를 가리면
    안 되니까) 이 조각만 되살립니다 */
-/* 걸음이 떠 있는 동안의 토스트 — 말풍선은 표 아래·가운데에 서니 토스트는 오른쪽 위로 비킵니다 (2026-09-06 사용자: 토스트가 말풍선을 가렸다) */
-.gs-toast.gs-toast-coach{bottom:auto; top:104px; left:auto; right:24px; transform:none; text-align:left; max-width:min(420px,60vw)} /* 두 클래스 — 뒤에 오는 .gs-toast 기본 규칙에 안 덮이게 */
+/* (폐기 2026-09-06 낮, 몇 시간 만에) 걸음 중 토스트를 오른쪽 위로 옮기던 .gs-toast-coach — 사용자: 튜토리얼 하나 때문에 앱 동작을 바꾸는 건 주객전도, 앞으로도 지양.
+   대신 말풍선이 토스트 자리에 안 앉게 걸음 스크롤이 화면 아래 110px 을 비워 둡니다 (CoachMark) */
 .gs-toast-link{font:inherit; color:var(--gold); background:transparent; border:0;
   padding:0; cursor:pointer; pointer-events:auto; text-decoration:underline;
   text-underline-offset:3px; text-decoration-thickness:1px}
