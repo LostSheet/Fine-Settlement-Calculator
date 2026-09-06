@@ -5249,9 +5249,21 @@ export default function GoldSettlement() {
   /* 초대 주소·코드로 들어갑니다 (§3.0 파티 카드 — 비밀 파티 입장 문법). 주소면 방과 코드가
      다 있고, 코드만이면 서버가 방을 찾아 줍니다(§4 보충 c: 색인). 로그인은 뷰어가 초대장에서
      받습니다 — 여기서 묻지 않습니다 */
-  const joinByCode = async (raw) => {
+  const joinByCode = async (raw, opts) => {
     const txt = String(raw || "").trim();
     if (!txt) return;
+    /* 앉은 파티가 있으면 옮기는 것입니다 — 한 번 묻고 나간 뒤 갑니다 (방 하나 규칙, 2026-09-07; 문구 초안) */
+    if (!readOnly && seatedNow && !(opts && opts.left))
+      return setAsk({
+        title: seatedName + "에서 나가고 옮길까요?",
+        body: meSeat && meSeat.round ? "그 파티의 내 자리가 비어요. 벌금은 줄에 남아요." : "그 파티의 내 자리가 비어요.",
+        action: "나가고 옮기기",
+        tone: "danger",
+        onYes: async () => {
+          await leaveFromLobby();
+          joinByCode(raw, { left: true });
+        },
+      });
     const m = txt.match(/\/r\/([A-Z0-9]{4,16})(?:.*?[#&?]j=([A-Z0-9]{8}))?/i);
     let room = m ? m[1].toUpperCase() : null;
     let code = m && m[2] ? m[2].toUpperCase() : null;
@@ -7505,6 +7517,13 @@ export default function GoldSettlement() {
               나가기
             </button>
           </div>
+          {/* 문 둘은 여기에도 — 누르면 방 하나 규칙이 먼저 묻습니다(나가고 만들기 / 나가고 옮기기) */}
+          <div className="gs-lh-acts">
+            <button className="gs-btn gs-btn-ghost gs-lifebtn gs-lh-newbtn" onClick={askNewBoard}>
+              + 새 판 만들기
+            </button>
+          </div>
+          <JoinBox onJoin={joinByCode} />
         </>
       );
     }
