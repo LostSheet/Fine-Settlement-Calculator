@@ -7873,12 +7873,16 @@ export default function GoldSettlement() {
             >
               새로 발급
             </button>
+            {/* 유출 주의 (2026-09-08 사용자: 복사 버튼 주변에) — 링크가 방송에 보이면 시청자가 들어옵니다. 문구 초안 */}
+            <span className="gs-invwarn">파티원에게만 보내요. 링크가 새면 아무나 들어와요.</span>
           </div>
           <div className="gs-invcode-l2">
             {/* [링크 복사]가 주 버튼입니다 (2026-09-08 사용자). (폐기, 하루 전) [디코 메시지 복사]가 금색 주 버튼 */}
-            {/* [링크 복사]와 [코드 복사]는 맨 주소가 도는 길이라 닫았습니다 (2026-09-08 사용자: 디코 메시지가 유일한 창구) */}
+            {/* [링크 복사]와 [코드 복사]는 맨 주소가 도는 길이라 닫았습니다 (2026-09-08 사용자: 디코 메시지가 유일한 창구).
+                클래스로 감추면 두 클래스짜리 규칙에 밀립니다 — 아예 그리지 않습니다 */}
+            {JOIN_BY_CODE && (
             <button
-              className={"gs-btn gs-btn-sm gs-invlinkbtn" + (JOIN_BY_CODE ? " gs-lbstart" : " gs-btn-ghost gs-hidden")}
+              className="gs-btn gs-btn-sm gs-lbstart gs-invlinkbtn"
               onClick={() => {
                 if (tutorialRef.current) {
                   /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
@@ -7893,6 +7897,7 @@ export default function GoldSettlement() {
             >
               {flash === "invurl" ? "복사했어요" : "링크 복사"}
             </button>
+            )}
             <button
               className="gs-btn gs-btn-sm gs-lbstart gs-invdiscbtn"
               onClick={() => {
@@ -7902,8 +7907,9 @@ export default function GoldSettlement() {
             >
               {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
             </button>
+            {JOIN_BY_CODE && (
             <button
-              className="gs-btn gs-btn-sm gs-btn-ghost gs-invcodebtn gs-hidden"
+              className="gs-btn gs-btn-sm gs-btn-ghost gs-invcodebtn"
               onClick={() => {
                 copy(hostInvite.code, "invcode");
                 if (!lobbyOn) startParty();
@@ -7911,6 +7917,7 @@ export default function GoldSettlement() {
             >
               {flash === "invcode" ? "복사했어요" : "코드 복사"}
             </button>
+            )}
           </div>
         </div>
       )}
@@ -17165,8 +17172,16 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-easebar{margin-top:12px}
 /* 초대 — 코드가 주인공 (⑥) */
 /* 초대 한 덩이 (2안, 2026-09-07) — 주 버튼 · 코드 칩 · 유령 둘 · 작은 글자, 왼쪽에 모여 한 줄(좁으면 줄바꿈). (폐기) 라벨 줄 + 22px 코드 + 오른쪽 끝 글자 링크 */
-.gs-invcode{display:flex; flex-direction:column; align-items:flex-start; gap:8px} /* 두 줄 고정 (2026-09-07 밤) */
-.gs-invcode-l1,.gs-invcode-l2{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+/* 어디서나 한 줄 (2026-09-08 사용자: 칩과 허브도 일관성) — 모집 카드와 파티 허브가 같은 모양입니다.
+   두 줄 묶음(l1·l2)은 자리만 잡고 자식들이 직접 줄에 섭니다. (폐기 2026-09-07 밤) 두 줄 고정 */
+.gs-invcode{display:flex; flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap}
+.gs-invcode-l1,.gs-invcode-l2{display:contents}
+.gs-invcode-chip{order:1}
+.gs-invlinkbtn{order:2}
+.gs-invdiscbtn{order:3}
+.gs-invcodebtn{order:4}
+.gs-invcode-renew{order:5}
+.gs-invwarn{order:6; flex-basis:100%; font-size:11.5px; color:var(--ink-2); line-height:1.6}
 .gs-invcode-chip{display:inline-flex; align-items:center; gap:8px; padding:5px 12px; border:1px solid rgba(var(--gold-rgb),.5); border-radius:4px; background:rgba(0,0,0,.18)}
 .gs-invcode-chip .gs-caplab{margin:0}
 .gs-invcode-b{font-family:var(--mono); font-size:15px; letter-spacing:.2em; color:var(--gold); line-height:1}
@@ -17178,15 +17193,8 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-recruitsec .gs-recruit{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 16px}
 .gs-recruit-n{margin-left:0}
 .gs-recruit-who{font-size:13.5px; color:var(--ink); padding-right:4px; border-right:1px solid rgba(var(--ink-rgb),.18); margin-right:2px}
-.gs-recruit .gs-invcode{flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap}
-/* 두 줄 묶음을 풀어 한 줄에 무게 순서대로 (2026-09-08) — 안 그러면 '새로 발급'이 코드 칩 뒤에 끼어 둘째 자리에 섭니다. 이 CSS 는 템플릿 문자열 안이라 주석에도 백틱을 쓰면 거기서 끊깁니다 */
-.gs-recruit .gs-invcode-l1,.gs-recruit .gs-invcode-l2{display:contents}
-.gs-hidden{display:none}
-.gs-recruit .gs-invcode-chip{order:1}
-.gs-recruit .gs-invlinkbtn{order:2}
-.gs-recruit .gs-invdiscbtn{order:3}
-.gs-recruit .gs-invcodebtn{order:4}
-.gs-recruit .gs-invcode-renew{order:5}
+
+/* (폐기 2026-09-08) .gs-recruit 안에서만 한 줄로 펴던 규칙 — 이제 초대 덩이는 어디서나 한 줄입니다 */
 /* 판을 만드는 문 둘 (2026-09-08 사용자 확정) — 로비 파티 카드 안에서 세로로, 위가 파티원 초대·아래가 혼자 세기 */
 .gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
