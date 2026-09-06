@@ -3383,6 +3383,29 @@ export default function GoldSettlement() {
      자리 = { 이름, 붙은 계정, 기억된 아이디 }. 연결이 판의 행이 아니라 자리에 살아서
      판이 갈려도 연결이 안 끊어집니다. 닉네임 매칭 재연결은 폐기했습니다. */
   const putSeats = (next) => setSeats(typeof next === "function" ? next : () => next);
+  /* ≡ 손잡이 — 이름 왼쪽을 끌어 줄 순서를 바꿉니다 (2026-09-06 오후 사용자 요청). 방장 줄(1번)은 손잡이도 없고 그 위로 놓을 수도 없습니다.
+     파티원 화면엔 없습니다. 줄과 자리는 같은 id 로 묶여 있어 둘 다 같은 순서로 돌립니다 — 저장·중계·오버레이는 줄 순서를 그대로 따릅니다 */
+  const dragRowRef = useRef(null);
+  const [dragOver, setDragOver] = useState(null); // {id, after} — 끌고 지나는 줄과 위/아래
+  const reorderById = (list, from, targetId, after) => {
+    const fi = list.findIndex((x) => x.id === from);
+    const ti = list.findIndex((x) => x.id === targetId);
+    if (fi < 1 || ti < 1) return list;
+    const arr = list.slice();
+    const [item] = arr.splice(fi, 1);
+    let to = arr.findIndex((x) => x.id === targetId) + (after ? 1 : 0);
+    if (to < 1) to = 1;
+    arr.splice(to, 0, item);
+    return arr;
+  };
+  const dropRow = (targetId, after) => {
+    const from = dragRowRef.current;
+    dragRowRef.current = null;
+    setDragOver(null);
+    if (!from || from === targetId) return;
+    setRows((prev) => reorderById(prev, from, targetId, after));
+    putSeats((prev) => reorderById(prev, from, targetId, after));
+  };
   const seatName2 = (s, i) => (s && (s.name || "").trim()) || ANON(i);
   /* 자리 하나 = 판의 줄 하나. 줄 id 가 자리 id 그대로라 판이 갈려도 자격이 따라옵니다 */
   const rowsFromSeats = (list) =>
@@ -8712,15 +8735,59 @@ export default function GoldSettlement() {
                         /* 파티원 화면에서 내 줄 — 이름부터 금색이라 어디를 눌러야 하는지 바로 보입니다 */
                         (you && you.rowId === row.id && readOnly ? " gs-myrow" : "") +
                         /* 방금 앉은 줄 — 3초 금색 (§3.1, 2026-09-05) */
-                        (ready && arrived[row.id] ? " gs-row-arrive" : "")
+                        (ready && arrived[row.id] ? " gs-row-arrive" : "") +
+                        /* 끌고 지나는 줄 — 놓일 자리를 금색 선으로 */
+                        (dragOver && dragOver.id === row.id ? (dragOver.after ? " gs-dragover-bot" : " gs-dragover-top") : "")
                       }
                       onClick={
                         spin && spin.phase === "pick" ? () => pickPassTarget(row) : undefined
+                      }
+                      onDragOver={
+                        !readOnly && i > 0
+                          ? (e) => {
+                              if (!dragRowRef.current) return;
+                              e.preventDefault();
+                              const r = e.currentTarget.getBoundingClientRect();
+                              const after = e.clientY > r.top + r.height / 2;
+                              setDragOver((p) => (p && p.id === row.id && p.after === after ? p : { id: row.id, after }));
+                            }
+                          : undefined
+                      }
+                      onDrop={
+                        !readOnly && i > 0
+                          ? (e) => {
+                              e.preventDefault();
+                              const r = e.currentTarget.getBoundingClientRect();
+                              dropRow(row.id, e.clientY > r.top + r.height / 2);
+                            }
+                          : undefined
                       }
                       data-row={row.id}
                     >
                       <th className="gs-stick gs-l">
                         <div className="gs-namecell">
+                          {/* ≡ 손잡이 (2026-09-06 오후 사용자 요청) — 방장 줄과 파티원 화면엔 없습니다. 튜토리얼에선 설명하지 않습니다 */}
+                          {!readOnly && i > 0 && (
+                            <span
+                              className="gs-drag"
+                              draggable="true"
+                              title="끌어서 줄 순서 바꾸기"
+                              aria-label="줄 순서 바꾸기"
+                              onDragStart={(e) => {
+                                dragRowRef.current = row.id;
+                                e.dataTransfer.effectAllowed = "move";
+                                try {
+                                  e.dataTransfer.setData("text/plain", row.id);
+                                } catch (x) {}
+                              }}
+                              onDragEnd={() => {
+                                dragRowRef.current = null;
+                                setDragOver(null);
+                              }}
+                            >
+                              ≡
+                            </span>
+                          )}
                           {/* 이름만 남깁니다 — 손잡이(기록·삭제)는 표 오른쪽 끝
                               도구 열로 나갔습니다. 이름이 옆 칸(횟수)에 바로 붙습니다. */}
                           {/* 비워 두면 어디서든 이 이름으로 불립니다 — 칸에도 같은 글자를 */}
@@ -14693,6 +14760,12 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 
 /* 이름 칸은 이름만 — 손잡이는 오른쪽 끝 도구 열에 삽니다 */
 .gs-namecell{display:flex; align-items:center; gap:4px}
+/* ≡ 손잡이 — 옅게 있다가 호버에 진해집니다. 끌고 지나는 줄엔 놓일 쪽에 금색 선 */
+.gs-drag{cursor:grab; color:var(--ink-2); font-size:15px; line-height:1; padding:0 3px; user-select:none; opacity:.5; flex:none}
+.gs-drag:hover{opacity:1; color:var(--ink)}
+.gs-drag:active{cursor:grabbing}
+tr.gs-dragover-top > th,tr.gs-dragover-top > td{box-shadow:inset 0 2px 0 var(--gold)}
+tr.gs-dragover-bot > th,tr.gs-dragover-bot > td{box-shadow:inset 0 -2px 0 var(--gold)}
 /* 줄의 신분 표시 — 이름 칸 왼쪽 빈자리 (§3.1). 이름은 오른쪽 끝에 그대로 붙습니다 */
 .gs-rowmeta{margin-right:auto; flex:none; display:inline-flex; align-items:center; gap:4px; padding-left:4px}
 /* i 하나 — 사람이 앉은 줄. 호버(title)에 닉 · 아이디. 끊긴 사람은 흐려집니다.
