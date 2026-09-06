@@ -48,7 +48,10 @@ export const PAGE_HTML = `<!doctype html>
     font-size:4.4vw; font-weight:500; line-height:1.2; border-radius:1vw;
     transition:transform .35s cubic-bezier(.22,1,.36,1)}
   /* 순위와 변동은 글자 크기가 달라서, 기준선 대신 줄 한가운데에 맞춥니다 */
-  .ov-rank{width:5.2vw; font-size:3.6vw; opacity:.68; font-variant-numeric:tabular-nums;
+  /* 이름과 순위는 어느 경우에도 또렷합니다 (2026-09-07 사용자). 흐림은 값 칸이 말합니다 —
+     줄 전체를 흐리게 하면 "아직 안 낸 사람"이라는 말이 이름과 등수까지 지워 버립니다.
+     (폐기 2026-09-07) 순위 opacity .68 · `.ov-row.zero{opacity:.5}` */
+  .ov-rank{width:5.2vw; font-size:3.6vw; font-variant-numeric:tabular-nums;
     flex:none; align-self:center; text-align:center}
   /* 순위 변동 자리 — 비어 있어도 폭을 차지해서 이름 열이 밀리지 않습니다 */
   .ov-move{width:5.6vw; flex:none; font-size:2.9vw; font-weight:700; text-align:center;
@@ -92,20 +95,25 @@ export const PAGE_HTML = `<!doctype html>
   /* 순액이 꺼져 있으면 칩은 판 바깥(투명 영역)으로 나갑니다 — 카드를 넓히지 않으니
      판이 작아지지 않고, OBS 소스에 어차피 남던 여백을 대신 씁니다.
      잘리지 않게 fitBoard 가 그 튀어나온 만큼을 폭에 얹어서 배율을 잽니다. */
-  .ov-row.zero{opacity:.5}
+  /* 아직 아무것도 안 낸 줄 — 이름·등수는 그대로 두고 값 칸만 물러납니다 (2026-09-07 사용자) */
+  .ov-row.zero .ov-gold{opacity:.5; --slop:.5}
   /* 슬라이드 모드 (2026-09-06 사용자 확정) — 항목 열과 순액을 늘어놓지 않고 합계 자리에서 번갈아 보여 줍니다.
      판이 절반 폭이 되어 같은 면적에서 글자가 두 배가 됩니다. 값은 왼쪽으로 나가고 오른쪽에서 들어옵니다
      (표의 자연스러운 순서 항목 → 합계 → 순액 방향 — 사용자). 줄마다 30ms 씩 늦춰 물결처럼 */
-  .ov-gold.as-cnt{color:var(--ink); opacity:.92}
-  .ov-gold.as-cnt.z{opacity:.3}
-  .ov-gold.as-net{color:var(--ink); opacity:.5}
-  .ov-gold.as-net.plus{color:#6fb4ff; opacity:1}
-  .ov-gold.as-net.minus{color:#ff7d6b; opacity:1}
-  .ov-total.as-lab{color:var(--ink); opacity:.88; font-weight:600; overflow:visible}
+  /* --slop 은 "이 칸이 다 들어왔을 때의 밝기"입니다 (2026-09-07 사용자 지적).
+     미끄러지는 애니메이션이 opacity:1 로 끝나던 동안에는 흐려야 할 값(0회·순액·항목)이
+     진하게 들어왔다가 애니메이션이 걷히는 순간 제 밝기로 뚝 떨어졌습니다. 나갈 때도 한 번 밝아졌고요.
+     그래서 끝점을 1 이 아니라 그 칸의 밝기로 잡습니다 — 흐린 값은 흐린 채로 들어오고 나갑니다. */
+  .ov-gold.as-cnt{color:var(--ink); opacity:.92; --slop:.92}
+  .ov-gold.as-cnt.z{opacity:.3; --slop:.3}
+  .ov-gold.as-net{color:var(--ink); opacity:.5; --slop:.5}
+  .ov-gold.as-net.plus{color:#6fb4ff; opacity:1; --slop:1}
+  .ov-gold.as-net.minus{color:#ff7d6b; opacity:1; --slop:1}
+  .ov-total.as-lab{color:var(--ink); opacity:.88; --slop:.88; font-weight:600; overflow:visible}
   .sl-out{animation:ov-sl-out 260ms cubic-bezier(.4,0,.8,.4) both}
   .sl-in{animation:ov-sl-in 260ms cubic-bezier(.2,.6,.3,1) both}
-  @keyframes ov-sl-out{from{transform:translateX(0); opacity:1} to{transform:translateX(-45%); opacity:0}}
-  @keyframes ov-sl-in{from{transform:translateX(45%); opacity:0} to{transform:translateX(0); opacity:1}}
+  @keyframes ov-sl-out{from{transform:translateX(0); opacity:var(--slop,1)} to{transform:translateX(-45%); opacity:0}}
+  @keyframes ov-sl-in{from{transform:translateX(45%); opacity:0} to{transform:translateX(0); opacity:var(--slop,1)}}
   @media (prefers-reduced-motion:reduce){ .sl-out,.sl-in{animation:none} }
 
   /* 벌금 알림 — 룰렛과 같은 결의 카드. 원판과 달리 글자 두 줄뿐이라 크게 잡을 필요가
@@ -618,7 +626,10 @@ export const PAGE_HTML = `<!doctype html>
     slow: { hold: 1500, end: 1900 },
     epic: { hold: 1800, end: 2200 },
   };
-  var OV_ROLL = 9250, OV_HOLD = 1200, OV_END = 1700; // cfg 가 안 왔을 때의 기본 감속(슬라이더 30)
+  /* cfg.roll 이 안 왔다 = 아직 배포 전 앱이 민 판입니다. 그때는 옛 고정값 7초를 그대로 씁니다 —
+     새 기본값을 끼워 넣으면 앱과 방송이 서로 다른 시간으로 돌아 결과 공개 시점이 어긋납니다.
+     덕분에 워커를 앱보다 먼저 올려도 그 사이가 멀쩡합니다 (2026-09-07) */
+  var OV_ROLL = 7000, OV_HOLD = 1200, OV_END = 1700;
   var useSpeed = function (sp) {
     var v = SPINS[(sp && sp.spd) || "normal"] || SPINS.normal;
     OV_HOLD = v.hold; OV_END = v.end;

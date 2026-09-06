@@ -478,7 +478,11 @@ const isPresetGlide = (r) => spinGlideOf(r) === GLIDE_NORMAL || spinGlideOf(r) =
 /* 슬라이더 값 → 서는 데 걸리는 시간. 판이 시작될 때 한 번 재서 판(spin.roll)에 얼려 싣습니다 —
    서기 원판·사람 원판·파티원 원판·방송 원판이 전부 이 한 값을 씁니다 (룰렛은 방장 것). */
 const glideMs = (g) => Math.round(GLIDE_MS_LO + ((GLIDE_MS_HI - GLIDE_MS_LO) * Math.max(0, Math.min(100, g))) / 100);
-const spinRoll = (sp) => (sp && sp.roll > 0 ? sp.roll : glideMs(GLIDE_DEFAULT));
+/* 판에 감속 시간이 없으면(배포 전 앱이 민 옛 판) 옛 고정값 7초를 씁니다 — 새 기본값 9.25초를
+   끼워 넣으면 그 판을 미는 화면과 보는 화면이 서로 다른 시간으로 돌아 결과 공개가 어긋납니다.
+   배포 뒤 새로 만드는 판은 늘 roll 을 싣고 오므로, 이 값은 갈아타는 동안에만 쓰입니다 (2026-09-07) */
+const LEGACY_ROLL_MS = 7000;
+const spinRoll = (sp) => (sp && sp.roll > 0 ? sp.roll : LEGACY_ROLL_MS);
 /* 멈추는 동안 면이 바뀌는 간격 — 원판과 같은 등감속입니다. 속도가 (1−p) 로 줄어드니
    간격은 그 역수로 벌어집니다. 원판과 릴이 같은 판에서 같은 속도감으로 서야 해서요.
    끝에서 무한대로 가지 않게 상한을 둡니다(마지막 한 칸은 어차피 결과가 차지합니다).
