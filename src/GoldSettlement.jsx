@@ -8957,45 +8957,6 @@ export default function GoldSettlement() {
                   </Fragment>
                 );
               })}
-              {/* 줄이 없는 사람은 표 맨 아래 (2026-09-06) — [받기]가 규칙대로 앉힙니다(시작 전은 신청만 서고, 진행 중은 처음 온 사람도 섭니다) */}
-              {!readOnly &&
-                waitBelow.map((p) => {
-                  const nick = p.nick || p.acct;
-                  return (
-                    <tr key={"w:" + p.acct} className="gs-waitrow">
-                      <td colSpan={30}>
-                        <div className="gs-waitline">
-                          <b>{nick}</b>
-                          <span className="gs-lbreq-id">{p.acct.slice(0, 2) + "••••"}</span>
-                          <span className="gs-waitwhy">{waitWhy(p)}</span>
-                          <span className="gs-waitacts">
-                            <button className="gs-swaplink gs-swaplink-mute" onClick={() => waitDeny(p)}>
-                              거절
-                            </button>
-                            {/* 시작 전 신청은 [받기](첫 빈 자리, 정원 늘림). 진행 중에 줄 없이 온 사람은 [자리 정하기] — 방장이 직접 고릅니다
-                                (2026-09-06 재정정; (폐기) [받기] 하나가 첫 빈 줄/새 줄에 앉히던 것) */}
-                            {roundLive ? (
-                              <button
-                                className="gs-btn gs-btn-sm gs-waitpickbtn"
-                                onClick={() => {
-                                  setWaitPick(p);
-                                  if (tutorialRef.current) tutHit("pick"); // 같이 해보기 7걸음
-                                }}
-                              >
-                                자리 정하기
-                              </button>
-                            ) : (
-                              <button className="gs-btn gs-btn-sm" onClick={() => waitTake(p)}>
-                                받기
-                              </button>
-                            )}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-
               <tr className="gs-addrow">
                 <th className="gs-stick gs-l">
                   {!readOnly && (
@@ -9032,6 +8993,46 @@ export default function GoldSettlement() {
             </tfoot>
           </table>
         </div>
+        {/* 줄이 없는 사람은 표 아래 (2026-09-06) — [받기]가 규칙대로 앉힙니다(시작 전은 신청만 서고, 진행 중은 처음 온 사람도 섭니다).
+            표 밖에 둡니다 — 열이 많아 표가 가로로 스크롤되면 표 안의 줄은 [자리 정하기]가 오른쪽으로 밀려 잘렸다 (같은 날 사용자) */}
+        {!readOnly && waitBelow.length > 0 && (
+          <div className="gs-waitrows">
+            {waitBelow.map((p) => {
+              const nick = p.nick || p.acct;
+              return (
+                <div key={"w:" + p.acct} className="gs-waitrow">
+                  <div className="gs-waitline">
+                    <b>{nick}</b>
+                    <span className="gs-lbreq-id">{p.acct.slice(0, 2) + "••••"}</span>
+                    <span className="gs-waitwhy">{waitWhy(p)}</span>
+                    <span className="gs-waitacts">
+                      <button className="gs-swaplink gs-swaplink-mute" onClick={() => waitDeny(p)}>
+                        거절
+                      </button>
+                      {/* 시작 전 신청은 [받기](첫 빈 자리, 정원 늘림). 진행 중에 줄 없이 온 사람은 [자리 정하기] — 방장이 직접 고릅니다
+                          (2026-09-06 재정정; (폐기) [받기] 하나가 첫 빈 줄/새 줄에 앉히던 것) */}
+                      {roundLive ? (
+                        <button
+                          className="gs-btn gs-btn-sm gs-waitpickbtn"
+                          onClick={() => {
+                            setWaitPick(p);
+                            if (tutorialRef.current) tutHit("pick"); // 튜토리얼 4장
+                          }}
+                        >
+                          자리 정하기
+                        </button>
+                      ) : (
+                        <button className="gs-btn gs-btn-sm" onClick={() => waitTake(p)}>
+                          받기
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         </div>
 
         </div>
@@ -9987,7 +9988,7 @@ export default function GoldSettlement() {
         </div>
       )}
       {toast && (
-        <div className="gs-toast" role="status" key={toast.t}>
+        <div className={"gs-toast" + (coach && coach.kind === "party" ? " gs-toast-coach" : "")} role="status" key={toast.t}>
           {toast.msg}
         </div>
       )}
@@ -11899,6 +11900,23 @@ function LobbyHome({
   };
   return (
     <section className="gs-lobbyhome" aria-label="로비">
+      {/* 같이 해보기 권유 (2026-09-06 사용자 확정) — 초대 없이 들어온 모든 사용자에게 한 번, 헤더 아래·두 카드 위 띠.
+          [됐어요]로 접으면 [?]에만 남습니다. 문구는 초안. (폐기, 같은 날) 내 판 카드 안 [+ 새 판 만들기] 바로 위 — 공지가 아니라 새 판 UI 의 일부처럼 읽혔다 */}
+      {tutLine && (
+        <div className="gs-tutline" role="status">
+          <span>
+            <b>리뉴얼됐어요.</b> 4인 파티를 예시로 처음부터 같이 열어 봐요.
+          </span>
+          <span className="gs-tutline-r">
+            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onDropTut}>
+              됐어요
+            </button>
+            <button className="gs-btn gs-btn-sm gs-lbstart" onClick={onTut}>
+              같이 해보기
+            </button>
+          </span>
+        </div>
+      )}
       <div className="gs-lobbyhome-col">
         <div className="gs-card gs-lh-me">
           {auth ? (
@@ -11946,23 +11964,6 @@ function LobbyHome({
               <div className="gs-lh-empty">
                 {/* 처음에도, 끝내기·해산 뒤에도 같은 얼굴 (2026-09-06) — "아직"은 끝낸 뒤엔 안 맞아서 뺌 (초안) */}
                 <p>{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
-                {/* 같이 해보기 권유 (2026-09-06 사용자 확정) — 초대 없이 들어온 모든 사용자에게 한 번, 새 판 버튼 바로 위.
-                    [됐어요]로 접으면 [?]에만 남습니다. 문구는 초안 */}
-                {tutLine && (
-                  <div className="gs-tutline" role="status">
-                    <span>
-                      <b>리뉴얼됐어요.</b> 4인 파티를 예시로 처음부터 같이 열어 봐요.
-                    </span>
-                    <span className="gs-tutline-r">
-                      <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onDropTut}>
-                        됐어요
-                      </button>
-                      <button className="gs-btn gs-btn-sm gs-lbstart" onClick={onTut}>
-                        같이 해보기
-                      </button>
-                    </span>
-                  </div>
-                )}
                 <button className={"gs-btn gs-lh-newbtn " + (auth ? "gs-btn-ghost" : "gs-lifebtn gs-lbstart")} onClick={onEnter}>
                   + 새 판 만들기
                 </button>
@@ -13324,7 +13325,7 @@ const HOST_STEPS = [
   { ch: 3, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
   { ch: 3, sel: ".gs-grid thead .gs-rcbtn", text: "룰렛 항목은 방장이 칸을 눌러 돌려요. 나온 숫자 × 단가가 벌금이에요.", action: "다음", lock: true },
   { ch: 3, sel: ".gs-rowi", text: "이름 옆 사람 아이콘. 줄을 옮기거나 파티에서 내보낼 땐 여기예요.", action: "다음", lock: true, enter: "wei" },
-  { ch: 3, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", center: true },
+  { ch: 3, sel: ".gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick" },
   { ch: 3, sel: ".gs-modal .gs-waitpick .gs-seatopt:not(.gs-seatopt-new)", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
   /* 5장 — 쌓인 데이터로 봅니다 */
   { ch: 4, sel: ".gs-grid", text: "한 판 돌았다고 칠게요… 넷이 더 들어와 여덟이 됐어요.", lock: true, wait: "auto", enter: "seed" },
@@ -13341,7 +13342,7 @@ const HOST_STEPS = [
   /* 7장 — 예시 안에서 진짜 끝내기 흐름 */
   { ch: 6, sel: ".gs-endbtn", text: "다 끝나면 여기예요.", wait: "endask" },
   { ch: 6, sel: ".gs-dialog .gs-btn:not(.gs-btn-ghost)", text: "결과지가 판 기록에 남아요. 끝낼게요.", wait: "ended", top: true },
-  { ch: 6, sel: ".gs-mast", text: "결과지예요. 파티원도 같은 걸 봐요.", action: "다음", lock: true, clear: true },
+  /* (폐기 2026-09-06, 같은 날) 결과지 머리 가리키기 `결과지예요. 파티원도 같은 걸 봐요.` — 사용자: 박스가 이상, 그냥 빼자 */
   { ch: 6, sel: ".gs-mast .gs-btn-ghost", text: "닫으면 로비로 가요.", wait: "genclose" },
   { ch: 6, sel: ".gs-lh-recs", text: "끝난 판은 여기 남아요. 결과지를 다시 볼 수 있어요. 이제 들어온 파티원이 보는 화면을 볼게요.", action: "다음 장", lock: true },
 ];
@@ -13462,9 +13463,17 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
     setBox(null);
     setBh(0);
     const first = document.querySelector(sel);
-    /* 화면 밖이면 테두리도 말풍선도 안 보이는 채로 안내가 돕니다. nearest 라서
-       표처럼 화면보다 큰 대상은 이미 보이는 대로 두고 건드리지 않습니다. */
-    if (first) first.scrollIntoView({ block: center ? "center" : "nearest", inline: "nearest" });
+    /* 창만 세로로 움직입니다 — scrollIntoView 는 표 같은 안쪽 스크롤 상자까지 가로로 밀어서 채워지는 칸이 안 보였습니다 (2026-09-06 사용자).
+       표적과 그 아래 말풍선 자리(약 130px)가 다 보이면 그대로 둡니다. (폐기, 같은 날) center 옵션 — 스크롤이 튄다(사용자) */
+    if (first) {
+      const r = first.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const need = Math.min(r.height + 130, vh - 32);
+      let dy = 0;
+      if (r.top < 16) dy = r.top - 16;
+      else if (r.top + need > vh) dy = Math.min(r.top - 16, r.top + need - vh);
+      if (dy) window.scrollBy(0, dy);
+    }
     let raf = 0;
     let miss = 0;
     let last = "";
@@ -14670,7 +14679,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-guide-row .gs-btn{margin-left:auto}
 .gs-guide-foot{margin:14px 0 0; padding-top:12px; border-top:1px solid rgba(var(--ink-rgb),.14); font-size:11.5px; color:var(--ink-2); line-height:1.7}
 /* 로비 권유 줄 (2026-09-06) */
-.gs-tutline{display:flex; align-items:center; gap:12px; margin:0 0 12px; text-align:left; padding:10px 12px; border:1px solid rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.07); font-size:12.5px; color:var(--ink-body); flex-wrap:wrap}
+.gs-tutline{grid-column:1/-1; display:flex; align-items:center; gap:12px; margin:0; text-align:left; padding:10px 12px; border:1px solid rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.07); font-size:12.5px; color:var(--ink-body); flex-wrap:wrap}
 .gs-tutline b{color:var(--ink)}
 .gs-tutline-r{margin-left:auto; display:flex; gap:8px}
 /* 예시 앱 창(부모)과 예시 띠(예시 앱) (2026-09-06) */
@@ -15609,6 +15618,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 알림 한 줄 — 화면 아래에 잠깐 떴다 사라집니다. 누를 것이 없어 조작을 안 막습니다 */
 /* 토스트 안에서 누를 수 있는 말 — 토스트는 클릭을 안 받게 두고(밑의 표를 가리면
    안 되니까) 이 조각만 되살립니다 */
+/* 걸음이 떠 있는 동안의 토스트 — 말풍선은 표 아래·가운데에 서니 토스트는 오른쪽 위로 비킵니다 (2026-09-06 사용자: 토스트가 말풍선을 가렸다) */
+.gs-toast.gs-toast-coach{bottom:auto; top:104px; left:auto; right:24px; transform:none; text-align:left; max-width:min(420px,60vw)} /* 두 클래스 — 뒤에 오는 .gs-toast 기본 규칙에 안 덮이게 */
 .gs-toast-link{font:inherit; color:var(--gold); background:transparent; border:0;
   padding:0; cursor:pointer; pointer-events:auto; text-decoration:underline;
   text-underline-offset:3px; text-decoration-thickness:1px}
@@ -16101,7 +16112,8 @@ tr.gs-row-arrive th.gs-stick{box-shadow:inset 3px 0 0 var(--gold)}
 .gs-note-x{margin-left:auto; font:inherit; font-size:16px; line-height:1; color:var(--ink-2); background:none; border:0; cursor:pointer; padding:0 2px}
 .gs-obs-invcard{margin-top:14px}
 /* 표 아래 사건 줄과 자기 줄 밑의 요청 줄 (2026-09-06) */
-tr.gs-waitrow td,tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb),.2)}
+tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb),.2)}
+.gs-waitrows{display:flex; flex-direction:column; gap:6px; margin:10px 0 0}
 .gs-waitline{display:flex; align-items:center; gap:10px; padding:8px 12px; border:1px dashed rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.06); font-size:12.5px; color:var(--ink-body)}
 .gs-waitline b{font-family:'Gowun Batang',serif; font-weight:700; color:var(--ink); font-size:14px}
 .gs-waitwhy{color:var(--ink-body)}
