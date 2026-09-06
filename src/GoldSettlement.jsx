@@ -1135,6 +1135,9 @@ const roomApi = {
   inviteNow: (token, roomId) => callApi(`/api/r/${roomId}/invite`, { token }).then((r) => r.invite || null),
   /* 정산 끝내기·해산 — 판이 없어집니다 (2026-09-06 모델) */
   end: (token, roomId) => callApi(`/api/r/${roomId}/end`, { method: "POST", body: {}, token }),
+  /* 외형을 고쳤다고 내 오버레이에 알립니다 (2026-09-07) — 서버는 그 계정의 소켓에만 그대로 넘깁니다 */
+  look: (token, roomId, look) =>
+    callApi(`/api/r/${roomId}/look`, { method: "POST", body: { look }, token }),
   lobby: (token, roomId, open, cap) =>
     callApi(`/api/r/${roomId}/lobby`, {
       method: "POST",
@@ -3471,13 +3474,21 @@ export default function GoldSettlement() {
     clearTimeout(lookTimer.current);
     lookTimer.current = setTimeout(() => {
       lookSent.current = body;
-      authApi.look(auth.token, JSON.parse(body)).catch(() => {
-        /* 못 올려도 이 브라우저의 외형은 그대로입니다 — 다음 변경 때 다시 시도합니다 */
-        lookSent.current = null;
-      });
+      authApi
+        .look(auth.token, JSON.parse(body))
+        .then(() => {
+          /* 저장만 하면 내 오버레이는 다음에 붙을 때까지 옛 외형입니다 — OBS 소스를 새로고침해야
+             반영되던 게 이것 때문이었습니다 (2026-09-07 사용자 지적). 방을 거쳐 내 소켓에만 알립니다 */
+          const room = relayRef.current.room;
+          if (room) roomApi.look(auth.token, room, JSON.parse(body)).catch(() => {});
+        })
+        .catch(() => {
+          /* 못 올려도 이 브라우저의 외형은 그대로입니다 — 다음 변경 때 다시 시도합니다 */
+          lookSent.current = null;
+        });
     }, 600);
     return () => clearTimeout(lookTimer.current);
-  }, [auth && auth.token, relay.look]);
+  }, [auth && auth.token, relay.look, relay.ov, relay.fx]);
 
   /* ================= 자리 (§3.2) =================
      자리 = { 이름, 붙은 계정, 기억된 아이디 }. 연결이 판의 행이 아니라 자리에 살아서
@@ -4640,13 +4651,17 @@ export default function GoldSettlement() {
     };
   };
   /* 머리(cols)와 줄(c)이 같은 목록을 써야 방송 표의 열이 안 어긋납니다 */
-  const ovCols = () => (simple ? [] : activeCols.filter((c) => !ovShow().itemOff(c.id)));
+  /* 열은 전부 싣습니다 (2026-09-07) — 무엇을 뺄지는 보는 계정이 자기 오버레이에서 정합니다.
+     예전엔 방장이 끈 열을 아예 안 보내서, 남의 오버레이에서도 그 열이 사라졌습니다 */
+  const ovCols = () => (simple ? [] : activeCols);
   /* 방송에 보낼 연출거리 — 누른 순서대로 마지막 몇 개. 오버레이가 id 로 중복을 걸러
      자기가 아직 안 보여 준 것만 재생합니다. 상태를 통째로 다시 보내도(재접속·새로고침)
      같은 카드가 두 번 뜨지 않는 건 그 id 덕분입니다.
      룰렛은 제 연출이 따로 있어 빼고, 기타·합계 수정은 "누가 무엇에"가 없어 뺍니다. */
   const fxOut = () => {
-    if (!fxOn(relay)) return [];
+    /* 알림을 껐어도 연출거리는 보냅니다 (2026-09-07) — 켜고 끄는 건 보는 계정의 몫이라,
+       여기서 비우면 알림을 켜 둔 파티원의 오버레이까지 같이 조용해집니다.
+       state 의 fxSpd 는 제 설정을 저장하지 않은 계정의 기본값으로 남습니다 */
     const isPress = (id) => {
       const o = log.find((x) => x.id === id);
       return !!o && (o.kind === "press" || o.kind === "confess");
@@ -4676,7 +4691,23 @@ export default function GoldSettlement() {
   const lookOut = () => {
     const lk = relay.look || { t: "dark", alpha: 25 };
     /* line(헤어라인)은 판 테마에만 실립니다 — 서버는 해석 없이 그대로 나릅니다 */
-    return isPanelLook(lk) ? { t: lk.t, bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) } : { t: lk.t };
+    const base = isPanelLook(lk)
+      ? { t: lk.t, bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) }
+      : { t: lk.t };
+    /* 룰렛 말고는 전부 계정 것입니다 (2026-09-07 사용자 확정) — 슬라이드·알림·끈 항목·합계·순액도
+       내 주소의 설정이라 여기 같이 싣습니다. 판(state)의 같은 값은 이걸 저장하지 않은 계정의
+       기본값으로만 남습니다. 룰렛(원판·테마·감속)은 여기 없습니다 — 판이 정합니다 */
+    const sh = ovShow();
+    /* 끈 열은 지금 보이는 열 중에서 고릅니다 — 옛 `ov.items === false`(전부 끔)도 이 셈에 녹습니다 */
+    const off = (simple ? [] : activeCols).filter((c) => sh.itemOff(c.id)).map((c) => c.id);
+    return {
+      ...base,
+      slide: sh.slide ? 1 : 0,
+      net: sh.net ? 1 : 0,
+      sum: sh.sum ? 1 : 0,
+      fx: fxOn(relay) ? 1 : 0,
+      ...(off.length ? { off } : {}),
+    };
   };
 
   /* 뷰어가 그대로 3탭을 그릴 수 있도록 표 전체를 보냅니다 (기록은 뺍니다) */
@@ -4688,6 +4719,8 @@ export default function GoldSettlement() {
     board: boardOf(),
     /* 오버레이 표의 열 머리 */
     cols: ovCols().map((c) => ({
+      /* id 는 보는 계정이 끈 열을 짚는 열쇠입니다 (2026-09-07). 이름은 겹칠 수 있습니다 */
+      id: c.id,
       t: (c.name || "").trim() || "항목",
       r: isRoulette(c) ? 1 : 0,
     })),

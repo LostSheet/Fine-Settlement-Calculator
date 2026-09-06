@@ -151,7 +151,7 @@ export default {
     // 방 API
     const api = p.match(
       new RegExp(
-        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end)$`
+        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end|look)$`
       )
     );
     if (api) {
@@ -1474,6 +1474,18 @@ export class Room {
         this.toScribe({ kind: "left", acct: me.id });
         this.toAcct(me.id, { kind: "you", you: null });
       }
+      return json({ ok: true });
+    }
+
+    /* 외형이 바뀌었다고 제 오버레이에 알립니다 (2026-09-07).
+       계정 외형은 /api/auth/look 이 진본이고, 오버레이는 그걸 붙을 때 한 번만 받아 왔습니다 —
+       그래서 테마를 고쳐도 OBS 소스를 새로고침해야 반영됐습니다(사용자 지적).
+       서버는 여기서도 해석하지 않고 그 계정의 뷰어 소켓에만 그대로 넘깁니다. 폴링은 안 씁니다 —
+       켜 둔 채 방치된 소스 하나가 하루 수천 번 서버를 두드리게 되니까요. */
+    if (path === "/look" && req.method === "POST") {
+      if (!me) return json({ error: "unauthorized" }, 401);
+      const look = b && b.look && typeof b.look === "object" && !Array.isArray(b.look) ? b.look : null;
+      if (look) this.toAcct(me.id, { kind: "look", look });
       return json({ ok: true });
     }
 

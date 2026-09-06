@@ -471,6 +471,15 @@ export const PAGE_HTML = `<!doctype html>
      계정 외형은 "OBS는 한 번만 넣는다"를 지키려고 서버에 둔 값이라(§4.4), 방장이 고른
      판의 look 보다 셉니다 — 오버레이 주소 하나가 사람 하나의 것이라서요. */
   var acctLook = null;
+  /* 계정 외형 중 판 그림에 관한 것들 — 없으면(undefined) 판의 값을 씁니다 (2026-09-07).
+     룰렛은 여기 없습니다: 원판·테마·감속은 방장 것이라 판이 정합니다 */
+  var acctFlag = function (k) {
+    if (!acctLook || acctLook[k] === undefined || acctLook[k] === null) return null;
+    return !!acctLook[k];
+  };
+  var acctOff = function () {
+    return acctLook && Object.prototype.toString.call(acctLook.off) === "[object Array]" ? acctLook.off : null;
+  };
   var applyLook = function (lk, fromAcct) {
     if (!lk || typeof lk !== "object") return;
     if (fromAcct) acctLook = lk;
@@ -483,6 +492,49 @@ export const PAGE_HTML = `<!doctype html>
       var ls = parseInt(lk.s, 10);
       if (!isNaN(ls)) document.body.style.fontSize = Math.min(300, Math.max(50, ls)) + "%";
     }
+  };
+
+  /* 마지막으로 받은 판 그대로 — 외형이 바뀌면 이걸 다시 입혀서 그립니다 */
+  var lastState = null;
+  /* 판이 온 그대로가 아니라 "내 계정 설정을 입힌 판"을 그립니다 (2026-09-07).
+     슬라이드·합계·순액은 내 값이 있으면 그걸로, 없으면 판의 값으로.
+     끈 열은 열 머리와 각 줄의 숫자를 같은 자리에서 같이 빼야 표가 안 어긋납니다. */
+  var viewOf = function (st) {
+    if (!st) return null;
+    var cols = st.cols || [];
+    var board = st.board ? st.board : null;
+    var off = acctOff();
+    if (off && off.length && cols.length) {
+      var keep = [];
+      for (var i = 0; i < cols.length; i++)
+        if (!(cols[i] && cols[i].id != null && off.indexOf(cols[i].id) >= 0)) keep.push(i);
+      if (keep.length !== cols.length) {
+        var src = cols;
+        cols = [];
+        for (var j = 0; j < keep.length; j++) cols.push(src[keep[j]]);
+        if (board) {
+          var rows = [];
+          for (var r = 0; r < board.length; r++) {
+            var row = board[r];
+            if (!row || Object.prototype.toString.call(row.c) !== "[object Array]") { rows.push(row); continue; }
+            var o = {}, k;
+            for (k in row) if (Object.prototype.hasOwnProperty.call(row, k)) o[k] = row[k];
+            o.c = [];
+            for (var q = 0; q < keep.length; q++) o.c.push(row.c[keep[q]]);
+            rows.push(o);
+          }
+          board = rows;
+        }
+      }
+    }
+    var sl = acctFlag("slide"), nn = acctFlag("net"), ns = acctFlag("sum");
+    return {
+      board: board,
+      cols: cols,
+      net: nn === null ? !(st.ovNet === false) : nn,
+      sum: ns === null ? !(st.ovSum === false) : ns,
+      slide: sl === null ? !(st.ovSlide === false) : sl, // 슬라이드 모드 — 기본 켬
+    };
   };
 
   /* 사람 브라우저에서만 한 줄 얹습니다 — 판별은 마우스입니다 (2026-09-05): 송출
@@ -1574,8 +1626,10 @@ export const PAGE_HTML = `<!doctype html>
   var fxOn = true;
   var applyFxCfg = function (st) {
     var sp = st.fxSpd;
-    /* 앱이 알림을 끄면 연출거리를 아예 안 보내지만, 받는 쪽에서도 한 번 더 겁니다 */
-    fxOn = sp !== "off";
+    /* 알림을 켤지는 보는 계정이 정합니다 (2026-09-07) — 저장해 둔 값이 없을 때만 판의 값을 따릅니다.
+       앱은 이제 알림을 꺼도 연출거리를 보냅니다. 켜 둔 파티원의 오버레이가 같이 조용해지지 않게요 */
+    var mine = acctFlag("fx");
+    fxOn = mine === null ? sp !== "off" : mine;
     FX_HOLD = FX_HOLDS[sp] || FX_HOLDS.norm;
     MV_DUR = Math.round(FX_HOLD * 0.7);
     mvMode = st.mvMode === "chip" || st.mvMode === "off" ? st.mvMode : "swipe";
@@ -1949,6 +2003,16 @@ export const PAGE_HTML = `<!doctype html>
           next = null; fxQ = []; fxCard = null; clearTimeout(fxTimer);
           /* 방장이 없는 방 = 계정 이전의 옛 주소입니다. 초대가 없어서 막힌 것과 답이 달라요 */
           NOTICE = m.why === "gone" ? NOTICE_GONE : NOTICE_HOME;
+        } else if (m.kind === "look") {
+          /* 내 계정이 외형을 고쳤습니다 (2026-09-07) — 예전엔 붙을 때 한 번만 받아서
+             OBS 소스를 새로고침해야 반영됐습니다. 판은 마지막 것을 그대로 다시 입힙니다 */
+          applyLook(m.look, true);
+          if (lastState) {
+            applyFxCfg(lastState);
+            next = viewOf(lastState);
+            pump(); // 연출이 돌고 있으면 그게 끝난 뒤에 앉습니다 — 판 반영과 같은 길입니다
+          }
+          return;
         } else if (m.kind === "you") {
           /* 명단에서 빠졌습니다(내보내기·나가기). 이미 붙어 있는 줄은 서버가 안 끊으므로
              여기서 떼고 다시 물어봅니다 — 자격이 없으면 그 답이 denied 로 와서 침묵합니다 */
@@ -1959,13 +2023,8 @@ export const PAGE_HTML = `<!doctype html>
           var st = m.state || {};
           lobby = st.lobby || null;
           /* 판은 바로 그리지 않고 담아 둡니다 — 연출이 다 끝나야 앉힙니다 */
-          next = {
-            board: st.board ? st.board : null,
-            cols: st.cols || [],
-            net: !(st.ovNet === false),
-            sum: !(st.ovSum === false),
-            slide: !(st.ovSlide === false), // 슬라이드 모드 — 기본 켬
-          };
+          lastState = st;
+          next = viewOf(st);
           applyFxCfg(st);
           ingestFx(st.fx);
           /* 룰렛도 같은 줄에 세웁니다 — 도착한 자리에서 차례를 기다립니다 */
