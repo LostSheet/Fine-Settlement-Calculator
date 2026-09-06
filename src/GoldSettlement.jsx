@@ -7763,6 +7763,7 @@ export default function GoldSettlement() {
           boardOn={boardOn}
           hasParty={!!(auth && relay.room)}
           seated={seats.filter((s0) => s0.acct).length}
+          seatNames={seats.filter((s0) => s0.acct).map((s0) => s0.name || s0.nick || "")}
           cap={lobbyCap}
           onDisband={() => askDisband(true)} // 로비에서는 늘 한 번 묻습니다 (2026-09-07 사용자: 경고는 당연히)
           onEnter={boardOn ? () => go(VIEW_BOARD) : newBoard}
@@ -12228,6 +12229,7 @@ function LobbyHome({
   boardOn,
   hasParty,
   seated,
+  seatNames,
   cap,
   onDisband,
   auth,
@@ -12358,7 +12360,8 @@ function LobbyHome({
                 <em className="gs-livechip-dot" aria-hidden="true" />
                 진행 중 · <b>{roundName || defaultRoundName()}</b>
               </h4>
-              <div className="gs-lh-box live">
+              {/* 상자 전체가 문 (2026-09-07 사용자: 롤 로비처럼 — 선 영역 전체로 복귀). 버튼 대신 발치에 `벌금판으로 ›` */}
+              <div className="gs-lh-box live gs-lh-go" role="button" tabIndex={0} onClick={onEnter} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEnter()}>
                 <p className="gs-lh-facts">
                   {filled.length}명 · 벌금 {man(liveGold || 0)}
                   {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
@@ -12367,11 +12370,7 @@ function LobbyHome({
                   판을 두고 나온 상태예요 —{" "}
                   {party ? "파티원은 그대로 셀 수 있어요." : "숫자는 그대로 남아 있어요."}
                 </p>
-                <div className="gs-lh-acts">
-                  <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onEnter}>
-                    벌금판으로 돌아가기
-                  </button>
-                </div>
+                <span className="gs-lh-goto">벌금판으로 ›</span>
               </div>
             </>
           ) : (
@@ -12381,6 +12380,8 @@ function LobbyHome({
                   `지난 판 '…'은 끝났어요 — 결과는 판 기록에.`·[벌금판 열기] — 판이 늘 있다는 전제의 얼굴이었다 */}
               {/* 대기실 인원은 두 얼굴 다 상자 안 사실 줄에 (2026-09-07 사용자: 시작 전에도 인원을 알려야 하고 UI 가 밀리면 안 된다).
                   (폐기) 모집 중 제목 옆 칩 `n / 정원 앉음` — 상태가 바뀌면 제목 줄이 늘어났다. [해산]은 왼쪽에 따로 앉혀 가운데 버튼이 안 밀립니다 */}
+              {/* 롤 로비처럼 (2026-09-07 사용자 확정): 제목 줄 오른쪽 끝 [× 해산], 상자 전체가 대기실로 가는 문, 상자 안엔 대기실 인원 수와 앉은 사람 이름.
+                  (폐기, 같은 날) 상자 왼쪽에 큰 유령 [해산] + 가운데 [대기실로] — 보조 동작이 주 버튼과 무게가 같았다. 문구는 초안 */}
               <h4 className="gs-lbcard-h gs-lh-facet">
                 {hasParty ? (
                   <>
@@ -12390,23 +12391,19 @@ function LobbyHome({
                 ) : (
                   "시작 전"
                 )}
+                {/* 로비의 [해산]은 늘 한 번 묻습니다 (2026-09-07 사용자: 경고는 당연히) */}
+                <button className="gs-lh-x" onClick={onDisband} aria-label="판 해산">
+                  <span aria-hidden="true">×</span> 해산
+                </button>
               </h4>
-              <div className="gs-lh-box">
+              <div className="gs-lh-box gs-lh-go" role="button" tabIndex={0} onClick={onEnter} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEnter()}>
                 <p className="gs-lh-facts">
                   대기실 {seated} / {cap} 앉음
                 </p>
-                <p className="gs-lh-sub">
-                  {hasParty ? "파티원이 모이는 중이에요. 대기실에서 자리를 보고 시작해요." : "판을 만들어 뒀어요. 대기실에서 파티원을 모으거나 바로 시작해요."}
+                <p className="gs-lh-names">
+                  {seatNames && seatNames.length ? seatNames.filter(Boolean).join(" · ") : "아직 아무도 없어요"}
                 </p>
-                <div className="gs-lh-acts">
-                  {/* 시작 전이면 파티가 없어도 [해산] — 로비에서 판을 없애는 문 (2026-09-07 사용자). 로비에서는 늘 한 번 묻습니다 */}
-                  <button className="gs-btn gs-btn-ghost gs-lh-side" onClick={onDisband}>
-                    해산
-                  </button>
-                  <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onEnter}>
-                    대기실로
-                  </button>
-                </div>
+                <span className="gs-lh-goto">대기실로 ›</span>
               </div>
             </>
           )}
@@ -16516,7 +16513,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-foot .gs-lbstart,.gs-lh-box .gs-lbstart{margin-left:0}
 /* 내 판 카드의 상자 — 네 얼굴이 같은 뼈대 (2026-09-06): 가운데 정렬, 사실 한 줄·설명 한 줄·버튼 줄.
    빈 판만 점선, 두고 나온 진행 중만 금테. (폐기) .gs-lh-empty 점선 상자는 백지에만 있었다 */
-.gs-lh-box{border:1px solid rgba(var(--ink-rgb),.22); border-radius:6px; padding:18px 16px 16px; text-align:center;
+.gs-lh-box{border:1px solid rgba(var(--ink-rgb),.48); background:rgba(var(--ink-rgb),.035); border-radius:6px; padding:18px 16px 16px; text-align:center; /* 테두리를 또렷하게 — 상자 전체가 누르는 영역임을 알리는 선 (2026-09-07 사용자: 롤처럼 상자 안 우상단 ×까지는 말고 테두리로) */
   color:var(--ink-2); font-size:12.5px; line-height:1.7}
 .gs-lh-box.empty{border:1px dashed var(--kraft-dk); border-radius:0}
 .gs-lh-box.live{border-color:rgba(var(--gold-rgb),.55); box-shadow:inset 3px 0 0 var(--gold)}
@@ -16524,7 +16521,15 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-box .gs-lh-sub{margin:0}
 .gs-lh-box .gs-lh-facts + .gs-lh-sub{margin-top:4px}
 .gs-lh-acts{display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px; position:relative}
-.gs-lh-side{position:absolute; left:0; top:50%; transform:translateY(-50%)} /* [해산] — 가운데 버튼을 안 밀고 왼쪽에 (2026-09-07) */
+/* 롤 로비처럼 (2026-09-07 사용자 확정) — 제목 줄 오른쪽 끝 작은 [× 해산], 상자 전체가 문. (폐기) .gs-lh-side 왼쪽 유령 [해산] */
+.gs-lh-x{margin-left:auto; border:0; background:transparent; font:inherit; font-size:12px; letter-spacing:0; color:var(--ink-2); cursor:pointer; padding:2px 4px; border-radius:3px}
+.gs-lh-x span{font-size:14px; line-height:1; margin-right:2px}
+.gs-lh-x:hover{color:#e59a90; background:rgba(229,154,144,.1)}
+.gs-lh-go{cursor:pointer; transition:border-color .15s, background .15s}
+.gs-lh-go:hover{border-color:rgba(var(--gold-rgb),.75); background:rgba(var(--gold-rgb),.05)}
+.gs-lh-go:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+.gs-lh-names{margin:4px 0 0; font-size:13.5px; color:var(--ink); line-height:1.6}
+.gs-lh-goto{display:inline-block; margin-top:12px; color:var(--gold); font-weight:600; font-size:12.5px; letter-spacing:.02em}
 .gs-lh-back{margin-bottom:14px}
 .gs-lh-join{display:flex; gap:8px; margin-top:8px}
 .gs-lh-in{flex:1 1 auto; min-width:0}
