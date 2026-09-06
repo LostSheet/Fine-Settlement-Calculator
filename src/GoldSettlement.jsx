@@ -12330,40 +12330,47 @@ function LobbyHome({
           {/* 내 판 카드의 세 얼굴 (§3.0, 2026-09-05) — 상태가 제목이다: 진행 중(두고 나온 판) / 시작 전 / 백지.
               (폐기, 당일) 제목 `내 판` + 작은 `진행 중` 뱃지 — "두고 나왔다"도 "시작 전이다"도 안 읽혔다.
               문구는 §8 초안 */}
+          {/* 네 얼굴, 한 뼈대 (2026-09-06 사용자: 왼쪽 UI 일관성) — 제목은 상태, 그 아래 상자 하나에 사실 한 줄·설명 한 줄·버튼 줄.
+              빈 판만 점선 상자, 두고 나온 진행 중만 금테. (폐기, 같은 날) 백지만 점선 상자·가운데 정렬이고 나머지는 맨 버튼이 왼쪽에 서던 것.
+              제목 `판 없음`과 설명 문구는 초안 */}
           {!made ? (
             <>
-              <h4 className="gs-lbcard-h">내 판</h4>
-              <div className="gs-lh-empty">
+              <h4 className="gs-lbcard-h">판 없음</h4>
+              <div className="gs-lh-box empty">
                 {/* 처음에도, 끝내기·해산 뒤에도 같은 얼굴 (2026-09-06) — "아직"은 끝낸 뒤엔 안 맞아서 뺌 (초안) */}
-                <p>{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
-                <button className={"gs-btn gs-lh-newbtn " + (auth ? "gs-btn-ghost" : "gs-lifebtn gs-lbstart")} onClick={onEnter}>
-                  + 새 판 만들기
-                </button>
+                <p className="gs-lh-sub">{auth ? "내 판이 없어요." : "벌금을 셀 판을 만들어요 — 계정은 필요 없어요."}</p>
+                <div className="gs-lh-acts">
+                  <button className={"gs-btn gs-lifebtn gs-lh-newbtn " + (auth ? "gs-btn-ghost" : "gs-lbstart")} onClick={onEnter}>
+                    + 새 판 만들기
+                  </button>
+                </div>
               </div>
             </>
           ) : roundLive ? (
-            <div className="gs-lh-face gs-lh-face-live">
+            <>
               <h4 className="gs-lbcard-h gs-lh-facet">
                 <em className="gs-livechip-dot" aria-hidden="true" />
                 진행 중 · <b>{roundName || defaultRoundName()}</b>
               </h4>
-              <p className="gs-lh-facts">
-                {filled.length}명 · 벌금 {man(liveGold || 0)}
-                {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
-              </p>
-              <p className="gs-lh-sub">
-                판을 두고 나온 상태예요 —{" "}
-                {party ? "파티원은 그대로 셀 수 있어요." : "숫자는 그대로 남아 있어요."}
-              </p>
-              <div className="gs-lh-foot">
-                <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onEnter}>
-                  벌금판으로 돌아가기
-                </button>
+              <div className="gs-lh-box live">
+                <p className="gs-lh-facts">
+                  {filled.length}명 · 벌금 {man(liveGold || 0)}
+                  {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
+                </p>
+                <p className="gs-lh-sub">
+                  판을 두고 나온 상태예요 —{" "}
+                  {party ? "파티원은 그대로 셀 수 있어요." : "숫자는 그대로 남아 있어요."}
+                </p>
+                <div className="gs-lh-acts">
+                  <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onEnter}>
+                    벌금판으로 돌아가기
+                  </button>
+                </div>
               </div>
-            </div>
+            </>
           ) : (
-            <div className="gs-lh-face">
-              {/* 시작 전 얼굴 (2026-09-06 모델) — 로비엔 내가 없는 동안 움직이는 것만: 앉은 수와 문 둘. 항목·단가는 대기실
+            <>
+              {/* 시작 전·모집 중 (2026-09-06 모델) — 로비엔 내가 없는 동안 움직이는 것만: 앉은 수와 문 둘. 항목·단가는 대기실
                   표 머리가 말합니다. (폐기 2026-09-06) 판 이름·항목 칩·`자리 n/8`·`열어서 [시작]을 누르면 세기 시작해요.`·
                   `지난 판 '…'은 끝났어요 — 결과는 판 기록에.`·[벌금판 열기] — 판이 늘 있다는 전제의 얼굴이었다 */}
               <h4 className="gs-lbcard-h gs-lh-facet">
@@ -12379,17 +12386,22 @@ function LobbyHome({
                   "시작 전"
                 )}
               </h4>
-              <div className="gs-lh-foot gs-lh-foot2">
-                {hasParty && (
-                  <button className="gs-btn gs-btn-ghost" onClick={onDisband}>
-                    해산
+              <div className="gs-lh-box">
+                <p className="gs-lh-sub">
+                  {hasParty ? "파티원이 모이는 중이에요. 대기실에서 자리를 보고 시작해요." : "판을 만들어 뒀어요. 대기실에서 파티원을 모으거나 바로 시작해요."}
+                </p>
+                <div className="gs-lh-acts">
+                  {hasParty && (
+                    <button className="gs-btn gs-btn-ghost" onClick={onDisband}>
+                      해산
+                    </button>
+                  )}
+                  <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onEnter}>
+                    대기실로
                   </button>
-                )}
-                <button className="gs-btn gs-lifebtn gs-lbstart" onClick={onEnter}>
-                  대기실로
-                </button>
+                </div>
               </div>
-            </div>
+            </>
           )}
           {/* 비로그인의 권유는 만들기 뒤에 한 줄로 (2026-09-05 ③) — 먼저 판을 만들고, 주소는 판 안의 공유 설정에서.
               (폐기, 당일) 카드 머리의 권유 슬립 + [시작하기] — 첫 화면에서 로그인부터 요구하는 그림이었다 */}
@@ -16490,10 +16502,17 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-seatn{font-size:11.5px; color:var(--ink-2); margin-left:4px}
 .gs-lh-chip-seat{border-style:dashed}
 .gs-lh-foot{display:flex; justify-content:flex-end; margin-top:16px}
-.gs-lh-foot .gs-lbstart,.gs-lh-empty .gs-lbstart{margin-left:0}
-.gs-lh-empty{border:1px dashed var(--kraft-dk); padding:18px 16px; text-align:center; color:var(--ink-2);
-  font-size:12.5px; line-height:1.7}
-.gs-lh-empty p{margin:0 0 12px}
+.gs-lh-foot .gs-lbstart,.gs-lh-box .gs-lbstart{margin-left:0}
+/* 내 판 카드의 상자 — 네 얼굴이 같은 뼈대 (2026-09-06): 가운데 정렬, 사실 한 줄·설명 한 줄·버튼 줄.
+   빈 판만 점선, 두고 나온 진행 중만 금테. (폐기) .gs-lh-empty 점선 상자는 백지에만 있었다 */
+.gs-lh-box{border:1px solid rgba(var(--ink-rgb),.22); border-radius:6px; padding:18px 16px 16px; text-align:center;
+  color:var(--ink-2); font-size:12.5px; line-height:1.7}
+.gs-lh-box.empty{border:1px dashed var(--kraft-dk); border-radius:0}
+.gs-lh-box.live{border-color:rgba(var(--gold-rgb),.55); box-shadow:inset 3px 0 0 var(--gold)}
+.gs-lh-box .gs-lh-facts{margin:0}
+.gs-lh-box .gs-lh-sub{margin:0}
+.gs-lh-box .gs-lh-facts + .gs-lh-sub{margin-top:4px}
+.gs-lh-acts{display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px}
 .gs-lh-back{margin-bottom:14px}
 .gs-lh-join{display:flex; gap:8px; margin-top:8px}
 .gs-lh-in{flex:1 1 auto; min-width:0}
@@ -16520,8 +16539,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 /* 내 판 카드의 세 얼굴 (§3.0, 2026-09-05) — 상태가 제목 */
 .gs-lh-facet{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 .gs-lh-facet b{font-family:'Gowun Batang',serif; font-weight:700; font-size:19px; color:var(--ink); letter-spacing:0}
-.gs-lh-face-live{margin:0 -6px; padding:10px 12px 12px; border-radius:6px;
-  border:1px solid rgba(var(--gold-rgb),.55); box-shadow:inset 3px 0 0 var(--gold)}
+/* (폐기 2026-09-06 낮) .gs-lh-face-live — 진행 중 얼굴만 쓰던 금테 상자. 지금은 .gs-lh-box.live */
 .gs-lh-facts{margin:8px 0 0; font-family:var(--mono); font-size:13px; color:var(--ink-body); letter-spacing:.02em}
 .gs-lh-sub{margin:8px 0 0; font-size:12px; color:var(--ink-2); line-height:1.7}
 .gs-livechip-dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:#6fbf73; flex:none;
@@ -16624,8 +16642,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-subline b{font-family:'Gowun Batang',serif; font-weight:700; color:var(--ink)}
 .gs-subarrow{font-family:var(--mono); color:var(--ink-2)}
 .gs-lh-cnt{font-family:var(--mono); font-size:12.5px; color:var(--gold); letter-spacing:0; font-weight:400; margin-left:8px}
-.gs-lh-foot2{justify-content:space-between}
-.gs-lh-foot2 .gs-btn-ghost{margin-right:auto}
+/* (폐기 2026-09-06 낮) .gs-lh-foot2 — 시작 전 얼굴의 버튼 줄. 지금은 .gs-lh-acts */
 @keyframes gs-glow{0%,100%{box-shadow:0 0 0 0 rgba(var(--gold-rgb),0)}50%{box-shadow:0 0 0 7px rgba(var(--gold-rgb),.26)}}
 .gs-glow{animation:gs-glow 3s ease-in-out infinite}
 /* 글자 칸은 입력칸과 같은 글꼴·정렬(Gowun Batang, 오른쪽 맞춤)을 그대로 씁니다 — (버그 기록 2026-09-06) font:inherit·왼쪽 맞춤으로 덮어 이름 글꼴이 바뀌고 왼쪽에 붙었다 */
