@@ -5206,7 +5206,8 @@ export default function GoldSettlement() {
       .catch((e) => {
       /* 되돌리기 창(30초)을 넘긴 −1 — 서버가 거릅니다 (§3.6, 2026-09-05). 문구는 §8 초안 */
       if (e && e.code === "late")
-        return setConfessErr("자수는 30초 안에만 되돌릴 수 있어요 — 그 뒤는 방장에게 말해 주세요.");
+        /* 토스트로 (2026-09-07 사용자) — 쪽지로 띄우면 생겼다 사라지며 화면이 통째로 밀렸다 */
+        return say("자수는 30초 안에만 되돌릴 수 있어요 — 그 뒤는 방장에게 말해 주세요.", 5000);
       if (e && (e.status === 409 || e.code === "scribe-off")) {
         setScribeOn(false);
         setConfessErr("방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요.");
