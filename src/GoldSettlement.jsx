@@ -12456,7 +12456,8 @@ function LobbyHome({
             </div>
           )}
           {/* 비밀 파티 입장 문법 — 주소를 그대로 붙여넣어도, 코드 8자만 쳐도 들어가진다 */}
-          <span className="gs-caplab">초대 코드나 초대 주소</span>
+          {/* 같은 말은 한 번만 (2026-09-07 사용자: 카드에 똑같은 내용이 세 번) — 위 라벨과 아래 안내 줄을 걷고 입력칸의 안내문만 남깁니다.
+              (폐기) `초대 코드나 초대 주소` 라벨 · `초대 링크나 코드를 받으면 여기 붙여넣어 들어가요.` 안내 줄 */}
           <div className="gs-lh-join">
             <input
               className="gs-in gs-lh-in"
@@ -12472,9 +12473,6 @@ function LobbyHome({
           </div>
           {/* (폐기 2026-09-05) 함께한 파티원 칩 줄(노크 문) — 함께한 사람 UI 를 통째로 걷었다 (§3.3).
               재합류는 멤버십 유지와 초대 링크가 맡는다 */}
-          {!seatedRoom && (
-            <p className="gs-lh-note">초대 링크나 코드를 받으면 여기 붙여넣어 들어가요.</p>
-          )}
         </div>
         {/* 판 기록의 집 (§3.0) — 내 판과 참여한 판이 이름표를 달고 섭니다. 없으면 카드도 없습니다 */}
         {gens.length > 0 && (
@@ -16540,7 +16538,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-goto{display:inline-block; margin-top:12px; color:var(--gold); font-weight:600; font-size:12.5px; letter-spacing:.02em}
 .gs-lh-back{margin-bottom:14px}
 .gs-lh-join{display:flex; gap:8px; margin-top:8px}
-.gs-lh-in{flex:1 1 auto; min-width:0}
+/* 입력칸은 칸처럼 보여야 합니다 (2026-09-07 사용자: 어디가 텍스트 박스인지 안 보인다) — 표 안 .gs-in 과 달리 테두리·바탕·안쪽 여백 */
+.gs-lh-in{flex:1 1 auto; min-width:0; border:1px solid rgba(var(--ink-rgb),.42); background:rgba(0,0,0,.18); border-radius:4px; padding:9px 12px; font-size:14px}
+.gs-lh-in:focus{outline:none; border-color:var(--gold); background:rgba(0,0,0,.24)}
+.gs-lh-in::placeholder{color:rgba(var(--ink-rgb),.45)}
 .gs-lh-mates{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:14px}
 .gs-lh-mates .gs-caplab{margin-right:4px}
 .gs-lh-mate{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:12.5px; padding:3px 9px;
