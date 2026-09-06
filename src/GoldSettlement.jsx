@@ -7689,7 +7689,7 @@ export default function GoldSettlement() {
               </div>
             </div>
             {/* 두 방식이 뭐가 다른지 (2026-09-08 사용자) — OBS 공유 설정 안의 그 창(GainGuide)을 여기서도 엽니다 */}
-            <button className="gs-auth-linkb gs-forkways" onClick={onWays}>
+            <button className="gs-auth-linkb gs-forkways" onClick={() => setWaysOpen(true)}>
               두 방식이 뭐가 달라요?
             </button>
           </div>
@@ -8262,7 +8262,6 @@ export default function GoldSettlement() {
           onSettings={() => setObsOpen(true)}
           onLogin={() => openAuth("register", () => setObsOpen(true))} // 로그인 뒤 OBS 창 — 거기서 주소를 받습니다 (2026-09-07 사용자)
           onUpgrade={() => setUpOpen({})}
-          onWays={() => setWaysOpen(true)}
           hub={partyHub("lobby")}
           // 판이 있든 없든 ×를 누를 때까지 그대로 (2026-09-08 사용자). (폐기) !boardOn — 판을 만들면 사라지고 해산하면 다시 나서 기형적이었다
           tutLine={!readOnly && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
@@ -12807,7 +12806,6 @@ function LobbyHome({
   onSettings,
   onLogin,
   onUpgrade,
-  onWays,
   hub,
   gens,
   onOpenGen,
