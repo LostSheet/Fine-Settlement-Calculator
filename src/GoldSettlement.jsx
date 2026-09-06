@@ -3152,7 +3152,11 @@ export default function GoldSettlement() {
       tutArrive(2);
       say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
     }
-    if (st.enter === "soloseed") partyT(tutSoloSeed, 300);
+    if (st.enter === "soloseed") {
+      partyT(tutSoloSeed, 300);
+      /* 여덟 줄을 한 번에 세우므로 방장 튜토리얼(38번 누르기)보다 빨리 끝납니다 */
+      partyT(() => setCoach((c) => (c && c.kind === "party" ? { ...c, ready: true } : c)), 1400);
+    }
     if (st.enter === "seed") {
       partyT(tutSeed, 300);
       partyT(() => setCoach((c) => (c && c.kind === "party" ? { ...c, ready: true } : c)), 4500); // 채우기 끝 → [다음] 등장 (서른여덟 번 누르는 데 1.5초, 넷 더 앉히고, 한 박자)
