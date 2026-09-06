@@ -7883,7 +7883,7 @@ export default function GoldSettlement() {
               {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
             </button>
             <button
-              className="gs-btn gs-btn-sm gs-btn-ghost"
+              className="gs-btn gs-btn-sm gs-btn-ghost gs-invcodebtn"
               onClick={() => {
                 copy(hostInvite.code, "invcode");
                 if (!lobbyOn) startParty();
@@ -17158,7 +17158,13 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-recruit-n{margin-left:0}
 .gs-recruit-who{font-size:13.5px; color:var(--ink); padding-right:4px; border-right:1px solid rgba(var(--ink-rgb),.18); margin-right:2px}
 .gs-recruit .gs-invcode{flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap}
-.gs-recruit .gs-invcode-l1,.gs-recruit .gs-invcode-l2{gap:8px}
+/* 두 줄 묶음을 풀어 한 줄에 무게 순서대로 (2026-09-08) — 안 그러면 '새로 발급'이 코드 칩 뒤에 끼어 둘째 자리에 섭니다. 이 CSS 는 템플릿 문자열 안이라 주석에도 백틱을 쓰면 거기서 끊깁니다 */
+.gs-recruit .gs-invcode-l1,.gs-recruit .gs-invcode-l2{display:contents}
+.gs-recruit .gs-invlinkbtn{order:1}
+.gs-recruit .gs-invcode-chip{order:2}
+.gs-recruit .gs-invdiscbtn{order:3}
+.gs-recruit .gs-invcodebtn{order:4}
+.gs-recruit .gs-invcode-renew{order:5}
 /* 판을 만드는 문 둘 (2026-09-08 사용자 확정) — 로비 파티 카드 안에서 세로로, 위가 파티원 초대·아래가 혼자 세기 */
 .gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
