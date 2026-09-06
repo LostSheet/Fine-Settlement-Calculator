@@ -2704,14 +2704,14 @@ export default function GoldSettlement() {
   const [demoReady, setDemoReady] = useState(false); // 예시 앱이 첫 그림을 그렸다고 알려 올 때까지 iframe 은 투명 — 흰 화면이 깜빡이지 않게
   const demoBase = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
   const [demoSrc, setDemoSrc] = useState(""); // #demo(방장 1~7장) → #demo&member&ch8(8장) / #demo&member(파티원 튜토리얼)
-  const [demoLoad, setDemoLoad] = useState("튜토리얼 시작 중"); // 사용자 지정 문구; 8장으로 넘어갈 땐 다른 말
+  const [demoLoad, setDemoLoad] = useState("튜토리얼을 시작하는 중이에요."); // 사용자 지정 문구(2026-09-06); 8장으로 넘어갈 땐 실리안의 화면
   const [demoPrev, setDemoPrev] = useState("");
   const demoSrcRef = useRef(""); // message 리스너는 첫 렌더의 클로저라 최신 src 는 ref 로 봅니다
   demoSrcRef.current = demoSrc; // 갈아 끼우는 동안 뒤에 남겨 두는 옛 예시 앱 — 새 것이 그려지면 걷습니다 (2026-09-06 사용자: 매끄럽게)
   const startPartyCourse = () => {
     if (DEMO) return;
     setDemoReady(false);
-    setDemoLoad("튜토리얼 시작 중");
+    setDemoLoad("튜토리얼을 시작하는 중이에요.");
     setDemoPrev("");
     setDemoSrc(demoBase + "#demo&t=" + Date.now()); // t 는 같은 주소로 다시 열어도 새로 뜨게
     setDemoOpen(true);
@@ -2720,7 +2720,7 @@ export default function GoldSettlement() {
   const startMemberTour = () => {
     if (DEMO) return;
     setDemoReady(false);
-    setDemoLoad("튜토리얼 시작 중");
+    setDemoLoad("튜토리얼을 시작하는 중이에요.");
     setDemoPrev("");
     setDemoSrc(demoBase + "#demo&member&t=" + Date.now());
     setDemoOpen(true);
@@ -2762,7 +2762,7 @@ export default function GoldSettlement() {
       if (e.data.next === "member") {
         /* 7장이 끝났습니다 — 같은 창에 파티원 예시(8장)를 갈아 끼웁니다(그릴 때까지 다시 투명) */
         setDemoReady(false);
-        setDemoLoad("파티원 화면으로 넘어가는 중");
+        setDemoLoad("실리안의 화면을 불러오는 중이에요."); // 파티원 중 한 명의 화면이라 이름을 그대로 (2026-09-06 사용자)
         setDemoPrev(demoSrcRef.current); // 옛 화면은 그대로 두고 그 위에 새 것을 얹습니다
         setDemoSrc(demoBase + "#demo&member&ch8&t=" + Date.now());
         return;
@@ -2851,8 +2851,9 @@ export default function GoldSettlement() {
       partyT(() => partyStep(next + 2), 7000);
     }
   };
-  /* 5장 머리 — 한 판 돌았다고 치고 표를 채웁니다. 숫자는 옛 벌금판 예시(DEFAULT_PEOPLE 앞 넷: 3·2 / 11·1 / 2·10 / 8·1)를
-     방장·실리안·니나브·웨이 이름으로 그대로 (2026-09-06 사용자). 셋째 열(옛 암살)은 지금은 룰렛이라 뺍니다.
+  /* 5장 머리 — 한 판 돌았다고 치고 표를 채웁니다. 숫자는 옛 벌금판 예시(DEFAULT_PEOPLE)를 이름만 바꿔 그대로:
+     앞 넷은 방장·실리안·니나브·웨이(3·2 / 11·1 / 2·10 / 8·1), 뒤 넷(주키니·포셔·티모·이다)은 그 사이 들어온 것으로 새 줄에
+     앉히고 채웁니다 — 정산 예시는 여덟 명 (2026-09-06 사용자). 셋째 열(옛 암살)은 지금은 룰렛이라 뺍니다.
      방장 줄은 진짜 누르기(pressCell), 파티원 줄은 자수(applyConfess)라 기록도 그대로 남습니다 */
   const tutSeed = () => {
     const c1 = cols.find((c) => c.id === "c1");
@@ -2869,17 +2870,28 @@ export default function GoldSettlement() {
       [rowOf("ninav"), "ninav"],
       [rowOf("wei"), "wei"],
     ];
-    const acts = [];
+    let t = 0;
+    const tick = () => (t += 40);
     targets.forEach(([row, acct], i) => {
       if (!row) return;
       const [, want1, want2] = DEFAULT_PEOPLE[i];
       const more1 = Math.max(0, want1 - num(row.counts.c1));
       const more2 = Math.max(0, want2 - num(row.counts.c2));
       const hit = (col) => (acct ? () => applyConfess(row.id, col.id, 1) : () => pressCell(row, col, 1));
-      for (let k = 0; k < more1; k++) acts.push(hit(c1));
-      for (let k = 0; k < more2; k++) acts.push(hit(c2));
+      for (let k = 0; k < more1; k++) partyT(hit(c1), tick());
+      for (let k = 0; k < more2; k++) partyT(hit(c2), tick());
     });
-    acts.forEach((fn, i) => partyT(fn, 60 * i));
+    /* 넷이 더 — 자리·줄·명단을 한 번에 함수형으로 더합니다. seatMember/applyConfess 는 이 렌더의 rows 를 닫아 둔 클로저라
+       타이머에서 잇달아 부르면 서로를 덮습니다(첫 시도의 사고). 새 줄의 숫자는 바로 적습니다 — 캐시가 없어 표가 그대로 셉니다 */
+    const extras = TUT_EXTRA.map((m, i) => ({ ...m, id: "r" + seq.current++, want: DEFAULT_PEOPLE[4 + i] }));
+    partyT(() => {
+      putSeats((prev) => [...prev, ...extras.map((e) => ({ id: e.id, name: e.nick, acct: e.acct, mem: e.acct, named: false, nick: e.nick }))]);
+      setRows((prev) => [
+        ...prev,
+        ...extras.map((e) => ({ id: e.id, name: e.nick, counts: { c1: e.want[1] ? String(e.want[1]) : "", c2: e.want[2] ? String(e.want[2]) : "" }, extras: [] })),
+      ]);
+      setMembers((p) => [...p, ...extras.filter((e) => !p.some((x) => x.acct === e.acct)).map((e) => ({ acct: e.acct, nick: e.nick, st: "ok", rowId: e.id, on: true }))]);
+    }, tick());
   };
   /* 걸음에 들어설 때 하는 일 — 웨이 도착(4장 사람 아이콘 걸음), 판 채우기(5장 머리) */
   const tutEntered = useRef(-1);
@@ -2894,7 +2906,7 @@ export default function GoldSettlement() {
     }
     if (st.enter === "seed") {
       partyT(tutSeed, 300);
-      partyT(() => partyStep(coach.step + 1), 4200); // 서른여덟 번 누르는 데 2.3초, 그 뒤 한 박자
+      partyT(() => partyStep(coach.step + 1), 4500); // 서른여덟 번 누르는 데 1.5초, 넷 더 앉히고, 그 뒤 한 박자
     }
   }, [coach]);
   /* 예시 앱: 끝(다 봤든 ✕·Esc·[그만두기]든) — 부모에게 알리고 부모가 창을 닫습니다. 부모 없이 열렸으면 보통 앱으로 */
@@ -9387,8 +9399,11 @@ export default function GoldSettlement() {
       {demoOpen && (
         <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
           {!demoReady && !demoPrev && <p className="gs-demo-load">{demoLoad}</p>}
+          {/* 갈아 끼우는 동안엔 옛 화면 위에 작은 칩으로 */}
+          {!demoReady && demoPrev && <p className="gs-demo-load gs-demo-load-over">{demoLoad}</p>}
           {/* 갈아 끼우는 동안 옛 예시 앱은 뒤에 그대로 — 새 것이 위에서 번져 나옵니다 */}
           {demoPrev && <iframe key={demoPrev} className="gs-demo-frame on gs-demo-prev" title="" aria-hidden="true" src={demoPrev} />}
+          {/* 칩이 옛 화면 위, 새 화면 아래에 오도록 새 iframe 은 z 를 올립니다 */}
           {/* key — 해시만 바뀌면 같은 문서 안에서 이동할 뿐 다시 뜨지 않습니다. 새 iframe 이어야 파티원 예시가 새로 부팅합니다 */}
           <iframe key={demoSrc} className={"gs-demo-frame" + (demoReady ? " on" : "")} title="처음부터 같이 해보기" src={demoSrc} />
         </div>
@@ -9408,6 +9423,7 @@ export default function GoldSettlement() {
             lock={!!TOUR_FLOW[coach.step].lock}
             center={!!TOUR_FLOW[coach.step].center}
             overModal={!!TOUR_FLOW[coach.step].top}
+            clear={!!TOUR_FLOW[coach.step].clear}
             onNext={() => {
               const st = TOUR_FLOW[coach.step];
               if (st.exit === "closeObs") setObsOpen(false);
@@ -13297,11 +13313,12 @@ const HOST_STEPS = [
   { ch: 3, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", center: true },
   { ch: 3, sel: ".gs-modal .gs-waitpick .gs-seatopt:not(.gs-seatopt-new)", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
   /* 5장 — 쌓인 데이터로 봅니다 */
-  { ch: 4, sel: ".gs-grid", text: "한 판 돌았다고 칠게요…", lock: true, wait: "auto", enter: "seed" },
-  { ch: 4, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료와 나누는 방식도 여기서 정해요.", wait: "tab:ledger" },
-  { ch: 4, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. 디코에 붙일 글도 여기서 복사해요.", wait: "tab:mail" },
-  { ch: 4, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet" },
-  { ch: 4, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true },
+  { ch: 4, sel: ".gs-grid", text: "한 판 돌았다고 칠게요… 넷이 더 들어와 여덟이 됐어요.", lock: true, wait: "auto", enter: "seed" },
+  /* 정산 내역이 어두운 막에 가리면 안 됩니다 — 이 장은 막 없이 (2026-09-06 사용자) */
+  { ch: 4, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료와 나누는 방식도 여기서 정해요.", wait: "tab:ledger", clear: true },
+  { ch: 4, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. 디코에 붙일 글도 여기서 복사해요.", wait: "tab:mail", clear: true },
+  { ch: 4, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
+  { ch: 4, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true, clear: true },
   /* 6장 — 발급까지 */
   { ch: 5, sel: ".gs-obsbtn", text: "방송에 띄우려면 여기예요.", wait: "obs" },
   { ch: 5, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
@@ -13310,7 +13327,7 @@ const HOST_STEPS = [
   /* 7장 — 예시 안에서 진짜 끝내기 흐름 */
   { ch: 6, sel: ".gs-endbtn", text: "다 끝나면 여기예요.", wait: "endask" },
   { ch: 6, sel: ".gs-dialog .gs-btn:not(.gs-btn-ghost)", text: "결과지가 판 기록에 남아요. 끝낼게요.", wait: "ended", top: true },
-  { ch: 6, sel: ".gs-mast", text: "결과지예요. 파티원도 같은 걸 봐요.", action: "다음", lock: true },
+  { ch: 6, sel: ".gs-mast", text: "결과지예요. 파티원도 같은 걸 봐요.", action: "다음", lock: true, clear: true },
   { ch: 6, sel: ".gs-mast .gs-btn-ghost", text: "닫으면 로비로 가요.", wait: "genclose" },
   { ch: 6, sel: ".gs-lh-recs", text: "끝난 판은 여기 남아요. 결과지를 다시 볼 수 있어요. 이제 들어온 파티원이 보는 화면을 볼게요.", action: "다음 장", lock: true },
 ];
@@ -13345,6 +13362,13 @@ const TUT_MEMBERS = [
   { acct: "ninav", nick: "니나브" },
   { acct: "wei", nick: "웨이" },
 ];
+/* 5장에 더 들어오는 넷 — 옛 예시(DEFAULT_PEOPLE) 뒤 넷의 이름과 숫자를 그대로 */
+const TUT_EXTRA = [
+  { acct: "zukini", nick: DEFAULT_PEOPLE[4][0] },
+  { acct: "posher", nick: DEFAULT_PEOPLE[5][0] },
+  { acct: "timo", nick: DEFAULT_PEOPLE[6][0] },
+  { acct: "ida", nick: DEFAULT_PEOPLE[7][0] },
+];
 /* 로비 권유 줄의 대상 — 초대 없이 들어온 사람. 초대 링크로 들어온 적이 있으면(코드 기억) 파티원이라 안 권합니다 */
 const cameByInvite = () => {
   try {
@@ -13356,7 +13380,7 @@ const cameByInvite = () => {
 
 /* block: 대상 말고는 못 누르게 막고 나머지를 어둡게 덮습니다.
    lock: 대상까지 막습니다 — 말풍선의 버튼으로만 넘어가는 걸음용. */
-function CoachMark({ sel, text, action, step, total, block, lock, center, overModal, onNext, onClose }) {
+function CoachMark({ sel, text, action, step, total, block, lock, center, overModal, clear, onNext, onClose }) {
   const [box, setBox] = useState(null);
   /* 그린 뒤에 실제 높이를 재서 다시 앉힙니다 — 어림값으로 두면 걸음마다 틈이 달라집니다 */
   const bubRef = useRef(null);
@@ -13467,7 +13491,7 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
       {/* 대상만 남기고 덮습니다 — 어두운 곳은 눌러도 안 되는 곳입니다 */}
       {block && (
         <div
-          className="gs-coach-hole"
+          className={"gs-coach-hole" + (clear ? " gs-coach-hole-clear" : "")}
           style={{ left: box.x - 6, top: box.y - 6, width: box.w + 12, height: box.h + 12 }}
         />
       )}
@@ -14617,9 +14641,10 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 예시 앱 창(부모)과 예시 띠(예시 앱) (2026-09-06) */
 .gs-demo{position:fixed; inset:0; z-index:60; background:var(--kraft); display:grid; place-items:center}
 .gs-demo-load{margin:0; font-size:13px; color:var(--ink-2)}
+.gs-demo-load-over{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:2; padding:10px 16px; border-radius:6px; background:var(--paper); color:var(--ink); border:1px solid rgba(var(--gold-rgb),.6); box-shadow:0 8px 26px rgba(0,0,0,.35)}
 .gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block; opacity:0; transition:opacity .25s ease}
-.gs-demo-frame.on{opacity:1}
-.gs-demo-prev{transition:none; pointer-events:none}
+.gs-demo-frame.on{opacity:1; z-index:3}
+.gs-demo-prev{transition:none; pointer-events:none; z-index:1}
 .gs-demoband{margin:-20px -20px 0; padding:9px 20px; display:flex; align-items:center; justify-content:center; gap:18px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
 .gs-tourdots{display:flex; align-items:center}
 .gs-tourdot{position:relative; width:10px; height:10px; border-radius:50%; border:1.5px solid var(--gold); background:transparent; box-sizing:border-box}
@@ -14656,6 +14681,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 대상만 남기고 덮는 그림자 — 어두운 곳은 눌러도 안 되는 곳입니다 */
 .gs-coach-hole{position:fixed; border-radius:5px; pointer-events:none;
   box-shadow:0 0 0 9999px rgba(0,0,0,.36)} /* 2026-09-06 사용자: 어두운 막은 덜하게 (전 .58) */
+.gs-coach-hole-clear{box-shadow:none} /* 정산 내역처럼 읽어야 하는 화면은 막을 씌우지 않습니다 (2026-09-06 사용자) */
 /* 나가는 문 — 시선이 가 있는 말풍선 안에 둡니다 */
 .gs-coach-x{position:absolute; top:7px; right:7px; width:24px; height:24px;
   display:grid; place-items:center; border:0; background:transparent; color:var(--ink-2);
