@@ -3128,13 +3128,10 @@ export default function GoldSettlement() {
       }
       return next;
     });
-    /* 자리도 줄에 맞춰 여덟 — 첫 자리(방장 계정)는 그대로 두고 이름만 예시로 */
-    putSeats((prev) =>
-      made.map((m, i) => {
-        const old = prev[i];
-        return old ? { ...old, id: m.id, name: m.name, named: true } : { id: m.id, name: m.name, acct: null, mem: null, named: true };
-      })
-    );
+    /* 자리도 줄에 맞춰 여덟. 계정은 전부 떼어 냅니다 — 혼자 쓰는 판이라 아무도 앱을 안 쓰고,
+       첫 줄에 방장 아바타가 남으면 방장 닉을 안 쓴 뜻이 무색해집니다 (2026-09-08 사용자) */
+    putSeats(() => made.map((m) => ({ id: m.id, name: m.name, acct: null, mem: null, named: true, nick: "" })));
+    setMembers([]);
     setLobbyCap(8);
   };
   /* 걸음에 들어설 때 하는 일 — 웨이 도착(4장 사람 아이콘 걸음), 판 채우기(5장 머리) */
