@@ -7671,15 +7671,23 @@ export default function GoldSettlement() {
               (폐기, 같은 날) 이 둘을 대기실 모집 카드에 넣은 것 — 판을 만드는 자리는 로비다(사용자 정정) */}
           {head(false, "파티 없음", null)}
           <div className="gs-lh-box empty">
-            <p className="gs-lh-sub">초대 코드를 주면 각자 자기 화면에서 자수해요. 방장은 확인만 해요.</p>
+            {/* 사용자 지정 문구 그대로 (2026-09-08). (폐기) `초대 코드를 주면 각자 자기 화면에서 자수해요. 방장은 확인만 해요.` — 아래 문장과 축이 달라 나란히 놓아도 대비가 안 됐다 */}
+            <p className="gs-forklead">
+              파티원들이 자수해서 방장의 기록을 도와줘요
+              <br />
+              파티원마다 OBS 주소가 하나씩 있어요
+            </p>
             <div className="gs-lh-acts">
               <button className="gs-btn gs-lifebtn gs-lbstart gs-lh-newbtn" onClick={askNewBoard}>
                 파티원 초대하여 시작하기
               </button>
             </div>
             <div className="gs-forksolo">
+              {/* 사용자 지정 문구 그대로 (2026-09-08). (폐기) `혼자 세려면 부르지 않고 바로 시작해요. 방장이 다 입력하고, 내 방송 주소만 OBS에 넣으면 돼요.` */}
               <p className="gs-forklead">
-                <b>혼자 세려면</b> 부르지 않고 바로 시작해요. 방장이 다 입력하고, 내 방송 주소만 OBS에 넣으면 돼요.
+                파티원들이 앱을 안 쓰고, 방장이 전부 기록해요.
+                <br />
+                방장의 OBS 주소를 다른 파티원들이 공유해요.
               </p>
               <div className="gs-lh-acts">
                 <button className="gs-btn gs-lifebtn gs-solobtn" onClick={askSoloBoard}>
@@ -8236,20 +8244,6 @@ export default function GoldSettlement() {
       {/* 대기실은 헤더 아래를 통째로 덮습니다 (§3-3) — 탭 줄과 마스트 버튼이 같이 보이면
           모이는 화면인지 벌금표인지 눈이 못 가릅니다.
           무효·만료 초대도 같습니다 — 볼 판이 없는데 탭 줄만 서 있으면 안 됩니다 */}
-      {/* 진행 중인 판을 두고 나온 동안의 띠 (2026-09-08 사용자) — 남은 초와 돌아가는 문. 문구 초안 */}
-      {liveAway && !tutorial && (
-        <div className="gs-guestbar gs-backbar">
-          <div className="gs-slip" role="status">
-            <span className="gs-slip-msg">
-              <em className="gs-livechip-dot" aria-hidden="true" /> 진행 중인 판이 있어요 —{" "}
-              <b>{hostBackIn == null ? 30 : hostBackIn}초</b> 뒤 벌금판으로 돌아가요.
-            </span>
-            <button className="gs-btn gs-btn-sm gs-slip-act gs-lbstart" onClick={goBoard}>
-              벌금판으로 돌아가기
-            </button>
-          </div>
-        </div>
-      )}
       {/* ── 로비 (홈, §3.0) ── */}
       {showLobby && (
         <LobbyHome
@@ -10765,6 +10759,19 @@ export default function GoldSettlement() {
       {toast && (
         <div className="gs-toast" role="status" key={toast.t}>
           {toast.msg}
+        </div>
+      )}
+      {/* 진행 중인 판을 두고 나온 동안 (2026-09-08 사용자: 띠 말고 토스트로 — 너비도 줄고) — 남은 초와 돌아가는 문.
+          보통 토스트와 달리 스스로 사라지지 않고, 판으로 돌아가면 없어집니다. 문구 초안 */}
+      {liveAway && !tutorial && (
+        <div className="gs-toast gs-backtoast" role="status">
+          <em className="gs-livechip-dot" aria-hidden="true" />
+          <span>
+            진행 중인 판이 있어요 — <b>{hostBackIn == null ? 30 : hostBackIn}초</b> 뒤 돌아가요.
+          </span>
+          <button className="gs-btn gs-btn-sm gs-lbstart" onClick={goBoard}>
+            벌금판으로 돌아가기
+          </button>
         </div>
       )}
       {ask && (
@@ -17089,9 +17096,11 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-forklead b{color:var(--ink-body)}
 .gs-forksolo{margin-top:16px; padding-top:15px; border-top:1px dashed rgba(var(--ink-rgb),.2)}
 .gs-forkways{display:block; margin:14px auto 0; font-size:12px}
-.gs-backbar{margin-bottom:2px}
-.gs-backbar .gs-slip{border-color:rgba(var(--gold-rgb),.5); background:rgba(var(--gold-rgb),.07)}
-.gs-backbar .gs-slip-msg b{font-family:var(--mono); color:var(--gold)}
+/* 판으로 돌아가는 토스트 (2026-09-08) — 스스로 사라지지 않고, 버튼이 있어 눌립니다 */
+.gs-backtoast{display:flex; align-items:center; gap:10px; text-align:left; pointer-events:auto;
+  animation:gs-toast-in .22s ease-out; max-width:min(520px,92vw); padding:10px 12px 10px 16px}
+.gs-backtoast b{font-family:var(--mono); color:var(--gold)}
+.gs-backtoast .gs-btn{flex:none}
 .gs-solobtn{display:inline-flex; align-items:center; gap:9px; background:transparent; border-color:rgba(var(--ink-rgb),.42); color:var(--ink)}
 .gs-solobtn:hover{border-color:var(--ink); background:rgba(var(--ink-rgb),.06)}
 /* 사각 뱃지 — 알약(칩)과 갈라 "옛 방식"이라는 꼬리표로 읽히게 (2026-09-07 밤 사용자 지정) */
