@@ -1866,6 +1866,9 @@ export default function GoldSettlement() {
         seats: [],
         liveRoom: liveRoom || null,
         joinCode: readJoinCode(),
+        /* hashchange 비교용 — 주소에서 코드를 지운 뒤의 값입니다. 원본(joinCode)과 갈라 두지 않으면
+           지우는 순간 "주소가 바뀌었다"고 판단해 스스로 새로고침합니다 */
+        hashJoin: null,
         obsToken,
         /* 판 기록은 이 브라우저의 것이라 뷰어도 자기 기록을 그대로 봅니다.
            목록만 읽고 이주(활성 판 승격)는 하지 않습니다 — 뷰어에게는 활성 판이 없습니다 */
@@ -1976,6 +1979,17 @@ export default function GoldSettlement() {
     };
   }
 
+  /* 주소창에서 초대 코드를 지웁니다 (2026-09-08 사용자) — 파티원 화면이 방송에 잡혀도 코드가 안 보이게.
+     부트가 코드를 이미 읽어 뒀으므로(boot.current.joinCode) 입장에는 지장이 없습니다. replaceState 라 hashchange 도 안 납니다 */
+  if (boot.current && boot.current.joinCode && canOwnUrl && typeof window !== "undefined" && readJoinCode()) {
+    try {
+      const hp = hashParams();
+      hp.delete(JOIN_KEY);
+      const { pathname, search } = window.location;
+      const rest = hashText(hp);
+      window.history.replaceState(null, "", pathname + search + (rest ? "#" + rest : ""));
+    } catch (e) {}
+  }
   /* 뷰어(읽기 전용)인지 — 이 값이 참이면 어떤 조작도 이 브라우저의 장부를 바꾸지 못합니다.
      #o=TOKEN 은 방을 모르고 들어오므로, 뷰어 여부는 부트에서 정하고 방 id 는 나중에 채웁니다. */
   const viewer = !!boot.current.liveRoom || !!boot.current.obsToken;
@@ -6026,7 +6040,7 @@ export default function GoldSettlement() {
          앱이 스스로 고치는 해시(#m=·공유 코드)는 replaceState 라 여기로 오지 않습니다 */
       if (
         readLiveRoom() !== (boot.current.liveRoom || null) ||
-        readJoinCode() !== (boot.current.joinCode || null) ||
+        readJoinCode() !== (boot.current.hashJoin || null) ||
         readObsToken() !== (boot.current.obsToken || null)
       ) {
         window.location.reload();
