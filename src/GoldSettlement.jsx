@@ -7894,7 +7894,7 @@ export default function GoldSettlement() {
                 (폐기) 사용법 모달(화면별 사용법 목록). 점은 이 화면에 맞는 튜토리얼을 아직 안 봤을 때 */}
             <span className="gs-helpwrap" ref={helpWrapRef}>
               <button
-                className={"gs-qm gs-helpbtn" + (helpOpen ? " gs-qm-on" : "")}
+                className={"gs-tutbtn" + (helpOpen ? " on" : "")}
                 onClick={() => {
                   if (DEMO) return;
                   setHelpAuto(false);
@@ -7903,7 +7903,15 @@ export default function GoldSettlement() {
                 aria-haspopup="dialog"
                 aria-label="튜토리얼"
               >
-                ?
+                {/* 말풍선 안의 물음표 — 안내라는 뜻 (2026-09-07 밤 사용자 확정 A안; (폐기) 37px 물음표 원 .gs-qm — 무엇이 열릴지 안 보였다) */}
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 9.6a2.4 2.4 0 0 1-2.4 2.4H5.2L2 14.4V4a2.4 2.4 0 0 1 2.4-2.4h7.2A2.4 2.4 0 0 1 14 4z" />
+                    <path d="M6.4 5.6a1.7 1.7 0 0 1 3.3.6c0 1.1-1.7 1.5-1.7 1.5" />
+                    <path d="M8 10.1h.01" />
+                  </g>
+                </svg>
+                튜토리얼
                 {!DEMO && !coach && !coachSeen(recMember ? "mtour" : "party") && <i className="gs-qdot" aria-hidden="true" />}
               </button>
               {helpOpen && !DEMO && (
@@ -8433,10 +8441,8 @@ export default function GoldSettlement() {
                     <button className="gs-btn gs-btn-ghost gs-lifebtn gs-endbtn" onClick={() => askDisband()}>
                       해산
                     </button>
-                    {/* [시작]은 3초 주기로 느리게 빛납니다 (2026-09-06) — 시작 전의 유일한 움직임 */}
-                    <button className="gs-btn gs-lifebtn gs-lbstart gs-glow" onClick={() => startRound(cols)}>
-                      시작하기
-                    </button>
+                    {/* (폐기 2026-09-07 밤) 마스트의 [시작하기] — 시작하는 문이 모집 카드 안 둘로 갈렸습니다(파티원 초대 / 혼자 세기).
+                        [시작]이 3초 주기로 빛나던 것(.gs-glow)은 카드의 [파티원 초대하여 시작하기]가 물려받았습니다 */}
                   </>
                 ) : (
                   <span className="gs-tip">
@@ -8596,8 +8602,30 @@ export default function GoldSettlement() {
             </h4>
             {/* 대기실에 있는 사람은 이름으로 (2026-09-07 사용자: 1/8 이 아니라 사람을 보여 달라) */}
             <p className="gs-recruit-who">{seatNamesNow.length ? seatNamesNow.join(" · ") : "아직 아무도 없어요"}</p>
-            {/* 읽는 순서: 머리 → 사람 → 초대 한 덩이. (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로 */}
+            {/* 읽는 순서: 머리 → 사람 → 초대 한 덩이 → 시작 버튼. (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로 */}
+            <p className="gs-forklead">초대 코드를 주면 각자 자기 화면에서 자수해요. 방장은 확인만 해요.</p>
             <div className="gs-lbsec gs-recruit-code">{inviteLine()}</div>
+            {/* 시작하는 문 둘 (2026-09-07 밤 사용자 확정) — 위는 파티원 초대, 아래는 혼자 세기. 마스트의 [시작하기]는 여기로 옮겨졌습니다.
+                (폐기) 마스트 오른쪽 [시작하기] 하나 — 파티원을 부르는 길과 혼자 쓰는 길이 갈리지 않아, 기존 방식으로 쓰던 사람이 초대 UI 앞에서 멈췄다 */}
+            <div className="gs-forkgo">
+              <button className="gs-btn gs-lifebtn gs-lbstart gs-glow" onClick={() => startRound(cols)}>
+                파티원 초대하여 시작하기
+              </button>
+            </div>
+            {/* 남이 앉아 있으면 이미 파티입니다 — 혼자 세기 단은 그때 서지 않습니다 */}
+            {seatSum.on <= 1 && (
+              <div className="gs-forksolo">
+                <p className="gs-forklead">
+                  <b>혼자 세려면</b> 부르지 않고 바로 시작해요. 방장이 다 입력하고, 내 방송 주소만 OBS에 넣으면 돼요.
+                </p>
+                <div className="gs-forkgo">
+                  <button className="gs-btn gs-lifebtn gs-solobtn" onClick={() => startRound(cols)}>
+                    혼자 세기
+                    <em className="gs-forkbadge">기존 방식</em>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -8611,6 +8639,11 @@ export default function GoldSettlement() {
             <span className="gs-recruit-liveacts">
               <button className="gs-btn gs-btn-sm" onClick={() => setObsOpen(true)}>
                 주소 받기
+              </button>
+              {/* 비로그인도 혼자 세는 길은 열려 있습니다 (2026-09-07 밤) — 마스트 [시작하기]가 카드로 옮겨졌기 때문입니다 */}
+              <button className="gs-btn gs-btn-sm gs-lbstart gs-solobtn" onClick={() => startRound(cols)}>
+                혼자 세기
+                <em className="gs-forkbadge">기존 방식</em>
               </button>
             </span>
           </div>
@@ -16947,6 +16980,25 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-invcode-renew:hover{color:var(--gold)}
 .gs-invdiscbtn{white-space:nowrap}
 .gs-recruit-who{margin:6px 0 12px; font-size:14px; color:var(--ink); line-height:1.6}
+/* 시작하는 문 둘 (2026-09-07 밤 사용자 확정) — 세로로, 위가 파티원 초대·아래가 혼자 세기 */
+.gs-forklead{margin:0 0 12px; font-size:12.5px; color:var(--ink-2); line-height:1.75}
+.gs-forklead b{color:var(--ink-body)}
+.gs-forkgo{display:flex; justify-content:flex-end; margin-top:14px}
+.gs-forksolo{margin-top:16px; padding-top:15px; border-top:1px dashed rgba(var(--ink-rgb),.2)}
+.gs-forksolo .gs-forklead{margin-bottom:0}
+.gs-solobtn{display:inline-flex; align-items:center; gap:9px; background:transparent; border-color:rgba(var(--ink-rgb),.42); color:var(--ink)}
+.gs-solobtn:hover{border-color:var(--ink); background:rgba(var(--ink-rgb),.06)}
+/* 사각 뱃지 — 알약(칩)과 갈라 "옛 방식"이라는 꼬리표로 읽히게 (2026-09-07 밤 사용자 지정) */
+.gs-forkbadge{font-style:normal; font-size:10.5px; letter-spacing:.06em; color:var(--ink-2);
+  border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; padding:2px 6px; font-weight:400}
+/* 오른쪽 위 튜토리얼 — 둥근 알약 + 말풍선 (2026-09-07 밤 사용자 확정 A안). OBS 의 직각·모니터와 갈립니다 */
+.gs-tutbtn{display:inline-flex; align-items:center; gap:7px; position:relative; height:34px; padding:0 14px 0 12px;
+  border:1px solid rgba(var(--ink-rgb),.3); border-radius:99px; background:transparent; color:var(--ink-body);
+  font:inherit; font-size:13px; line-height:1; cursor:pointer; flex:none}
+.gs-tutbtn svg{flex:none; opacity:.85}
+.gs-tutbtn:hover{border-color:var(--ink); color:var(--ink)}
+.gs-tutbtn.on{border-color:rgba(var(--gold-rgb),.6); color:var(--gold)}
+.gs-tutbtn .gs-qdot{position:static; width:6px; height:6px; margin-left:1px}
 /* 파티 허브 (2026-09-07) — 헤더 칩의 팝오버와 로비 2열 카드 */
 .gs-hubchip{margin-left:12px}
 .gs-hubchip.on{background:rgba(var(--gold-rgb),.22)}
