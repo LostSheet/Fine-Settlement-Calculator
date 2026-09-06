@@ -2705,10 +2705,14 @@ export default function GoldSettlement() {
   const demoBase = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
   const [demoSrc, setDemoSrc] = useState(""); // #demo(방장 1~7장) → #demo&member&ch8(8장) / #demo&member(파티원 튜토리얼)
   const [demoLoad, setDemoLoad] = useState("튜토리얼 시작 중"); // 사용자 지정 문구; 8장으로 넘어갈 땐 다른 말
+  const [demoPrev, setDemoPrev] = useState("");
+  const demoSrcRef = useRef(""); // message 리스너는 첫 렌더의 클로저라 최신 src 는 ref 로 봅니다
+  demoSrcRef.current = demoSrc; // 갈아 끼우는 동안 뒤에 남겨 두는 옛 예시 앱 — 새 것이 그려지면 걷습니다 (2026-09-06 사용자: 매끄럽게)
   const startPartyCourse = () => {
     if (DEMO) return;
     setDemoReady(false);
     setDemoLoad("튜토리얼 시작 중");
+    setDemoPrev("");
     setDemoSrc(demoBase + "#demo&t=" + Date.now()); // t 는 같은 주소로 다시 열어도 새로 뜨게
     setDemoOpen(true);
   };
@@ -2717,13 +2721,17 @@ export default function GoldSettlement() {
     if (DEMO) return;
     setDemoReady(false);
     setDemoLoad("튜토리얼 시작 중");
+    setDemoPrev("");
     setDemoSrc(demoBase + "#demo&member&t=" + Date.now());
     setDemoOpen(true);
   };
   /* 예시 앱이 못 뜨더라도 갇히지 않게 — 8초 뒤엔 있는 그대로 보입니다 */
   useEffect(() => {
     if (!demoOpen || demoReady) return;
-    const t = setTimeout(() => setDemoReady(true), 8000);
+    const t = setTimeout(() => {
+      setDemoReady(true);
+      setDemoPrev("");
+    }, 8000);
     return () => clearTimeout(t);
   }, [demoOpen, demoReady]);
   const closeDemo = (done, kind) => {
@@ -2745,12 +2753,17 @@ export default function GoldSettlement() {
     if (DEMO) return;
     const on = (e) => {
       if (e.origin !== window.location.origin || !e.data) return;
-      if (e.data.gs === "party-demo-ready") return setDemoReady(true);
+      if (e.data.gs === "party-demo-ready") {
+        setDemoReady(true);
+        setTimeout(() => setDemoPrev(""), 450); // 새 것이 다 번진 뒤 옛 것을 걷습니다
+        return;
+      }
       if (e.data.gs !== "party-demo") return;
       if (e.data.next === "member") {
         /* 7장이 끝났습니다 — 같은 창에 파티원 예시(8장)를 갈아 끼웁니다(그릴 때까지 다시 투명) */
         setDemoReady(false);
         setDemoLoad("파티원 화면으로 넘어가는 중");
+        setDemoPrev(demoSrcRef.current); // 옛 화면은 그대로 두고 그 위에 새 것을 얹습니다
         setDemoSrc(demoBase + "#demo&member&ch8&t=" + Date.now());
         return;
       }
@@ -2838,24 +2851,35 @@ export default function GoldSettlement() {
       partyT(() => partyStep(next + 2), 7000);
     }
   };
-  /* 5장 머리 — 한 판 돌았다고 치고 표를 채웁니다(방장 잡힘 3·죽음 1, 실리안 잡힘 2·죽음 2, 니나브 잡힘 1, 웨이 죽음 1).
+  /* 5장 머리 — 한 판 돌았다고 치고 표를 채웁니다. 숫자는 옛 벌금판 예시(DEFAULT_PEOPLE 앞 넷: 3·2 / 11·1 / 2·10 / 8·1)를
+     방장·실리안·니나브·웨이 이름으로 그대로 (2026-09-06 사용자). 셋째 열(옛 암살)은 지금은 룰렛이라 뺍니다.
      방장 줄은 진짜 누르기(pressCell), 파티원 줄은 자수(applyConfess)라 기록도 그대로 남습니다 */
   const tutSeed = () => {
     const c1 = cols.find((c) => c.id === "c1");
     const c2 = cols.find((c) => c.id === "c2");
     if (!c1 || !c2) return;
     const host = rows[0];
-    const idOf = (acct) => {
+    const rowOf = (acct) => {
       const k = seatsRef.current.find((s0) => s0.acct === acct);
-      return k && k.id;
+      return k && rows.find((r) => r.id === k.id);
     };
+    const targets = [
+      [host, null],
+      [rowOf("silian"), "silian"],
+      [rowOf("ninav"), "ninav"],
+      [rowOf("wei"), "wei"],
+    ];
     const acts = [];
-    if (host) acts.push(() => pressCell(host, c1, 1), () => pressCell(host, c1, 1), () => pressCell(host, c2, 1));
-    const s1 = idOf("silian"), s2 = idOf("ninav"), s3 = idOf("wei");
-    if (s1) acts.push(() => applyConfess(s1, "c1", 1), () => applyConfess(s1, "c2", 1), () => applyConfess(s1, "c2", 1));
-    if (s2) acts.push(() => applyConfess(s2, "c1", 1));
-    if (s3) acts.push(() => applyConfess(s3, "c2", 1));
-    acts.forEach((fn, i) => partyT(fn, 150 * i));
+    targets.forEach(([row, acct], i) => {
+      if (!row) return;
+      const [, want1, want2] = DEFAULT_PEOPLE[i];
+      const more1 = Math.max(0, want1 - num(row.counts.c1));
+      const more2 = Math.max(0, want2 - num(row.counts.c2));
+      const hit = (col) => (acct ? () => applyConfess(row.id, col.id, 1) : () => pressCell(row, col, 1));
+      for (let k = 0; k < more1; k++) acts.push(hit(c1));
+      for (let k = 0; k < more2; k++) acts.push(hit(c2));
+    });
+    acts.forEach((fn, i) => partyT(fn, 60 * i));
   };
   /* 걸음에 들어설 때 하는 일 — 웨이 도착(4장 사람 아이콘 걸음), 판 채우기(5장 머리) */
   const tutEntered = useRef(-1);
@@ -2870,7 +2894,7 @@ export default function GoldSettlement() {
     }
     if (st.enter === "seed") {
       partyT(tutSeed, 300);
-      partyT(() => partyStep(coach.step + 1), 3500);
+      partyT(() => partyStep(coach.step + 1), 4200); // 서른여덟 번 누르는 데 2.3초, 그 뒤 한 박자
     }
   }, [coach]);
   /* 예시 앱: 끝(다 봤든 ✕·Esc·[그만두기]든) — 부모에게 알리고 부모가 창을 닫습니다. 부모 없이 열렸으면 보통 앱으로 */
@@ -9362,7 +9386,9 @@ export default function GoldSettlement() {
       {showSplitHelp && <SplitHelp onClose={() => setShowSplitHelp(false)} />}
       {demoOpen && (
         <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
-          {!demoReady && <p className="gs-demo-load">{demoLoad}</p>}
+          {!demoReady && !demoPrev && <p className="gs-demo-load">{demoLoad}</p>}
+          {/* 갈아 끼우는 동안 옛 예시 앱은 뒤에 그대로 — 새 것이 위에서 번져 나옵니다 */}
+          {demoPrev && <iframe key={demoPrev} className="gs-demo-frame on gs-demo-prev" title="" aria-hidden="true" src={demoPrev} />}
           {/* key — 해시만 바뀌면 같은 문서 안에서 이동할 뿐 다시 뜨지 않습니다. 새 iframe 이어야 파티원 예시가 새로 부팅합니다 */}
           <iframe key={demoSrc} className={"gs-demo-frame" + (demoReady ? " on" : "")} title="처음부터 같이 해보기" src={demoSrc} />
         </div>
@@ -14593,6 +14619,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-demo-load{margin:0; font-size:13px; color:var(--ink-2)}
 .gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block; opacity:0; transition:opacity .25s ease}
 .gs-demo-frame.on{opacity:1}
+.gs-demo-prev{transition:none; pointer-events:none}
 .gs-demoband{margin:-20px -20px 0; padding:9px 20px; display:flex; align-items:center; justify-content:center; gap:18px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
 .gs-tourdots{display:flex; align-items:center}
 .gs-tourdot{position:relative; width:10px; height:10px; border-radius:50%; border:1.5px solid var(--gold); background:transparent; box-sizing:border-box}
