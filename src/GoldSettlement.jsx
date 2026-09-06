@@ -8738,11 +8738,31 @@ export default function GoldSettlement() {
                 {seatSum.on}/{lobbyCap}
               </span>
             </h4>
-            {/* 대기실에 있는 사람은 이름으로 (2026-09-07 사용자: 1/8 이 아니라 사람을 보여 달라) */}
-            <p className="gs-recruit-who">{seatNamesNow.length ? seatNamesNow.join(" · ") : "아직 아무도 없어요"}</p>
-            {/* 읽는 순서: 머리 → 사람 → 초대 한 덩이. (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로.
-                (폐기 2026-09-08) 여기 있던 시작 문 둘 — 판을 만드는 자리는 대기실이 아니라 로비의 파티 카드다(사용자 정정) */}
-            <div className="gs-lbsec gs-recruit-code">{inviteLine()}</div>
+            {/* 좌우 두 덩이 (2026-09-08 사용자 확정) — 왼쪽 초대, 오른쪽 들어온 사람.
+                (폐기, 하루 전) 이름을 가운뎃점으로 이은 한 줄 + 그 아래 초대 덩이 — 카드가 네 단으로 늘어지고 오른쪽이 통째로 비었다.
+                (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로 */}
+            <div className="gs-recruit-split">
+              <div className="gs-recruit-inv">
+                <span className="gs-caplab">초대</span>
+                {inviteLine()}
+              </div>
+              <div className="gs-recruit-seats">
+                <span className="gs-caplab">들어온 사람</span>
+                <ol className="gs-seatlist">
+                  {Array.from({ length: lobbyCap }, (_, i) => {
+                    const s0 = seats[i];
+                    const nick = s0 ? (s0.name || s0.nick || "").trim() : "";
+                    const sat = !!(s0 && s0.acct);
+                    return (
+                      <li key={s0 ? s0.id : "e" + i} className={sat ? "" : nick && !isFillName(nick) ? "gs-seatlist-typed" : "gs-seatlist-empty"}>
+                        <b>{i + 1}</b>
+                        <span>{sat || (nick && !isFillName(nick)) ? nick : "빈 자리"}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            </div>
           </div>
         </section>
       )}
@@ -17153,7 +17173,21 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-invcode-renew{margin-left:2px; font-weight:400; color:var(--ink-2); text-decoration:underline}
 .gs-invcode-renew:hover{color:var(--gold)}
 .gs-invdiscbtn{white-space:nowrap}
-.gs-recruit-who{margin:6px 0 12px; font-size:14px; color:var(--ink); line-height:1.6}
+/* (폐기 2026-09-08) .gs-recruit-who — 이름을 가운뎃점으로 잇던 한 줄 */
+/* 좌우 두 덩이 (2026-09-08 사용자 확정) — 왼쪽 초대, 오른쪽 들어온 사람 */
+.gs-recruit-split{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; margin-top:12px}
+.gs-recruit-inv .gs-caplab,.gs-recruit-seats .gs-caplab{display:block; margin-bottom:9px}
+.gs-recruit-seats{border-left:1px solid rgba(var(--ink-rgb),.14); padding-left:20px}
+.gs-seatlist{list-style:none; margin:0; padding:0}
+.gs-seatlist li{display:flex; align-items:center; gap:9px; padding:3px 0; font-size:13.5px; line-height:1.5; color:var(--ink)}
+.gs-seatlist b{width:15px; text-align:right; flex:none; font-family:var(--mono); font-size:11.5px; font-weight:400; color:var(--ink-2)}
+.gs-seatlist li span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.gs-seatlist-typed{color:var(--ink-body)}
+.gs-seatlist-empty{color:var(--ink-2); opacity:.5}
+@media (max-width:720px){
+  .gs-recruit-split{grid-template-columns:minmax(0,1fr)}
+  .gs-recruit-seats{border-left:0; padding-left:0; border-top:1px dashed rgba(var(--ink-rgb),.18); padding-top:12px}
+}
 /* 판을 만드는 문 둘 (2026-09-08 사용자 확정) — 로비 파티 카드 안에서 세로로, 위가 파티원 초대·아래가 혼자 세기 */
 .gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
