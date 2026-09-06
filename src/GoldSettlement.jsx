@@ -817,6 +817,7 @@ function saveLastLive(v) {
 
 function loadPartyReg() {
   if (typeof window === "undefined") return null;
+  if (DEMO) return DEMO_STORE.reg || null;
   try {
     const v = JSON.parse(window.localStorage.getItem(PARTY_REG_KEY) || "null");
     if (v && Array.isArray(v.list) && v.list.length && typeof v.active === "string") return v;
@@ -826,13 +827,14 @@ function loadPartyReg() {
 function savePartyReg(reg) {
   if (typeof window === "undefined") return;
   try {
-    if (!DEMO) window.localStorage.setItem(PARTY_REG_KEY, JSON.stringify(reg));
+    if (DEMO) DEMO_STORE.reg = reg;
+    else window.localStorage.setItem(PARTY_REG_KEY, JSON.stringify(reg));
   } catch (e) {}
 }
 function loadPartySlot(name) {
   if (typeof window === "undefined") return null;
   try {
-    const v = JSON.parse(window.localStorage.getItem(partySlotKey(name)) || "null");
+    const v = DEMO ? DEMO_STORE["slot:" + name] || null : JSON.parse(window.localStorage.getItem(partySlotKey(name)) || "null");
     if (!v || !Array.isArray(v.rows) || !Array.isArray(v.cols)) return null;
     return { ...v, rows: migrateRows(v.rows) };
   } catch (e) {
@@ -842,7 +844,8 @@ function loadPartySlot(name) {
 function savePartySlot(name, data) {
   if (typeof window === "undefined") return;
   try {
-    if (!DEMO) window.localStorage.setItem(partySlotKey(name), JSON.stringify(data));
+    if (DEMO) DEMO_STORE["slot:" + name] = data;
+    else window.localStorage.setItem(partySlotKey(name), JSON.stringify(data));
   } catch (e) {}
 }
 function dropPartySlot(name) {
@@ -943,6 +946,10 @@ const DEMO = (() => {
 /* #demo&member — 예시의 뒷부분(2026-09-06 사용자 확정): 같은 앱을 파티원(뷰어) 모드로 한 번 더 띄워, 실리안의 자리에서
    자수 화면을 보여 줍니다. 예시 방(DEMO_ROOM)의 길을 타되 판은 방장 예시와 같은 넷이고 숫자는 움직이지 않습니다 */
 const DEMO_MEMBER = DEMO && /(^|&)member(=|&|$)/.test(window.location.hash.replace(/^#/, ""));
+/* 방장 튜토리얼의 8장(파티원 화면)으로 뜬 파티원 예시 앱 — 띠에 장 점을 그립니다. 없으면 독립 파티원 튜토리얼 */
+const DEMO_CH8 = DEMO_MEMBER && /(^|&)ch8(=|&|$)/.test(window.location.hash.replace(/^#/, ""));
+/* 예시 앱의 판 기록·장부 슬롯 — 저장소 대신 메모리 (7장 끝내기가 결과지·판 기록을 여기서 읽습니다) */
+const DEMO_STORE = {};
 /* 진짜 계정의 닉 — 예시 판의 방장 이름에 씁니다(없으면 `방장`) */
 const realNick = () => {
   try {
@@ -961,8 +968,9 @@ function loadAuth() {
   try {
     const v = JSON.parse(window.localStorage.getItem(AUTH_KEY) || "null");
     /* 예시 앱의 방장은 가짜 계정 — 닉만 진짜 계정 것을 빌립니다(없으면 `나`) */
-    if (DEMO_MEMBER) return { id: "silian", nick: "실리안", anon: false, token: "demo", obsToken: "EXAMPLE" };
-    if (DEMO) return { id: "demo:me", nick: (v && v.nick) || "나", anon: !!(v && v.anon), token: "demo", obsToken: "EXAMPLE" };
+    /* 주소(obsToken)는 없이 시작합니다 — 튜토리얼이 [내 방송용 주소 받기]를 누르게 하고 예시에서 바로 발급합니다 */
+    if (DEMO_MEMBER) return { id: "silian", nick: "실리안", anon: false, token: "demo" };
+    if (DEMO) return { id: "demo:me", nick: (v && v.nick) || "나", anon: !!(v && v.anon), token: "demo" };
     if (v && typeof v.id === "string" && typeof v.token === "string") return v;
   } catch (e) {}
   return null;
@@ -2022,7 +2030,6 @@ export default function GoldSettlement() {
   const [tutorial, setTutorial] = useState(DEMO); // 예시 앱은 처음부터 끝까지 tutorial 입니다
   const tutorialRef = useRef(DEMO); // 같이 해보기가 도는 중인지 — 낡은 클로저(타이머·putRelay)에서 봅니다
   tutorialRef.current = tutorial;
-  const tutorialBack = useRef(null);
 
   /* 코치마크 진행 상태 — {kind:"course",step} | {kind:"obs"} | {kind:"hint"} */
   const [coach, setCoach] = useState(null);
@@ -2030,7 +2037,7 @@ export default function GoldSettlement() {
 
   const coachRef = useRef(null);
   coachRef.current = coach;
-  if (DEMO) window.__gsDemo = { coach, sel: coach && coach.kind === "party" && PARTY_FLOW[coach.step] ? PARTY_FLOW[coach.step].sel : null }; // 예시 앱 검사용
+  if (DEMO) window.__gsDemo = { coach, sel: coach && coach.kind === "party" && TOUR_FLOW[coach.step] ? TOUR_FLOW[coach.step].sel : null }; // 예시 앱 검사용
 
   useEffect(() => {
     if (!burst.length || burstHold) return;
@@ -2048,13 +2055,9 @@ export default function GoldSettlement() {
   }, [burst, burstHold, burstKey]);
 
   /* 코스 진행 — 해당 조작이 실제로 일어났을 때만 다음으로 */
+  /* 진짜 버튼을 눌러도 튜토리얼이 넘어갑니다 — 칸 누르기·탭·OBS 버튼이 부릅니다 */
   const courseHit = (what) => {
-    const c = coachRef.current;
-    if (c && c.kind === "party") return tutHit(what); // 같이 해보기 4걸음(칸 누르기)
-    if (!c || c.kind !== "course") return;
-    const want = ["press", "unpress", "ledger", "mail", "obs"][c.step];
-    if (what !== want) return;
-    setCoach({ kind: "course", step: c.step + 1 }); // 5·6걸음은 버튼으로 넘깁니다
+    if (tutorialRef.current) tutHit(what);
   };
 
   const [mode, setMode] = useState(boot.current.mode || "simple");
@@ -2066,7 +2069,18 @@ export default function GoldSettlement() {
   const [openRow, setOpenRow] = useState(null);
   const [ask, setAsk] = useState(null);
   const [share, setShare] = useState(null);
-  const [showHelp, setShowHelp] = useState(false);
+  /* [?] 팝오버 — 튜토리얼 둘 중 고르기 (2026-09-06 사용자 확정: 사용법 모달 폐기) */
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpAuto, setHelpAuto] = useState(false); // 파티원 첫 방문에 저절로 열린 것 — 머리말이 다릅니다
+  const helpWrapRef = useRef(null);
+  useEffect(() => {
+    if (!helpOpen) return;
+    const h = (e) => {
+      if (helpWrapRef.current && !helpWrapRef.current.contains(e.target)) setHelpOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [helpOpen]);
   const [showHub, setShowHub] = useState(false);
   /* 보기 방식 — 탭(한 카드만 크게, 방송용)과 세로(세 카드를 이어서). */
   const [view, setView] = useState(boot.current.view);
@@ -2166,8 +2180,7 @@ export default function GoldSettlement() {
   const pickTab = (k) => {
     setTab(k);
     window.scrollTo(0, 0);
-    if (k === "ledger") courseHit("ledger");
-    if (k === "mail") courseHit("mail");
+    courseHit("tab:" + k); // 튜토리얼 5장·파티원 3걸음
   };
 
   /* 금액만 모드는 왼쪽 메모장 ↔ 오른쪽 표가 같은 데이터를 봅니다.
@@ -2690,11 +2703,21 @@ export default function GoldSettlement() {
   const [demoOpen, setDemoOpen] = useState(false);
   const [demoReady, setDemoReady] = useState(false); // 예시 앱이 첫 그림을 그렸다고 알려 올 때까지 iframe 은 투명 — 흰 화면이 깜빡이지 않게
   const demoBase = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
-  const [demoSrc, setDemoSrc] = useState(""); // #demo(방장 8걸음) → #demo&member(파티원 화면 2걸음)
+  const [demoSrc, setDemoSrc] = useState(""); // #demo(방장 1~7장) → #demo&member&ch8(8장) / #demo&member(파티원 튜토리얼)
+  const [demoLoad, setDemoLoad] = useState("튜토리얼 시작 중"); // 사용자 지정 문구; 8장으로 넘어갈 땐 다른 말
   const startPartyCourse = () => {
-    if (readOnly || DEMO) return;
+    if (DEMO) return;
     setDemoReady(false);
+    setDemoLoad("튜토리얼 시작 중");
     setDemoSrc(demoBase + "#demo&t=" + Date.now()); // t 는 같은 주소로 다시 열어도 새로 뜨게
+    setDemoOpen(true);
+  };
+  /* 파티원 튜토리얼 — 파티원 예시 앱 하나로 (2026-09-06 사용자 확정: [?]에서 둘 중 고름, 어디서든) */
+  const startMemberTour = () => {
+    if (DEMO) return;
+    setDemoReady(false);
+    setDemoLoad("튜토리얼 시작 중");
+    setDemoSrc(demoBase + "#demo&member&t=" + Date.now());
     setDemoOpen(true);
   };
   /* 예시 앱이 못 뜨더라도 갇히지 않게 — 8초 뒤엔 있는 그대로 보입니다 */
@@ -2703,11 +2726,11 @@ export default function GoldSettlement() {
     const t = setTimeout(() => setDemoReady(true), 8000);
     return () => clearTimeout(t);
   }, [demoOpen, demoReady]);
-  const closeDemo = (done) => {
+  const closeDemo = (done, kind) => {
     setDemoOpen(false);
     coachDone("partyAsk");
     setTutAsk(false);
-    if (done) coachDone("party");
+    if (done) coachDone(kind === "member" ? "mtour" : "party");
   };
   useEffect(() => {
     if (!demoOpen) return;
@@ -2725,12 +2748,13 @@ export default function GoldSettlement() {
       if (e.data.gs === "party-demo-ready") return setDemoReady(true);
       if (e.data.gs !== "party-demo") return;
       if (e.data.next === "member") {
-        /* 방장 부분이 끝났습니다 — 같은 창에 파티원 예시를 갈아 끼웁니다(그릴 때까지 다시 투명) */
+        /* 7장이 끝났습니다 — 같은 창에 파티원 예시(8장)를 갈아 끼웁니다(그릴 때까지 다시 투명) */
         setDemoReady(false);
-        setDemoSrc(demoBase + "#demo&member&t=" + Date.now());
+        setDemoLoad("파티원 화면으로 넘어가는 중");
+        setDemoSrc(demoBase + "#demo&member&ch8&t=" + Date.now());
         return;
       }
-      closeDemo(!!e.data.done);
+      closeDemo(!!e.data.done, e.data.kind);
     };
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
@@ -2739,7 +2763,7 @@ export default function GoldSettlement() {
      querySelector 는 못 보고, 예시 앱은 서버 응답이 없어 다시 그려질 계기도 없습니다 — 표적이 보일 때까지 살핍니다 */
   useEffect(() => {
     if (!coach || coach.kind !== "party") return;
-    const st = PARTY_FLOW[coach.step];
+    const st = TOUR_FLOW[coach.step];
     if (!st) return;
     /* 표적이 있어도 이번 렌더가 못 봤으면(같은 커밋에 생김) 말풍선이 없습니다 — 그때도 다시 그립니다 */
     const drawn = () => !!document.querySelector(".gs-coach");
@@ -2796,7 +2820,7 @@ export default function GoldSettlement() {
   const tutHit = (what) => {
     const c = coachRef.current;
     if (!tutorialRef.current || !c || c.kind !== "party") return;
-    const st = PARTY_FLOW[c.step];
+    const st = TOUR_FLOW[c.step];
     if (!st || st.wait !== what) return;
     const next = c.step + 1;
     partyStep(next);
@@ -2806,18 +2830,49 @@ export default function GoldSettlement() {
       partyT(() => partyStep(next + 1), 5400);
     }
     if (what === "press") {
-      /* 누름 → (3초) 실리안 자수 + 그 말풍선 → (5.5초) 웨이. (2026-09-06 사용자: 1.8초·3.6초는 빠르다) */
+      /* 누름 → (3초) 실리안 자수 + 그 말풍선 → (4초) 룰렛 걸음. 웨이는 사람 아이콘 걸음에 들어설 때 옵니다 */
       partyT(() => {
         tutConfess();
         partyStep(next + 1);
       }, 3000);
-      partyT(() => {
-        tutArrive(2);
-        say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
-        partyStep(next + 2);
-      }, 8500);
+      partyT(() => partyStep(next + 2), 7000);
     }
   };
+  /* 5장 머리 — 한 판 돌았다고 치고 표를 채웁니다(방장 잡힘 3·죽음 1, 실리안 잡힘 2·죽음 2, 니나브 잡힘 1, 웨이 죽음 1).
+     방장 줄은 진짜 누르기(pressCell), 파티원 줄은 자수(applyConfess)라 기록도 그대로 남습니다 */
+  const tutSeed = () => {
+    const c1 = cols.find((c) => c.id === "c1");
+    const c2 = cols.find((c) => c.id === "c2");
+    if (!c1 || !c2) return;
+    const host = rows[0];
+    const idOf = (acct) => {
+      const k = seatsRef.current.find((s0) => s0.acct === acct);
+      return k && k.id;
+    };
+    const acts = [];
+    if (host) acts.push(() => pressCell(host, c1, 1), () => pressCell(host, c1, 1), () => pressCell(host, c2, 1));
+    const s1 = idOf("silian"), s2 = idOf("ninav"), s3 = idOf("wei");
+    if (s1) acts.push(() => applyConfess(s1, "c1", 1), () => applyConfess(s1, "c2", 1), () => applyConfess(s1, "c2", 1));
+    if (s2) acts.push(() => applyConfess(s2, "c1", 1));
+    if (s3) acts.push(() => applyConfess(s3, "c2", 1));
+    acts.forEach((fn, i) => partyT(fn, 150 * i));
+  };
+  /* 걸음에 들어설 때 하는 일 — 웨이 도착(4장 사람 아이콘 걸음), 판 채우기(5장 머리) */
+  const tutEntered = useRef(-1);
+  useEffect(() => {
+    if (!coach || coach.kind !== "party" || tutEntered.current === coach.step) return;
+    tutEntered.current = coach.step;
+    const st = TOUR_FLOW[coach.step];
+    if (!st) return;
+    if (st.enter === "wei") {
+      tutArrive(2);
+      say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
+    }
+    if (st.enter === "seed") {
+      partyT(tutSeed, 300);
+      partyT(() => partyStep(coach.step + 1), 3500);
+    }
+  }, [coach]);
   /* 예시 앱: 끝(다 봤든 ✕·Esc·[그만두기]든) — 부모에게 알리고 부모가 창을 닫습니다. 부모 없이 열렸으면 보통 앱으로 */
   const endPartyCourse = (done) => {
     partyTimers.current.forEach(clearTimeout);
@@ -2826,56 +2881,13 @@ export default function GoldSettlement() {
     if (window.parent && window.parent !== window) {
       try {
         /* done: true = 다 봄, "member" = 방장 부분 끝, 파티원 화면으로, false = 그만둠 */
-        window.parent.postMessage({ gs: "party-demo", done: done === true, next: done === "member" ? "member" : null }, window.location.origin);
+        window.parent.postMessage({ gs: "party-demo", done: done === true, next: done === "member" ? "member" : null, kind: DEMO_MEMBER && !DEMO_CH8 ? "member" : "host" }, window.location.origin);
       } catch (e) {}
       return;
     }
     window.location.replace(window.location.pathname + window.location.search);
   };
-  const startTutorial = () => {
-    if (readOnly) return;
-    tutorialBack.current = {
-      ...currentLedger(),
-      seats,
-      roundLive,
-      roundId,
-    };
-    setTutorial(true);
-    setIntro(null);
-    coachReset("course");
-    applyLedger({
-      mode: "items", // 예시는 카운터로 엽니다 — 코스 1·2걸음이 칸 누르기입니다
-      unit: "10000", // 예시 금액은 만G 기준으로 짜여 있습니다
-      cols: [
-        { id: "c1", name: "잡힘", price: "10,000" },
-        { id: "c2", name: "죽음", price: "30,000" },
-        { id: "c3", name: "암살", price: "100,000" },
-      ],
-      rows: DEFAULT_ROWS,
-      log: demoLog(),
-      feePercent: "5",
-      splitMode: "pot",
-      memoFreeze: null,
-      undoSnap: null,
-    });
-    putSeats(seatsFromRows(DEFAULT_ROWS));
-    setRoundLive(true);
-    setCoach({ kind: "course", step: 0 });
-  };
-
-  /* 튜토리얼 종료 — 끝까지 봤든 중간에 그만뒀든 같은 자리로 나옵니다.
-     예시는 저장된 적이 없으니 그냥 덮어쓰면 사라집니다. */
-  const endTutorial = () => {
-    coachDone("course");
-    setTutorial(false);
-    const back = tutorialBack.current;
-    applyLedger(back || blankPartyLedger(8));
-    /* 예시를 열기 전의 자리·판 표시로 돌아갑니다 — 로비에서 들어왔으면 로비로 나갑니다 */
-    putSeats((back && back.seats) || []);
-    setRoundLive(!!(back && back.roundLive));
-    setRoundId((back && back.roundId) || "");
-    tutorialBack.current = null;
-  };
+  /* (폐기 2026-09-06) startTutorial/endTutorial — 예시 표를 진짜 장부 위에 덮고 되돌리던 옛 코스 */
 
   // 고칠 때마다 저장해 두면 새로고침해도 그대로 돌아옵니다
   useEffect(() => {
@@ -4441,10 +4453,12 @@ export default function GoldSettlement() {
       setJustEnded(nm);
       openGen(nm);
     }
+    courseHit("ended"); // 튜토리얼 7장 — 결과지로
   };
-  const askEndRound = () =>
+  const askEndRound = () => {
+    courseHit("endask"); // 튜토리얼 7장
     /* 기록이 없으면 남길 결과지도 없습니다 — 판을 접고 로비로 (2026-09-05 ⑤). 끝내기의 도착지는 언제나 로비 */
-    !log.length
+    return !log.length
       ? setAsk({
           /* (폐기 2026-09-06) `아직 기록이 없어요. / 이 판을 접고 로비로 갈까요? 이름과 항목은 그대로 남아요.` [접기] —
              접기라는 세 번째 동사. 기록 없는 끝은 해산입니다 (초안) */
@@ -4463,6 +4477,7 @@ export default function GoldSettlement() {
           action: "정산 끝내기",
           onYes: endRound,
         });
+  };
   /* [중단] — 아무것도 지우지 않고 얼립니다. 사람·셈·연결 그대로이고 [이어가기]로 돌아옵니다.
      방장 화면은 홈(로비)으로 물러나고, 거기 중단된 판 카드가 섭니다 (§3.1) */
   /* 손으로 얼리는 [중단]은 폐지했습니다 (§3.4) — 브라우저를 닫아도 판은 살아 있고,
@@ -5014,20 +5029,7 @@ export default function GoldSettlement() {
   const guestWaiting = !!you && you.st === "ok" && !!vlobby;
   /* 끝난 판에는 자수가 없습니다 — 더 셀 것이 없어서요. 표 세 장은 그대로 봅니다 */
   const guestPlaying = !!you && you.st === "ok" && !vlobby && !ended && !genView;
-  /* 파티원의 OBS 코치마크 (2026-09-06) — 처음 자리에 앉아 헤더가 나타난 뒤 1.5초, 브라우저마다 한 번. 주소를 복사한 적이
-     있으면 생략. 파티원은 링크 → 앉음의 길 어디에서도 OBS라는 말을 못 듣기 때문에 여기서 한 번 */
-  useEffect(() => {
-    if (!readOnly || !auth || !you || you.st !== "ok" || !you.rowId) return;
-    if (!(guestWaiting || guestPlaying)) return;
-    if (coachSeen("obsGuest")) return;
-    try {
-      if (localStorage.getItem("goldSettlement.obsCopied")) return;
-    } catch (e) {}
-    const t = setTimeout(() => {
-      if (!coachRef.current) setCoach({ kind: "obsGuest" });
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [readOnly, !!auth, you && you.st, you && you.rowId, guestWaiting, guestPlaying]);
+  /* (폐기 2026-09-06 밤) 파티원 OBS 코치마크 — 파티원 튜토리얼 4·5걸음이 대신합니다 */
   /* 앉는 순간 맨 위로 (2026-09-06 사용자 지적) — 초대장·닉 정하기에서 내려온 스크롤을 표가 물려받지 않게 */
   useEffect(() => {
     if (readOnly && you && you.st === "ok" && you.rowId) window.scrollTo(0, 0);
@@ -6395,6 +6397,8 @@ export default function GoldSettlement() {
   boardOnRef.current = boardOn;
   const boardMade = boardOn;
   /* 지금 화면 (2026-09-06) — 화면별 사용법과 [?] 메뉴의 "지금 이 화면"이 봅니다 */
+  const recMember = readOnly && !genView;
+  const recKey = recMember ? "member" : "host";
   const screenId = showLobby
     ? "lobby"
     : readOnly
@@ -6408,44 +6412,18 @@ export default function GoldSettlement() {
           : roundLive
             ? "board"
             : null;
-  const screenGuideSeen = !screenId || !GUIDES[screenId] || coachSeen(guideKey(screenId));
-  /* 화면에 처음 왔을 때 한 번 — 다른 코치가 떠 있거나 모달이 열려 있거나 예시 중이면 안 뜹니다 */
+  /* 파티원 첫 방문 — 자수 화면에 처음 왔을 때 1.5초 뒤 [?] 팝오버가 저절로 한 번 열립니다(브라우저당) (2026-09-06 사용자 확정) */
   useEffect(() => {
-    if (!screenId || !GUIDES[screenId] || tutorial || showHelp || obsOpen) return;
-    if (coachSeen(guideKey(screenId))) return;
+    if (DEMO || !readOnly || screenId !== "confess" || tutorial || obsOpen) return;
+    if (coachSeen("askMember")) return;
     const t = setTimeout(() => {
-      if (!coachRef.current) setCoach({ kind: "guide", id: screenId, step: 0 });
+      coachDone("askMember");
+      setHelpAuto(true);
+      setHelpOpen(true);
     }, 1500);
     return () => clearTimeout(t);
-  }, [screenId, tutorial, showHelp, obsOpen]);
-  /* 표적이 없는 걸음은 건너뜁니다 (판 기록 카드가 없을 때 등) */
-  useEffect(() => {
-    if (!coach || coach.kind !== "guide" || !GUIDES[coach.id]) return;
-    const g = GUIDES[coach.id];
-    const st = g.steps[coach.step];
-    if (st && !document.querySelector(st.sel)) {
-      if (coach.step < g.steps.length - 1) setCoach({ ...coach, step: coach.step + 1 });
-      else {
-        coachDone(guideKey(coach.id));
-        setCoach(null);
-      }
-    }
-  }, [coach]);
-  /* 방장의 OBS 코치마크 (2026-09-06 사용자 지적, 초안) — 새 판을 만들어 대기실에 온 1.5초 뒤 헤더 [OBS 공유 설정]에 한 번.
-     파티원 것과 같은 규칙: 브라우저마다 한 번, 주소를 복사한 적 있으면 생략. 비로그인 방장은 주소가 없어 대기실 카드의
-     [주소 받기]가 이미 말하니 생략. "방장은 당연히 안다"고 여기고 빠뜨렸던 자리 */
-  useEffect(() => {
-    if (readOnly || !auth || !boardOn || roundLive || showLobby || genView || tutorial) return;
-    if (coachSeen("obsHost")) return;
-    if (!coachSeen(guideKey("ready"))) return; // 대기실 사용법이 먼저, 그다음에 OBS (2026-09-06)
-    try {
-      if (localStorage.getItem("goldSettlement.obsCopied")) return;
-    } catch (e) {}
-    const t = setTimeout(() => {
-      if (!coachRef.current) setCoach({ kind: "obsHost" });
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [readOnly, !!auth, boardOn, roundLive, showLobby, genView, coach]);
+  }, [readOnly, screenId, tutorial, obsOpen]);
+  /* (폐기 2026-09-06 밤) 방장 OBS 코치마크 — 튜토리얼 6장이 대신합니다 */
   /* 판이 없는데 판 화면이면 로비로 — 부팅·옛 주소·끝낸 직후 */
   useEffect(() => {
     /* 막 끝낸 판은 결과지로 갑니다(justEnded) — 여기서 먼저 로비로 밀면 결과지가 안 열립니다 (버그 기록 2026-09-06) */
@@ -6605,7 +6583,10 @@ export default function GoldSettlement() {
   };
   /* [닫기]/[지금 판으로] — 화면 이동이라 주소로 갑니다. 막 끝낸 판이나 로비에서 연 기록은 로비로,
      판에서 들춰본 기록은 판으로 (§3.4). 뒤로가기는 hashchange 가 같은 closeGenInner 로 접습니다 */
-  const closeGen = () => go(genView === justEnded || atLobby ? VIEW_LOBBY : VIEW_BOARD);
+  const closeGen = () => {
+    courseHit("genclose"); // 튜토리얼 7장 — 로비의 판 기록으로
+    go(genView === justEnded || atLobby ? VIEW_LOBBY : VIEW_BOARD);
+  };
   /* [닫기] — 끝난 파티 화면을 접고 이 브라우저의 내 장부로 갑니다.
      뷰어인지는 부트에서 정해지므로 주소에서 방을 떼고 다시 엽니다 */
   /* [들어가기] — 같은 문을 다시 지납니다 (2026-09-06). 입장을 다시 걸면 앉는 순간 소켓이 새로 붙어 새 판을 받습니다 */
@@ -7098,16 +7079,32 @@ export default function GoldSettlement() {
   );
   return (
     <div className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
-      {DEMO && (
-        <div className="gs-demoband" role="status">
-          <span>
-            <b>예시예요.</b> 실제 판엔 아무 영향 없어요.
-          </span>
-          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => endPartyCourse(false)}>
-            그만두기
-          </button>
-        </div>
-      )}
+      {DEMO &&
+        (() => {
+          /* 진행 표시 (2026-09-06 사용자 확정) — 장 점을 선으로 잇고 지금 장은 크게, 옆에 `3장 파티원 모으기 · 2/4`.
+             독립 파티원 튜토리얼은 걸음 점 여섯 개. [그만두기]는 없습니다 — ✕·Esc 가 나가는 길 */
+          const st = coach && coach.kind === "party" ? TOUR_FLOW[coach.step] : null;
+          const soloMember = DEMO_MEMBER && !DEMO_CH8;
+          const ch = st ? st.ch : DEMO_MEMBER ? 7 : 0;
+          const inCh = TOUR_FLOW.filter((x) => x.ch === ch);
+          const shown = inCh.filter((x) => x.wait !== "auto");
+          const cur = st ? Math.max(1, shown.indexOf(st) + 1 || inCh.slice(0, inCh.indexOf(st) + 1).filter((x) => x.wait !== "auto").length) : 0;
+          const dots = soloMember ? shown.length : TOUR_CHAPTERS.length;
+          const now = soloMember ? cur - 1 : ch;
+          return (
+            <div className="gs-demoband" role="status" aria-label="튜토리얼 진행">
+              <span className="gs-tourdots" aria-hidden="true">
+                {Array.from({ length: dots }, (_, i) => (
+                  <i key={i} className={"gs-tourdot" + (i < now ? " done" : i === now ? " now" : "")} />
+                ))}
+              </span>
+              <span className="gs-tourlabel">
+                {soloMember ? "파티원 튜토리얼" : ch + 1 + "장 " + TOUR_CHAPTERS[ch]}
+                {st ? " · " + cur + "/" + shown.length : ""}
+              </span>
+            </div>
+          );
+        })()}
       <style>{CSS}</style>
 
       {/* ── 시스템 줄 — 뷰포트 맨 위에 딱 붙는 전폭 바. 안쪽 내용은 본문과 같은 열 ── */}
@@ -7188,12 +7185,7 @@ export default function GoldSettlement() {
                 <button
                   className={"gs-btn gs-btn-ghost gs-obsbtn" + (dotState === "on" ? " on" : "")}
                   onClick={() => {
-                    courseHit("obs"); // 5걸음에서 진짜 버튼을 눌러도 진행됩니다
-                    /* 파티원 코치마크는 이 버튼이 곧 표적입니다 (2026-09-06) — 누르면 창이 열리며 끝 */
-                    if (coachRef.current && (coachRef.current.kind === "obsGuest" || coachRef.current.kind === "obsHost")) {
-                      coachDone(coachRef.current.kind);
-                      setCoach(null);
-                    }
+                    courseHit("obs"); // 튜토리얼 6장·파티원 4걸음
                     setObsOpen(true);
                   }}
                 >
@@ -7225,16 +7217,51 @@ export default function GoldSettlement() {
                 </span>
               </span>
             )}
-            <button
-              className={"gs-qm gs-helpbtn" + (showHelp ? " gs-qm-on" : "")}
-              onClick={() => setShowHelp(true)}
-              aria-haspopup="dialog"
-              aria-label="사용법 보기"
-            >
-              ?
-              {/* 지금 화면의 사용법을 아직 안 봤으면 점 (2026-09-06) */}
-              {!screenGuideSeen && !coach && <i className="gs-qdot" aria-hidden="true" />}
-            </button>
+            {/* [?] = 튜토리얼 고르기 팝오버 (2026-09-06 사용자 확정) — 방장·파티원 둘 다 늘 보이고, 이 화면에 맞는 쪽이 채운 [보기]와 `추천`.
+                (폐기) 사용법 모달(화면별 사용법 목록). 점은 이 화면에 맞는 튜토리얼을 아직 안 봤을 때 */}
+            <span className="gs-helpwrap" ref={helpWrapRef}>
+              <button
+                className={"gs-qm gs-helpbtn" + (helpOpen ? " gs-qm-on" : "")}
+                onClick={() => {
+                  if (DEMO) return;
+                  setHelpAuto(false);
+                  setHelpOpen((v) => !v);
+                }}
+                aria-haspopup="dialog"
+                aria-label="튜토리얼"
+              >
+                ?
+                {!DEMO && !coach && !coachSeen(recMember ? "mtour" : "party") && <i className="gs-qdot" aria-hidden="true" />}
+              </button>
+              {helpOpen && !DEMO && (
+                <div className="gs-invpop gs-helppop" role="dialog" aria-label="튜토리얼">
+                  <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
+                  {[
+                    { k: "host", name: "방장 튜토리얼", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
+                    { k: "member", name: "파티원 튜토리얼", sub: MEMBER_STEPS.length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
+                  ]
+                    .sort((a, b) => (a.k === recKey ? -1 : b.k === recKey ? 1 : 0))
+                    .map((r) => (
+                      <div key={r.k} className="gs-helprow">
+                        <b>{r.name}</b>
+                        <span className="gs-guide-n">{r.sub}</span>
+                        {r.seen && <span className="gs-guide-seen">봤어요</span>}
+                        <button
+                          className={"gs-btn gs-btn-sm" + (r.k === recKey ? "" : " gs-btn-ghost")}
+                          onClick={() => {
+                            setHelpOpen(false);
+                            r.go();
+                          }}
+                        >
+                          {r.k === recKey && <em className="gs-rec">추천</em>}
+                          {r.seen ? "다시" : "보기"}
+                        </button>
+                      </div>
+                    ))}
+                  <p className="gs-guide-foot">OBS에 넣는 방법과 방송 주소 안내는 [OBS 공유 설정] 창에 있어요.</p>
+                </div>
+              )}
+            </span>
             {/* 하는 일과 나를 가릅니다 — 왼쪽은 이 앱으로 하는 일, 오른쪽은 내 것입니다 */}
             <span className="gs-sysbar-sep" aria-hidden="true" />
             {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
@@ -8007,7 +8034,7 @@ export default function GoldSettlement() {
                 <button
                   key={toast ? toast.t : 0}
                   className={
-                    "gs-btn gs-btn-ghost" +
+                    "gs-btn gs-btn-ghost gs-logbtn" +
                     (showLog ? " gs-logbtn-on" : "") +
                     (toast && toast.log ? " gs-logbtn-blink" : "")
                   }
@@ -9252,58 +9279,6 @@ export default function GoldSettlement() {
           (폐기 2026-09-06) 질문 답변 목록 아홉 개(잘못 눌렀어요 · 숫자를 직접 고치고 싶어요 · 단가를 중간에 바꿔야 해요 · 이미 메모장에 적고
           있었어요 · 같은 멤버로 한 판 더 해요 · 어제 판을 다시 보고 싶어요 · 파티원한테 보여주고 싶어요 · 벌금을 어떻게 나눌지 고르고 싶어요 ·
           채팅에 붙여넣고 싶어요)와 [튜토리얼 다시보기] — 답이 전부 코치마크 안으로 들어간다 */}
-      {showHelp && (
-        <InfoModal title="사용법" onClose={() => setShowHelp(false)}>
-          <div className="gs-guide-list">
-            {!readOnly && !DEMO && (
-              <div className="gs-guide-row">
-                <b>처음부터 같이 해보기</b>
-                <span className="gs-guide-n">4인 파티 예시 · {PARTY_TOTAL}걸음 · 지금 판엔 영향 없음</span>
-                {coachSeen("party") && <span className="gs-guide-seen">봤어요</span>}
-                <button
-                  className="gs-btn gs-btn-sm"
-                  onClick={() => {
-                    setShowHelp(false);
-                    startPartyCourse();
-                  }}
-                >
-                  {coachSeen("party") ? "다시" : "시작"}
-                </button>
-              </div>
-            )}
-            {/* 자수 사용법은 파티원 화면의 것 — 방장 메뉴엔 같이 해보기만 (2026-09-06 통합) */}
-            {[...GUIDE_ORDER].filter((id) => id !== "confess" || readOnly).sort((a, b) => (a === screenId ? -1 : b === screenId ? 1 : 0)).map((id) => {
-              const g = GUIDES[id];
-              const now = id === screenId;
-              const seen = coachSeen(guideKey(id));
-              return (
-                <div key={id} className="gs-guide-row">
-                  <b>{g.name}</b>
-                  <span className="gs-guide-n">
-                    {g.steps.length}걸음{id === "confess" ? " · 파티원 화면" : ""}
-                  </span>
-                  {now && <span className="gs-guide-now">지금 이 화면</span>}
-                  {!now && seen && <span className="gs-guide-seen">봤어요</span>}
-                  {now ? (
-                    <button
-                      className="gs-btn gs-btn-sm"
-                      onClick={() => {
-                        setShowHelp(false);
-                        setCoach({ kind: "guide", id, step: 0 });
-                      }}
-                    >
-                      {seen ? "다시" : "보기"}
-                    </button>
-                  ) : (
-                    <span className="gs-guide-seen gs-guide-else">그 화면에서</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <p className="gs-guide-foot">OBS에 넣는 방법과 방송 주소 안내는 [OBS 공유 설정] 창에 있어요.</p>
-        </InfoModal>
-      )}
       {showLog && !simple && (
         <InfoModal
           title={logRow ? `${logName || "이 사람"} · 기록` : "기록"}
@@ -9385,126 +9360,39 @@ export default function GoldSettlement() {
         </InfoModal>
       )}
       {showSplitHelp && <SplitHelp onClose={() => setShowSplitHelp(false)} />}
-      {coach && coach.kind === "course" && (
-        <CoachMark
-          sel={COURSE_STEPS[coach.step].sel}
-          text={COURSE_STEPS[coach.step].text}
-          action={COURSE_STEPS[coach.step].action}
-          step={coach.step + 1}
-          total={COURSE_STEPS.length}
-          block
-          lock={COURSE_STEPS[coach.step].lock}
-          onNext={() => {
-            if (coach.step < COURSE_STEPS.length - 1) {
-              setCoach({ kind: "course", step: coach.step + 1 });
-            } else {
-              endTutorial();
-              setCoach(null);
-            }
-          }}
-          onClose={() => {
-            /* X·Esc, 그리고 대상이 사라졌을 때. 그만두는 것도 끝난 것이라 예시를 치웁니다.
-               마지막 걸음은 다시 오는 길을 이미 말했으니 그대로 닫습니다. */
-            endTutorial();
-            setCoach(coach.step >= COURSE_STEPS.length - 1 ? null : { kind: "hint" });
-          }}
-        />
-      )}
-      {coach && coach.kind === "guide" && GUIDES[coach.id] && GUIDES[coach.id].steps[coach.step] && (
-        <CoachMark
-          key={coach.id + ":" + coach.step}
-          sel={GUIDES[coach.id].steps[coach.step].sel}
-          text={GUIDES[coach.id].steps[coach.step].text}
-          action={GUIDES[coach.id].steps[coach.step].action}
-          step={coach.step + 1}
-          total={GUIDES[coach.id].steps.length}
-          block
-          lock={GUIDES[coach.id].steps[coach.step].lock}
-          onNext={() => {
-            if (coach.step < GUIDES[coach.id].steps.length - 1) setCoach({ ...coach, step: coach.step + 1 });
-            else {
-              coachDone(guideKey(coach.id));
-              setCoach(null);
-            }
-          }}
-          onClose={() => {
-            coachDone(guideKey(coach.id));
-            setCoach(null);
-          }}
-        />
-      )}
       {demoOpen && (
         <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
-          {!demoReady && <p className="gs-demo-load">튜토리얼 시작 중</p>}
+          {!demoReady && <p className="gs-demo-load">{demoLoad}</p>}
           {/* key — 해시만 바뀌면 같은 문서 안에서 이동할 뿐 다시 뜨지 않습니다. 새 iframe 이어야 파티원 예시가 새로 부팅합니다 */}
           <iframe key={demoSrc} className={"gs-demo-frame" + (demoReady ? " on" : "")} title="처음부터 같이 해보기" src={demoSrc} />
         </div>
       )}
-      {/* 같이 해보기(예시 앱 안) — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이). ✕는 그만두기, 표적이 사라진 건 다음 걸음이 오는 것 */}
+      {/* 튜토리얼(예시 앱 안) — 표적이 아직 없으면 그리지 않습니다(화면이 바뀌는 사이; 살피는 효과가 곧 다시 그림).
+          ✕·Esc 는 그만두기. 번호는 띠(스테퍼)가 말하므로 말풍선엔 없습니다 */}
       {coach &&
         coach.kind === "party" &&
-        PARTY_FLOW[coach.step] &&
-        document.querySelector(PARTY_FLOW[coach.step].sel) && (
+        TOUR_FLOW[coach.step] &&
+        document.querySelector(TOUR_FLOW[coach.step].sel) && (
           <CoachMark
             key={"party:" + coach.step}
-            sel={PARTY_FLOW[coach.step].sel}
-            text={PARTY_FLOW[coach.step].text}
-            action={PARTY_FLOW[coach.step].action}
-            step={PARTY_FLOW[coach.step].no}
-            total={PARTY_TOTAL}
+            sel={TOUR_FLOW[coach.step].sel}
+            text={TOUR_FLOW[coach.step].text}
+            action={TOUR_FLOW[coach.step].action}
             block
-            lock={!!PARTY_FLOW[coach.step].lock}
-            center={!!PARTY_FLOW[coach.step].center}
-            overModal={!!PARTY_FLOW[coach.step].top}
-            onNext={() => (coach.step >= PARTY_FLOW.length - 1 ? endPartyCourse(DEMO_MEMBER ? true : "member") : partyStep(coach.step + 1))}
+            lock={!!TOUR_FLOW[coach.step].lock}
+            center={!!TOUR_FLOW[coach.step].center}
+            overModal={!!TOUR_FLOW[coach.step].top}
+            onNext={() => {
+              const st = TOUR_FLOW[coach.step];
+              if (st.exit === "closeObs") setObsOpen(false);
+              if (coach.step >= TOUR_FLOW.length - 1) endPartyCourse(DEMO_MEMBER ? true : "member");
+              else partyStep(coach.step + 1);
+            }}
             onClose={() => {
-              if (document.querySelector(PARTY_FLOW[coach.step].sel)) endPartyCourse(false);
+              if (document.querySelector(TOUR_FLOW[coach.step].sel)) endPartyCourse(false);
             }}
           />
         )}
-      {coach && coach.kind === "hint" && (
-        <CoachMark
-          sel=".gs-helpbtn"
-          text="안내는 여기서 언제든 다시 볼 수 있어요."
-          action="알겠어요"
-          onNext={() => setCoach(null)}
-          onClose={() => setCoach(null)}
-        />
-      )}
-      {/* 파티원의 한 번 (2026-09-06, 초안) — 버튼이 곧 표적: 누르면 창이 열리며 끝, [알겠어요]는 안 열고 닫기 */}
-      {coach && coach.kind === "obsGuest" && (
-        <CoachMark
-          sel=".gs-obsbtn"
-          text="방송하시면 이 판을 OBS에도 띄울 수 있어요. 여기서요."
-          action="알겠어요"
-          block
-          onNext={() => {
-            coachDone("obsGuest");
-            setCoach(null);
-          }}
-          onClose={() => {
-            coachDone("obsGuest");
-            setCoach(null);
-          }}
-        />
-      )}
-      {/* 방장의 한 번 (2026-09-06, 초안) — 파티원 것과 같은 표적·같은 규칙, 말만 방장 쪽 */}
-      {coach && coach.kind === "obsHost" && (
-        <CoachMark
-          sel=".gs-obsbtn"
-          text="방송에 띄우는 주소는 여기 있어요. OBS에 한 번만 넣으면 돼요."
-          action="알겠어요"
-          block
-          onNext={() => {
-            coachDone("obsHost");
-            setCoach(null);
-          }}
-          onClose={() => {
-            coachDone("obsHost");
-            setCoach(null);
-          }}
-        />
-      )}
       {coach && coach.kind === "obs" && (
         <CoachMark
           sel=".gs-obsbtn"
@@ -9777,14 +9665,21 @@ export default function GoldSettlement() {
         <ObsShare
           relay={relay}
           putRelay={putRelay}
-          auth={auth}
-          onOpenAuth={(tab, wantAddr) =>
+          /* 예시 앱은 주소를 받기 전엔 계정 없는 사람의 창을 보여 줍니다 — [내 방송용 주소 받기]가 튜토리얼의 표적 (6장·파티원 5걸음) */
+          auth={DEMO && !(auth && auth.obsToken) ? null : auth}
+          onOpenAuth={(tab, wantAddr) => {
+            /* 예시 앱 — 계정 창 없이 바로 주소가 생긴 것으로 (튜토리얼 6장·파티원 5걸음) */
+            if (DEMO) {
+              setAuth((a) => (a ? { ...a, obsToken: "EXAMPLE" } : a));
+              courseHit("obsgot");
+              return;
+            }
             /* wantAddr = [내 방송용 주소 받기]로 들어온 경우 — 어느 문으로 끝내든
                방을 열고 다음 걸음 안내(주소가 나왔어요)를 띄웁니다. 이 창은 그대로
                열려 있다가 주소를 보여 줍니다.
                ctx 문구는 안 얹습니다 (§3.11) — 대문은 어디서 열든 같은 얼굴입니다 */
-            openAuth(tab, wantAddr ? openMyRoom : null)
-          }
+            openAuth(tab, wantAddr ? openMyRoom : null);
+          }}
           onNick={changeNick}
           onLogout={() => {
             setObsOpen(false);
@@ -13332,91 +13227,35 @@ function MouseIcon({ side }) {
   );
 }
 
-/* 튜토리얼 — 예시 파티에서만 도는 하나의 이야기, 여섯 걸음.
-   1~4는 실조작(기록→정정→정산 확인→최종 출력), 5~6은 위치와 졸업.
-   일반 파티에서는 어떤 안내도 자동으로 뜨지 않습니다. */
-const COURSE_STEPS = [
-  {
-    /* 표 전체가 대상입니다 — 아무 칸이나 눌러도 넘어가니, 밝혀 두는 곳도 표 전체여야
-       문구와 맞습니다. 칸 하나만 밝히면 그 칸만 되는 줄 압니다. */
-    sel: ".gs-grid-count",
-    text: (
-      <>
-        아무 칸이나 <MouseIcon side="left" /> 눌러 보세요 — 1회가 쌓여요.
-      </>
-    ),
-  },
-  {
-    sel: ".gs-grid-count",
-    text: (
-      <>
-        이번엔 <MouseIcon side="right" /> 우클릭 — 1회가 빠져요.
-      </>
-    ),
-  },
-  { sel: ".gs-tab-ledger", text: "정산 장부 탭을 눌러 보세요 — 방금 누른 게 정산돼 있어요." },
-  { sel: ".gs-tab-mail", text: "보낼 우편 탭도 눌러 보세요 — 누가 누구에게 얼마를 보낼지 나와 있어요." },
-  {
-    /* 여기는 자리를 알려 주는 걸음이라 누를 필요가 없습니다. 열리면 설정 창이 안내
-       위로 올라와 가리므로, 대상까지 잠그고 말풍선의 [다음]으로만 넘어갑니다. */
-    sel: ".gs-obsbtn",
-    text: "이 현황을 방송 화면에 실시간으로 띄우려면 여기예요.",
-    action: "다음",
-    lock: true,
-  },
-  {
-    /* 마지막은 다시 오는 길을 알려 줍니다 — 예시가 사라지고 빈 표가 되는 순간이라,
-       "방금 그건 어디 갔지"와 "다시 보려면"이 같이 나와야 합니다 */
-    sel: ".gs-helpbtn",
-    text: "여기까지예요 — 안내는 여기서 다시 볼 수 있어요. 이제 빈 표로 시작해요.",
-    action: "알겠어요",
-    lock: true,
-  },
-];
+/* (폐기 2026-09-06) 옛 여섯 걸음 코스(COURSE_STEPS) — 예시 표를 진짜 장부에 덮고 되돌리던 방식. 원문은 OBS-SPEC §8 */
 
 /* 화면별 사용법 (2026-09-06 사용자 요청) — 그 화면에 처음 왔을 때 1.5초 뒤 한 번(브라우저당), [?]에서 다시.
    한 화면에 하나, 모달이 열려 있으면 안 뜨고, 같이 해보기(예시) 중엔 안 뜹니다. 걸음은 전부 가리키기만([다음]) —
    진짜 판에서 뭔가를 누르게 하지 않습니다(칸 누르기는 같이 해보기가 예시 판에서 맡습니다). 문구는 전부 초안.
    (폐기 2026-09-06) 첫 방문 관문 `처음 오셨나요?`(닫을 수 없는 모달, 새 판을 누른 뒤에야 떴다) · [?]의 질문 답변 목록 ·
    옛 여섯 걸음 예시 코스(COURSE_STEPS — 위치 안내 둘을 빼고 단가·사람 아이콘을 넣어 아래 board 로 리뉴얼) */
-/* 가이드는 하나로 (2026-09-06 사용자 확정, 통합) — 방장 쪽은 '처음부터 같이 해보기'가 전부고, 파티원 화면의 자수 사용법만 남습니다.
-   파티원은 초대로 들어와 방장 예시를 볼 일이 없어서요. 문구는 같이 해보기의 파티원 걸음(MEMBER_STEPS)과 같은 말.
-   (폐기 2026-09-06) 로비 3걸음·대기실 3걸음·벌금판 6걸음 사용법 — 원문은 OBS-SPEC §8 */
-const GUIDES = {
-  confess: {
-    name: "자수 사용법",
-    steps: [
-      {
-        sel: ".gs-confcard",
-        text: (
-          <>
-            내 줄이에요. 칸을 <MouseIcon side="left" /> 누르면 1회, <MouseIcon side="right" /> 우클릭하면 되돌려요.
-          </>
-        ),
-        action: "다음",
-        lock: true,
-      },
-      { sel: ".gs-confcard", text: "누른 건 방장 벌금판에 바로 올라가요. 되돌리기는 30초 안에만 돼요. 방장 표는 [벌금표] 탭에서 봐요.", action: "알겠어요", lock: true },
-    ],
-  },
-};
-const GUIDE_ORDER = ["confess"];
-const guideKey = (id) => "guide:" + id;
+/* (폐기 2026-09-06 밤, 사용자 확정) 화면별 사용법(GUIDES)·자수 사용법 — 방장 튜토리얼·파티원 튜토리얼(§3.9)로 통합. 원문은 OBS-SPEC §8 */
 
-/* 처음부터 같이 해보기 (2026-09-06 사용자 확정) — 4인 파티 예시. 더미 파티원 실리안·니나브·웨이가 정해진 박자로 움직이고
-   서버엔 아무것도 안 갑니다. wait 는 이 걸음을 넘기는 사건(사용자가 표적을 누름), auto 는 타이머가 넘깁니다.
-   no 는 화면에 보이는 번호(기다리는 걸음은 앞 걸음과 같은 번호). 문구는 전부 초안 */
-const PARTY_STEPS = [
-  { no: 1, sel: ".gs-lh-newbtn", text: "판부터 만들어 볼게요. 파티는 판 안에 있어요.", wait: "newboard" },
-  /* 항목·단가 (2026-09-06 사용자 요청) — 가리키기만, 예시에서 고치게 하진 않습니다 */
-  /* 단가 칸은 센 기록이 있으면 버튼(.gs-pricebtn), 없으면 바로 치는 칸(PriceFree)이라 감싸는 칸을 가리킵니다 */
-  { no: 2, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
-  { no: 3, sel: ".gs-addcol", text: "항목은 여기서 늘려요. 지우는 건 항목 이름 옆 ×.", action: "다음", lock: true },
-  { no: 4, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
-  { no: 4, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto" },
-  { no: 5, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
+/* 튜토리얼 (2026-09-06 사용자 확정, 통합 가이드 — OBS-SPEC §3.9).
+   방장 튜토리얼은 예시 앱(#demo)에서 1~7장, 8장은 파티원 예시 앱(#demo&member&ch8)이 이어받습니다.
+   파티원 튜토리얼은 그 파티원 예시 앱 하나(#demo&member, 6걸음)이고 8장과 같은 걸음입니다.
+   걸음 종류: wait(표적을 눌러야 넘어감) · action(가리키기, [다음]/[다음 장]) · wait:"auto"(기다림, 잠김).
+   ch 는 장 번호(0부터). enter/exit 은 걸음에 들어설 때·나갈 때 하는 일. 문구는 전부 초안 */
+const TOUR_CHAPTERS = ["판 만들기", "항목과 단가", "파티원 모으기", "벌금 세기", "정산 보기", "방송에 띄우기", "끝내기와 기록", "파티원 화면"];
+const HOST_STEPS = [
+  /* 1장 */
+  { ch: 0, sel: ".gs-lh-newbtn", text: "먼저 판을 만들어요. 파티원을 부르는 건 그다음이에요.", wait: "newboard" },
+  /* 2장 — 가리키기만, 예시에서 고치게 하진 않습니다 */
+  { ch: 1, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
+  { ch: 1, sel: ".gs-addcol", text: "항목은 여기서 늘려요. 지우는 건 항목 이름 옆 ×.", action: "다음", lock: true },
+  { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true },
+  /* 3장 */
+  { ch: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
+  { ch: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto" },
+  { ch: 2, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
+  /* 4장 */
   {
-    no: 6,
+    ch: 3,
     sel: ".gs-grid",
     text: (
       <>
@@ -13425,19 +13264,34 @@ const PARTY_STEPS = [
     ),
     wait: "press",
   },
-  /* 누른 뒤 한 박자 — 자수 안내가 누름과 같은 순간에 뜨면 이상합니다(사용자 지적). 실리안의 자수는 이 말풍선 뒤에 옵니다 */
-  { no: 6, sel: ".gs-grid", text: "올라갔죠? 파티원은 자기 줄을 자수 탭에서 직접 눌러요. 실리안이 지금 누르는 중…", lock: true, wait: "auto" },
-  { no: 6, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
-  /* 표 아래 줄은 화면 가운데로 — 아래 끝에 걸리면 '방금 바뀐' 카드가 [받기]를 덮습니다(사용자 지적) */
-  { no: 7, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", center: true },
-  /* 시트는 모달(z 50) 위라 이 걸음만 안내를 그 위로 올립니다(top) */
-  { no: 7, sel: ".gs-modal .gs-waitpick .gs-seatopt:not(.gs-seatopt-new)", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
-  { no: 8, sel: ".gs-endbtn", text: "다 끝나면 여기예요. 결과지가 기록에 남아요. 이제 들어온 파티원이 보는 화면도 볼게요.", action: "파티원 화면 보기", lock: true },
+  { ch: 3, sel: ".gs-grid", text: "올라갔죠? 파티원은 자기 줄을 자수 탭에서 직접 눌러요. 실리안이 지금 누르는 중…", lock: true, wait: "auto" },
+  { ch: 3, sel: ".gs-grid", text: "실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.", lock: true, wait: "auto" },
+  { ch: 3, sel: ".gs-grid thead .gs-rcbtn", text: "룰렛 항목은 방장이 칸을 눌러 돌려요. 나온 숫자 × 단가가 벌금이에요.", action: "다음", lock: true },
+  { ch: 3, sel: ".gs-rowi", text: "이름 옆 사람 아이콘. 줄을 옮기거나 파티에서 내보낼 땐 여기예요.", action: "다음", lock: true, enter: "wei" },
+  { ch: 3, sel: "tr.gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", center: true },
+  { ch: 3, sel: ".gs-modal .gs-waitpick .gs-seatopt:not(.gs-seatopt-new)", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
+  /* 5장 — 쌓인 데이터로 봅니다 */
+  { ch: 4, sel: ".gs-grid", text: "한 판 돌았다고 칠게요…", lock: true, wait: "auto", enter: "seed" },
+  { ch: 4, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료와 나누는 방식도 여기서 정해요.", wait: "tab:ledger" },
+  { ch: 4, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. 디코에 붙일 글도 여기서 복사해요.", wait: "tab:mail" },
+  { ch: 4, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet" },
+  { ch: 4, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true },
+  /* 6장 — 발급까지 */
+  { ch: 5, sel: ".gs-obsbtn", text: "방송에 띄우려면 여기예요.", wait: "obs" },
+  { ch: 5, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
+  { ch: 5, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. 파티가 바뀌어도 그대로. [복사]로 가져가요.", action: "다음", lock: true, top: true },
+  { ch: 5, sel: ".gs-modal .gs-obs-lineact", text: "브라우저 소스로 넣는 법은 여기. 한 번만 넣으면 돼요.", action: "다음 장", lock: true, top: true, exit: "closeObs" },
+  /* 7장 — 예시 안에서 진짜 끝내기 흐름 */
+  { ch: 6, sel: ".gs-endbtn", text: "다 끝나면 여기예요.", wait: "endask" },
+  { ch: 6, sel: ".gs-dialog .gs-btn:not(.gs-btn-ghost)", text: "결과지가 판 기록에 남아요. 끝낼게요.", wait: "ended", top: true },
+  { ch: 6, sel: ".gs-mast", text: "결과지예요. 파티원도 같은 걸 봐요.", action: "다음", lock: true },
+  { ch: 6, sel: ".gs-mast .gs-btn-ghost", text: "닫으면 로비로 가요.", wait: "genclose" },
+  { ch: 6, sel: ".gs-lh-recs", text: "끝난 판은 여기 남아요. 결과지를 다시 볼 수 있어요. 이제 들어온 파티원이 보는 화면을 볼게요.", action: "다음 장", lock: true },
 ];
-/* 뒷부분 — 파티원 예시 앱(#demo&member)에서 도는 두 걸음. 번호는 방장 걸음에 이어 9·10 */
+/* 8장 = 파티원 튜토리얼 — 파티원 예시 앱에서 돕니다 */
 const MEMBER_STEPS = [
   {
-    no: 9,
+    ch: 7,
     sel: ".gs-confcard",
     text: (
       <>
@@ -13446,10 +13300,13 @@ const MEMBER_STEPS = [
     ),
     wait: "confess",
   },
-  { no: 10, sel: ".gs-confcard", text: "방장 벌금판에 바로 올라갔어요. 되돌리기는 30초 안에만 돼요. 다시 보려면 [?]에서요.", action: "알겠어요", lock: true },
+  { ch: 7, sel: ".gs-confcard", text: "방장 벌금판에 바로 올라갔어요. 되돌리기는 30초 안에만 돼요.", action: "다음", lock: true },
+  { ch: 7, sel: ".gs-tab-sheet", text: "방장 표는 여기서 봐요. 정산 장부와 보낼 우편도 같이 보여요.", action: "다음", lock: true },
+  { ch: 7, sel: ".gs-obsbtn", text: "내 방송에도 이 판을 띄울 수 있어요. 여기서요.", wait: "obs" },
+  { ch: 7, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
+  { ch: 7, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. OBS 브라우저 소스에 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "알겠어요", lock: true, top: true, exit: "closeObs" },
 ];
-const PARTY_FLOW = DEMO_MEMBER ? MEMBER_STEPS : PARTY_STEPS;
-const PARTY_TOTAL = 10;
+const TOUR_FLOW = DEMO_MEMBER ? MEMBER_STEPS : HOST_STEPS;
 /* 파티원 예시의 판 — 방장 예시가 끝난 시점 그대로 */
 const TUT_ROWS = (host) => [
   { id: "r1", name: host, counts: { c1: "1" }, extras: [] },
@@ -14736,8 +14593,20 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-demo-load{margin:0; font-size:13px; color:var(--ink-2)}
 .gs-demo-frame{position:absolute; inset:0; width:100%; height:100%; border:0; display:block; opacity:0; transition:opacity .25s ease}
 .gs-demo-frame.on{opacity:1}
-.gs-demoband{margin:-20px -20px 0; padding:7px 20px; display:flex; align-items:center; justify-content:center; gap:14px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
-.gs-demoband b{color:var(--ink)}
+.gs-demoband{margin:-20px -20px 0; padding:9px 20px; display:flex; align-items:center; justify-content:center; gap:18px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
+.gs-tourdots{display:flex; align-items:center}
+.gs-tourdot{position:relative; width:10px; height:10px; border-radius:50%; border:1.5px solid var(--gold); background:transparent; box-sizing:border-box}
+.gs-tourdot + .gs-tourdot{margin-left:26px}
+.gs-tourdot + .gs-tourdot::before{content:""; position:absolute; right:100%; top:50%; width:26px; height:1.5px; margin-top:-.75px; background:rgba(var(--gold-rgb),.55)}
+.gs-tourdot.done{background:var(--gold)}
+.gs-tourdot.now{width:16px; height:16px; background:var(--gold); box-shadow:0 0 0 3px rgba(var(--gold-rgb),.25)}
+.gs-tourlabel{font-weight:600; color:var(--ink)}
+.gs-helppop{width:min(400px, 92vw)}
+.gs-helppop-h{margin:0 0 8px; font-size:13.5px; color:var(--ink); font-weight:700}
+.gs-helprow{display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px dotted rgba(var(--ink-rgb),.2); font-size:13px}
+.gs-helprow b{font-family:'Gowun Batang',serif; font-size:14px; color:var(--ink); white-space:nowrap}
+.gs-helprow .gs-btn{margin-left:auto; white-space:nowrap}
+.gs-rec{font-style:normal; font-size:10.5px; letter-spacing:.08em; margin-right:6px; opacity:.85}
 .gs-pressing{padding-bottom:300px}
 .gs-coaching .gs-press{display:none} /* 같이 해보기 걸음이 떠 있는 동안 — 표 아래 줄의 [자리 정하기]를 덮었음 (2026-09-06) */ /* '방금 바뀐' 카드(고정, 아래 오른쪽)가 표 끝 줄의 버튼을 덮지 않게 내려 볼 여지 (2026-09-06) */
 .gs-demoband ~ .gs-sysbar{margin-top:0} /* 시스템 줄의 위 당김(-20px)은 띠가 없을 때의 것 — 사이에 <style> 이 있어 형제 선택자는 ~ */
@@ -14759,7 +14628,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-coach-pass .gs-coach-bubble{pointer-events:auto}
 /* 대상만 남기고 덮는 그림자 — 어두운 곳은 눌러도 안 되는 곳입니다 */
 .gs-coach-hole{position:fixed; border-radius:5px; pointer-events:none;
-  box-shadow:0 0 0 9999px rgba(0,0,0,.58)}
+  box-shadow:0 0 0 9999px rgba(0,0,0,.36)} /* 2026-09-06 사용자: 어두운 막은 덜하게 (전 .58) */
 /* 나가는 문 — 시선이 가 있는 말풍선 안에 둡니다 */
 .gs-coach-x{position:absolute; top:7px; right:7px; width:24px; height:24px;
   display:grid; place-items:center; border:0; background:transparent; color:var(--ink-2);
