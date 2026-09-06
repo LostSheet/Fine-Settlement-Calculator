@@ -9383,10 +9383,16 @@ export default function GoldSettlement() {
                                     aria-label={i === 0 ? "방장" : "이 줄의 사람"}
                                     aria-haspopup={i > 0 ? "dialog" : undefined}
                                     onClick={i > 0 && auth && relay.room ? () => setRowPerson(row.id) : undefined}
-                                    style={{ "--h": avaHue(st.acct) }}
                                   >
-                                    {/* 글자 원 (2026-09-07 사용자 확정 ③) — 로비·허브와 한 벌. (폐기) 사람 아이콘 svg */}
-                                    {avaChar((mem && mem.nick) || st.nick || (auth && st.acct === auth.id ? auth.nick : ""))}
+                                    {/* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 초상화가 없는 자리라 글자를 넣지 않습니다.
+                                        (폐기 2026-09-07) 계정 색 글자 원 — 이름 옆에 같은 글자가 한 번 더 나와 조잡했다(사용자).
+                                        (폐기 2026-09-06) 선으로 그린 사람 아이콘 — 속이 비어 작을 때 안 읽혔다 */}
+                                    <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
+                                      <g fill="currentColor">
+                                        <circle cx="10" cy="6.4" r="3.4" />
+                                        <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+                                      </g>
+                                    </svg>
                                   </button>
                                   <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
                                     {/* 계정 닉만 — 줄 이름은 방장 장부의 것이라 여기 안 옵니다 (2026-09-06 사용자 지적).
@@ -17189,10 +17195,10 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-ava{font-style:normal; border-radius:50%; display:inline-grid; place-items:center; flex:none; line-height:1;
   font-family:'Gowun Batang',serif; font-weight:700; color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border:1px solid rgba(var(--ink-rgb),.2)}
 .gs-ava-host{border-color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
-.gs-rowi-ava{width:20px; height:20px; font-family:'Gowun Batang',serif; font-weight:700; font-size:10px; line-height:1;
-  color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border-color:rgba(var(--ink-rgb),.2)}
-.gs-rowmeta:hover .gs-rowi-ava,.gs-rowi-ava:focus-visible{color:#fff; border-color:rgba(var(--gold-rgb),.9)}
-.gs-rowi-ava.gs-rowi-host{border-color:var(--gold)} /* 글자 원 규칙이 방장 금테를 덮지 않게 (2026-09-07 밤 실측) */
+/* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 속을 채워 작아도 사람으로 읽힙니다. (폐기) 계정 색 글자 원 */
+.gs-rowi-ava{width:20px; height:20px; color:var(--ink-2); background:rgba(var(--ink-rgb),.05); border-color:rgba(var(--ink-rgb),.3)}
+.gs-rowmeta:hover .gs-rowi-ava,.gs-rowi-ava:focus-visible{color:var(--gold); border-color:rgba(var(--gold-rgb),.9)}
+.gs-rowi-ava.gs-rowi-host{border-color:var(--gold); color:var(--gold)}
 /* 허브 머리 — 팝오버의 나 한 줄 */
 .gs-hub-me{display:flex; align-items:center; gap:8px; margin:0 0 12px; padding-bottom:10px; border-bottom:1px solid rgba(var(--ink-rgb),.14)}
 .gs-hub-me b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
