@@ -1247,7 +1247,7 @@ const maskUrl = (u) => {
 
 /* 디코용 복사 — 마스크드 링크 한 줄. 주소가 글자로 노출되지 않게 감싸 둡니다 */
 const inviteMsg = (hostNick, url) =>
-  `[🔔 ${hostNick}네 벌금 현황판 — 눌러서 참여](<${url}>)\n방송에 띄우려면 로그인해서 내 방송 주소를 OBS에 한 번만 넣어요.`; // 둘째 줄: 파티원이 링크를 열기 전에 봅니다 (2026-09-06 오후 사용자 확정)
+  `🔔 ${hostNick}네 벌금 현황판 — 눌러서 참여\n${url}\n방송에 띄우려면 로그인해서 내 방송 주소를 OBS에 한 번만 넣어요.`; // 둘째 줄: 파티원이 링크를 열기 전에 봅니다 (2026-09-06 오후 사용자 확정). (폐기 2026-09-08) 마스크드 링크 `[글](<주소>)` — 디스코드는 사람이 보내는 메시지에서 그걸 안 풀어서 글자 그대로 보였다(사용자 실측)
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -7815,17 +7815,9 @@ export default function GoldSettlement() {
             </button>
           </div>
           <div className="gs-invcode-l2">
+            {/* [링크 복사]가 주 버튼입니다 (2026-09-08 사용자). (폐기, 하루 전) [디코 메시지 복사]가 금색 주 버튼 */}
             <button
-              className="gs-btn gs-btn-sm gs-lbstart gs-invdiscbtn"
-              onClick={() => {
-                copy(inviteMsg(auth.nick, hostInvite.url), "inv");
-                if (!lobbyOn) startParty();
-              }}
-            >
-              {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
-            </button>
-            <button
-              className="gs-btn gs-btn-sm gs-btn-ghost gs-invlinkbtn"
+              className="gs-btn gs-btn-sm gs-lbstart gs-invlinkbtn"
               onClick={() => {
                 if (tutorialRef.current) {
                   /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
@@ -7839,6 +7831,15 @@ export default function GoldSettlement() {
               }}
             >
               {flash === "invurl" ? "복사했어요" : "링크 복사"}
+            </button>
+            <button
+              className="gs-btn gs-btn-sm gs-btn-ghost gs-invdiscbtn"
+              onClick={() => {
+                copy(inviteMsg(auth.nick, hostInvite.url), "inv");
+                if (!lobbyOn) startParty();
+              }}
+            >
+              {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
             </button>
             <button
               className="gs-btn gs-btn-sm gs-btn-ghost"
@@ -17044,6 +17045,11 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 /* 모집 카드 — 옛 모으기 열이 표 위에 가로로 누웠습니다 (§3.1, 2026-09-05). 시작하면 사라집니다 */
 .gs-recruitsec{margin-top:14px}
 .gs-recruit{padding:16px 18px 14px; border-color:rgba(var(--gold-rgb),.45)}
+/* 주소를 받아야 다음이 열리는 줄 — 테두리가 느리게 숨 쉽니다 (2026-09-08 사용자 제안) */
+@keyframes gs-glowline{0%,100%{border-color:rgba(var(--gold-rgb),.35); box-shadow:0 0 0 0 rgba(var(--gold-rgb),0)}
+  50%{border-color:rgba(var(--gold-rgb),.85); box-shadow:0 0 14px 0 rgba(var(--gold-rgb),.22)}}
+.gs-recruit.gs-recruit-live{animation:gs-glowline 3.2s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){ .gs-recruit.gs-recruit-live{animation:none; border-color:rgba(var(--gold-rgb),.7)} }
 .gs-recruit .gs-lbsec{margin-bottom:12px}
 .gs-recruit-guest{margin:12px 0 0}
 /* 내 판 카드의 세 얼굴 (§3.0, 2026-09-05) — 상태가 제목 */
