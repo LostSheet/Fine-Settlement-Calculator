@@ -15229,7 +15229,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-namecell .gs-in-name{margin-left:0; min-width:0; width:auto; flex:0 1 auto; field-sizing:content}
 /* 아바타는 닉네임 바로 왼쪽에 (2026-09-07 사용자 확정) — 레버는 왼쪽 끝 그대로, 오른쪽 묶음(아바타·이름)이 이름 열 오른쪽에 붙습니다.
    방장 아바타는 금색으로 강조. (폐기) 아바타가 레버 옆에 서고 이름만 오른쪽으로 밀리던 배치 — 방장 줄엔 레버가 없어 아바타 열이 어긋났다 */
-.gs-namecell .gs-rowmeta{margin-left:0}
+.gs-namecell .gs-rowmeta{margin:0} /* 옛 margin-right:auto 잔재가 아바타를 왼쪽 끝으로 밀었다 (실측 100px, 2026-09-07 밤) */
 /* (폐기 2026-09-07 밤) .gs-rowmeta{margin-left:auto} + 입력칸 100% — 아바타가 입력칸 왼쪽 끝에, 글자는 오른쪽 끝에 서서 멀리 떨어졌다(사용자 재지적) */
 .gs-rowi-host{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
