@@ -4591,6 +4591,9 @@ export default function GoldSettlement() {
       look: spin.look || "wheel",
       theme: spin.theme || "satin",
       spd: spin.spd || "slow",
+      /* 감속 (2026-09-07) — 룰렛은 방장 것이라 파티원 화면도 이 값으로 돕니다.
+         안 싣던 동안 파티원 원판만 기본 감속으로 돌았습니다 */
+      roll: spinRoll(spin),
       /* 랜덤 양도면 사람 원판도 같이 — 방송과 파티원 화면이 같은 장면을 봅니다 */
       pass2: spin.pass2 ? { faces: spin.pass2.faces, name: spin.pass2.name } : null,
       /* free 일 때는 아직 답이 없습니다 — 받는 쪽은 끝없이 돌기만 합니다 */
@@ -4609,7 +4612,7 @@ export default function GoldSettlement() {
       /* 도는 규칙 — 방송 화면이 제 복사본을 들고 있으면 언젠가 어긋납니다.
          한쪽만 고쳐도 눈치채기 어려워서, 출처를 여기 하나로 둡니다.
          판이 없을 때는 안 실리니 평소 크기는 그대로입니다. */
-      cfg: { free: FREE_MS, aim: spinAim(spin), tail: spinTail(spin), face: FACE_MS },
+      cfg: { free: FREE_MS, roll: spinRoll(spin), face: FACE_MS },
       /* 적용 결과 — 오버레이가 표 도착을 기다리지 않고 수식·벌금 변화를 그립니다.
          (표 푸시는 재생 종료와 경합할 수 있어서 믿을 시계가 못 됩니다) */
       out: spin.out
@@ -4943,7 +4946,7 @@ export default function GoldSettlement() {
        사람 원판도 같습니다. */
     if (vplay.sp.phase === "free" || vplay.sp.whoFree) return;
     const sp2 = spinSpeed(vplay.sp.spd);
-    const ms = vplay.rolling || vplay.who === "roll" ? sp2.roll : vplay.over ? sp2.end : sp2.hold;
+    const ms = vplay.rolling || vplay.who === "roll" ? spinRoll(vplay.sp) : vplay.over ? sp2.end : sp2.hold;
     const t = setTimeout(() => {
       setVplay((x) => {
         if (!x) return x;
@@ -6034,7 +6037,7 @@ export default function GoldSettlement() {
      phase: roll(도는 중) → pick(양도 대상 고르는 중) → done(끝) */
   /* 판마다 속도가 달라서 상수 대신 그 판의 값을 씁니다 */
   const spd = spinSpeed(spin && spin.spd);
-  const ROLL_MS = spd.roll;
+  const ROLL_MS = spinRoll(spin);
   const HOLD_MS = spd.hold;
   const END_MS = spd.end;
 
@@ -6120,7 +6123,9 @@ export default function GoldSettlement() {
       look: spinShape(relay),
       theme: wheelTheme(relay),
       spd: spinSpd(relay),
-      glide: spinGlideOf(relay), // 감속 슬라이더 값 0~100 (2026-09-07)
+      /* 감속을 시간으로 재서 얼려 둡니다 (2026-09-07) — 서기 원판·사람 원판·파티원 원판·방송
+         원판이 전부 이 한 값을 씁니다. 도는 중에 슬라이더를 만져도 다음 판부터 듣습니다 */
+      roll: glideMs(spinGlideOf(relay)),
       rowId: row.id,
       colId: col.id,
       who: seatName(row, rows.indexOf(row)),
@@ -6151,7 +6156,7 @@ export default function GoldSettlement() {
        간격을 지수로 늘리는 것은 속도가 지수로 줄어드는 것과 같습니다 — 앞은 빠르게
        느려지고 뒤는 길게 기어갑니다. 원판 곡선과 같은 성격입니다. */
     const free = spin.phase === "free" || !!spin.whoFree;
-    const ms = spinSpeed(spin.spd).roll;
+    const ms = spinRoll(spin);
     const t0 = Date.now();
     let id = null;
     const step = () => {
@@ -10650,7 +10655,7 @@ function ViewSpinPanel({ pl }) {
   const vRoll = !!pl.rolling || pl.who === "roll";
   useEffect(() => {
     if (!vFree && !vRoll) return;
-    const ms = spinSpeed(sp.spd).roll;
+    const ms = spinRoll(sp);
     const t0 = Date.now();
     let id = null;
     const step = () => {
@@ -10686,6 +10691,8 @@ function ViewSpinPanel({ pl }) {
     i: pl.i,
     rolling: pl.rolling,
     spd: sp.spd,
+    /* 감속은 방장 것 (2026-09-07 고침) — 안 받던 동안 파티원 원판만 기본값으로 돌았습니다 */
+    roll: sp.roll,
     /* 서기가 아직 안 멈춘 판이면 여기서도 끝없이 돕니다 — 이게 없으면 답도 없는데
        감속 곡선을 타서 파티원 화면만 혼자 멈춥니다 */
     phase: sp.phase,
@@ -10874,31 +10881,30 @@ function SpinWheel({ spin, landed }) {
       rotRef.current = seat;
       return;
     }
-    /* 진짜 원판은 곡선 하나로 섭니다 — 등감속이면 처음 속도가 평균의 딱 두 배입니다.
-       그래서 timing-function 의 처음 기울기를 "돌던 속도 / 평균 속도"에 맞추면
-       멈추기 시작하는 순간에 이음매가 없습니다. 두 곡선을 이어 붙이면 그 이음매에서
-       속도가 툭 바뀌어 고장 난 것처럼 보였습니다.
-       매번 다르게 서는 맛은 곡선이 아니라 바퀴 수로 냅니다 — 같은 시간에 더 많이 돌면
-       그만큼 제동이 세고, 적게 돌면 길게 미끄러집니다. */
-    const ms = spinSpeed(spin.spd).roll;
+    /* 진짜 원판은 곡선 하나로, 등감속으로 섭니다 (2026-09-07).
+       등감속이면 처음 속도가 평균의 딱 두 배라, 곡선의 처음 기울기를 2 에 맞추면
+       돌던 속도와 이음매가 없습니다. 그 곡선은 y = 2t − t² 이고 3차 베지어로 딱 떨어집니다:
+       (1/3, 2/3, 2/3, 1). 두 곡선을 이어 붙이면 그 이음매에서 속도가 툭 바뀌어
+       고장 난 것처럼 보였습니다 — 그래서 곡선은 늘 하나입니다.
+       바퀴 수는 감속에서 나옵니다 — 약하게 세울수록 오래 돌고 많이 돕니다. */
+    const ms = spinRoll(spin);
     const v0 = (360 / FREE_MS) * ms; // 지금 속도로 계속 돌면 갈 거리
-    /* 목표 배속에서 나오는 바퀴 수. 판마다 ±1 바퀴 흔들어서, 더 돈 판은 조금 세게,
-       덜 돈 판은 조금 길게 미끄러집니다 */
-    const base = Math.max(1, Math.round(v0 / (spinAim(spin) * 360)));
-    const turns = Math.max(1, base + ((seed % 3) - 1));
+    /* 등감속이면 실제로 도는 거리는 그 절반입니다. 칸 자리에 앉히려고 한 바퀴 단위로
+       스냅하는데, 그 어긋남(최대 반 바퀴)이 판마다 다르게 서는 맛이 됩니다 */
+    const turns = Math.max(1, Math.round((v0 / 2 - (seat - from)) / 360));
     const target = seat + turns * 360;
     const D = Math.max(1, target - from);
-    /* 처음 기울기 s0 를 갖고 끝에서 0 이 되는 곡선 (x1, s0·x1, x2, 1).
-       y1 이 1 을 넘으면 목표를 지나쳤다 되돌아오고, 그건 원판이 뒤로 감기는 것으로
-       보입니다. x2 는 마지막 기어가는 구간의 길이를 정합니다. */
-    const s0 = Math.min(2.4, Math.max(1.3, v0 / D));
+    /* 스냅 때문에 거리가 v0/2 에서 조금 어긋납니다. 그만큼 처음 기울기 s0 도 2 에서
+       벗어나므로, 곡선의 x1 을 s0 에 맞춰 다시 잡습니다 — 그래야 돌던 속도에서
+       그대로 이어집니다. y1 은 2/3 로 두므로 1 을 넘어 되감길 일이 없습니다. */
+    const s0 = v0 / D;
     el.style.transitionProperty = 'none';
     el.style.transform = 'rotate(' + from.toFixed(2) + 'deg)';
     void el.offsetWidth;
     el.style.transitionProperty = 'transform';
-    const x1 = Math.min(0.5, 0.96 / s0);
+    const x1 = Math.min(0.9, Math.max(0.1, 0.667 / s0));
     el.style.transitionTimingFunction = wasFree
-      ? 'cubic-bezier(' + x1.toFixed(3) + ',' + (s0 * x1).toFixed(3) + ',' + spinTail(spin) + ',1)'
+      ? 'cubic-bezier(' + x1.toFixed(3) + ',.667,.667,1)'
       : /* 멈춰 있다 다시 도는 판 — 붙었다가 같은 성격으로 늘어지며 섭니다 */
         'cubic-bezier(.35,0,.28,1)';
     el.style.transitionDuration = ms + 'ms';
@@ -11031,6 +11037,8 @@ function SpinPanel({ spin, onStop, onSkip, onPickSelf }) {
               rolling: !!spin.whoRolling,
               phase: whoFree ? "free" : "roll",
               spd: spin.spd,
+              /* 사람 원판도 방장의 감속으로 (2026-09-07 고침) — 안 실어서 기본값으로 혼자 돌았습니다 */
+              roll: spin.roll,
               skipped: spin.skipAt === "who",
             }}
             landed={!whoFree && !spin.whoRolling ? spin.pass2.name : null}
@@ -16914,6 +16922,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-rowi-ava{width:20px; height:20px; font-family:'Gowun Batang',serif; font-weight:700; font-size:10px; line-height:1;
   color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border-color:rgba(var(--ink-rgb),.2)}
 .gs-rowmeta:hover .gs-rowi-ava,.gs-rowi-ava:focus-visible{color:#fff; border-color:rgba(var(--gold-rgb),.9)}
+.gs-rowi-ava.gs-rowi-host{border-color:var(--gold)} /* 글자 원 규칙이 방장 금테를 덮지 않게 (2026-09-07 밤 실측) */
 /* 허브 머리 — 팝오버의 나 한 줄 */
 .gs-hub-me{display:flex; align-items:center; gap:8px; margin:0 0 12px; padding-bottom:10px; border-bottom:1px solid rgba(var(--ink-rgb),.14)}
 .gs-hub-me b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
