@@ -4948,28 +4948,63 @@ export default function GoldSettlement() {
     }
     courseHit("ended"); // 튜토리얼 7장 — 결과지로
   };
-  const askEndRound = () => {
+  /* [정산 끝내기]가 눌리는 자리는 둘입니다 (2026-09-08 사용자 확정 ①) — 벌금판 우상단, 그리고 로비 진행 중 카드.
+     away = 로비에서 누른 것: 벌금표를 안 보고 마감하는 것이라 지금 값을 적어 보이고 빨강으로 묻습니다.
+     ev 가 그대로 흘러들면 늘 참이 되므로 부르는 쪽은 반드시 () => askEndRound() 꼴입니다 */
+  const askEndRound = (away) => {
     courseHit("endask"); // 튜토리얼 7장
     /* 기록이 없으면 남길 결과지도 없습니다 — 판을 접고 로비로 (2026-09-05 ⑤). 끝내기의 도착지는 언제나 로비 */
-    return !log.length
-      ? setAsk({
-          /* (폐기 2026-09-06) `아직 기록이 없어요. / 이 판을 접고 로비로 갈까요? 이름과 항목은 그대로 남아요.` [접기] —
-             접기라는 세 번째 동사. 기록 없는 끝은 해산입니다 (초안) */
-          title: "기록이 없어요 — 해산할까요?",
-          body: "판이 없어지고 로비로 가요. 항목·단가·인원은 그대로예요.",
-          action: "해산",
-          tone: "danger",
-          onYes: () => {
-            endRound();
-            go(VIEW_LOBBY);
-          },
-        })
-      : setAsk({
-          title: "이 판을 마감할까요?",
-          body: "결과지가 판 기록에 남아요.",
-          action: "정산 끝내기",
-          onYes: endRound,
-        });
+    if (!log.length)
+      return setAsk({
+        /* (폐기 2026-09-06) `아직 기록이 없어요. / 이 판을 접고 로비로 갈까요? 이름과 항목은 그대로 남아요.` [접기] —
+           접기라는 세 번째 동사. 기록 없는 끝은 해산입니다 (초안)
+           (폐기 2026-09-08) `판이 없어지고 로비로 가요. 항목·단가·인원은 그대로예요.` — 자리에 앉은 사람은 방장 줄만
+           남는데 "인원 그대로"라고 했고(사용자 지적), 로비에서 누르면 "로비로 가요"도 거짓이었습니다 */
+        title: "기록이 없어요 — 해산할까요?",
+        body: away
+          ? "판이 없어져요. 항목·단가·정원은 그대로예요."
+          : "판이 없어지고 로비로 가요. 항목·단가·정원은 그대로예요.",
+        action: "해산",
+        tone: "danger",
+        onYes: () => {
+          endRound();
+          go(VIEW_LOBBY);
+        },
+      });
+    if (!away)
+      return setAsk({
+        title: "이 판을 마감할까요?",
+        body: "결과지가 판 기록에 남아요.",
+        action: "정산 끝내기",
+        onYes: endRound,
+      });
+    /* 로비에서 (2026-09-08 사용자: 경고를 강하게) — 표를 보고 누르는 문이 아니라서 지금 값을 대신 적습니다.
+       빨강은 되돌릴 수 없는 것에만인데(§9-4) 이건 정말 되돌릴 수 없습니다. 문구 초안 */
+    const heads = seats.filter((x) => x.acct || ((x.name || "").trim() && !isFillName(x.name))).length;
+    const mins = roundSinceMin();
+    /* 앉은 파티원 — 방(relay.room)이 아니라 사람을 셉니다: 혼자 세기 판도 방은 만들기 때문입니다 (버그 기록 2026-09-08) */
+    const mates = seats.filter((x) => x.acct && (!auth || x.acct !== auth.id)).length;
+    return setAsk({
+      title: "판을 보지 않고 마감할까요?",
+      body: (
+        <>
+          <b>{roundName || defaultRoundName()}</b> · {heads}명 · 벌금{" "}
+          {man(rows.reduce((a, r) => a + itemGold(r), 0))}
+          {mins != null && (mins < 1 ? " · 방금 시작" : " · " + mins + "분째")}
+          <br />
+          지금 값 그대로 결과지가 되고 판이 없어져요. 되돌릴 수 없어요.
+          {mates > 0 && (
+            <>
+              <br />
+              파티원 {mates}명은 다음 판에 다시 들어와야 해요.
+            </>
+          )}
+        </>
+      ),
+      action: "정산 끝내기",
+      tone: "danger",
+      onYes: endRound,
+    });
   };
   /* [중단] — 아무것도 지우지 않고 얼립니다. 사람·셈·연결 그대로이고 [이어가기]로 돌아옵니다.
      방장 화면은 홈(로비)으로 물러나고, 거기 중단된 판 카드가 섭니다 (§3.1) */
@@ -5644,7 +5679,9 @@ export default function GoldSettlement() {
      아무 조작이 있으면 다시 30초. 띠에 남은 초와 [벌금판으로 돌아가기]를 같이 답니다 */
   const [hostBackIn, setHostBackIn] = useState(null);
   useEffect(() => {
-    if (!liveAway || tutorial) {
+    /* 확인창이 열려 있으면 세지 않습니다 (2026-09-08) — 로비 [정산 끝내기]를 물어보는 중에 판으로
+       끌려가면, 로비에서 띄운 확인창이 판 화면 위에 남습니다 */
+    if (!liveAway || tutorial || ask) {
       setHostBackIn(null);
       return;
     }
@@ -5666,7 +5703,7 @@ export default function GoldSettlement() {
       kinds.forEach((k) => window.removeEventListener(k, arm, { capture: true }));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveAway, tutorial]);
+  }, [liveAway, tutorial, !!ask]);
   /* 내 줄과 내 벌금 — 자수 카드 위에 적습니다 */
   const myRow = confessTab && you.rowId ? rows.find((x) => x.id === you.rowId) : null;
   const myGold = myRow ? itemGold(myRow) : 0;
@@ -7793,18 +7830,26 @@ export default function GoldSettlement() {
           {pending}
           {head(true, <>진행 중 · <b>{roundName || defaultRoundName()}</b></>, hasPartyNow ? "방장" : null)}
           {/* (폐기 2026-09-07 사용자) `판을 두고 나온 상태예요 — 파티원은 그대로 셀 수 있어요.` — 로비를 보는 건 나간 게 아니다 */}
-          {goBox(
-            "live",
-            goBoard,
-            <>
-              <p className="gs-lh-facts">
-                {filled.length}명 · 벌금 {man(rows.reduce((a, r) => a + itemGold(r), 0))}
-                {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
-              </p>
-              {seatNamesNow.length > 0 && <p className="gs-lh-names">{seatNamesNow.join(" · ")}</p>}
-              <span className="gs-lh-goto">벌금판으로 ›</span>
-            </>
-          )}
+          {/* 여기에도 [정산 끝내기] (2026-09-08 사용자 확정 ①) — 뒤로 나온 사람이 판을 끝낼 길이 없어 벌금판으로
+              다시 들어가야 했다(사용자: 어떻게 다음 판 하지?). 시작 전 카드의 [× 해산]과 같은 자리·같은 몸이되
+              빨강이 아니다 — 마감은 버리는 일이 아니다. 무게는 확인창이 진다 */}
+          <div className="gs-lh-boxwrap">
+            {goBox(
+              "live",
+              goBoard,
+              <>
+                <p className="gs-lh-facts">
+                  {filled.length}명 · 벌금 {man(rows.reduce((a, r) => a + itemGold(r), 0))}
+                  {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
+                </p>
+                {seatNamesNow.length > 0 && <p className="gs-lh-names">{seatNamesNow.join(" · ")}</p>}
+                <span className="gs-lh-goto">벌금판으로 ›</span>
+              </>
+            )}
+            <button className="gs-lh-x gs-lh-end" onClick={() => askEndRound(true)}>
+              정산 끝내기
+            </button>
+          </div>
           {own}
           {hasPartyNow && where !== "board" && <div className="gs-hub-inv">{inviteLine()}</div>}
         </>
@@ -8625,7 +8670,7 @@ export default function GoldSettlement() {
                   </>
                 ) : (
                   <span className="gs-tip">
-                    <button className="gs-btn gs-btn-ghost gs-lifebtn gs-endbtn" onClick={askEndRound}>
+                    <button className="gs-btn gs-btn-ghost gs-lifebtn gs-endbtn" onClick={() => askEndRound()}>
                       정산 끝내기
                     </button>
                     <span className="gs-tip-body gs-tip-r" role="tooltip">
@@ -10851,7 +10896,7 @@ export default function GoldSettlement() {
       )}
       {/* 진행 중인 판을 두고 나온 동안 (2026-09-08 사용자: 띠 말고 토스트로 — 너비도 줄고) — 남은 초와 돌아가는 문.
           보통 토스트와 달리 스스로 사라지지 않고, 판으로 돌아가면 없어집니다. 문구 초안 */}
-      {liveAway && !tutorial && (
+      {liveAway && !tutorial && !ask && (
         <div className="gs-toast gs-backtoast" role="status">
           <em className="gs-livechip-dot" aria-hidden="true" />
           <span>
@@ -17164,7 +17209,14 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-boxwrap{position:relative}
 .gs-lh-x{position:absolute; top:8px; right:10px; border:1px solid rgba(var(--ink-rgb),.42); background:transparent; font:inherit; font-size:12px; letter-spacing:0; color:var(--ink-2); cursor:pointer; padding:3px 9px; border-radius:4px} /* 테두리 있는 작은 버튼 — 상자 안에서 눌리는 것임을 보인다 (2026-09-07 사용자) */
 .gs-lh-x span{font-size:14px; line-height:1; margin-right:2px}
+/* 모서리 버튼 자리 비우기 (2026-09-08 실측) — 상자 첫 줄이 [× 해산]·[정산 끝내기] 밑으로 파고들었습니다.
+   양쪽을 같이 비워 가운데 정렬을 지킵니다 (한쪽만 비우면 글자가 왼쪽으로 밀립니다) */
+.gs-lh-boxwrap .gs-lh-facts{padding:0 82px}
 .gs-lh-x:hover{color:#e59a90; border-color:rgba(229,154,144,.7); background:rgba(229,154,144,.1)}
+/* 로비 진행 중 카드의 [정산 끝내기] (2026-09-08 사용자 확정 ①) — [× 해산]과 같은 자리·같은 몸이되 빨강이 아닙니다:
+   마감은 버리는 일이 아니라 판의 정상적인 끝입니다. 판의 [정산 끝내기](.gs-endbtn)와 같은 결로 잉크 한 단 */
+.gs-lh-x.gs-lh-end{color:var(--ink)}
+.gs-lh-x.gs-lh-end:hover{color:var(--ink); border-color:var(--ink); background:rgba(var(--ink-rgb),.08)}
 .gs-lh-go{cursor:pointer; transition:border-color .15s, background .15s}
 .gs-lh-go:hover{border-color:rgba(var(--gold-rgb),.75); background:rgba(var(--gold-rgb),.05)}
 .gs-lh-go:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
