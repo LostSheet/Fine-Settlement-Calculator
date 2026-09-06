@@ -2858,9 +2858,9 @@ export default function GoldSettlement() {
     if (what === "link") {
       partyT(() => tutArrive(0), 1800);
       partyT(() => tutArrive(1), 3400);
-      partyT(() => partyStep(next + 1), 5400);
+      partyT(() => setCoach((c) => (c && c.kind === "party" ? { ...c, ready: true } : c)), 4400); // 둘이 앉고 한 박자 → [다음] 등장 (자동 넘김 없음)
     }
-    if (what === "confess:c2") partyT(() => partyStep(next + 1), 2200); // 올라갔어요 → 아, 잡힌 거였어요
+    /* (폐기 2026-09-06 낮) "confess:c2" 2.2초 뒤 자동 — `방장 벌금판에 바로 올라갔어요.`는 다음 말풍선에 합쳤습니다 */
     /* (폐기 2026-09-06 낮) "press" 3초 뒤 실리안 자수 타이머 — 이제 실리안의 잡힘은 4장(파티원 화면)에서 누르고 방장 화면으로 돌아올 때 올라옵니다 */
   };
   /* 5장 머리 — 한 판 돌았다고 치고 표를 채웁니다. 숫자는 옛 벌금판 예시(DEFAULT_PEOPLE)를 이름만 바꿔 그대로:
@@ -2918,14 +2918,7 @@ export default function GoldSettlement() {
     /* 2장을 떠날 때 — 이름·단가를 안 적고 지나왔으면 암살·10만으로 채웁니다. 5장 채우기 직전에 하면 그 렌더의 타이머 클로저가
        옛 단가(1만)를 써서 실리안의 암살 2회가 2만으로 잡혔습니다(첫 시도의 사고) */
     if (st.enter === "colfix") setCols((prev) => prev.map((c) => (c.id === "ctut" ? { ...c, name: c.name || "암살", price: c.price === "10,000" ? "100,000" : c.price } : c)));
-    if (st.enter === "handoff") {
-      /* 3장 끝 — 부모가 파티원 예시 앱(4장)을 위에 얹습니다. 부모 없이 열렸으면(개발용 #demo 단독) 그냥 다음 걸음 */
-      if (window.parent && window.parent !== window) {
-        try {
-          window.parent.postMessage({ gs: "party-demo", done: false, next: "member", kind: "host" }, window.location.origin);
-        } catch (e) {}
-      } else partyT(() => partyStep(coach.step + 1), 800);
-    }
+    /* (폐기 2026-09-06 낮) enter:"handoff" — 걸음에 들어서자마자 파티원 예시를 얹던 것. 지금은 [실리안의 화면 보기]를 눌러야(onNext) */
     if (st.enter === "wei") {
       tutArrive(2);
       say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
@@ -9521,6 +9514,16 @@ export default function GoldSettlement() {
             onNext={() => {
               const st = TOUR_FLOW[coach.step];
               if (st.exit === "closeObs") setObsOpen(false);
+              if (st.exit === "handoff") {
+                /* 3장 끝 [실리안의 화면 보기] — 부모가 파티원 예시 앱(4장)을 위에 얹고, 돌아오면(party-demo-resume) 다음 걸음.
+                   부모 없이 열렸으면(개발용 #demo 단독) 그냥 다음 걸음 */
+                if (window.parent && window.parent !== window) {
+                  try {
+                    window.parent.postMessage({ gs: "party-demo", done: false, next: "member", kind: "host" }, window.location.origin);
+                  } catch (e) {}
+                } else partyStep(coach.step + 1);
+                return;
+              }
               if (coach.step >= TOUR_FLOW.length - 1) endPartyCourse(DEMO_CH4 ? "host" : true); // 4장 파티원 예시는 방장 예시로 복귀, 나머지는 끝
               else partyStep(coach.step + 1);
             }}
@@ -13393,10 +13396,10 @@ const HOST_STEPS = [
   { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true, enter: "colfix" },
   /* 3장 */
   { ch: 2, sel: ".gs-invlinkbtn", text: "초대 링크를 복사해서 디코에 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" },
-  { ch: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto" },
+  { ch: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto", after: "다음" }, // 둘이 앉으면 [다음] — (폐기 2026-09-06 낮) 5.4초 뒤 자동
   { ch: 2, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
   /* 4장 파티원 화면 — 이 걸음에 들어서면 부모가 파티원 예시 앱을 위에 얹습니다. 돌아오면(party-demo-resume) 실리안의 잡힘 1이 올라오고 다음 걸음 */
-  { ch: 3, sel: ".gs-grid", text: "시작했어요. 이제 실리안의 화면으로 가 볼게요.", lock: true, wait: "auto", enter: "handoff" },
+  { ch: 3, sel: ".gs-grid", text: "시작했어요. 그런데 실리안 쪽에선 어떻게 보였을까요? 링크를 받았을 때부터 볼게요.", lock: true, action: "실리안의 화면 보기", exit: "handoff" }, // (폐기 2026-09-06 낮) `시작했어요. 이제 실리안의 화면으로 가 볼게요.` 자동 — 뜬금없다(사용자)
   /* 5장 벌금 세기 — 4장에서 실리안이 누른 잡힘 1이 올라온 채 시작합니다 (2026-09-06 낮 사용자 확정 "1안").
      (폐기, 같은 날) 방장이 먼저 누르고 3초 뒤 실리안 자수가 오던 두 걸음 `올라갔죠? 파티원은 자기 줄을 자수 탭에서 직접 눌러요. 실리안이 지금 누르는 중…` · `실리안이 자수했어요. 파티원이 누른 건 이렇게 올라와요.` */
   {
@@ -13411,8 +13414,9 @@ const HOST_STEPS = [
   },
   { ch: 4, sel: ".gs-grid", text: "올라갔죠? 파티원이 자수한 것과 방장이 누른 게 한 표에 쌓여요.", lock: true, action: "다음" },
   /* (폐기 2026-09-06 낮) 룰렛 머리 가리키기 `룰렛 항목은 방장이 칸을 눌러 돌려요. 나온 숫자 × 단가가 벌금이에요.` — 사용자: 튜토리얼에서 룰렛은 뺌 */
-  { ch: 4, sel: ".gs-rowi", text: "이름 옆 사람 아이콘. 줄을 옮기거나 파티에서 내보낼 땐 여기예요.", action: "다음", lock: true, enter: "wei" },
-  { ch: 4, sel: ".gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick" },
+  { ch: 4, sel: ".gs-rowi", text: "이름 옆 사람 아이콘. 줄을 옮기거나 파티에서 내보낼 땐 여기예요.", action: "다음", lock: true },
+  /* 웨이는 이 걸음에 들어설 때 옵니다 (2026-09-06 낮; (폐기) 사람 아이콘 걸음에서 — 가리키기와 더미 움직임이 섞였다) */
+  { ch: 4, sel: ".gs-waitrow", text: "웨이가 늦게 왔어요. 표 아래에 서 있죠? [자리 정하기]로 줄을 골라 앉혀요.", wait: "pick", enter: "wei" },
   { ch: 4, sel: ".gs-modal .gs-waitpick .gs-seatopt:not(.gs-seatopt-new)", text: "빈 줄, 퇴장한 사람 줄, 새 줄 중에 골라요. (모험가4) 줄을 눌러 볼까요?", wait: "take", top: true },
   /* 5장 — 쌓인 데이터로 봅니다 */
   /* after — 채우기가 끝나면(4.5초) 그제야 [다음]이 나타나고, 넘어가는 건 사용자 몫 (2026-09-06 낮 사용자: 템포; (폐기) 4.5초 뒤 자동) */
@@ -13446,13 +13450,13 @@ const MEMBER_STEPS = [
     ),
     wait: "confess:c2",
   },
-  { ch: 7, sel: ".gs-confcard-c2", text: "방장 벌금판에 바로 올라갔어요.", lock: true, wait: "auto" },
+  /* (폐기 2026-09-06 낮) `방장 벌금판에 바로 올라갔어요.` 2.2초 자동 걸음 — 다음 말풍선에 합침 */
   {
     ch: 7,
     sel: ".gs-confcard-c2",
     text: (
       <>
-        아, 잡힌 거였어요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요.
+        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요.
       </>
     ),
     wait: "unconfess:c2",
@@ -13475,24 +13479,24 @@ const MEMBER_STEPS = [
 /* 방장 튜토리얼 4장(파티원 화면) — 실리안이 링크를 눌렀을 때의 초대장부터, 자수와 정정까지만 (2026-09-06 낮 사용자: "초대의 룩 → 자수, 정정" 이 정도만).
    독립 파티원 튜토리얼(MEMBER_STEPS)과 달리 OBS 걸음이 없고, 끝나면 방장 예시로 돌아갑니다. 문구는 초안 */
 const MEMBER_INHOST = [
-  { ch: 3, sel: ".gs-invite", text: "실리안이 링크를 눌렀을 때 뜬 초대장이에요. 누가 있는지 보이죠? [참여하기]를 눌러요.", wait: "join" },
+  { ch: 3, sel: ".gs-invite", text: "실리안이 링크를 눌렀을 때 뜬 초대장이에요. 그땐 방장만 앉아 있었죠. [참여하기]를 눌러요.", wait: "join" },
   {
     ch: 3,
     sel: ".gs-confcard-c2",
     text: (
       <>
-        들어온 파티원은 이 화면을 봐요. 자기 줄만 있어요. 이번 판에 죽었군요. 죽음 칸을 <MouseIcon side="left" /> 눌러 자수해 봐요.
+        들어왔어요. 방장이 시작하면 이 화면이 떠요. 자기 줄만 있어요. 이번 판에 죽었군요. 죽음 칸을 <MouseIcon side="left" /> 눌러 자수해 봐요.
       </>
     ),
     wait: "confess:c2",
   },
-  { ch: 3, sel: ".gs-confcard-c2", text: "방장 벌금판에 바로 올라갔어요.", lock: true, wait: "auto" },
+  /* (폐기 2026-09-06 낮) `방장 벌금판에 바로 올라갔어요.` 2.2초 자동 걸음 — 다음 말풍선에 합침 */
   {
     ch: 3,
     sel: ".gs-confcard-c2",
     text: (
       <>
-        아, 잡힌 거였어요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요.
+        방장 벌금판에 바로 올라갔어요. 아, 그런데 잡힌 거였네요. 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 되돌려요.
       </>
     ),
     wait: "unconfess:c2",
@@ -13507,7 +13511,7 @@ const MEMBER_INHOST = [
     ),
     wait: "confess:c1",
   },
-  { ch: 3, sel: ".gs-confcard-c1", text: "올라갔어요. 이제 방장 화면으로 돌아가서 볼게요.", lock: true, action: "다음 장" },
+  { ch: 3, sel: ".gs-confcard-c1", text: "올라갔어요. 이제 방장 화면으로 돌아가서 볼게요.", lock: true, action: "방장 화면으로" },
 ];
 const TOUR_FLOW = DEMO_CH4 ? MEMBER_INHOST : DEMO_MEMBER ? MEMBER_STEPS : HOST_STEPS;
 /* 파티원 예시의 판 — 방장 예시가 끝난 시점 그대로 */
