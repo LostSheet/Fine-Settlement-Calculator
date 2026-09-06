@@ -13043,8 +13043,8 @@ function AcctGuide({ onClose }) {
   return (
     <InfoModal title="아이디를 만들면 뭐가 달라져요?" onClose={onClose} wide>
       <p className="gs-gain-lead">
-        게스트든 아이디든 <b>내 방송용 주소</b>는 하나씩 나오고, 자수·참여·정산도 똑같아요. 다른 건{" "}
-        <b>어디서 이어 쓸 수 있느냐</b>예요.
+        게스트든 아이디든 <b>내 방송용 주소</b>는 하나씩 나오고, 자수·참여·정산도 똑같아요.
+        {/* (폐기 2026-09-06 오후) 뒷문장 `다른 건 어디서 이어 쓸 수 있느냐예요.` — 사용자: 빼자 */}
       </p>
       <div className="gs-gain-cols">
         <div className="gs-gain-col">
