@@ -12879,7 +12879,8 @@ function GenList({ gens, onOpen, onDrop }) {
               <span>{g.n}명</span>
               {g.rname && <span>{fmtWhenShort(g.from || g.t)}</span>}
             </span>
-            {/* 파티원 전부 — "외 4명"으로 줄이지 않습니다 */}
+            {/* 파티원 전부 — "외 4명"으로 줄이지 않습니다. 계정이 붙은 사람만이 아니라 방장이 직접 적은 이름도 그대로 남습니다(realNames).
+                칩이 아니라 가운뎃점으로 나눈 평문 (2026-09-07 밤 사용자 지정; (폐기) 이름마다 둥근 칩 .gs-idmem — 이름이 데이터가 아니라 상태 배지처럼 보였다) */}
             {g.mems.length > 0 && (
               <span className="gs-idmems">
                 {g.mems.map((n, i) => (
@@ -12894,6 +12895,7 @@ function GenList({ gens, onOpen, onDrop }) {
                         : "")
                     }
                   >
+                    {i > 0 && <em className="gs-idmem-sep" aria-hidden="true">·</em>}
                     {n}
                   </span>
                 ))}
@@ -15723,12 +15725,12 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-idsrc-local{border-color:rgba(var(--ink-rgb),.32); color:var(--ink-2);
   background:rgba(var(--ink-rgb),.06)}
 /* 파티원 칩 — 방장은 금색, 나는 파랑. 전부 적습니다 */
-.gs-idmems{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
-.gs-idmem{font-size:11.5px; padding:3px 8px; border-radius:11px;
-  background:rgba(var(--ink-rgb),.07); border:1px solid rgba(var(--ink-rgb),.16);
-  color:var(--ink-body)}
-.gs-idmem-host{border-color:rgba(var(--gold-rgb),.5); color:var(--gold)}
-.gs-idmem-me{border-color:rgba(var(--blue-rgb),.5); color:var(--blue)}
+/* 기록의 사람 이름 — 가운뎃점으로 나눈 평문 (2026-09-07 밤 사용자 지정). (폐기) 이름마다 둥근 칩 */
+.gs-idmems{display:block; margin-top:7px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-idmem{color:var(--ink-body)}
+.gs-idmem-sep{font-style:normal; color:var(--ink-2); opacity:.7; margin:0 5px}
+.gs-idmem-host{color:var(--gold)}
+.gs-idmem-me{color:var(--blue)}
 /* 판 기록 목록의 한 줄 — 배지·이름·날짜·파티원 전부·총액·[×] */
 .gs-hisrow{display:flex; align-items:flex-start; gap:10px; padding:10px 11px; margin-top:8px;
   border-radius:7px; background:rgba(var(--ink-rgb),.05);
