@@ -1246,8 +1246,12 @@ const maskUrl = (u) => {
 };
 
 /* 디코용 복사 — 마스크드 링크 한 줄. 주소가 글자로 노출되지 않게 감싸 둡니다 */
+/* 주소를 감춘 마스크드 링크 (2026-09-08 사용자 확정) — 디스코드 채팅창이 방송에 잡혀도 주소가 안 보입니다.
+   `<>` 로 감싸 미리보기 카드도 억제합니다. 이모지를 넣으면 안 풀립니다(사용자 실측) — 앞머리에 기호를 붙이지 않습니다.
+   (폐기 2026-09-08 낮) 맨 주소 세 줄 — 채팅창에 주소가 그대로 보여 시청자가 읽고 들어올 수 있었다.
+   (폐기, 같은 날) `🔔 …` 로 시작하던 마스크드 링크 — 이모지 때문에 디스코드가 안 풀었다. 문구는 초안 */
 const inviteMsg = (hostNick, url) =>
-  `🔔 ${hostNick}네 벌금 현황판 — 눌러서 참여\n${url}\n방송에 띄우려면 로그인해서 내 방송 주소를 OBS에 한 번만 넣어요.`; // 둘째 줄: 파티원이 링크를 열기 전에 봅니다 (2026-09-06 오후 사용자 확정). (폐기 2026-09-08) 마스크드 링크 `[글](<주소>)` — 디스코드는 사람이 보내는 메시지에서 그걸 안 풀어서 글자 그대로 보였다(사용자 실측)
+  `${hostNick}네 벌금 파티 초대예요.\n[눌러서 참여하기](<${url}>)\n방송에 띄우려면 로그인해서 내 방송 주소를 OBS에 한 번만 넣어요.`;
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -2588,6 +2592,10 @@ export default function GoldSettlement() {
   /* 쓰는 방식 비교 창 (GainGuide) — OBS 공유 설정 안에만 있던 것을 로비 파티 카드에서도 엽니다 (2026-09-08 사용자) */
   const [waysOpen, setWaysOpen] = useState(false);
   /* 보관된 초대 (방 하나 규칙, 2026-09-07) — 내 판이 있을 때 받은 초대. 판을 끝내거나 해산한 뒤 허브에서 [참여하기] */
+  /* 코드로 들어오는 길은 임시로 닫았습니다 (2026-09-08 사용자: 링크로 오면 딸깍인데 왜 그런 짓을 하나).
+     코드가 새면 시청자가 들어와 판을 어지럽힐 수 있어, 창구를 디코 메시지 하나로 좁힙니다.
+     되살릴 때는 이 상수만 참으로 — 서버의 코드 색인·resolveJoin·주소 j= 는 그대로 삽니다 */
+  const JOIN_BY_CODE = false;
   const [pendingJoin, setPendingJoin] = useState(() => {
     try {
       const v = JSON.parse(localStorage.getItem("goldSettlement.pendingJoin") || "null");
@@ -7688,7 +7696,7 @@ export default function GoldSettlement() {
               + 새 판 만들기
             </button>
           </div>
-          <JoinBox onJoin={joinByCode} />
+          {JOIN_BY_CODE && <JoinBox onJoin={joinByCode} />}
         </>
       );
     }
@@ -7742,8 +7750,9 @@ export default function GoldSettlement() {
               두 방식이 뭐가 달라요?
             </button>
           </div>
-          {/* 비밀 파티 입장 문법 — 주소를 그대로 붙여넣어도, 코드 8자만 쳐도 들어가진다. 같은 말은 한 번만 (2026-09-07 사용자) */}
-          <JoinBox onJoin={joinByCode} />
+          {/* (임시로 닫음 2026-09-08 사용자) 비밀 파티 입장 칸 — 주소나 코드 8자를 붙여넣던 자리.
+              링크를 누르면 바로 들어가는데 코드를 옮겨 적는 길을 열어 두면 코드가 도는 이유만 생깁니다 */}
+          {JOIN_BY_CODE && <JoinBox onJoin={joinByCode} />}
         </>
       );
     }
@@ -7832,12 +7841,15 @@ export default function GoldSettlement() {
               (폐기, 같은 날) 한 줄 [디코 메시지 복사][코드 칩][코드 복사][링크 복사] 새로 발급 — 좁으면 마지막 것만 떨어졌다.
               (폐기, 같은 날 낮) `초대 코드` 라벨 + 22px 코드 한 줄 + 아래 줄 [코드 복사][링크 복사] 디코 메시지 복사 … 새로 발급(오른쪽 끝) */}
           <div className="gs-invcode-l1">
-            {/* 코드는 펴지 않습니다 (2026-09-08 사용자 확정) — 화면이 방송에 잡히면 시청자가 그대로 읽고 들어옵니다.
-                옮기는 길은 [코드 복사]뿐입니다. (폐기) 눈 버튼으로 잠깐 펴 보기 — 펴는 순간이 곧 노출이고, 통화로 불러 주는 것도 같은 노출입니다 */}
-            <span className="gs-invcode-chip">
-              <span className="gs-caplab">초대 코드</span>
-              <b className="gs-invcode-b">•••• ••••</b>
-            </span>
+            {/* 코드는 화면에 안 나옵니다 (2026-09-08 사용자 확정) — 방송에 잡히면 시청자가 읽고 들어옵니다.
+                코드로 들어오는 길 자체를 닫았으므로 칩도 서지 않습니다.
+                (폐기) 눈 버튼으로 잠깐 펴 보기 · 가린 채 서 있던 `초대 코드 •••• ••••` 칩 */}
+            {JOIN_BY_CODE && (
+              <span className="gs-invcode-chip">
+                <span className="gs-caplab">초대 코드</span>
+                <b className="gs-invcode-b">•••• ••••</b>
+              </span>
+            )}
             <button
               className="gs-swaplink gs-invcode-renew"
               onClick={() => {
@@ -7850,8 +7862,9 @@ export default function GoldSettlement() {
           </div>
           <div className="gs-invcode-l2">
             {/* [링크 복사]가 주 버튼입니다 (2026-09-08 사용자). (폐기, 하루 전) [디코 메시지 복사]가 금색 주 버튼 */}
+            {/* [링크 복사]와 [코드 복사]는 맨 주소가 도는 길이라 닫았습니다 (2026-09-08 사용자: 디코 메시지가 유일한 창구) */}
             <button
-              className="gs-btn gs-btn-sm gs-lbstart gs-invlinkbtn"
+              className={"gs-btn gs-btn-sm gs-invlinkbtn" + (JOIN_BY_CODE ? " gs-lbstart" : " gs-btn-ghost gs-hidden")}
               onClick={() => {
                 if (tutorialRef.current) {
                   /* 같이 해보기 2걸음 — 보내는 건 저희가 대신합니다 */
@@ -7867,7 +7880,7 @@ export default function GoldSettlement() {
               {flash === "invurl" ? "복사했어요" : "링크 복사"}
             </button>
             <button
-              className="gs-btn gs-btn-sm gs-btn-ghost gs-invdiscbtn"
+              className="gs-btn gs-btn-sm gs-lbstart gs-invdiscbtn"
               onClick={() => {
                 copy(inviteMsg(auth.nick, hostInvite.url), "inv");
                 if (!lobbyOn) startParty();
@@ -7876,7 +7889,7 @@ export default function GoldSettlement() {
               {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
             </button>
             <button
-              className="gs-btn gs-btn-sm gs-btn-ghost gs-invcodebtn"
+              className="gs-btn gs-btn-sm gs-btn-ghost gs-invcodebtn gs-hidden"
               onClick={() => {
                 copy(hostInvite.code, "invcode");
                 if (!lobbyOn) startParty();
@@ -17154,6 +17167,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-recruit .gs-invcode{flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap}
 /* 두 줄 묶음을 풀어 한 줄에 무게 순서대로 (2026-09-08) — 안 그러면 '새로 발급'이 코드 칩 뒤에 끼어 둘째 자리에 섭니다. 이 CSS 는 템플릿 문자열 안이라 주석에도 백틱을 쓰면 거기서 끊깁니다 */
 .gs-recruit .gs-invcode-l1,.gs-recruit .gs-invcode-l2{display:contents}
+.gs-hidden{display:none}
 .gs-recruit .gs-invcode-chip{order:1}
 .gs-recruit .gs-invlinkbtn{order:2}
 .gs-recruit .gs-invdiscbtn{order:3}
