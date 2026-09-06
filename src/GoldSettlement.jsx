@@ -6881,10 +6881,13 @@ export default function GoldSettlement() {
       return;
     }
     if (!boardOn) return;
+    /* 자리 채우기(정원만큼 빈 자리를 만드는 효과)가 먼저 돌아야 합니다 — 안 기다리면 방장 줄 하나짜리 판이 열립니다
+       (버그 기록 2026-09-08: 혼자 세기로 시작했더니 `정산 장부 1명`) */
+    if (seats.length < lobbyCap) return;
     soloPending.current = false;
     startRound(cols);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardOn, roundLive]);
+  }, [boardOn, roundLive, seats.length, lobbyCap]);
   /* 지금 화면 (2026-09-06) — 화면별 사용법과 [?] 메뉴의 "지금 이 화면"이 봅니다 */
   const recMember = readOnly && !genView;
   const recKey = recMember ? "member" : "host";
