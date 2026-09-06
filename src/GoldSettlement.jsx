@@ -8332,6 +8332,11 @@ export default function GoldSettlement() {
           onSettings={() => setObsOpen(true)}
           onLogin={() => openAuth("register", () => setObsOpen(true))} // 로그인 뒤 OBS 창 — 거기서 주소를 받습니다 (2026-09-07 사용자)
           onUpgrade={() => setUpOpen({})}
+          onNick={(nm) => {
+            /* 2~3글자가 아니면 서버까지 가지 않고 그 자리에서 말합니다 (문구 초안) */
+            if (!nm) return say("이름은 2~3글자로 정해요.");
+            changeNick(nm).catch((e) => say((e && e.message) || "이름을 바꾸지 못했어요."));
+          }}
           hub={partyHub("lobby")}
           // 판이 있든 없든 ×를 누를 때까지 그대로 (2026-09-08 사용자). (폐기) !boardOn — 판을 만들면 사라지고 해산하면 다시 나서 기형적이었다
           tutLine={!readOnly && (!meCur || meCur === relay.room) && tutAsk && !tutorial}
@@ -12894,6 +12899,7 @@ function LobbyHome({
   onSettings,
   onLogin,
   onUpgrade,
+  onNick,
   hub,
   gens,
   onOpenGen,
@@ -12905,6 +12911,20 @@ function LobbyHome({
 }) {
   /* 누적 한 줄 — 기록 카드 발치, 로컬 집계 (§3.0) */
   const total = gens.reduce((a, g) => a + (g.gold || 0), 0);
+  /* 닉 고치기 (2026-09-08 사용자: 로비에서 바로) — 판 이름과 같은 문법. 2~3글자가 아니면 되돌립니다 */
+  const [nickEdit, setNickEdit] = useState(false);
+  const [nickDraft, setNickDraft] = useState("");
+  const startNick = () => {
+    setNickDraft((auth && auth.nick) || "");
+    setNickEdit(true);
+  };
+  const doneNick = () => {
+    setNickEdit(false);
+    const nm = nickDraft.trim();
+    const len = [...nm].length;
+    if (!nm || nm === (auth && auth.nick)) return;
+    onNick(len >= 2 && len <= 3 ? nm : null);
+  };
   return (
     <section className="gs-lobbyhome" aria-label="로비">
       {/* 같이 해보기 권유 (2026-09-06 사용자 확정) — 초대 없이 들어온 모든 사용자에게 한 번, 헤더 아래·두 카드 위 띠.
@@ -12932,7 +12952,36 @@ function LobbyHome({
               {/* 계정 줄 — 설정(닉·로그아웃·아이디 만들기)은 오버레이 공유 설정 창(§5.7)이 집이고, 로비는 진열대입니다 */}
               <div className="gs-lh-acct">
                 <Ava id={auth.id} nick={auth.nick} size={36} />
-                <b className="gs-lh-nick">{auth.nick}</b>
+                {/* 글자 + 연필, 누르면 입력칸 (2026-09-08 사용자: 로비에서 바로 바꾸게) — 판 이름과 같은 문법 */}
+                {nickEdit ? (
+                  <input
+                    className="gs-in gs-lh-nickin"
+                    value={nickDraft}
+                    maxLength={3}
+                    autoFocus
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setNickDraft(e.target.value)}
+                    onBlur={doneNick}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                      if (e.key === "Escape") {
+                        setNickDraft((auth && auth.nick) || "");
+                        setNickEdit(false);
+                      }
+                    }}
+                    aria-label="닉네임"
+                  />
+                ) : (
+                  <button className="gs-lh-nick gs-lh-nickbtn" onClick={startNick} aria-label="닉네임 바꾸기">
+                    <b>{auth.nick}</b>
+                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m11.3 2.7 2 2L5 13l-2.6.6L3 11l8.3-8.3Z" />
+                        <path d="m9.8 4.2 2 2" />
+                      </g>
+                    </svg>
+                  </button>
+                )}
                 {auth.anon ? (
                   <span className="gs-acct-badge">게스트</span>
                 ) : (
@@ -17069,6 +17118,14 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lobbyhome .gs-card{margin:0; width:100%}
 .gs-lh-acct{display:flex; align-items:center; gap:10px}
 .gs-lh-nick{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700}
+/* 닉 고치기 (2026-09-08) — 판 이름과 같은 결: 평소엔 글자, 호버에 연필이 보입니다 */
+.gs-lh-nickbtn{display:inline-flex; align-items:center; gap:6px; background:transparent; border:0; padding:0; color:inherit; font:inherit; cursor:pointer}
+.gs-lh-nickbtn b{font-weight:700}
+.gs-lh-nickbtn svg{opacity:0; color:var(--ink-2); transition:opacity .12s}
+.gs-lh-nickbtn:hover svg,.gs-lh-nickbtn:focus-visible svg{opacity:1}
+.gs-lh-nickbtn:hover b{color:var(--gold)}
+.gs-lh-nickin{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; width:5.2em; min-width:0;
+  border:1px solid rgba(var(--gold-rgb),.6); background:rgba(0,0,0,.2); border-radius:4px; padding:2px 8px}
 .gs-lh-set{margin-left:auto}
 .gs-lh-addr{display:flex; align-items:center; gap:9px; margin-top:14px; flex-wrap:nowrap}
 .gs-lh-url{font-family:var(--mono); font-size:12.5px; letter-spacing:.06em; color:var(--ink-body);
