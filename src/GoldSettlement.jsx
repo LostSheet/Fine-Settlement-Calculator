@@ -467,16 +467,21 @@ const FACE_MS = 70;
 const SPIN_TAIL = 0.55;
 /* 감속 '느긋하게' (2026-09-05, 룰렛 외형의 선택지) — 바퀴는 덜 돌고 꼬리는 길게: 끝에서 오래 미적여
    긴장을 늘립니다. 서기 원판과 방송 원판이 같은 값을 쓰도록 판(spin.ease)에 실어 보냅니다 */
-/* 감속은 슬라이더 0~100 (2026-09-07 사용자 확정: 슬라이더 + 프리셋). 프리셋 보통 25 · 느긋하게 75, 기본 75.
-   값이 클수록 바퀴는 적고(aim 1.7→1.3) 곡선 x2 는 작아져(0.62→0.32) 뒤에서 오래 미끄러집니다. 어느 값이든 급정거는 안 납니다(x2 ≤ .62).
-   판(spin.glide)에 실어 보내 서기 원판과 방송 원판이 같은 값을 씁니다. (폐기, 같은 날) spinEase "normal"/"gentle" 두 단 */
-const GLIDE_NORMAL = 25;
-const GLIDE_GENTLE = 75;
-const GLIDE_DEFAULT = 75;
+/* 감속은 슬라이더 0~100 (2026-09-07 사용자 확정: 슬라이더 + 프리셋 보통·느긋하게·직접, 슬라이더를 만지면 직접).
+   곡선 x2 는 지수로 갑니다 — 0 이 .62, 100 이 .15, 절반이 .30 (사용자: 선형이 아니라 로그·지수 느낌으로, 극단도 되게).
+   보통 10(x2 .53) · 느긋하게 30(.40), 기본 30. 바퀴 수(aim)는 고정 — 슬라이더는 뒤에서 미끄러지는 길이만 바꿉니다.
+   x2 ≤ .62 라 어느 값이든 급정거는 안 납니다(남은 2% 에 20°/s 이하). 판(spin.glide)에 실어 서기 원판과 방송 원판이 같은 값.
+   (폐기, 같은 날) 선형 .62→.32 + aim 1.7→1.3, 프리셋 25/75 · 그 전의 spinEase 두 단 */
+const GLIDE_NORMAL = 10;
+const GLIDE_GENTLE = 30;
+const GLIDE_DEFAULT = 30;
+const GLIDE_X2_HI = 0.62;
+const GLIDE_X2_LO = 0.15;
 const spinGlideOf = (r) => (r && Number.isFinite(r.spinGlide) ? Math.max(0, Math.min(100, r.spinGlide)) : GLIDE_DEFAULT);
+const isPresetGlide = (r) => spinGlideOf(r) === GLIDE_NORMAL || spinGlideOf(r) === GLIDE_GENTLE;
 const glideOfSp = (sp) => (sp && Number.isFinite(sp.glide) ? Math.max(0, Math.min(100, sp.glide)) : GLIDE_DEFAULT) / 100;
-const spinAim = (sp) => 1.7 - 0.4 * glideOfSp(sp);
-const spinTail = (sp) => 0.62 - 0.3 * glideOfSp(sp);
+const spinAim = () => SPIN_AIM;
+const spinTail = (sp) => GLIDE_X2_HI * Math.pow(GLIDE_X2_LO / GLIDE_X2_HI, glideOfSp(sp));
 /* 멈추는 동안 면이 바뀌는 간격 — 지수로 늘리는 것은 속도가 지수로 줄어드는 것과 같습니다.
    원판 곡선과 같은 성격이라, 원판과 릴이 같은 판에서 같은 속도감으로 섭니다.
    p 는 멈추기 시작한 뒤 흐른 비율입니다. */
@@ -5329,13 +5334,6 @@ export default function GoldSettlement() {
     if (!cf || cf.n <= 0) return 0;
     return Math.max(0, CONFESS_UNDO_MS - (Date.now() - cf.t));
   };
-  useEffect(() => {
-    if (!confessTab) return;
-    const id = setInterval(() => {
-      if (Object.keys(cfRef.current).some((k) => cfLeft(k) > 0)) setCfTick((t) => t + 1);
-    }, 500);
-    return () => clearInterval(id);
-  }, [confessTab]);
   /* 자수 — 낙관 갱신을 하지 않습니다. 방장이 장부에 적고 푸시로 돌아온 것만 화면에 뜹니다 */
   const sendConfess = (rowId, colId, dir) => {
     if (!auth || !liveRoom) return;
@@ -5431,6 +5429,14 @@ export default function GoldSettlement() {
   /* 메모장에는 보통 항목이 없습니다 (§3.4: 모드도 판의 일부) — 셀 칸이 없으니 자수 탭도
      서지 않습니다. 방장이 메모장으로 바꾸면 파티원은 벌금표에서 그 판을 그대로 봅니다 */
   const confessTab = guestPlaying && !simple;
+  /* 되돌리기 칩의 시계 — confessTab 이 선 뒤에 걸어야 합니다 (버그 기록 2026-09-07: 선언 전에 의존성으로 읽어 TDZ 로 앱이 통째로 죽었다) */
+  useEffect(() => {
+    if (!confessTab) return;
+    const id = setInterval(() => {
+      if (Object.keys(cfRef.current).some((k) => cfLeft(k) > 0)) setCfTick((t) => t + 1);
+    }, 500);
+    return () => clearInterval(id);
+  }, [confessTab]);
   /* 자수할 줄이 실제로 있을 때만 나머지 칸을 물러나게 합니다 */
   const confessMode = confessTab && !!you.rowId;
   const [showObs, setShowObs] = useState(false); // 내 방송용 주소 — 기본 가림
@@ -12026,6 +12032,10 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
             >
               느긋하게
             </button>
+            {/* 슬라이더를 만지면 저절로 여기로 옵니다 — 누르는 건 표시일 뿐 값을 바꾸지 않습니다 (2026-09-07 사용자 확정) */}
+            <button type="button" className={isPresetGlide(relay) ? "" : "on"} aria-pressed={!isPresetGlide(relay)}>
+              직접
+            </button>
           </div>
           <label className="gs-glide">
             <span className="gs-glide-l">짧게</span>
@@ -12033,7 +12043,7 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
               type="range"
               min="0"
               max="100"
-              step="5"
+              step="1"
               value={spinGlideOf(relay)}
               onChange={(e) => putRelay({ ...relay, spinGlide: Number(e.target.value) })}
               aria-label="끝에서 미끄러지는 길이"
