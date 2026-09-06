@@ -3406,6 +3406,7 @@ export default function GoldSettlement() {
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch (x) {}
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // 이름 칸 포커스가 따라오지 않게
     const h = els[from].getBoundingClientRect().height;
     /* 각 줄의 원래 가운데 — 끄는 동안 다른 줄은 transform 으로 움직이니 원래 자리를 기억해 둡니다 */
     const mid = els.map((el) => {
@@ -14819,7 +14820,9 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 끄는 동안 — 잡은 줄은 손을 따라오고(전환 없음, 위로 띄움), 다른 줄은 미끄러져 자리를 비킵니다 (2026-09-06 오후 실시간) */
 .gs-grid.gs-drag-live tbody > tr{transition:transform .16s ease}
 .gs-grid.gs-drag-live tbody > tr.gs-dragging{transition:none; position:relative; z-index:3}
-tr.gs-dragging > th,tr.gs-dragging > td{background:var(--paper); box-shadow:0 6px 18px rgba(0,0,0,.28)}
+/* 바깥 그림자는 안 됩니다 — 기타 칸(.gs-disc)이 position:relative 라 그 칸의 그림자만 이웃 위로 올라와 도드라졌다(2026-09-06 오후 사용자).
+   칸마다 같은 불투명 배경 + 위아래 금색 선으로 띄웁니다 */
+tr.gs-dragging > th,tr.gs-dragging > td{background:color-mix(in srgb, var(--paper) 88%, var(--gold)); box-shadow:inset 0 1px 0 rgba(var(--gold-rgb),.75), inset 0 -1px 0 rgba(var(--gold-rgb),.75)}
 tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 줄의 신분 표시 — 이름 칸 왼쪽 빈자리 (§3.1). 이름은 오른쪽 끝에 그대로 붙습니다 */
 .gs-rowmeta{margin-right:auto; flex:none; display:inline-flex; align-items:center; gap:4px; padding-left:4px}
