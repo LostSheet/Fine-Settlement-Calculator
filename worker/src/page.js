@@ -107,12 +107,12 @@ export const PAGE_HTML = `<!doctype html>
      판이 작아지지 않고, OBS 소스에 어차피 남던 여백을 대신 씁니다.
      잘리지 않게 fitBoard 가 그 튀어나온 만큼을 폭에 얹어서 배율을 잽니다. */
   /* 아직 아무것도 안 낸 줄 — 이름·등수는 그대로 두고 값 칸만 물러납니다 (2026-09-07 사용자) */
-  .ov-row.zero .ov-gold{opacity:.5; --slop:.5}
+  .ov-row.zero .ov-gold{--slop:.5}
   /* 0원 줄이 굴러 올라가는 동안은 칸을 흐리게 하지 않습니다 (2026-09-08 사용자 지적).
      칸에 opacity 를 주면 그 안의 릴이 통째로 눌려서 들어오는 증감(+3만)과 결과(3만)까지
      어두웠습니다 — 자식은 부모의 opacity 를 되돌릴 수 없습니다.
      흐림은 옛 0 한 줄에만 겁니다. 올라갈 땐 릴의 첫 줄, 내려갈 땐 마지막 줄이 옛 값입니다 */
-  .ov-row.zero .ov-gold.ov-mv{opacity:1; --slop:1}
+  .ov-row.zero .ov-gold.ov-mv{--slop:1}
   .ov-row.zero .ov-gold.ov-mv .ov-mvreel.up > i:first-child,
   .ov-row.zero .ov-gold.ov-mv .ov-mvreel.dn > i:last-child{opacity:.5}
   /* 슬라이드 모드 (2026-09-06 사용자 확정) — 항목 열과 순액을 늘어놓지 않고 합계 자리에서 번갈아 보여 줍니다.
@@ -122,12 +122,15 @@ export const PAGE_HTML = `<!doctype html>
      미끄러지는 애니메이션이 opacity:1 로 끝나던 동안에는 흐려야 할 값(0회·순액·항목)이
      진하게 들어왔다가 애니메이션이 걷히는 순간 제 밝기로 뚝 떨어졌습니다. 나갈 때도 한 번 밝아졌고요.
      그래서 끝점을 1 이 아니라 그 칸의 밝기로 잡습니다 — 흐린 값은 흐린 채로 들어오고 나갑니다. */
-  .ov-gold.as-cnt{color:var(--ink); opacity:.92; --slop:.92}
-  .ov-gold.as-cnt.z{opacity:.3; --slop:.3}
-  .ov-gold.as-net{color:var(--ink); opacity:.5; --slop:.5}
-  .ov-gold.as-net.plus{color:#6fb4ff; opacity:1; --slop:1}
-  .ov-gold.as-net.minus{color:#ff7d6b; opacity:1; --slop:1}
-  .ov-total.as-lab{color:var(--ink); opacity:.88; --slop:.88; font-weight:600; overflow:visible}
+  /* 밝기는 칸이 아니라 안쪽 .ov-slot 이 씁니다 (2026-09-08) — 칸에 opacity 를 걸면
+     칸의 배경(합계 기둥)까지 반쯤 지워져 기둥에 구멍이 뚫립니다. --slop 하나로 통일합니다 */
+  .ov-slot{display:block; width:100%; opacity:var(--slop,1)}
+  .ov-gold.as-cnt{color:var(--ink); --slop:.92}
+  .ov-gold.as-cnt.z{--slop:.3}
+  .ov-gold.as-net{color:var(--ink); --slop:.5}
+  .ov-gold.as-net.plus{color:#6fb4ff; --slop:1}
+  .ov-gold.as-net.minus{color:#ff7d6b; --slop:1}
+  .ov-total.as-lab{color:var(--ink); --slop:.88; font-weight:600; overflow:visible}
   .sl-out{animation:ov-sl-out 260ms cubic-bezier(.4,0,.8,.4) both}
   .sl-in{animation:ov-sl-in 260ms cubic-bezier(.2,.6,.3,1) both}
   @keyframes ov-sl-out{from{transform:translateX(0); opacity:var(--slop,1)} to{transform:translateX(-45%); opacity:0}}
@@ -437,34 +440,87 @@ export const PAGE_HTML = `<!doctype html>
   html[data-t="bars"] .ov-head > .ov-move{display:none}
   html[data-t="bars"] .ov-name-t, html[data-t="bars"] .ov-lobby-t{margin-left:0;
     font-size:3.3vw; font-weight:700; letter-spacing:.05em}
-  /* 금색 블록 — 합계·지표 라벨·대기실 인원이 같은 자리에 섭니다. 왼쪽 크림색 띠는
-     box-shadow 라 자리를 안 먹습니다: 열 간격을 그대로 덮어서 칸 정렬이 안 틀어집니다 */
+  /* 금색 블록 — 합계와 대기실 인원이 같은 자리에 섭니다. 왼쪽 띠는 box-shadow 라
+     자리를 안 먹습니다: 열 간격을 그대로 덮어서 칸 정렬이 안 틀어집니다.
+     띠 색이 크림에서 색면(rgba(8,7,6,.55))으로 바뀐 이유는 아래 "지표 구간" 주석에 있습니다 */
   html[data-t="bars"] .ov-total, html[data-t="bars"] .ov-lobby-n{
     background:var(--gold); color:#17130e; opacity:1; font-weight:800;
     align-self:stretch; display:flex; align-items:center; justify-content:flex-end;
-    margin:-1vw 0; padding:0; min-width:9.5vw;
-    box-shadow:-1.6vw 0 0 0 rgba(245,240,230,.75)}
-  /* 좌우 여백을 주면 안 됩니다 — 폭이 --goldw(테두리 기준)라 여백만큼 속이 좁아져서
-     그 폭에 딱 맞는 값이 잘립니다(총액이 굴러갈 때의 증감 줄에서 봤습니다).
-     --goldw 는 "999만"을 밑값으로 잡아 두어 보통은 글자보다 넓으니 여백 없이도 숨이 붙습니다 */
-  html[data-t="bars"] .ov-total.as-lab{color:#17130e; opacity:1}
+    min-width:9.5vw; position:relative;
+    /* 세로 여백은 반드시 긴 이름으로 — margin 단축을 쓰면 아래 :last-child 의
+       margin-right:-1.6vw 를 지워서 머리와 줄의 열이 1.6vw 어긋납니다 (2026-09-08 실측) */
+    margin-top:-1vw; margin-bottom:-1vw;
+    box-shadow:-1.6vw 0 0 0 rgba(8,7,6,.55)}
+  /* 금색은 값에만 씁니다 (2026-09-08 사용자 확정). 슬라이드에서 이 자리는 합계일 땐 총액(값),
+     항목·순액일 땐 이름입니다. 이름일 때까지 금색이면 "금색 = 돈"이 흐려지고, 나란히에서
+     같은 단어(잡힘)가 어두운 색면에 크림 글자인 것과도 어긋납니다.
+     그래서 라벨일 때는 라벨의 옷 — 어두운 색면에 크림 글자 — 을 입습니다 */
+  html[data-t="bars"] .ov-total.as-lab{
+    background:rgba(8,7,6,.55); color:rgba(245,240,230,.92); font-weight:700}
   /* 금색 블록 안의 증감은 어두운 짝으로 (2026-09-08 사용자 지적: 황색 띠에 녹색이 안 보인다).
      총액이 굴러갈 때 그 사이에 끼는 증감 한 줄(.ov-mvreel > i.d)이 금색 바탕에 떠 버립니다.
      녹색과 적색은 한 쌍이라 같이 내립니다 — 밝은 판 테마에서 크림 바탕에 대고 검증한 값
      (--up #2f7a4d / --dn #b8462f)을 그대로 씁니다. 어두운 막대 위의 밝은 짝은 그대로입니다 */
   html[data-t="bars"] .ov-total .ov-mvreel.up > i.d{color:#2f7a4d}
   html[data-t="bars"] .ov-total .ov-mvreel.dn > i.d{color:#b8462f}
-  /* 오른쪽 끝까지 채우는 건 금색 블록이 머리줄의 마지막 칸일 때만입니다 (슬라이드 모드).
-     순액 열이 켜진 나란히 모드에서는 순액 머리가 끝이라, 여기서 여백을 먹으면 머리줄 전체가
-     1.6vw 밀려 열이 줄과 어긋납니다 (2026-09-08 실측: 머리 172만이 줄 금액보다 27px 오른쪽) */
-  html[data-t="bars"] .ov-head > .ov-total:last-child,
-  html[data-t="bars"] .ov-head > .ov-lobby-n:last-child{margin-right:-1.6vw;
-    padding-right:1.6vw; box-sizing:content-box}
-  /* 오른쪽 여백 1.6vw 는 줄의 오른쪽 안쪽 여백과 같은 값이라, 블록 안의 글자가 아래
-     금액들과 같은 선에서 끝납니다. content-box 라 그 여백이 --goldw 를 안 먹습니다 —
-     border-box 로 두면 그 폭에 딱 맞는 값이 잘립니다(총액이 굴러갈 때의 증감 줄에서 봤습니다).
-     음수 바깥 여백이 그만큼을 도로 걷어서 뒤 칸의 자리는 그대로입니다 */
-  html[data-t="bars"] .ov-chead, html[data-t="bars"] .ov-nethead{align-self:center}
+  /* 칠해진 값 칸은 글자 뒤에 1.6vw 를 둡니다 (2026-09-08 사용자 지적: 글자가 칸 끝에 딱 붙는다).
+     1.6vw 는 줄의 오른쪽 안쪽 여백과 같은 값이라, 블록 안의 글자가 아래 금액들과 같은 선에서
+     끝납니다. content-box 라 그 여백이 --goldw 를 안 먹습니다 — border-box 로 두면 그 폭에
+     딱 맞는 값이 잘립니다(총액이 굴러갈 때의 증감 줄에서 봤습니다).
+     setGoldW 의 자에는 padding:0 을 못 박아 두었습니다 — 그 자도 .ov-row 안에 들어가서,
+     안 그러면 --goldw 가 1.6vw 부풀고 래칫이라 되돌아오지 않습니다 */
+  html[data-t="bars"] .ov-total,
+  html[data-t="bars"] .ov-lobby-n,
+  html[data-t="bars"] .ov-row > .ov-gold{padding-right:1.6vw; box-sizing:content-box}
+  /* 마지막 칸은 판의 안쪽 여백을 먹어 색이 막대 오른쪽 끝까지 갑니다 (2026-09-08 사용자 지적:
+     색면이 끝에서 1.6vw 앞에 멈춰 머리줄만 덜 그려진 것처럼 보인다).
+     content-box 라 글자는 제자리에 남고, 음수 바깥 여백이 그만큼을 도로 걷습니다.
+     ★ 머리와 줄에 똑같이 걸어야 합니다 — 한쪽에만 걸면 그쪽 flex:1 칸(제목/이름)만 1.6vw
+     자라서 그 뒤의 열이 통째로 어긋납니다 (2026-09-08 실측: 순액 머리에만 걸었더니
+     머리 총액이 줄 금액보다 15px 오른쪽, 순액 라벨도 순액 값보다 15px 오른쪽) */
+  html[data-t="bars"] .ov-head > :last-child,
+  html[data-t="bars"] .ov-row > :last-child{
+    margin-right:-1.6vw; padding-right:1.6vw; box-sizing:content-box}
+
+  /* 지표 구간 — 머리줄의 라벨을 칸마다 칠하지 않고 잡힘부터 순액까지를 하나의 색면으로
+     깝니다 (2026-09-08 사용자와 확정). 칸마다 칠하면 칸 폭이 색으로 드러나서, 숫자가 정한
+     열 폭과 두 글자짜리 라벨의 차이가 빈 판이 됩니다 — 순액 칸 11.74vw 에 라벨은 4.39vw 라
+     7.35vw 가 텅 빕니다. 칸 사이 1.6vw 틈은 box-shadow 로 메워 색면을 잇습니다.
+     표에서 칸 하나만 칠하는 건 "이 열이 기준이다"라는 강조일 때뿐이고, 여기서 그 열은 금색입니다 */
+  html[data-t="bars"] .ov-head > .ov-chead,
+  html[data-t="bars"] .ov-head > .ov-nethead{
+    align-self:stretch; display:flex; align-items:center; position:relative;
+    margin-top:-1vw; margin-bottom:-1vw; /* 단축 금지 — :last-child 의 margin-right 를 지웁니다 */
+    opacity:1; font-weight:700; color:rgba(245,240,230,.92);
+    background:rgba(8,7,6,.55); box-shadow:-1.6vw 0 0 0 rgba(8,7,6,.55)}
+  html[data-t="bars"] .ov-head > .ov-chead{justify-content:center}
+  html[data-t="bars"] .ov-head > .ov-nethead{justify-content:flex-end}
+  /* 색면은 첫 라벨 칸의 왼쪽 끝에서 시작합니다 — 제목과는 틈으로 갈립니다.
+     :first-of-type 은 못 씁니다: 머리줄의 첫 span 은 (막대에서 숨긴) .ov-rank 라서요 */
+  html[data-t="bars"] .ov-name-t + .ov-chead{box-shadow:none}
+
+  /* 칸을 가르는 건 색면이 아니라 선입니다 — 크림색 0.45vw, 틈 가운데.
+     예전 1.6vw 통짜 띠는 금색 앞에만 있었는데, 색면이 이어지면 그 띠는 "칸을 가르는 선"이
+     되고 선의 제자리는 틈 가운데입니다. 나란히의 칸 사이도, 슬라이드의 제목|슬롯 경계도
+     같은 선을 씁니다 (2026-09-08 사용자 확정: 균일한 굵기) */
+  html[data-t="bars"] .ov-chead + .ov-chead::before,
+  html[data-t="bars"] .ov-head > .ov-total::before,
+  html[data-t="bars"] .ov-head > .ov-lobby-n::before,
+  html[data-t="bars"] .ov-head > .ov-nethead::before{
+    content:''; position:absolute; right:100%; top:0; bottom:0;
+    width:.45vw; margin-right:.575vw; background:rgba(245,240,230,.5); z-index:1}
+
+  /* 합계 기둥 — 금액이 뜨는 칸에 등수 칸과 같은 값을 깝니다 (2026-09-08 사용자 제안).
+     어두운 칸이 등수와 금액 둘이 되는데, 정확히 순위를 만드는 두 가지입니다.
+     슬라이드의 항목·순액 페이즈에는 기둥이 없습니다 — 금색 머리와 짝을 이뤄
+     "지금 돈을 보고 있다"를 말합니다. 나란히에서 잡힘 열이 맨 줄인 것과도 같습니다.
+     배경은 칸이, 밝기(--slop)와 미끄러짐은 안쪽 .ov-slot 이 맡습니다 */
+  html[data-t="bars"] .ov-row > .ov-gold{
+    align-self:stretch; display:flex; align-items:center; justify-content:flex-end;
+    margin-top:-.85vw; margin-bottom:-.85vw; /* 단축 금지 — :last-child 의 margin-right 를 지웁니다 */
+    background:rgba(8,7,6,.55)}
+  html[data-t="bars"] .ov-row > .ov-gold.as-cnt,
+  html[data-t="bars"] .ov-row > .ov-gold.as-net{background:none}
   /* 줄 = 막대. 사이 간격이 판 노릇을 합니다 */
   html[data-t="bars"] .ov-row{background:rgba(20,17,14,var(--bg,.9)); border-radius:0;
     padding:.85vw 1.6vw .85vw 0}
@@ -880,6 +936,13 @@ export const PAGE_HTML = `<!doctype html>
   var still = function (txt) {
     return '<span class="ov-mvbox"><span class="ov-mvreel"><i>' + txt + "</i></span></span>";
   };
+  /* 값 칸의 속입니다 (2026-09-08). 칸(.ov-gold/.ov-total)은 폭·정렬·배경만 맡고,
+     밝기(--slop)와 미끄러짐(sl-out/sl-in)은 전부 이 안쪽에 겁니다.
+     칸에 걸어 두면 칸의 배경까지 같이 흐려지고 같이 미끄러져 나갑니다 —
+     합계 기둥이 생기면서 그게 바로 드러났습니다(0원 줄에서 구멍, 지표가 바뀔 때 조각남) */
+  var slot = function (inner) {
+    return '<span class="ov-slot">' + inner + "</span>";
+  };
 
   /* 순위: 금액 내림차순, 동률은 표에 적힌 순서 유지 */
   var ranked = function (rows) {
@@ -916,7 +979,10 @@ export const PAGE_HTML = `<!doctype html>
     wrap.style.cssText = "position:absolute; visibility:hidden; pointer-events:none";
     var probe = document.createElement("span");
     probe.className = "ov-gold";
-    probe.style.cssText = "width:auto; min-width:0";
+    /* 여백을 0 으로 못 박습니다 (2026-09-08) — 이 자는 .ov-row 안에 들어가므로
+       막대 테마의 "글자 뒤 1.6vw"를 같이 물어 버립니다. 그러면 --goldw 가 1.6vw 부풀고,
+       래칫이라 되돌아오지 않습니다. 재는 건 글자 폭이지 칸 폭이 아닙니다 */
+    probe.style.cssText = "width:auto; min-width:0; padding:0";
     var nprobe = document.createElement("span");
     nprobe.className = "ov-net";
     nprobe.style.cssText = "width:auto; min-width:0";
@@ -994,10 +1060,15 @@ export const PAGE_HTML = `<!doctype html>
      떨어져 결국 제자리라서요. 늘릴 수 있는 건 다른 글자 대비 비율뿐입니다.
      짧은 이름은 커지고, 긴 이름만 지금 크기(1.6vw)로 남습니다 — 손해 보는 열은 없습니다. */
   var fitCheads = function () {
-    var MAXV = 2.6, MINV = 1.6;
+    /* 순액 머리글도 같은 규칙을 받습니다 (2026-09-08) — 전에는 항목만 칸에 맞춰 2.6vw 까지
+       키우고 순액은 1.6vw 로 못 박혀 있어서, 같은 머리줄의 머리글끼리 크기가 38% 달랐습니다.
+       상한을 2.2 로 낮춘 건 라벨 칸에 색이 깔리면서입니다 — 2.6 이면 칸 안 좌우 여백이
+       0.6vw 밖에 안 남아 글자가 색면에 꽉 낍니다. 칸 폭은 항목 칸(6.4vw)을 자로 씁니다:
+       순액 칸은 더 넓지만 그 폭에 맞춰 키우면 순액만 유독 커집니다 */
+    var MAXV = 2.2, MINV = 1.6;
     var box = 6.4 * (window.innerWidth / 100); // 칸 폭(px). 배율 전 레이아웃 기준
     if (!box) return;
-    [].forEach.call(document.querySelectorAll(".ov-chead"), function (el) {
+    [].forEach.call(document.querySelectorAll(".ov-chead, .ov-nethead"), function (el) {
       /* 잘린 채로 재면 칸 폭이 그대로 나옵니다 — 잠깐 풀어서 진짜 폭을 잽니다.
          offsetWidth 는 확대(transform) 전 값이라 box 와 같은 자로 잽니다 */
       el.style.fontSize = MAXV + "vw";
@@ -1105,15 +1176,15 @@ export const PAGE_HTML = `<!doctype html>
   var slotHtml = function (r, ph, rc, showD, dAge, delay) {
     if (ph.k === "item") {
       var v = (r.c || [])[ph.i] || 0;
-      return '<span class="ov-gold as-cnt' + (v ? '' : ' z') + '">' + still(esc(v)) + '</span>'; // 0회도 0으로 (사용자: 비워 두지 않는다)
+      return '<span class="ov-gold as-cnt' + (v ? '' : ' z') + '">' + slot(still(esc(v))) + '</span>'; // 0회도 0으로 (사용자: 비워 두지 않는다)
     }
     if (ph.k === "net")
       return '<span class="ov-gold as-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
-        still((r.d > 0 ? "+" : "") + manShort(r.d || 0)) + '</span>';
-    return '<span class="ov-gold">' + still(manShort(r.g)) +
+        slot(still((r.d > 0 ? "+" : "") + manShort(r.d || 0))) + '</span>';
+    return '<span class="ov-gold">' + slot(still(manShort(r.g)) +
       '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
         (showD ? delay(dAge) : "") + '>' +
-        (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>' +
+        (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>') +
       '</span>';
   };
   /* 머리줄의 총액 자리 — 합계일 땐 총액, 항목일 땐 항목 이름, 순액일 땐 '순액' (사용자 확정: 총액 자리를 라벨 자리로) */
@@ -1121,11 +1192,11 @@ export const PAGE_HTML = `<!doctype html>
     if (ph.k === "item") {
       var c = cols[ph.i] || {};
       return '<span class="ov-total as-lab' + (c.r ? " rl" : "") + '">' +
-        still((c.r ? '<i class="ov-rlmk">◎</i>' : "") + esc(c.t)) + '</span>';
+        slot(still((c.r ? '<i class="ov-rlmk">◎</i>' : "") + esc(c.t))) + '</span>';
     }
-    if (ph.k === "net") return '<span class="ov-total as-lab">' + still("순액") + '</span>';
+    if (ph.k === "net") return '<span class="ov-total as-lab">' + slot(still("순액")) + '</span>';
     return '<span class="ov-total">' +
-      still(manShort((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0))) + '</span>';
+      slot(still(manShort((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0)))) + '</span>';
   };
   /* 라벨이 칸보다 길면 글자를 줄입니다 (2.0~3.4vw) — 칸을 넓히면 판이 넓어져 배율이 떨어집니다 */
   var fitLabel = function () {
@@ -1135,7 +1206,11 @@ export const PAGE_HTML = `<!doctype html>
     /* 글자가 상자(.ov-mvbox) 안으로 들어가서, 넘치는 폭은 안쪽 칸에서 재야 합니다 (2026-09-08).
        바깥 .ov-total 의 scrollWidth 는 상자가 100% 폭이라 늘 칸 폭과 같아 보입니다 */
     var inner = el.querySelector(".ov-mvreel > i") || el;
-    var box = el.offsetWidth, need = inner.scrollWidth; // 칸 폭은 실제 상자로 — --goldw 가 아직 없을 때도 맞습니다
+    /* 칸 폭은 .ov-slot 으로 잽니다 (2026-09-08) — 칸에 글자 뒤 여백(1.6vw)이 붙어서
+       el.offsetWidth 는 그만큼 넓게 나오고, 라벨이 제때 안 줄어듭니다.
+       .ov-slot 은 속(content-box) 폭 그대로라 --goldw 가 아직 없을 때도 맞습니다 */
+    var boxEl = el.querySelector(".ov-slot") || el;
+    var box = boxEl.offsetWidth, need = inner.scrollWidth;
     if (box && need > box) el.style.fontSize = Math.max(2.0, (3.4 * box) / need).toFixed(2) + "vw";
   };
   /* 지표를 바꿉니다 — 값이 왼쪽으로 나가고(줄마다 30ms 늦게) 새 값이 오른쪽에서 들어옵니다 */
@@ -1144,11 +1219,13 @@ export const PAGE_HTML = `<!doctype html>
     var n = rows.length;
     var span = SLIDE_DUR + n * SLIDE_STAG;
     sliding = true;
+    /* 미끄러지는 건 칸이 아니라 칸의 속입니다 (2026-09-08) — 칸에 걸면 배경(합계 기둥)까지
+       줄마다 30ms 씩 어긋나며 옆으로 끌려 나가 조각납니다. 기둥은 제자리에서 갈려야 합니다 */
     [].forEach.call(rows, function (row, i) {
-      var s0 = row.querySelector(".ov-gold");
+      var s0 = row.querySelector(".ov-gold > .ov-slot");
       if (s0) { s0.style.animationDelay = i * SLIDE_STAG + "ms"; s0.classList.add("sl-out"); }
     });
-    var hd0 = document.querySelector(".ov-total");
+    var hd0 = document.querySelector(".ov-total > .ov-slot");
     if (hd0) hd0.classList.add("sl-out");
     setTimeout(function () {
       phase = to;
@@ -1163,8 +1240,9 @@ export const PAGE_HTML = `<!doctype html>
         var tmp = document.createElement("span");
         tmp.innerHTML = slotHtml(r, ph, recent[rowKey(r)] || {}, false, Infinity, none);
         var ns = tmp.firstChild;
-        ns.style.animationDelay = i * SLIDE_STAG + "ms";
-        ns.classList.add("sl-in");
+        var nsl = ns.querySelector(".ov-slot") || ns;
+        nsl.style.animationDelay = i * SLIDE_STAG + "ms";
+        nsl.classList.add("sl-in");
         s1.parentNode.replaceChild(ns, s1);
       });
       var old = document.querySelector(".ov-total");
@@ -1172,7 +1250,7 @@ export const PAGE_HTML = `<!doctype html>
         var t2 = document.createElement("span");
         t2.innerHTML = headSlot(ph);
         var nh = t2.firstChild;
-        nh.classList.add("sl-in");
+        (nh.querySelector(".ov-slot") || nh).classList.add("sl-in");
         old.parentNode.replaceChild(nh, old);
         fitLabel();
       }
@@ -2070,7 +2148,9 @@ export const PAGE_HTML = `<!doctype html>
       var items = up ? [a, mid, c] : [c, mid, a];
       /* 굴러가는 칸이라고 표시합니다 (2026-09-08) — 0원 줄의 흐림이 릴까지 누르지 않게 */
       el.classList.add("ov-mv");
-      el.innerHTML =
+      /* 속만 갈아 끼웁니다 — 칸을 통째로 다시 쓰면 .ov-slot 이 사라져서 배경(기둥)만 남고
+         밝기·미끄러짐이 걸릴 자리가 없어집니다 (2026-09-08) */
+      (el.querySelector(".ov-slot") || el).innerHTML =
         '<span class="ov-mvbox"><span class="ov-mvreel ' + (up ? "up" : "dn") + '">' +
         '<i>' + items[0] + '</i><i class="d">' + items[1] + '</i><i>' + items[2] + "</i>" +
         "</span></span>";
@@ -2259,7 +2339,7 @@ export const PAGE_HTML = `<!doctype html>
           }).join("") +
           (showSum
             ? '<span class="ov-total">' +
-              still(manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0))) + "</span>"
+              slot(still(manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)))) + "</span>"
             : "") +
           (showNet ? '<span class="ov-nethead">순액</span>' : ""));
     fitCheads(); // 머리줄을 그린 뒤에 — 확대(fitBoard) 전에 크기를 정해야 합니다
