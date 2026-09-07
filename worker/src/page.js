@@ -477,9 +477,16 @@ export const PAGE_HTML = `<!doctype html>
      딱 맞는 값이 잘립니다(총액이 굴러갈 때의 증감 줄에서 봤습니다).
      setGoldW 의 자에는 padding:0 을 못 박아 두었습니다 — 그 자도 .ov-row 안에 들어가서,
      안 그러면 --goldw 가 1.6vw 부풀고 래칫이라 되돌아오지 않습니다 */
+  /* 왼쪽에도 같은 값을 줍니다 (2026-09-08 사용자 지적: 1위 금액이 카드 왼쪽 끝에 붙는다).
+     --goldw 는 가장 넓은 값에 "딱 맞춰" 재기 때문에, 1위 금액은 구조적으로 칸을 꽉 채우고
+     왼쪽 여백이 0 이 됩니다 (실측: --goldw 14.222vw 에 1249만이 14.23vw).
+     기둥이 생기기 전에는 그 자리에 경계가 없어 안 보이던 것이, 이제 카드 모서리가 숫자에 닿습니다.
+     슬라이드에서 나란히로 "전환"만 하면 괜찮아 보이는 건 슬라이드가 부호 붙은 값까지 잡아 둔
+     17.0vw 가 래칫으로 남아서일 뿐이고, 새로고침하면 그 여유가 사라집니다 */
   html[data-t="bars"] .ov-total,
   html[data-t="bars"] .ov-lobby-n,
-  html[data-t="bars"] .ov-row > .ov-gold{padding-right:1.6vw; box-sizing:content-box}
+  html[data-t="bars"] .ov-row > .ov-gold{
+    padding-left:1.6vw; padding-right:1.6vw; box-sizing:content-box}
   /* 마지막 칸은 판의 안쪽 여백을 먹어 색이 막대 오른쪽 끝까지 갑니다 (2026-09-08 사용자 지적:
      색면이 끝에서 1.6vw 앞에 멈춰 머리줄만 덜 그려진 것처럼 보인다).
      content-box 라 글자는 제자리에 남고, 음수 바깥 여백이 그만큼을 도로 걷습니다.
