@@ -2393,9 +2393,8 @@ export const PAGE_HTML = `<!doctype html>
      "내 방송도 저렇겠구나" 할 수 없었습니다. 명단과 금액은 그대로 SAMPLE 을 씁니다 */
   var startDemo = function () {
     var COLS = [{ id: "c1", t: "잡힘" }, { id: "c2", t: "죽음" }];
-    var FACES = ["1", "2", "3", "5", "-1", "x2"];
     var PRICE = [30000, 50000];
-    var rows, feed, seq, spinNow, lobbyOn;
+    var rows, feed, seq, lobbyOn;
     var at = 0; /* 대본 커서 — reset 이 안 건드립니다 */
 
     var reset = function () {
@@ -2406,7 +2405,6 @@ export const PAGE_HTML = `<!doctype html>
       });
       feed = [];
       seq = 0;
-      spinNow = null;
       lobbyOn = true;
       /* at(대본 커서)은 여기서 안 건드립니다 — reset 이 커서까지 0 으로 되돌리면
          첫 걸음(대기실)만 무한히 되풀이합니다 (2026-09-08 실측) */
@@ -2428,7 +2426,6 @@ export const PAGE_HTML = `<!doctype html>
           return { k: r.k, n: r.n, g: r.g, c: r.c.slice(), d: r.d };
         }),
         fx: feed.slice(-6),
-        spin: spinNow,
       };
       /* 대기실은 판 대신 그려집니다 — 정원만큼 줄을 미리 세우고 들어온 사람만 또렷하게 (§4.3) */
       if (lobbyOn) {
@@ -2456,33 +2453,10 @@ export const PAGE_HTML = `<!doctype html>
       push();
     };
 
-    /* 룰렛 한 판 — 판과 결과 카드를 한 번에 실어 보냅니다. 원판이 서면 결과 카드가 먼저 뜨고,
-       그 뒤에 표가 앉습니다 (연출 순서 규칙 ③④⑤) */
-    var roulette = function () {
-      var r = rows[Math.floor(Math.random() * rows.length)];
-      var k = FACES[Math.floor(Math.random() * 4)];
-      var gold = Number(k) * 30000;
-      r.c[1] += 1;
-      r.g += gold;
-      spinNow = {
-        sid: "s" + ++seq,
-        look: "wheel",
-        theme: "satin",
-        faces: FACES,
-        w: {},
-        steps: [{ k: k }],
-        phase: "done",
-        who: r.n,
-        item: COLS[1].t,
-        gold: gold,
-        out: { name: r.n, g: gold, after: r.g, raw: gold },
-        cfg: { roll: 4200, free: 260, face: 70 },
-      };
-      feed.push({ i: "f" + ++seq, k: "roul", n: r.n, t: COLS[1].t, g: gold });
-      push();
-    };
+    /* 룰렛은 예시에서 빼 둡니다 (2026-09-08 사용자 확정: CAFE22 는 룰렛 없음, 항목 클릭 알림만).
+       오버레이의 룰렛 자체는 그대로라, 진짜 방에서 방장이 돌리면 똑같이 나옵니다 */
 
-    /* 한 바퀴 — 대기실로 열고, 자수 몇 번에 룰렛 한 판을 끼우고, 다시 처음으로.
+    /* 한 바퀴 — 대기실로 열고, 자수를 여섯 번 하고, 다시 처음으로.
        [뒤 숫자는 그 걸음이 끝나고 다음 걸음까지 기다리는 밀리초] */
     var SCRIPT = [
       ["lobby", 7000],
@@ -2490,11 +2464,9 @@ export const PAGE_HTML = `<!doctype html>
       ["confess", 4200],
       ["confess", 4200],
       ["confess", 4200],
-      ["roulette", 15000],
       ["confess", 4200],
       ["confess", 4200],
       ["confess", 6000],
-      ["clear", 3000],
     ];
 
     var tick = function () {
@@ -2503,8 +2475,6 @@ export const PAGE_HTML = `<!doctype html>
       if (s[0] === "lobby") { reset(); push(); }
       else if (s[0] === "start") { lobbyOn = false; push(); }
       else if (s[0] === "confess") confess();
-      else if (s[0] === "roulette") roulette();
-      else if (s[0] === "clear") { spinNow = null; push(); }
       setTimeout(tick, s[1]);
     };
 
