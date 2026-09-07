@@ -188,10 +188,13 @@ export const PAGE_HTML = `<!doctype html>
      폭은 금액 열이 이미 --goldw 로 정해 두었으니 그대로 채웁니다. */
   /* 이름은 ov-mv* 로 — .ov-reel 은 룰렛 슬롯이 이미 쓰고 있습니다(가운데 정렬·고정 크기).
      같은 이름을 쓰면 그 규칙이 덮어써서 금액이 반 칸씩 어긋납니다. */
-  .ov-mvbox{position:relative; display:inline-block; width:100%; height:1.16em;
+  /* 칸 높이는 줄의 line-height(1.2)와 같게 맞춥니다 (2026-09-08) — 1.16em 이면 릴이 평문으로
+     바뀌는 순간 글자가 0.5px 내려앉았습니다. 눈에 띄는 크기는 아니지만, 그 0.5px 이 FLIP 의
+     문턱을 넘겨 여덟 줄을 통째로 미끄러지게 하는 씨앗이었습니다 */
+  .ov-mvbox{position:relative; display:inline-block; width:100%; height:1.2em;
     overflow:hidden; clip-path:inset(0); vertical-align:bottom; line-height:0}
   .ov-mvreel{position:absolute; top:0; left:0; right:0; display:flex; flex-direction:column}
-  .ov-mvreel > i{font-style:normal; display:block; height:1.16em; line-height:1.16em}
+  .ov-mvreel > i{font-style:normal; display:block; height:1.2em; line-height:1.2em}
   .ov-mvreel.up > i.d{color:#8fd89b}
   .ov-mvreel.dn > i.d{color:#e59a90}
   .ov-mvreel.up{animation:ov-mv-up var(--mvdur,1120ms) cubic-bezier(.3,0,.2,1) forwards}
