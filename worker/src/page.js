@@ -869,6 +869,18 @@ export const PAGE_HTML = `<!doctype html>
     return (neg ? "\u2212" : "") + out;
   };
 
+  /* \uac12\uc740 **\ub298 \uac19\uc740 \uc0c1\uc790**\uc5d0 \ub2f4\uc2b5\ub2c8\ub2e4 (2026-09-08 \uc0ac\uc6a9\uc790 \uc9c0\uc801: \uc790\uafb8 \uae30\uc6cc\ub0b4\uc9c0 \ub9d0\uace0 \uadfc\ubcf8\uc744 \ucc3e\uc544\ub77c).
+     \uad74\ub7ec\uac08 \ub54c\ub294 .ov-mvbox \uc548\uc758 \uce78\uc774\uace0 \uc549\uc558\uc744 \ub54c\ub294 \ub9e8 \uae00\uc790\uc600\uc2b5\ub2c8\ub2e4 \u2014 \uc0c1\uc790\uac00 \ub458\uc774\ub77c
+     \uae00\uaf34\u00b7line-height\u00b7\uae30\uc900\uc120 \uc911 \ud558\ub098\ub9cc \uc5b4\uae0b\ub098\ub3c4 \uac12\uc774 \uc549\ub294 \uc21c\uac04 \uae00\uc790\uac00 \ud291\ub2c8\ub2e4. \uc9c0\uae08\uae4c\uc9c0 \uadf8
+     \uc5b4\uae0b\ub09c \uac12\uc744 \ud55c \uc790\ub9ac\uc529 \ub9de\ucdb0 \uc654\ub294\ub370(\uc904 1.16em \u2192 1.2em, \uba38\ub9ac line-height), \uc790\ub9ac\uac00 \ub298 \ub54c\ub9c8\ub2e4
+     \uac19\uc740 \uc77c\uc774 \ub418\ud480\uc774\ub429\ub2c8\ub2e4. \uc0c1\uc790\ub97c \ud558\ub098\ub85c \ub9cc\ub4e4\uba74 \ub9de\ucd9c \uac83\uc774 \uc5c6\uc5b4\uc9d1\ub2c8\ub2e4 \u2014 \uad74\ub9bc\uc774 \uba48\ucd98 \uc790\ub9ac\uc640
+     \uc549\uc740 \uc790\ub9ac\uac00 \uac19\uc740 \uc694\uc18c\uc758 \uac19\uc740 \uc704\uce58\uac00 \ub418\ub2c8\uae4c\uc694.
+     \uce78\uc774 \ud558\ub098\ubfd0\uc774\uba74 \ub9b4\uc740 \uc6c0\uc9c1\uc77c \uac83\uc774 \uc5c6\uc5b4 \uadf8\ub300\ub85c \uadf8 \uc790\ub9ac\uc5d0 \uc12d\ub2c8\ub2e4(\uad74\ub9bc\uc740 \uc138 \uce78 \uc911 \uc14b\uc9f8\ub85c
+     \uc62c\ub77c\uac00 \uba48\ucd94\ub294\ub370, \ud55c \uce78\uc774\uba74 \uadf8 \uccab \uce78\uc774 \uace7 \uac19\uc740 \uc790\ub9ac\uc785\ub2c8\ub2e4) */
+  var still = function (txt) {
+    return '<span class="ov-mvbox"><span class="ov-mvreel"><i>' + txt + "</i></span></span>";
+  };
+
   /* 순위: 금액 내림차순, 동률은 표에 적힌 순서 유지 */
   var ranked = function (rows) {
     return rows.map(function (r, i) {
@@ -1098,7 +1110,7 @@ export const PAGE_HTML = `<!doctype html>
     if (ph.k === "net")
       return '<span class="ov-gold as-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
         (r.d > 0 ? "+" : "") + manShort(r.d || 0) + '</span>';
-    return '<span class="ov-gold">' + manShort(r.g) +
+    return '<span class="ov-gold">' + still(manShort(r.g)) +
       '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
         (showD ? delay(dAge) : "") + '>' +
         (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>' +
@@ -1113,7 +1125,7 @@ export const PAGE_HTML = `<!doctype html>
     }
     if (ph.k === "net") return '<span class="ov-total as-lab">순액</span>';
     return '<span class="ov-total">' +
-      manShort((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0)) + '</span>';
+      still(manShort((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0))) + '</span>';
   };
   /* 라벨이 칸보다 길면 글자를 줄입니다 (2.0~3.4vw) — 칸을 넓히면 판이 넓어져 배율이 떨어집니다 */
   var fitLabel = function () {
@@ -2244,7 +2256,7 @@ export const PAGE_HTML = `<!doctype html>
           }).join("") +
           (showSum
             ? '<span class="ov-total">' +
-              manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)) + "</span>"
+              still(manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0))) + "</span>"
             : "") +
           (showNet ? '<span class="ov-nethead">순액</span>' : ""));
     fitCheads(); // 머리줄을 그린 뒤에 — 확대(fitBoard) 전에 크기를 정해야 합니다
