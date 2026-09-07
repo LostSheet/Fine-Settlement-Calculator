@@ -1105,11 +1105,11 @@ export const PAGE_HTML = `<!doctype html>
   var slotHtml = function (r, ph, rc, showD, dAge, delay) {
     if (ph.k === "item") {
       var v = (r.c || [])[ph.i] || 0;
-      return '<span class="ov-gold as-cnt' + (v ? '' : ' z') + '">' + esc(v) + '</span>'; // 0회도 0으로 (사용자: 비워 두지 않는다)
+      return '<span class="ov-gold as-cnt' + (v ? '' : ' z') + '">' + still(esc(v)) + '</span>'; // 0회도 0으로 (사용자: 비워 두지 않는다)
     }
     if (ph.k === "net")
       return '<span class="ov-gold as-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
-        (r.d > 0 ? "+" : "") + manShort(r.d || 0) + '</span>';
+        still((r.d > 0 ? "+" : "") + manShort(r.d || 0)) + '</span>';
     return '<span class="ov-gold">' + still(manShort(r.g)) +
       '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
         (showD ? delay(dAge) : "") + '>' +
@@ -1121,9 +1121,9 @@ export const PAGE_HTML = `<!doctype html>
     if (ph.k === "item") {
       var c = cols[ph.i] || {};
       return '<span class="ov-total as-lab' + (c.r ? " rl" : "") + '">' +
-        (c.r ? '<i class="ov-rlmk">◎</i>' : "") + esc(c.t) + '</span>';
+        still((c.r ? '<i class="ov-rlmk">◎</i>' : "") + esc(c.t)) + '</span>';
     }
-    if (ph.k === "net") return '<span class="ov-total as-lab">순액</span>';
+    if (ph.k === "net") return '<span class="ov-total as-lab">' + still("순액") + '</span>';
     return '<span class="ov-total">' +
       still(manShort((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0))) + '</span>';
   };
@@ -1132,7 +1132,10 @@ export const PAGE_HTML = `<!doctype html>
     var el = document.querySelector(".ov-total.as-lab");
     if (!el) return;
     el.style.fontSize = "";
-    var box = el.offsetWidth, need = el.scrollWidth; // 칸 폭은 실제 상자로 — --goldw 가 아직 없을 때도 맞습니다
+    /* 글자가 상자(.ov-mvbox) 안으로 들어가서, 넘치는 폭은 안쪽 칸에서 재야 합니다 (2026-09-08).
+       바깥 .ov-total 의 scrollWidth 는 상자가 100% 폭이라 늘 칸 폭과 같아 보입니다 */
+    var inner = el.querySelector(".ov-mvreel > i") || el;
+    var box = el.offsetWidth, need = inner.scrollWidth; // 칸 폭은 실제 상자로 — --goldw 가 아직 없을 때도 맞습니다
     if (box && need > box) el.style.fontSize = Math.max(2.0, (3.4 * box) / need).toFixed(2) + "vw";
   };
   /* 지표를 바꿉니다 — 값이 왼쪽으로 나가고(줄마다 30ms 늦게) 새 값이 오른쪽에서 들어옵니다 */
