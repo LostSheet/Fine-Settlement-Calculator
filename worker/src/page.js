@@ -104,6 +104,13 @@ export const PAGE_HTML = `<!doctype html>
      잘리지 않게 fitBoard 가 그 튀어나온 만큼을 폭에 얹어서 배율을 잽니다. */
   /* 아직 아무것도 안 낸 줄 — 이름·등수는 그대로 두고 값 칸만 물러납니다 (2026-09-07 사용자) */
   .ov-row.zero .ov-gold{opacity:.5; --slop:.5}
+  /* 0원 줄이 굴러 올라가는 동안은 칸을 흐리게 하지 않습니다 (2026-09-08 사용자 지적).
+     칸에 opacity 를 주면 그 안의 릴이 통째로 눌려서 들어오는 증감(+3만)과 결과(3만)까지
+     어두웠습니다 — 자식은 부모의 opacity 를 되돌릴 수 없습니다.
+     흐림은 옛 0 한 줄에만 겁니다. 올라갈 땐 릴의 첫 줄, 내려갈 땐 마지막 줄이 옛 값입니다 */
+  .ov-row.zero .ov-gold.ov-mv{opacity:1; --slop:1}
+  .ov-row.zero .ov-gold.ov-mv .ov-mvreel.up > i:first-child,
+  .ov-row.zero .ov-gold.ov-mv .ov-mvreel.dn > i:last-child{opacity:.5}
   /* 슬라이드 모드 (2026-09-06 사용자 확정) — 항목 열과 순액을 늘어놓지 않고 합계 자리에서 번갈아 보여 줍니다.
      판이 절반 폭이 되어 같은 면적에서 글자가 두 배가 됩니다. 값은 왼쪽으로 나가고 오른쪽에서 들어옵니다
      (표의 자연스러운 순서 항목 → 합계 → 순액 방향 — 사용자). 줄마다 30ms 씩 늦춰 물결처럼 */
@@ -2000,6 +2007,8 @@ export const PAGE_HTML = `<!doctype html>
       var a = manShort(m.from), c = manShort(m.to);
       /* 아래로 굴릴 때는 순서를 뒤집고 반대 방향으로 — 둘 다 새 값에서 멈춥니다 */
       var items = up ? [a, mid, c] : [c, mid, a];
+      /* 굴러가는 칸이라고 표시합니다 (2026-09-08) — 0원 줄의 흐림이 릴까지 누르지 않게 */
+      el.classList.add("ov-mv");
       el.innerHTML =
         '<span class="ov-mvbox"><span class="ov-mvreel ' + (up ? "up" : "dn") + '">' +
         '<i>' + items[0] + '</i><i class="d">' + items[1] + '</i><i>' + items[2] + "</i>" +
