@@ -213,7 +213,7 @@ export const PAGE_HTML = `<!doctype html>
   .ov-row.top .ov-name{font-weight:700}
 
   /* 방금 벌금이 붙은 줄 — 잠깐 번쩍이고 오른쪽에 증감이 떠올랐다 사라집니다 */
-  .ov-row.hit{animation:ov-flash 1.6s ease-out}
+  .ov-row.hit{animation:ov-flash 900ms linear}
   /* 룰렛 — 보드가 아니라 소스(뷰포트) 전체를 덮습니다. 보드가 좁고 길어도
      원판은 소스 크기로 큽니다 */
   /* 뒤를 어둡게 깔지 않습니다 — 소스가 화면 모퉁이의 작은 상자라, 막은 게임이 아니라
@@ -360,9 +360,15 @@ export const PAGE_HTML = `<!doctype html>
      1.6초 동안 막대가 통째로 사라졌다가 애니메이션이 끝나며 뚝 돌아왔습니다
      (실측: 검정 → 노랑 → 투명 → 검정). inset 그림자는 배경 위·글자 아래에 깔려서
      어느 테마든 줄의 제 배경을 안 건드립니다. 등수 블록은 반투명이라 같이 물듭니다 */
+  /* 순위 이동 한 판 (2026-09-08 사용자 확정). 줄이 미끄러지는 0.35초 동안은 그대로 켜 두고
+     (900ms 의 39%), 착지한 뒤 나머지에서 빠집니다 — 움직이는 내내 빛이 붙어 있어야
+     어느 줄이 옮겨 갔는지 눈이 따라갑니다.
+     배경 대신 안쪽 그림자로 얹습니다 — 배경을 갈아치우면 줄에 제 배경이 있는 막대 테마에서
+     막대가 통째로 사라집니다(2026-09-08 실측) */
   @keyframes ov-flash{
-    from{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,.28)}
-    to{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,0)}
+    0%{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,.28)}
+    39%{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,.28)}
+    100%{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,0)}
   }
   .ov-delta.plus,.ov-delta.minus{animation:ov-rise 4.2s ease-out forwards}
   .ov-delta.minus{color:#e0776b}
@@ -752,6 +758,12 @@ export const PAGE_HTML = `<!doctype html>
   var applying = false; // 판 반영(스와이프·순위 이동) 중
   var FX_HOLD = 1600;   // 카드가 머무는 시간
   var MV_DUR = 1120;    // 금액 스와이프 한 판
+  /* 번쩍임 한 판 = 순위 이동 한 판 (2026-09-08 사용자 확정). 줄이 미끄러지는 0.35초 동안
+     켜져 있고, 착지한 뒤 여운으로 빠집니다. CSS 의 ov-flash 길이와 같은 값이어야 합니다 —
+     한쪽만 고치면 렌더가 클래스를 먼저 떼거나 늦게 떼서 불이 끊기거나 남습니다.
+     이건 판의 속도 설정(FX_HOLD)이 아니라 줄이 미끄러지는 CSS 전환 시간에 매인 값이라
+     고정입니다 */
+  var HIT_MS = 900;
   var mvMode = "swipe"; // swipe | chip | off
   var spin = null;      // 앱이 보낸 판 (한 번에 통째로)
   var play = null;      // 방송이 제 시계로 재생하는 상태
@@ -992,6 +1004,16 @@ export const PAGE_HTML = `<!doctype html>
         if (rc.mvAt == null || now - rc.mvAt >= MOVE_MS) rc.mvBase = was.rank;
         rc.mv = rc.mvBase - rank;
         rc.mvAt = rc.mv === 0 ? null : now;
+        /* 번쩍임은 **순위가 바뀐 줄**에만 (2026-09-08 사용자 확정). 빛은 움직임에 붙을 때만
+           말이 됩니다 — 금액이 붙은 건 스와이프가 이미 말하고 있어서, 거기 빛까지 더하면
+           같은 말을 두 번 합니다. 순위가 안 바뀐 자수는 조용히 지나갑니다.
+           오른 줄이든 밀린 줄이든 움직인 줄은 다 빛납니다: 뜻이 "이 줄의 순위가 바뀌었다"라서
+           밀린 줄이 빛나는 것도 맞는 말입니다.
+           (개정 전) 트리거가 금액이었습니다. 다만 켜지는 시각이 순위 이동이 시작하는 시각과
+           같아서 순위 규칙처럼 보였고, 순위가 안 바뀔 때만 혼자 뜬금없이 빛났습니다.
+           mvAt 을 그대로 안 쓰는 이유: 제자리로 돌아온 줄은 mv 가 0 이라 mvAt 이 null 이 되는데,
+           그 줄도 화면에서는 분명히 움직였으므로 빛나야 합니다 */
+        rc.hitAt = now;
       }
     });
 
@@ -999,17 +1021,19 @@ export const PAGE_HTML = `<!doctype html>
        단가를 0으로 두고 횟수만 세는 판이 그렇습니다 — 그때는 아무도 안 흐리게 둡니다. */
     var anyPaid = list.some(function (r) { return (r.g || 0) !== 0; });
     var html = list.map(function (r, i) {
-      var was = prev[rowKey(r)];
-      var justHit = !!was && r.g - was.g !== 0;   // 번쩍임은 바뀐 그 순간만
       var rc = recent[rowKey(r)] || {};
       var dAge = rc.dAt == null ? Infinity : now - rc.dAt;
       var mAge = rc.mvAt == null ? Infinity : now - rc.mvAt;
+      /* 번쩍임은 트랜잭션이 끝날 때까지 — 켜진 지 얼마나 됐는지로 봅니다 (2026-09-08) */
+      var hAge = rc.hitAt == null ? Infinity : now - rc.hitAt;
       var showD = mvMode === "chip" && dAge < DELTA_MS, showM = mAge < MOVE_MS;
-      var cls = "ov-row" + (r.g || !anyPaid ? "" : " zero") + (justHit ? " hit" : "") +
+      var showH = hAge < HIT_MS;
+      var cls = "ov-row" + (r.g || !anyPaid ? "" : " zero") + (showH ? " hit" : "") +
         (i === 0 && r.g ? " top" : "");
       /* 이미 흐르던 표시는 지난 만큼 앞당겨 이어 붙입니다 — 다시 처음부터 뜨지 않게 */
       var delay = function (age) { return ' style="animation-delay:-' + Math.round(age) + 'ms"'; };
-      return '<div class="' + cls + '" data-k="' + esc(rowKey(r)) + '">' +
+      return '<div class="' + cls + '" data-k="' + esc(rowKey(r)) + '"' +
+        (showH ? delay(hAge) : "") + '>' +
         '<span class="ov-rank">' + (i + 1) + '</span>' +
         '<span class="ov-move ' + (showM ? (rc.mv > 0 ? "up" : "down") : "") + '"' +
           (showM ? delay(mAge) : "") + '>' +
@@ -1996,12 +2020,17 @@ export const PAGE_HTML = `<!doctype html>
     if (box) box.style.setProperty("--mvdur", MV_DUR + "ms");
     var rows = document.querySelectorAll(".ov-row");
     moves.forEach(function (m) {
-      var el = null;
+      var el = null, rowEl = null;
       if (m.total) el = document.querySelector(".ov-total");
       else
         for (var i = 0; i < rows.length; i++)
-          if (rows[i].getAttribute("data-k") === m.k) el = rows[i].querySelector(".ov-gold");
+          if (rows[i].getAttribute("data-k") === m.k) {
+            rowEl = rows[i];
+            el = rows[i].querySelector(".ov-gold");
+          }
       if (!el) return;
+      /* 여기서는 번쩍임을 안 켭니다 — 빛은 순위가 바뀐 줄의 것이고, 순위는 판이 앉을 때
+         정해집니다(rowsHtml 의 머리). 스와이프는 금액 이야기라 제 몫만 합니다 */
       var up = m.to > m.from;
       var mid = (up ? "+" : "\u2212") + manShort(Math.abs(m.to - m.from));
       var a = manShort(m.from), c = manShort(m.to);
