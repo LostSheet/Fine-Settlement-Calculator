@@ -514,16 +514,18 @@ export const PAGE_HTML = `<!doctype html>
      :first-of-type 은 못 씁니다: 머리줄의 첫 span 은 (막대에서 숨긴) .ov-rank 라서요 */
   html[data-t="bars"] .ov-name-t + .ov-chead{box-shadow:none}
 
-  /* 칸을 가르는 건 색면이 아니라 선입니다 — 크림색 0.45vw, 틈 가운데.
-     예전 1.6vw 통짜 띠는 금색 앞에만 있었는데, 색면이 이어지면 그 띠는 "칸을 가르는 선"이
-     되고 선의 제자리는 틈 가운데입니다. 나란히의 칸 사이도, 슬라이드의 제목|슬롯 경계도
-     같은 선을 씁니다 (2026-09-08 사용자 확정: 균일한 굵기) */
-  html[data-t="bars"] .ov-chead + .ov-chead::before,
-  html[data-t="bars"] .ov-head > .ov-total::before,
-  html[data-t="bars"] .ov-head > .ov-lobby-n::before,
-  html[data-t="bars"] .ov-head > .ov-nethead::before{
+  /* 띠 (2026-09-08 사용자 확정) — 슬라이드에서만, 슬롯 왼쪽에 붙여서 하나.
+     "회색 띠 - 노란 영역" 두 조각으로 끝냅니다. 어두운 색면 다리(box-shadow)도 여기선 뺍니다.
+     회색은 크림을 50% 로 낮춘 것입니다 — 진짜 중립 회색을 쓰면 옆의 크림·금색과 온도가 달라
+     한 톤 탁해 보입니다.
+     나란히에서는 띠를 아예 두지 않습니다: 칸을 가르는 일은 색면과 여백이 이미 하고 있어서,
+     선까지 더하면 머리줄이 시끄러워집니다. (폐기: 칸 사이마다 넣던 0.45vw 선, 틈 가운데 두기) */
+  html[data-t="bars"][data-sl="1"] .ov-head > .ov-total,
+  html[data-t="bars"][data-sl="1"] .ov-head > .ov-lobby-n{box-shadow:none}
+  html[data-t="bars"][data-sl="1"] .ov-head > .ov-total::before,
+  html[data-t="bars"][data-sl="1"] .ov-head > .ov-lobby-n::before{
     content:''; position:absolute; right:100%; top:0; bottom:0;
-    width:.45vw; margin-right:.575vw; background:rgba(245,240,230,.5); z-index:1}
+    width:.45vw; background:rgba(245,240,230,.5); z-index:1}
 
   /* 합계 기둥 — 금액이 뜨는 칸에 등수 칸과 같은 값을 깝니다 (2026-09-08 사용자 제안).
      어두운 칸이 등수와 금액 둘이 되는데, 정확히 순위를 만드는 두 가지입니다.
@@ -2363,6 +2365,9 @@ export const PAGE_HTML = `<!doctype html>
        금액 내림차순으로 서는 판이라 '표'보다 '순위'가 화면이 하는 일을 그대로 말합니다 */
     /* 항목 이름은 머리줄에 한 번만 — 줄마다 되뇌면 방송에서 읽히지 않습니다.
        칸 구성은 본문 줄과 하나하나 같아야 열이 맞습니다 */
+    /* 띠는 두 모드가 다릅니다 (2026-09-08 사용자 확정) — 슬라이드는 슬롯 왼쪽에 회색 띠 하나,
+       나란히는 띠 없음. CSS 에서 두 모드를 가릴 방법이 없어 여기서 표시만 남깁니다 */
+    root.dataset.sl = slideOn ? "1" : "0";
     document.getElementById("ovhead").innerHTML =
       '<span class="ov-rank"></span><span class="ov-move"></span>' +
       '<span class="ov-name-t">벌금 순위</span>' +
