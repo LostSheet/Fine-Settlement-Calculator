@@ -2233,6 +2233,64 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 구독 — 접속 즉시 스냅샷 한 번, 이후 변경분. 끊기면 물러났다 다시 붙습니다.
      자격은 쿼리로 갑니다: 방송용 토큰(?o) 아니면 초대 코드(?j). 주소창에는 안 실립니다 */
+  /* 받은 판 하나를 처리합니다 — 소켓과 예시 방(CAFE22)이 같은 길을 탑니다 (2026-09-08).
+     예시가 render() 로 판만 갈아 끼우던 때에는 연출 큐도 룰렛도 안 돌아서, 방송에 실제로
+     나가는 그림과 예시가 서로 달랐습니다 */
+  var onState = function (st) {
+    dead = false;
+    lobby = st.lobby || null;
+    /* 판은 바로 그리지 않고 담아 둡니다 — 연출이 다 끝나야 앉힙니다 */
+    lastState = st;
+    next = viewOf(st);
+    applyFxCfg(st);
+    ingestFx(st.fx);
+    /* 룰렛도 같은 줄에 세웁니다 — 도착한 자리에서 차례를 기다립니다 */
+    var sp = st.spin || null;
+    if (sp && sp.sid !== doneSid && !fxSeen["S" + sp.sid] && (!play || play.sp.sid !== sp.sid)) {
+      fxSeen["S" + sp.sid] = 1;
+      pendSpin = sp; // 큐가 아니라 위층
+    }
+    spin = sp;
+    /* 재생 중에는 pump 가 일찍 빠져나가 render 가 안 돕니다 —
+       돌고 있는 판의 최신 상태(양도 대기·답 도착)는 여기서 직접 이어 줍니다 */
+    /* 지금 돌고 있는 그 판일 때만 갱신합니다 — 다음 판이 먼저 도착해도
+       재생 중인 판을 덮어쓰면 엉뚱한 결과로 멈춥니다 */
+    if (play && spin && spin.sid === play.sp.sid) {
+      play.sp = spin;
+      var nf = spFree(spin);
+      if (nf && !play.free) enterFree();
+      else if (!nf && play.free) leaveFree();
+      else {
+        /* 건너뛰기 (2026-09-05) — 서기가 도는 중에 세웠으면(skipAt) 여기서도 그 자리에 세우고,
+           fast(결과 화면 없이 닫기)면 남은 박자를 줄입니다. 예전엔 둘 다 무시돼 방송만 느긋했습니다 */
+        if (!play.over && play.rolling && spin.skipAt != null && play.skipDone !== spin.skipAt) {
+          play.skipDone = spin.skipAt;
+          snapWheel();
+          clearTimeout(stepTimer);
+          stepTimer = setTimeout(stepPlay, 240);
+        } else if (spin.fast && !play.rolling && stepTimer) {
+          clearTimeout(stepTimer);
+          stepTimer = setTimeout(stepPlay, 0);
+        }
+        drawPlay();
+        /* 다음 면을 기다리다 답이 왔습니다 — 안 깨우면 판이 안 끝납니다 */
+        if (play.waiting) {
+          play.waiting = false;
+          clearTimeout(stepTimer);
+          stepTimer = setTimeout(stepPlay, 0);
+        }
+      }
+    } else if (play && !spin) {
+      /* 서기가 판을 닫았습니다 — 다음 면을 기다리던 것을 풀고 제 시계로 끝냅니다.
+         안 그러면 오지 않을 답을 영원히 기다리며 표까지 붙잡고 있습니다. */
+      play.appGone = true;
+      if (play.free) leaveFree();
+      else if (!stepTimer) stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
+    }
+    name = st.name || "";
+    applyLook(st.look);
+  };
+
   var wait = 1000;
   var CUR = ROOM;   // 지금 붙어 있는 방 (/o/ 는 resolve 로 알아냅니다)
   var authQ = function () {
@@ -2272,59 +2330,7 @@ export const PAGE_HTML = `<!doctype html>
           if (!m.you) { try { ws.close(); } catch (e2) {} }
           return;
         } else if (m.kind === "state") {
-          dead = false;
-          var st = m.state || {};
-          lobby = st.lobby || null;
-          /* 판은 바로 그리지 않고 담아 둡니다 — 연출이 다 끝나야 앉힙니다 */
-          lastState = st;
-          next = viewOf(st);
-          applyFxCfg(st);
-          ingestFx(st.fx);
-          /* 룰렛도 같은 줄에 세웁니다 — 도착한 자리에서 차례를 기다립니다 */
-          var sp = st.spin || null;
-          if (sp && sp.sid !== doneSid && !fxSeen["S" + sp.sid] && (!play || play.sp.sid !== sp.sid)) {
-            fxSeen["S" + sp.sid] = 1;
-            pendSpin = sp; // 큐가 아니라 위층
-          }
-          spin = sp;
-          /* 재생 중에는 pump 가 일찍 빠져나가 render 가 안 돕니다 —
-             돌고 있는 판의 최신 상태(양도 대기·답 도착)는 여기서 직접 이어 줍니다 */
-          /* 지금 돌고 있는 그 판일 때만 갱신합니다 — 다음 판이 먼저 도착해도
-             재생 중인 판을 덮어쓰면 엉뚱한 결과로 멈춥니다 */
-          if (play && spin && spin.sid === play.sp.sid) {
-            play.sp = spin;
-            var nf = spFree(spin);
-            if (nf && !play.free) enterFree();
-            else if (!nf && play.free) leaveFree();
-            else {
-              /* 건너뛰기 (2026-09-05) — 서기가 도는 중에 세웠으면(skipAt) 여기서도 그 자리에 세우고,
-                 fast(결과 화면 없이 닫기)면 남은 박자를 줄입니다. 예전엔 둘 다 무시돼 방송만 느긋했습니다 */
-              if (!play.over && play.rolling && spin.skipAt != null && play.skipDone !== spin.skipAt) {
-                play.skipDone = spin.skipAt;
-                snapWheel();
-                clearTimeout(stepTimer);
-                stepTimer = setTimeout(stepPlay, 240);
-              } else if (spin.fast && !play.rolling && stepTimer) {
-                clearTimeout(stepTimer);
-                stepTimer = setTimeout(stepPlay, 0);
-              }
-              drawPlay();
-              /* 다음 면을 기다리다 답이 왔습니다 — 안 깨우면 판이 안 끝납니다 */
-              if (play.waiting) {
-                play.waiting = false;
-                clearTimeout(stepTimer);
-                stepTimer = setTimeout(stepPlay, 0);
-              }
-            }
-          } else if (play && !spin) {
-            /* 서기가 판을 닫았습니다 — 다음 면을 기다리던 것을 풀고 제 시계로 끝냅니다.
-               안 그러면 오지 않을 답을 영원히 기다리며 표까지 붙잡고 있습니다. */
-            play.appGone = true;
-            if (play.free) leaveFree();
-            else if (!stepTimer) stepTimer = setTimeout(stepPlay, holdMs(OV_HOLD));
-          }
-          name = st.name || "";
-          applyLook(st.look);
+          onState(m.state || {});
         } else return;
         wait = 1000;
         /* 대기실은 연출 큐를 안 탑니다 — 기다릴 판이 없으니 바로 그립니다 */
@@ -2367,20 +2373,130 @@ export const PAGE_HTML = `<!doctype html>
       .catch(function () { dead = true; render(); setTimeout(boot, bootWait()); });
   };
 
-  /* 예시: 몇 초마다 한 사람에게 벌금이 붙고, 순위가 바뀌면 줄이 미끄러집니다 */
+  /* 예시 방 — 서버에 방을 만들지 않고 페이지가 스스로 굴립니다 (2026-09-08 개편).
+     소켓과 같은 길(onState)로 판을 밀어 넣어서, 실제 방송에 나가는 연출이 그대로 돕니다:
+     대기실 → 시작 → 자수 카드 → 금액 스와이프·순위 이동 → 룰렛 → 표 반영, 그리고 슬라이드.
+     예전에는 board 를 직접 갈고 render() 만 불러서 카드도 룰렛도 안 돌았습니다 — 예시를 보고
+     "내 방송도 저렇겠구나" 할 수 없었습니다. 명단과 금액은 그대로 SAMPLE 을 씁니다 */
   var startDemo = function () {
+    var COLS = [{ id: "c1", t: "잡힘" }, { id: "c2", t: "죽음" }];
+    var FACES = ["1", "2", "3", "5", "-1", "x2"];
+    var PRICE = [30000, 50000];
+    var rows, feed, seq, spinNow, lobbyOn;
+    var at = 0; /* 대본 커서 — reset 이 안 건드립니다 */
+
     var reset = function () {
-      board = SAMPLE.map(function (p) { return { n: p[0], g: p[1] }; });
+      /* 줄 고유번호를 답니다 — 순위가 바뀔 때 FLIP 이 같은 줄을 따라가는 열쇠입니다 (§4.4) */
+      rows = SAMPLE.map(function (p, i) {
+        return { k: "r" + i, n: p[0], g: p[1],
+                 c: [Math.round(p[1] / 150000), Math.round(p[1] / 260000)], d: 0 };
+      });
+      feed = [];
+      seq = 0;
+      spinNow = null;
+      lobbyOn = true;
+      /* at(대본 커서)은 여기서 안 건드립니다 — reset 이 커서까지 0 으로 되돌리면
+         첫 걸음(대기실)만 무한히 되풀이합니다 (2026-09-08 실측) */
     };
+
+    /* 순액 — 받을 몫에서 낸 벌금을 뺀 값. 슬라이드가 돌 것이 있어야 지표가 셋이 됩니다 */
+    var reNet = function () {
+      var tot = rows.reduce(function (a, r) { return a + r.g; }, 0);
+      var share = Math.round(tot / rows.length / 10000) * 10000;
+      rows.forEach(function (r) { r.d = share - r.g; });
+    };
+
+    var push = function () {
+      reNet();
+      var st = {
+        name: "예시 파티",
+        cols: COLS,
+        board: rows.map(function (r) {
+          return { k: r.k, n: r.n, g: r.g, c: r.c.slice(), d: r.d };
+        }),
+        fx: feed.slice(-6),
+        spin: spinNow,
+      };
+      /* 대기실은 판 대신 그려집니다 — 정원만큼 줄을 미리 세우고 들어온 사람만 또렷하게 (§4.3) */
+      if (lobbyOn) {
+        st.lobby = { n: 4, cap: 8, names: [
+          { n: rows[0].n, live: true, host: true },
+          { n: rows[1].n, live: true },
+          { n: rows[2].n, live: true },
+          { n: rows[3].n, live: true },
+          { n: rows[4].n, live: false },
+        ] };
+      }
+      onState(st);
+      /* 소켓 쪽 꼬리와 같은 줄입니다 — 대기실은 기다릴 판이 없으니 바로 그립니다 */
+      if (dead || lobby) render();
+      else pump();
+    };
+
+    /* 자수 한 번 — 카드가 뜨고, 카드가 지나간 뒤에 금액과 순위가 따라옵니다 */
+    var confess = function () {
+      var r = rows[Math.floor(Math.random() * rows.length)];
+      var ci = Math.random() < 0.6 ? 0 : 1;
+      r.c[ci] += 1;
+      r.g += PRICE[ci];
+      feed.push({ i: "f" + ++seq, k: "add", n: r.n, t: COLS[ci].t, g: PRICE[ci] });
+      push();
+    };
+
+    /* 룰렛 한 판 — 판과 결과 카드를 한 번에 실어 보냅니다. 원판이 서면 결과 카드가 먼저 뜨고,
+       그 뒤에 표가 앉습니다 (연출 순서 규칙 ③④⑤) */
+    var roulette = function () {
+      var r = rows[Math.floor(Math.random() * rows.length)];
+      var k = FACES[Math.floor(Math.random() * 4)];
+      var gold = Number(k) * 30000;
+      r.c[1] += 1;
+      r.g += gold;
+      spinNow = {
+        sid: "s" + ++seq,
+        look: "wheel",
+        theme: "satin",
+        faces: FACES,
+        w: {},
+        steps: [{ k: k }],
+        phase: "done",
+        who: r.n,
+        item: COLS[1].t,
+        gold: gold,
+        out: { name: r.n, g: gold, after: r.g, raw: gold },
+        cfg: { roll: 4200, free: 260, face: 70 },
+      };
+      feed.push({ i: "f" + ++seq, k: "roul", n: r.n, t: COLS[1].t, g: gold });
+      push();
+    };
+
+    /* 한 바퀴 — 대기실로 열고, 자수 몇 번에 룰렛 한 판을 끼우고, 다시 처음으로.
+       [뒤 숫자는 그 걸음이 끝나고 다음 걸음까지 기다리는 밀리초] */
+    var SCRIPT = [
+      ["lobby", 7000],
+      ["start", 2600],
+      ["confess", 4200],
+      ["confess", 4200],
+      ["confess", 4200],
+      ["roulette", 15000],
+      ["confess", 4200],
+      ["confess", 4200],
+      ["confess", 6000],
+      ["clear", 3000],
+    ];
+
+    var tick = function () {
+      var s = SCRIPT[at % SCRIPT.length];
+      at++;
+      if (s[0] === "lobby") { reset(); push(); }
+      else if (s[0] === "start") { lobbyOn = false; push(); }
+      else if (s[0] === "confess") confess();
+      else if (s[0] === "roulette") roulette();
+      else if (s[0] === "clear") { spinNow = null; push(); }
+      setTimeout(tick, s[1]);
+    };
+
     reset();
-    render();
-    setInterval(function () {
-      var total = board.reduce(function (a, r) { return a + r.g; }, 0);
-      if (total > 4000000) reset();
-      else board[Math.floor(Math.random() * board.length)].g +=
-        [10000, 30000, 100000][Math.floor(Math.random() * 3)];
-      render();
-    }, 3200);
+    tick();
   };
 
   /* 창 크기를 바꾸면 vw 가 달라져 판 크기도 달라집니다 — 그 즉시 다시 맞춥니다 */

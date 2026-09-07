@@ -13559,6 +13559,15 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, fresh, guest, onAskReissu
             <div className="gs-obs-card">
               <div className="gs-obs-cardhead">
                 <h4 className="gs-key-h">내 방송용 주소</h4>
+                {/* 예시 방을 새 탭으로 (2026-09-08 사용자 지정 라벨) — 내 주소가 아니라
+                    예시 판이라 지금 판이 없어도, 로그인 전에도 그림을 볼 수 있습니다.
+                    카드 머리의 .gs-btn 은 margin-left:auto 라 오른쪽 끝에 섭니다 */}
+                <button
+                  className="gs-btn gs-btn-sm gs-btn-ghost"
+                  onClick={() => window.open(roomApi.roomUrl(DEMO_ROOM) + "?mode=overlay", "_blank", "noopener")}
+                >
+                  미리보기
+                </button>
               </div>
               {/* (폐기 2026-09-06 당일) 실시간 미리보기 iframe `지금 이 주소에 나가는 그림이에요.` — 사용자: 스크롤을 너무
                   잡아먹고 주소가 잘 안 보인다. 나가는 게 뭔지는 아래 상태 문장(CAST_WHY)이 말합니다 */}
