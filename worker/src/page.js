@@ -894,8 +894,21 @@ export const PAGE_HTML = `<!doctype html>
       el.textContent = t;
       return el.offsetWidth;
     };
-    var w = mw(probe, "999만");
-    var nw = mw(nprobe, "\u2212999만");
+    /* 밑값은 manShort 가 만들어 낼 수 있는 **가장 넓은 꼴**로 잡습니다 (2026-09-08 사용자 지적:
+       판이 조금씩 넓어지는데 되돌아오지 않는다). 옛 밑값 "999만"(실측 128px)은 실제로 나오는
+       값들을 못 덮었습니다 — manShort 는 1만 미만이면 콤마를("3,750"=126), 100만 미만이면
+       소수점을("99.9만"=145) 붙이고, 슬라이드는 순액을 같은 칸에 넣어 부호까지 답니다
+       ("−99.9만"=176). 그래서 값이 그 꼴로 바뀔 때마다 열이 넓어졌고, 폭이 래칫이라
+       되돌아오지 않았습니다(새로고침하면 다시 재서 줄어든 것이 그 증거입니다).
+       이제 첫 그림부터 최대 폭이라 도중에 늘어날 일이 없습니다 */
+    var WIDE = ["9999만", "99.9만", "9,999"];
+    var WIDE_SIGNED = ["−9999만", "−99.9만", "−9,999"];
+    var w = 0;
+    WIDE.forEach(function (t) { w = Math.max(w, mw(probe, t)); });
+    /* 슬라이드에서는 순액이 이 칸으로 들어옵니다 — 부호 붙은 꼴까지 미리 자리를 잡습니다 */
+    if (slideOn) WIDE_SIGNED.forEach(function (t) { w = Math.max(w, mw(probe, t)); });
+    var nw = 0;
+    WIDE_SIGNED.forEach(function (t) { nw = Math.max(nw, mw(nprobe, t)); });
     var mwd = 0;
     var total = 0;
     rows.forEach(function (r) {
@@ -2507,6 +2520,10 @@ export const PAGE_HTML = `<!doctype html>
      못 받으면 이 약속은 그냥 안 옵니다 — 화면은 폴백 글꼴 그대로입니다 */
   if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
     document.fonts.ready.then(function () {
+      /* 열 폭도 다시 잽니다 (2026-09-08) — 첫 그림은 폴백 글꼴로 쟀는데 방송용 글꼴이
+         뒤늦게 오면 글자 폭이 달라집니다. 안 다시 재면 다음 판이 올 때 그때서야 재면서
+         폭이 한 번 튀고, 래칫이라 그 자리에 눌러앉습니다 */
+      if (board) setGoldW(board);
       fitCheads();
       fitLabel();
       fitBoard();
