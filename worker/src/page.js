@@ -421,7 +421,7 @@ export const PAGE_HTML = `<!doctype html>
      box-shadow 라 자리를 안 먹습니다: 열 간격을 그대로 덮어서 칸 정렬이 안 틀어집니다 */
   html[data-t="bars"] .ov-total, html[data-t="bars"] .ov-lobby-n{
     background:var(--gold); color:#17130e; opacity:1; font-weight:800;
-    align-self:stretch; display:flex; align-items:center; justify-content:center;
+    align-self:stretch; display:flex; align-items:center; justify-content:flex-end;
     margin:-1vw 0; padding:0; min-width:9.5vw;
     box-shadow:-1.6vw 0 0 0 rgba(245,240,230,.75)}
   /* 좌우 여백을 주면 안 됩니다 — 폭이 --goldw(테두리 기준)라 여백만큼 속이 좁아져서
@@ -438,7 +438,12 @@ export const PAGE_HTML = `<!doctype html>
      순액 열이 켜진 나란히 모드에서는 순액 머리가 끝이라, 여기서 여백을 먹으면 머리줄 전체가
      1.6vw 밀려 열이 줄과 어긋납니다 (2026-09-08 실측: 머리 172만이 줄 금액보다 27px 오른쪽) */
   html[data-t="bars"] .ov-head > .ov-total:last-child,
-  html[data-t="bars"] .ov-head > .ov-lobby-n:last-child{margin-right:-1.6vw}
+  html[data-t="bars"] .ov-head > .ov-lobby-n:last-child{margin-right:-1.6vw;
+    padding-right:1.6vw; box-sizing:content-box}
+  /* 오른쪽 여백 1.6vw 는 줄의 오른쪽 안쪽 여백과 같은 값이라, 블록 안의 글자가 아래
+     금액들과 같은 선에서 끝납니다. content-box 라 그 여백이 --goldw 를 안 먹습니다 —
+     border-box 로 두면 그 폭에 딱 맞는 값이 잘립니다(총액이 굴러갈 때의 증감 줄에서 봤습니다).
+     음수 바깥 여백이 그만큼을 도로 걷어서 뒤 칸의 자리는 그대로입니다 */
   html[data-t="bars"] .ov-chead, html[data-t="bars"] .ov-nethead{align-self:center}
   /* 줄 = 막대. 사이 간격이 판 노릇을 합니다 */
   html[data-t="bars"] .ov-row{background:rgba(20,17,14,var(--bg,.9)); border-radius:0;
@@ -1155,6 +1160,10 @@ export const PAGE_HTML = `<!doctype html>
   var playKey = null;   // 지금 그려 둔 판
   var doneSid = null;   // 이미 끝까지 재생한 판 — 늦게 온 푸시가 같은 판을 또 돌리지 않게
   var wheelRot = 0;     // 원판이 지금까지 돈 각도 (앞으로만 돕니다)
+  /* 원판이 실제로 서는 시각 (2026-09-08). 결과를 여는 타이머와 원판을 돌리는 CSS 전환은
+     서로 다른 시계라, 전환이 한 프레임 늦게 시작하거나 소스가 눌려 밀리면 결과가
+     원판이 서기 전에 열립니다. 전환을 거는 순간 여기 적어 두고 stepPlay 가 확인합니다 */
+  var wheelStopAt = 0;
   var clearPlayTimers = function () {
     if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
     if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
@@ -1282,6 +1291,7 @@ export const PAGE_HTML = `<!doctype html>
     el.style.transition = "none";
     el.style.transform = "rotate(" + deg.toFixed(2) + "deg)";
     wheelRot = deg;
+    wheelStopAt = 0; // 그 자리에 즉시 멈춥니다 — 기다릴 것이 없습니다
   };
   /* 건너뛰기 — 돌던 원판을 목표 자리에 짧게 세웁니다 (2026-09-05) */
   var snapWheel = function () {
@@ -1290,6 +1300,7 @@ export const PAGE_HTML = `<!doctype html>
     if (el.classList.contains("ov-w-free")) { holdFree(); return; }
     el.style.transition = "transform 240ms ease-out";
     el.style.transform = "rotate(" + wheelRot.toFixed(2) + "deg)";
+    wheelStopAt = performance.now() + 240;
   };
   /* fast(결과 화면 없이 바로 닫기)면 남은 박자를 짧게 — 서기 화면과 같이 닫힙니다 */
   var holdMs = function (ms) {
@@ -1358,6 +1369,14 @@ export const PAGE_HTML = `<!doctype html>
   var stepPlay = function () {
     if (!play) return;
     if (play.rolling) {
+      /* 원판이 아직 서는 중이면 그만큼만 더 기다립니다 (2026-09-08 사용자 지적:
+         결과가 정지 전에 공개된다). 결과를 여는 건 setTimeout 이고 원판을 돌리는 건 CSS
+         전환이라 시계가 둘입니다 — 전환이 한 프레임 늦게 시작하거나 소스가 눌려 밀리면
+         그 차이만큼 결과가 먼저 열립니다. 숫자만 모드는 전환이 없어 이 검사를 건너뜁니다 */
+      if (play.sp.look !== "num") {
+        var leftMs = wheelStopAt - performance.now();
+        if (leftMs > 16) { stepTimer = setTimeout(stepPlay, leftMs); return; }
+      }
       play.rolling = false;
       if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
       drawPlay();
@@ -1828,6 +1847,7 @@ export const PAGE_HTML = `<!doctype html>
     void el.offsetWidth;
     el.style.transition = "transform " + OV_ROLL + "ms " + cz;
     el.style.transform = "rotate(" + target.toFixed(2) + "deg)";
+    wheelStopAt = performance.now() + OV_ROLL;
   };
 
   /* 설정 — 앱이 상태에 실어 보냅니다 */
