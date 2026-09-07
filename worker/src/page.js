@@ -450,7 +450,8 @@ export const PAGE_HTML = `<!doctype html>
     font-size:3.3vw; font-weight:700; letter-spacing:.05em}
   /* 금색 블록 — 합계와 대기실 인원이 같은 자리에 섭니다. 왼쪽 띠는 box-shadow 라
      자리를 안 먹습니다: 열 간격을 그대로 덮어서 칸 정렬이 안 틀어집니다.
-     띠 색이 크림에서 색면(rgba(8,7,6,.55))으로 바뀐 이유는 아래 "지표 구간" 주석에 있습니다 */
+     ::before 를 안 쓰는 이유도 있습니다 — .ov-chead 에 overflow:hidden 이 걸려 있어서
+     칸 바깥에 그린 ::before 는 통째로 잘립니다 (2026-09-08 목업에서 실제로 안 보였습니다) */
   html[data-t="bars"] .ov-total, html[data-t="bars"] .ov-lobby-n{
     background:var(--gold); color:#17130e; opacity:1; font-weight:800;
     align-self:stretch; display:flex; align-items:center; justify-content:flex-end;
@@ -458,13 +459,16 @@ export const PAGE_HTML = `<!doctype html>
     /* 세로 여백은 반드시 긴 이름으로 — margin 단축을 쓰면 아래 :last-child 의
        margin-right:-1.6vw 를 지워서 머리와 줄의 열이 1.6vw 어긋납니다 (2026-09-08 실측) */
     margin-top:-1vw; margin-bottom:-1vw;
-    box-shadow:-1.6vw 0 0 0 rgba(8,7,6,.55)}
+    /* 두꺼운 띠 — 값 칸(금색)만. 라벨 칸의 두 배입니다 (2026-09-08 사용자 확정) */
+    box-shadow:-.45vw 0 0 0 rgba(245,240,230,.5)}
   /* 금색은 값에만 씁니다 (2026-09-08 사용자 확정). 슬라이드에서 이 자리는 합계일 땐 총액(값),
      항목·순액일 땐 이름입니다. 이름일 때까지 금색이면 "금색 = 돈"이 흐려지고, 나란히에서
      같은 단어(잡힘)가 어두운 색면에 크림 글자인 것과도 어긋납니다.
      그래서 라벨일 때는 라벨의 옷 — 어두운 색면에 크림 글자 — 을 입습니다 */
   html[data-t="bars"] .ov-total.as-lab{
-    background:rgba(8,7,6,.55); color:rgba(245,240,230,.92); font-weight:700}
+    background:rgba(8,7,6,.55); color:rgba(245,240,230,.92); font-weight:700;
+    /* 라벨일 땐 띠도 라벨 두께로 — 두꺼운 띠는 노란 칸의 짝입니다 */
+    box-shadow:-.22vw 0 0 0 rgba(245,240,230,.5)}
   /* 금색 블록 안의 증감은 어두운 짝으로 (2026-09-08 사용자 지적: 황색 띠에 녹색이 안 보인다).
      총액이 굴러갈 때 그 사이에 끼는 증감 한 줄(.ov-mvreel > i.d)이 금색 바탕에 떠 버립니다.
      녹색과 적색은 한 쌍이라 같이 내립니다 — 밝은 판 테마에서 크림 바탕에 대고 검증한 값
@@ -497,35 +501,29 @@ export const PAGE_HTML = `<!doctype html>
   html[data-t="bars"] .ov-row > :last-child{
     margin-right:-1.6vw; padding-right:1.6vw; box-sizing:content-box}
 
-  /* 지표 구간 — 머리줄의 라벨을 칸마다 칠하지 않고 잡힘부터 순액까지를 하나의 색면으로
-     깝니다 (2026-09-08 사용자와 확정). 칸마다 칠하면 칸 폭이 색으로 드러나서, 숫자가 정한
-     열 폭과 두 글자짜리 라벨의 차이가 빈 판이 됩니다 — 순액 칸 11.74vw 에 라벨은 4.39vw 라
-     7.35vw 가 텅 빕니다. 칸 사이 1.6vw 틈은 box-shadow 로 메워 색면을 잇습니다.
-     표에서 칸 하나만 칠하는 건 "이 열이 기준이다"라는 강조일 때뿐이고, 여기서 그 열은 금색입니다 */
+  /* 머리줄의 한 마디 = [띠][칸][반투명 공백] (2026-09-08 사용자 확정).
+     칸마다 따로 칠하고 그 왼쪽에 띠를 답니다 — 슬라이드의 [띠][슬롯]이 여기서 반복될 뿐이라
+     두 모드가 같은 문법을 씁니다. 칸 사이 1.6vw 중 띠가 먹고 남은 만큼은 안 칠해진 채로 남고,
+     거기로 머리 막대가 비쳐 보입니다(반투명 공백).
+     (폐기 2026-09-08) 잡힘~순액을 하나의 색면으로 잇던 것 — 다리로 이어 붙이면 칸이 어디서
+     갈리는지 안 보여서 "이 열의 몫이 여기까지"라는 직관이 실제 칸과 어긋났습니다.
+     실측: 잡힘은 라벨 앞이 1.01vw 인데 죽음은 2.61vw 라, 폭이 같은 두 열이 좁고/넓게 읽혔습니다 */
   html[data-t="bars"] .ov-head > .ov-chead,
   html[data-t="bars"] .ov-head > .ov-nethead{
     align-self:stretch; display:flex; align-items:center; position:relative;
     margin-top:-1vw; margin-bottom:-1vw; /* 단축 금지 — :last-child 의 margin-right 를 지웁니다 */
     opacity:1; font-weight:700; color:rgba(245,240,230,.92);
-    background:rgba(8,7,6,.55); box-shadow:-1.6vw 0 0 0 rgba(8,7,6,.55)}
+    background:rgba(8,7,6,.55);
+    box-shadow:-.22vw 0 0 0 rgba(245,240,230,.5)}
   html[data-t="bars"] .ov-head > .ov-chead{justify-content:center}
   html[data-t="bars"] .ov-head > .ov-nethead{justify-content:flex-end}
-  /* 색면은 첫 라벨 칸의 왼쪽 끝에서 시작합니다 — 제목과는 틈으로 갈립니다.
-     :first-of-type 은 못 씁니다: 머리줄의 첫 span 은 (막대에서 숨긴) .ov-rank 라서요 */
-  html[data-t="bars"] .ov-name-t + .ov-chead{box-shadow:none}
+  /* (폐기 2026-09-08) 첫 라벨 칸의 띠를 빼던 것 — 잡힘만 왼쪽 경계가 없어서 다른 칸보다
+     좁게 읽혔습니다. 이제 네 칸 모두 제 띠를 갖습니다 */
 
-  /* 띠 (2026-09-08 사용자 확정) — 슬라이드에서만, 슬롯 왼쪽에 붙여서 하나.
-     "회색 띠 - 노란 영역" 두 조각으로 끝냅니다. 어두운 색면 다리(box-shadow)도 여기선 뺍니다.
-     회색은 크림을 50% 로 낮춘 것입니다 — 진짜 중립 회색을 쓰면 옆의 크림·금색과 온도가 달라
-     한 톤 탁해 보입니다.
-     나란히에서는 띠를 아예 두지 않습니다: 칸을 가르는 일은 색면과 여백이 이미 하고 있어서,
-     선까지 더하면 머리줄이 시끄러워집니다. (폐기: 칸 사이마다 넣던 0.45vw 선, 틈 가운데 두기) */
-  html[data-t="bars"][data-sl="1"] .ov-head > .ov-total,
-  html[data-t="bars"][data-sl="1"] .ov-head > .ov-lobby-n{box-shadow:none}
-  html[data-t="bars"][data-sl="1"] .ov-head > .ov-total::before,
-  html[data-t="bars"][data-sl="1"] .ov-head > .ov-lobby-n::before{
-    content:''; position:absolute; right:100%; top:0; bottom:0;
-    width:.45vw; background:rgba(245,240,230,.5); z-index:1}
+  /* 띠 색은 크림을 50% 로 낮춘 것입니다 — 진짜 중립 회색을 쓰면 옆의 크림·금색과 온도가 달라
+     한 톤 탁해 보입니다 (2026-09-08 사용자와 확정).
+     (폐기 2026-09-08) 모드마다 띠를 다르게 두던 것(data-sl) — 이제 두 모드가 같은 마디를 쓰니
+     가릴 것이 없습니다. 메모장(항목 열 없음)도 같은 규칙으로 저절로 맞습니다 */
 
   /* 합계 기둥 — 금액이 뜨는 칸에 등수 칸과 같은 값을 깝니다 (2026-09-08 사용자 제안).
      어두운 칸이 등수와 금액 둘이 되는데, 정확히 순위를 만드는 두 가지입니다.
@@ -2365,12 +2363,6 @@ export const PAGE_HTML = `<!doctype html>
        금액 내림차순으로 서는 판이라 '표'보다 '순위'가 화면이 하는 일을 그대로 말합니다 */
     /* 항목 이름은 머리줄에 한 번만 — 줄마다 되뇌면 방송에서 읽히지 않습니다.
        칸 구성은 본문 줄과 하나하나 같아야 열이 맞습니다 */
-    /* 띠는 두 모드가 다릅니다 (2026-09-08 사용자 확정) — 슬라이드는 슬롯 왼쪽에 회색 띠 하나,
-       나란히는 띠 없음. CSS 에서 두 모드를 가릴 방법이 없어 여기서 표시만 남깁니다.
-       항목 열이 없으면 나란히여도 슬라이드 룩으로 갑니다 (2026-09-08 사용자 확정: 메모장 모드).
-       메모장은 앱에서 cols 를 빈 배열로 보냅니다(ovCols = simple ? [] : activeCols) —
-       가를 열이 없으니 지표 구간이랄 것도 없고, 색면을 깔면 금색 칸 하나만 감싸는 꼴이 됩니다 */
-    root.dataset.sl = slideOn || !cols.length ? "1" : "0";
     document.getElementById("ovhead").innerHTML =
       '<span class="ov-rank"></span><span class="ov-move"></span>' +
       '<span class="ov-name-t">벌금 순위</span>' +
