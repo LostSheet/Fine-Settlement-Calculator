@@ -734,7 +734,8 @@ export const PAGE_HTML = `<!doctype html>
   var fxCard = null;  // 지금 떠 있는 카드
   var fxTimer = null;
   var pendSpin = null;   // 큐 위로 올라갈 판
-  var settleNow = false; // 룰렛 결과 뒤에는 카드가 남아 있어도 판을 먼저 앉힙니다
+  /* (폐기 2026-09-08) settleNow — 룰렛 결과 뒤에 카드가 남아 있어도 판을 먼저 앉히던 예외.
+     표는 모든 연출이 끝난 뒤 한 번만 움직입니다 (규칙 ⑤) */
   var fxBooted = false; // 첫 상태의 대기열은 '이미 흘러간 것'으로 봅니다
   var applying = false; // 판 반영(스와이프·순위 이동) 중
   var FX_HOLD = 1600;   // 카드가 머무는 시간
@@ -1888,9 +1889,11 @@ export const PAGE_HTML = `<!doctype html>
     /* 정정(취소·빼기)은 짧게 — 알리되 붙는 것만큼 크게 다루지 않습니다.
        그리고 밀리면 더 짧게: 다 보여 주되 속도만 올려 다음 판을 안 잡아먹습니다. */
     var hold = e.k === "add" || e.k === "roul" ? FX_HOLD : Math.round(FX_HOLD * 0.7);
-    /* 룰렛 결과가 지나가면 판을 바로 앉힙니다 — 밀린 카드를 다 볼 때까지
-       바퀴의 결과가 표에 안 뜨면, 방금 본 것과 표가 따로 놉니다 */
-    if (e.k === "roul") settleNow = true;
+    /* (폐기 2026-09-08 사용자 확정) 룰렛 결과 뒤에 판을 먼저 앉히던 settleNow.
+       그 예외 때문에 룰렛이 낀 판에서만 표가 두 번 움직였습니다 — 룰렛 뒤에 한 번,
+       큐가 끝나고 또 한 번. 예외를 없애면 어떤 판이든 표는 한 번만 움직입니다.
+       예외를 넣었던 이유(바퀴 결과가 표에 늦게 뜬다)는 룰렛 결과 카드가 큐 맨 앞에
+       서는 것(ingestFx 의 unshift)이 이미 답합니다 — 바퀴가 서면 그 결과가 곧바로 뜹니다 */
     if (fxQ.length > 4) hold = Math.round(hold * 0.5);
     var host = document.getElementById("ovfx");
     /* 카드는 벌금표에 대한 이야기라 표 소스에 뜹니다. 룰렛 소스는 룰렛만 —
@@ -2018,7 +2021,8 @@ export const PAGE_HTML = `<!doctype html>
     }
     if (applying || fxCard) return;
     if (play) return; // 판이 떠 있는 동안 큐는 멈춥니다. 쌓인 카드는 끝난 뒤에
-    if (next && settleNow) { settleNow = false; settle(); return; }
+    /* 큐가 다 빠진 뒤에야 표를 앉힙니다 (2026-09-08 사용자 확정 규칙 ⑤) —
+       큐와 룰렛을 포함한 모든 동작이 끝나면 금액과 순위가 한 번에 반영됩니다 */
     if (fxQ.length) { playCard(fxQ.shift()); return; }
     if (next) settle();
   };
