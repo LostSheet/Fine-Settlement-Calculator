@@ -958,6 +958,16 @@ export const PAGE_HTML = `<!doctype html>
     box.style.setProperty("--goldw", goldHW.toFixed(3) + "vw");
     box.style.setProperty("--netw", netHW.toFixed(3) + "vw");
     box.style.setProperty("--namew", nameHW.toFixed(3) + "vw");
+    /* 열 폭이 실제로 달라졌으면 배율을 다시 잡습니다 (2026-09-08 사용자 지적: 대기실에서
+       판으로 넘어가면 아래에 여백이 남고 다음 갱신에서야 채워진다).
+       바로 위에 자가 0 으로 나오면 다음 프레임에 다시 재는 길이 있는데(대기실 뒤 첫 판이
+       그렇습니다 — ovBoard 가 비워져 DOM 이 갓 생깁니다), 그때 fitBoard 를 다시 안 부르면
+       판은 새 폭으로 커졌는데 배율은 옛 폭으로 잡힌 채 남습니다. 그게 그 여백이었습니다 */
+    var sig = goldHW.toFixed(3) + "/" + netHW.toFixed(3) + "/" + nameHW.toFixed(3);
+    if (sig !== setGoldW.sig) {
+      setGoldW.sig = sig;
+      if (typeof fitBoard === "function") fitBoard();
+    }
   };
 
   /* 항목명 크기 — 칸(6.4vw)에 들어가는 최대 크기를 이름마다 재서 정합니다.
@@ -2240,9 +2250,23 @@ export const PAGE_HTML = `<!doctype html>
      가운데 정렬. 소스 사각형 = 판이라는 위젯의 관행을 따릅니다. 판의 원래 크기는
      transform 이 안 건드는 offset 치수로 잽니다. */
   var fitted = false;
+  /* 판 크기가 어떤 이유로든 달라지면 배율을 다시 잡습니다 (2026-09-08 사용자 지적: 대기실에서
+     판으로 넘어가면 아래에 여백이 남고 다음 갱신에서야 채워진다).
+     실측한 그림: 대기실 h=514 → 첫 판 h=475(배율 1.8947) → 다음 판 h=471인데 배율은 그대로라
+     아래 8px 이 비었고, 그다음 갱신에서 1.9108 로 다시 잡히며 채워졌습니다.
+     4px 이 어디서 오는지 하나씩 쫓는 대신 **크기가 변한 사실 자체**를 보고 맞춥니다 —
+     글꼴이 늦게 오든 열 폭이 늦게 정해지든 앞으로 생길 같은 종류를 한꺼번에 덮습니다.
+     transform 은 테두리 상자 크기를 안 바꾸므로 이 관찰이 스스로를 다시 부르지 않습니다 */
+  var roEl = null, ro = null;
   var fitBoard = function () {
     var el = document.querySelector(".ov");
     if (!el) return;
+    if (window.ResizeObserver && el !== roEl) {
+      if (ro) ro.disconnect();
+      ro = new ResizeObserver(function () { fitBoard(); });
+      ro.observe(el);
+      roEl = el;
+    }
     var w = el.offsetWidth, h = el.offsetHeight;
     if (!w || !h) return;
     var scale = Math.min(window.innerWidth / w, window.innerHeight / h);
