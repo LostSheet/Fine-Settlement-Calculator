@@ -61,7 +61,9 @@ export const PAGE_HTML = `<!doctype html>
   /* 순위 변동 자리 — 비어 있어도 폭을 차지해서 이름 열이 밀리지 않습니다 */
   .ov-move{width:5.6vw; flex:none; font-size:2.9vw; font-weight:700; text-align:center;
     font-variant-numeric:tabular-nums; align-self:center}
-  .ov-name{flex:1; min-width:6vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:1.6vw}
+  /* min-width 는 setGoldW 가 이름을 굵게 재서 정합니다 (2026-09-08) — 1위가 굵어질 때
+     칸이 늘어 판이 넓어지고, 그 폭으로 fitBoard 가 배율을 다시 잡던 밀림을 막습니다 */
+  .ov-name{flex:1; min-width:var(--namew, 6vw); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:1.6vw}
   /* 항목은 표의 열로 세웁니다 — 이름 밑에 늘어놓으면 방송에서 안 읽힙니다.
      열이 늘면 판이 가로로 넓어집니다 (width:fit-content) */
   .ov-cnum{width:6.4vw; flex:none; text-align:center; font-size:3.4vw;
@@ -91,7 +93,7 @@ export const PAGE_HTML = `<!doctype html>
   .ov-delta{position:absolute; left:100%; margin-left:.6vw; top:50%;
     transform:translateY(-50%); white-space:nowrap;
     font-size:3.4vw; font-weight:600; color:var(--gold);
-    padding:.1vw .8vw; border-radius:99px; background:rgba(20,17,14,.72)}
+    padding:.1vw .8vw; background:rgba(20,17,14,.72)} /* 각진 칩 (2026-09-08) — 판 위에 직접 얹히는 조각이라 막대와 같은 결로 */
   /* 밝은 판·진한 글자 테마에서는 칩도 밝게 */
   html[data-t="light"] .ov-delta, html[data-t="cleardark"] .ov-delta{background:rgba(248,244,236,.85)}
   .ov-delta.plus{color:#8fd89b}
@@ -133,11 +135,14 @@ export const PAGE_HTML = `<!doctype html>
   #ovfx > .ov-fx{grid-area:1/1}
   /* 평평하게 — 조명·광택 없이 색 하나와 얇은 테두리로만 */
   /* 룰렛 결과 카드 — 방금 본 바퀴의 것이라고 표시합니다 */
-  .ov-fx.roul{border-color:rgba(220,174,94,.85)}
+  /* 두 조각 카드 (2026-09-08 사용자 확정) — 머리 바와 같은 문법입니다: 먹색 이름 블록과
+     금색 값 블록, 사이에 크림색 띠. 방송에서 정작 봐야 하는 건 아래 줄(항목 + 금액)이라
+     그쪽이 제 블록을 갖습니다. (폐기) 둥근 상자 + 금색 얇은 테두리 — 판이 둥근 반투명이던 시절의 마감 */
+  .ov-fx.roul{box-shadow:0 0 0 .26vw rgba(232,198,106,.85)}
   .ov-fx.roul b::before{content:"◎ "; color:#dcae5e}
-  .ov-fx{max-width:86%; text-align:center; color:#ece4d6; padding:3.4vw 6vw;
-    border-radius:1.4vw; animation:ov-fx-in .2s cubic-bezier(.2,1.3,.4,1);
-    background:#1b1611; border:.26vw solid rgba(220,174,94,.55)}
+  .ov-fx{max-width:86%; text-align:center; color:#ece4d6;
+    animation:ov-fx-in .2s cubic-bezier(.2,1.3,.4,1);
+    background:none; border:0; padding:0}
   /* 카드가 이어질 땐 카드 한 장을 그대로 두고 속만 바꿉니다 (2026-09-07 사용자 확정: 카드는 한 장, 대신 다른 사건임을 알린다).
      옛 글이 0.07초 사라진 뒤 새 글이 0.14초 나타나고(두 글이 겹치지 않음), 그 순간 카드가 4% 부풀며 테두리가 금색으로
      번쩍합니다 — 그것이 "다른 건"이라는 신호. 글은 움직이지 않습니다(사용자: 글이 흐를 이유가 없다).
@@ -148,16 +153,22 @@ export const PAGE_HTML = `<!doctype html>
   @keyframes ov-fx-fade{to{opacity:0}}
   @keyframes ov-fx-rise{from{opacity:0}}
   .ov-fx.bump{animation:ov-fx-bump .28s ease-out}
+  /* 각진 링으로 (2026-09-08) — 테두리가 없어져서 번쩍임은 바깥 그림자 하나가 맡습니다.
+     연출 자체는 그대로입니다: 4% 부풀며 한 번 번쩍이는 것이 "다른 건"이라는 신호 */
   @keyframes ov-fx-bump{
-    0%{transform:scale(1)} 35%{transform:scale(1.04); border-color:rgba(236,205,120,1); box-shadow:0 0 0 .6vw rgba(220,174,94,.28)}
-    100%{transform:scale(1); box-shadow:0 0 0 0 rgba(220,174,94,0)}}
+    0%{transform:scale(1)} 35%{transform:scale(1.04); box-shadow:0 0 0 .6vw rgba(232,198,106,.34)}
+    100%{transform:scale(1); box-shadow:0 0 0 0 rgba(232,198,106,0)}}
   .ov-fx b{display:block; font-size:6.4vw; font-weight:700; line-height:1.1;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .ov-fx span{display:block; margin-top:1.2vw; font-size:4.2vw; opacity:.92;
-    white-space:nowrap}
-  .ov-fx em{font-style:normal; font-weight:700}
-  .ov-fx.up em{color:#8fd89b}
-  .ov-fx.dn em{color:#e59a90}
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    background:#17130e; padding:2.6vw 5vw}
+  .ov-fx span{display:block; font-size:4.2vw; white-space:nowrap; font-weight:800;
+    background:#e8c66a; color:#17130e; padding:1.5vw 5vw;
+    border-top:.6vw solid rgba(245,240,230,.75)}
+  /* 금색 바탕에서는 어두운 판의 청·녹·적이 떠 버립니다 — 밝은 판 테마에서 이미 검증한
+     값을 그대로 씁니다(크림 바탕 명도대비 4.8~4.9). §4.4 밝은 판의 색과 같은 가족입니다 */
+  .ov-fx em{font-style:normal; font-weight:800}
+  .ov-fx.up em{color:#2f7a4d}
+  .ov-fx.dn em{color:#b8462f}
   @keyframes ov-fx-in{from{opacity:0; transform:scale(.86)} to{opacity:1; transform:scale(1)}}
   /* 마지막 카드는 번져 사라집니다 — 뚝 꺼지지 않게 (2026-09-07) */
   .ov-fx.out{animation:ov-fx-out .17s ease-in forwards}
@@ -201,16 +212,17 @@ export const PAGE_HTML = `<!doctype html>
   /* 뒤를 어둡게 깔지 않습니다 — 소스가 화면 모퉁이의 작은 상자라, 막은 게임이 아니라
      우리 판만 덮습니다. 나눈 소스(룰렛 전용)에서는 아예 검은 사각형으로 보이고요.
      판(.ov-sp)이 이미 불투명해서 원판 뒤는 그것으로 가려집니다. */
-  #ovspin:not(:empty){position:fixed; inset:0; z-index:3; display:flex;
+  /* 룰렛은 카드 위입니다 (2026-09-08 사용자 지적 → 고침, §4.4 규칙 3).
+     둘 다 z-index:3 이었고 #ovfx 가 DOM 에서 뒤라, 떠 있던 클릭 알림이 원판을 덮었습니다 */
+  #ovspin:not(:empty){position:fixed; inset:0; z-index:4; display:flex;
     align-items:center; justify-content:center; padding:2%;
     animation:ov-spin-in .18s ease-out}
   @keyframes ov-spin-in{from{opacity:0} to{opacity:1}}
+  /* 각진 평면 상자 (2026-09-08 사용자 확정) — 원판은 그대로 두고 담는 상자만 바꿉니다.
+     (폐기) 둥근 모서리 · 방사형 그라데이션 · 안팎 그림자 — 조명과 광택이 있던 마감 */
   .ov-sp{position:relative; display:flex; width:96%; max-height:100%; text-align:center;
-    border-radius:calc(var(--u)*2); color:#ece4d6;
-    background:radial-gradient(120% 90% at 50% 12%, #322721 0%, #1d1712 58%, #17110d 100%);
-    border:calc(var(--u)*.4) solid rgba(220,174,94,.8);
-    box-shadow:inset 0 0 calc(var(--u)*8) rgba(0,0,0,.45),
-      0 calc(var(--u)*2) calc(var(--u)*6) rgba(0,0,0,.5)}
+    color:#ece4d6; background:#17130e;
+    border:calc(var(--u)*.4) solid rgba(232,198,106,.75)}
   /* 늘 세로 한 줄 — 이름 줄, 원판 무대, 트랙 순서 */
   .ov-sp{flex-direction:column; align-items:center; justify-content:center;
     gap:calc(var(--u)*1.6); padding:calc(var(--u)*5) calc(var(--u)*2.4) calc(var(--u)*2.2)}
@@ -234,8 +246,9 @@ export const PAGE_HTML = `<!doctype html>
     gap:calc(var(--u)*1.2); min-width:0}
   /* 이번 판 트랙 — 앱과 같은 5칸. 칩과 슬롯 폭이 같아 채워져도 안 밀립니다 */
   .ov-sp-track{display:flex; gap:calc(var(--u)*1.4); justify-content:center}
+  /* 각진 칩 (2026-09-08). 점선 슬롯은 그대로 — 빈 칸이라는 뜻이 대기실 빈 자리와 같은 말입니다 */
   .ov-tchip,.ov-tslot{width:calc(var(--u)*11); height:calc(var(--u)*5.4);
-    border-radius:99px; flex:none; display:flex; align-items:center; justify-content:center;
+    flex:none; display:flex; align-items:center; justify-content:center;
     font-size:calc(var(--u)*2.8); font-weight:700; overflow:hidden; white-space:nowrap}
   .ov-tchip{background:#241d18; border:1px solid rgba(220,174,94,.55)}
   .ov-tchip.pass{color:#ff9d92; border-color:#a44f46}
@@ -275,11 +288,8 @@ export const PAGE_HTML = `<!doctype html>
   /* 릴 창 — 숫자만 모드. 이웃 면이 위아래로 흐릿하게 스칩니다 */
   .ov-reel{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     width:calc(var(--u)*40*var(--wu,1)); height:calc(var(--u)*42*var(--wu,1));
-    border-radius:calc(var(--u)*2);
-    overflow:hidden; background:linear-gradient(#151009, #241c14 30% 70%, #151009);
-    border:calc(var(--u)*.4) solid #3a2e25;
-    box-shadow:0 0 0 calc(var(--u)*.3) rgba(220,174,94,.7),
-      inset 0 0 calc(var(--u)*3) rgba(0,0,0,.6);
+    overflow:hidden; background:#1b1611;
+    border:calc(var(--u)*.4) solid rgba(232,198,106,.55);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:calc(var(--u)*.8)}
   .ov-reel-n{font-weight:800; line-height:1; white-space:nowrap}
@@ -297,7 +307,7 @@ export const PAGE_HTML = `<!doctype html>
     transform:translateX(-50%); white-space:nowrap;
     font-size:calc(var(--u)*2.6); font-weight:700; color:#dcae5e;
     background:rgba(12,10,8,.85); border:1px solid rgba(220,174,94,.5);
-    border-radius:99px; padding:calc(var(--u)*.7) calc(var(--u)*2.2)}
+    padding:calc(var(--u)*.7) calc(var(--u)*2.2)} /* 각진 알약 (2026-09-08) */
   .ov-sp-gone:empty{display:none}
   .ov-sp-out{font-size:calc(var(--u)*5); font-weight:800; color:#dcae5e;
     height:calc(var(--u)*6.4); display:flex; align-items:center; justify-content:center;
@@ -338,9 +348,14 @@ export const PAGE_HTML = `<!doctype html>
   .ov-w-hit.on{animation:ov-hitpop .28s cubic-bezier(.2,1.5,.4,1) forwards}
   @keyframes ov-hitpop{from{transform:scale(.4); opacity:0}
     to{transform:scale(1); opacity:1}}
+  /* 번쩍임은 배경을 갈아치우지 않고 그 위에 얹힙니다 (2026-09-08 사용자 지적 → 고침).
+     옛 규칙은 to{background:transparent} 였는데, 줄이 제 배경을 갖는 막대 테마에서는
+     1.6초 동안 막대가 통째로 사라졌다가 애니메이션이 끝나며 뚝 돌아왔습니다
+     (실측: 검정 → 노랑 → 투명 → 검정). inset 그림자는 배경 위·글자 아래에 깔려서
+     어느 테마든 줄의 제 배경을 안 건드립니다. 등수 블록은 반투명이라 같이 물듭니다 */
   @keyframes ov-flash{
-    from{background:rgba(232,198,106,.28)}
-    to{background:transparent}
+    from{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,.28)}
+    to{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,0)}
   }
   .ov-delta.plus,.ov-delta.minus{animation:ov-rise 4.2s ease-out forwards}
   .ov-delta.minus{color:#e0776b}
@@ -407,9 +422,18 @@ export const PAGE_HTML = `<!doctype html>
   html[data-t="bars"] .ov-total, html[data-t="bars"] .ov-lobby-n{
     background:var(--gold); color:#17130e; opacity:1; font-weight:800;
     align-self:stretch; display:flex; align-items:center; justify-content:center;
-    margin:-1vw 0; padding:0 1.4vw; min-width:9.5vw;
+    margin:-1vw 0; padding:0; min-width:9.5vw;
     box-shadow:-1.6vw 0 0 0 rgba(245,240,230,.75)}
+  /* 좌우 여백을 주면 안 됩니다 — 폭이 --goldw(테두리 기준)라 여백만큼 속이 좁아져서
+     그 폭에 딱 맞는 값이 잘립니다(총액이 굴러갈 때의 증감 줄에서 봤습니다).
+     --goldw 는 "999만"을 밑값으로 잡아 두어 보통은 글자보다 넓으니 여백 없이도 숨이 붙습니다 */
   html[data-t="bars"] .ov-total.as-lab{color:#17130e; opacity:1}
+  /* 금색 블록 안의 증감은 어두운 짝으로 (2026-09-08 사용자 지적: 황색 띠에 녹색이 안 보인다).
+     총액이 굴러갈 때 그 사이에 끼는 증감 한 줄(.ov-mvreel > i.d)이 금색 바탕에 떠 버립니다.
+     녹색과 적색은 한 쌍이라 같이 내립니다 — 밝은 판 테마에서 크림 바탕에 대고 검증한 값
+     (--up #2f7a4d / --dn #b8462f)을 그대로 씁니다. 어두운 막대 위의 밝은 짝은 그대로입니다 */
+  html[data-t="bars"] .ov-total .ov-mvreel.up > i.d{color:#2f7a4d}
+  html[data-t="bars"] .ov-total .ov-mvreel.dn > i.d{color:#b8462f}
   /* 오른쪽 끝까지 채우는 건 금색 블록이 머리줄의 마지막 칸일 때만입니다 (슬라이드 모드).
      순액 열이 켜진 나란히 모드에서는 순액 머리가 끝이라, 여기서 여백을 먹으면 머리줄 전체가
      1.6vw 밀려 열이 줄과 어긋납니다 (2026-09-08 실측: 머리 172만이 줄 금액보다 27px 오른쪽) */
@@ -443,6 +467,33 @@ export const PAGE_HTML = `<!doctype html>
   /* 발치 문구도 막대 하나 — 판이 없어져서 맨 글자로 두면 밝은 화면에서 사라집니다 */
   html[data-t="bars"] .ov-lobby-note{background:rgba(23,19,14,var(--bg,.9));
     margin-top:1.02vw; padding:.85vw 1.6vw; opacity:1; color:rgba(245,240,230,.78)}
+
+  /* ---- 밝은 판에서는 카드와 룰렛도 밝게 (2026-09-08 사용자 확정) ----
+     형태(각진 블록)는 테마와 무관하게 한 벌이고, 뒤집는 것은 색뿐입니다.
+     금색 값 블록은 양쪽에서 그대로 둡니다 — 채운 강조색이라 어느 바탕에서나 섭니다.
+     기본·어두운 판·그 밖의 테마는 아래를 안 타서 어두운 카드 그대로입니다 */
+  html[data-t="light"] .ov-fx b{background:#f8f4ec; color:#221c14}
+  html[data-t="light"] .ov-fx span{border-top-color:rgba(34,28,20,.5)}
+  html[data-t="light"] .ov-sp{background:#f8f4ec; border-color:rgba(34,28,20,.5)}
+  html[data-t="light"] .ov-sp-who{color:#221c14}
+  html[data-t="light"] .ov-sp-item,
+  html[data-t="light"] .ov-sp-delta{color:#6b6154}
+  html[data-t="light"] .ov-sp-delta b{color:#221c14}
+  html[data-t="light"] .ov-sp-out{color:#8a6415}
+  html[data-t="light"] .ov-sp-out em{color:#6b6154}
+  html[data-t="light"] .ov-stage-out .ov-sp-out{color:#221c14;
+    text-shadow:0 calc(var(--u)*.5) calc(var(--u)*2) rgba(255,255,255,.75)}
+  html[data-t="light"] .ov-sp-gone{background:rgba(248,244,236,.92);
+    border-color:rgba(34,28,20,.4); color:#8a6415}
+  html[data-t="light"] .ov-tchip{background:#e9e2d4; border-color:rgba(34,28,20,.35); color:#221c14}
+  html[data-t="light"] .ov-tchip.pass{color:#b8462f; border-color:#b8462f}
+  html[data-t="light"] .ov-tchip.mult{color:#8a6415; border-color:#b97f37}
+  html[data-t="light"] .ov-tslot{border-color:rgba(34,28,20,.3)}
+  html[data-t="light"] .ov-tslot.next{border-color:rgba(34,28,20,.7)}
+  html[data-t="light"] .ov-reel{background:#efe8da; border-color:rgba(34,28,20,.4)}
+  html[data-t="light"] .ov-reel-n.big{color:#221c14; text-shadow:none}
+  html[data-t="light"] .ov-reel-n.side{color:#221c14}
+  html[data-t="light"] .ov-reel-line{border-color:rgba(34,28,20,.35)}
 
   /* 미리보기 창에서만 — 투명한 자리를 체커보드로 표시합니다.
      중간 회색이라 밝은 글자·진한 글자 테마를 둘 다 판단할 수 있습니다. */
@@ -807,7 +858,12 @@ export const PAGE_HTML = `<!doctype html>
      순간 한 번만 넓어지고 다시는 안 좁아집니다(래칫). 모든 줄이 같은 폭을 쓰므로
      줄 사이가 어긋나지 않고, 숫자가 자라도 판이 축소되지 않습니다. */
   var goldHW = 0,
-    netHW = 0;
+    netHW = 0,
+    /* 이름 칸도 미리 잡아 둡니다 (2026-09-08 사용자 지적 → 고침). 1위 이름이 굵어질 때
+       판의 max-content 폭이 늘고(실측 555 → 559px), .ov 가 fit-content 라 판이 넓어지고,
+       fitBoard 가 배율을 다시 잡아 판 전체가 다시 앉았습니다 — 최초 클릭 때 제일 컸습니다.
+       그때 .top 이 처음 생기기 때문입니다(그 전엔 모두 0원이라 어느 줄도 1위가 아닙니다) */
+    nameHW = 0;
   var setGoldW = function (rows) {
     var box = document.querySelector(".ov");
     if (!box) return;
@@ -820,8 +876,13 @@ export const PAGE_HTML = `<!doctype html>
     var nprobe = document.createElement("span");
     nprobe.className = "ov-net";
     nprobe.style.cssText = "width:auto; min-width:0";
+    /* 이름은 1위가 될 때의 굵기(700)로 잽니다 — 그래야 굵어져도 칸이 안 늘어납니다 */
+    var mprobe = document.createElement("span");
+    mprobe.className = "ov-name";
+    mprobe.style.cssText = "flex:none; width:auto; min-width:0; font-weight:700";
     wrap.appendChild(probe);
     wrap.appendChild(nprobe);
+    wrap.appendChild(mprobe);
     box.appendChild(wrap);
     var mw = function (el, t) {
       el.textContent = t;
@@ -829,8 +890,10 @@ export const PAGE_HTML = `<!doctype html>
     };
     var w = mw(probe, "999만");
     var nw = mw(nprobe, "\u2212999만");
+    var mwd = 0;
     var total = 0;
     rows.forEach(function (r) {
+      mwd = Math.max(mwd, mw(mprobe, r.n || ""));
       total += r.g || 0;
       w = Math.max(w, mw(probe, manShort(r.g)));
       nw = Math.max(nw, mw(nprobe, (r.d > 0 ? "+" : "") + manShort(r.d || 0)));
@@ -853,8 +916,10 @@ export const PAGE_HTML = `<!doctype html>
     var vw1 = window.innerWidth / 100 || 1;
     goldHW = Math.max(goldHW, w / vw1);
     netHW = Math.max(netHW, nw / vw1);
+    nameHW = Math.max(nameHW, mwd / vw1);
     box.style.setProperty("--goldw", goldHW.toFixed(3) + "vw");
     box.style.setProperty("--netw", netHW.toFixed(3) + "vw");
+    box.style.setProperty("--namew", nameHW.toFixed(3) + "vw");
   };
 
   /* 항목명 크기 — 칸(6.4vw)에 들어가는 최대 크기를 이름마다 재서 정합니다.
@@ -1407,6 +1472,17 @@ export const PAGE_HTML = `<!doctype html>
 
   var startPlay = function (sp) {
     clearPlayTimers();
+    /* 큐를 여기서 멈춥니다 (2026-09-08 사용자 규칙 3·4). 떠 있던 카드는 줄 맨 앞으로
+       되돌려서, 룰렛이 끝난 뒤 pump 가 처음부터 다시 띄웁니다 — 예전엔 원판 아래에 깔린 채
+       제 시계로 사라져서, 방금 뜬 카드를 아무도 못 읽고 지나갔습니다.
+       룰렛 결과 카드는 ingestFx 가 unshift 하므로 되돌린 카드보다 앞에 섭니다(§4.4) */
+    if (fxCard) {
+      clearTimeout(fxTimer);
+      fxQ.unshift(fxCard);
+      fxCard = null;
+      var fxHost = document.getElementById("ovfx");
+      if (fxHost) fxHost.innerHTML = "";
+    }
     useSpeed(sp);
     useSpinCfg(sp);
     var free = spFree(sp);
