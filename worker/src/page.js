@@ -2366,8 +2366,11 @@ export const PAGE_HTML = `<!doctype html>
     /* 항목 이름은 머리줄에 한 번만 — 줄마다 되뇌면 방송에서 읽히지 않습니다.
        칸 구성은 본문 줄과 하나하나 같아야 열이 맞습니다 */
     /* 띠는 두 모드가 다릅니다 (2026-09-08 사용자 확정) — 슬라이드는 슬롯 왼쪽에 회색 띠 하나,
-       나란히는 띠 없음. CSS 에서 두 모드를 가릴 방법이 없어 여기서 표시만 남깁니다 */
-    root.dataset.sl = slideOn ? "1" : "0";
+       나란히는 띠 없음. CSS 에서 두 모드를 가릴 방법이 없어 여기서 표시만 남깁니다.
+       항목 열이 없으면 나란히여도 슬라이드 룩으로 갑니다 (2026-09-08 사용자 확정: 메모장 모드).
+       메모장은 앱에서 cols 를 빈 배열로 보냅니다(ovCols = simple ? [] : activeCols) —
+       가를 열이 없으니 지표 구간이랄 것도 없고, 색면을 깔면 금색 칸 하나만 감싸는 꼴이 됩니다 */
+    root.dataset.sl = slideOn || !cols.length ? "1" : "0";
     document.getElementById("ovhead").innerHTML =
       '<span class="ov-rank"></span><span class="ov-move"></span>' +
       '<span class="ov-name-t">벌금 순위</span>' +
