@@ -136,6 +136,14 @@ export const PAGE_HTML = `<!doctype html>
   @keyframes ov-sl-out{from{transform:translateX(0); opacity:var(--slop,1)} to{transform:translateX(-45%); opacity:0}}
   @keyframes ov-sl-in{from{transform:translateX(45%); opacity:0} to{transform:translateX(0); opacity:var(--slop,1)}}
   @media (prefers-reduced-motion:reduce){ .sl-out,.sl-in{animation:none} }
+  /* 기둥이 사라지고 생기는 "때"를 줄마다 늦춥니다 (2026-09-08 사용자 확정 ②안).
+     하는 일은 하나뿐입니다 — 제 차례가 올 때까지 옛 배경을 붙잡고 있다가 놓습니다.
+     그래서 색은 전과 똑같이 즉시 바뀌고, 바뀌는 시각만 글자가 빠져나가는 물결(30ms 간격)을
+     따라갑니다. 전에는 글자는 물결로 나가는데 배경만 한 프레임에 여덟 줄이 동시에 끊겼습니다.
+     타이머(setTimeout)를 안 쓰는 이유: 화면에 안 보이는 페이지에서는 타이머가 1초로 뭉쳐
+     30·60·…·210ms 가 한꺼번에 터집니다 (2026-09-08 실측: 10~500ms 요청이 전부 647ms 에).
+     애니메이션은 그렇게 뭉치지 않습니다. 붙잡을 색은 slideTo 가 --hold-c 로 넣어 줍니다 */
+  @keyframes ov-col-hold{ from{background-color:var(--hold-c)} to{background-color:var(--hold-c)} }
 
   /* 벌금 알림 — 룰렛과 같은 결의 카드. 원판과 달리 글자 두 줄뿐이라 크게 잡을 필요가
      없어서, 소스 크기를 재지 않고 내용에 맞춰 세웁니다. */
@@ -1233,6 +1241,14 @@ export const PAGE_HTML = `<!doctype html>
       var byKey = {};
       (board || []).forEach(function (r) { byKey[rowKey(r)] = r; });
       var none = function () { return ""; };
+      /* 옛 배경을 한 번에 읽어 둡니다 — 읽기와 쓰기를 섞으면 줄마다 레이아웃을 다시 잽니다.
+         이 값이 각 칸이 제 차례까지 붙잡고 있을 색입니다 (합계로 갈 땐 투명, 나올 땐 기둥 색) */
+      var noMo = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var keepBg = [];
+      [].forEach.call(rows, function (row) {
+        var g = row.querySelector(".ov-gold");
+        keepBg.push(g ? getComputedStyle(g).backgroundColor : "");
+      });
       [].forEach.call(rows, function (row, i) {
         var r = byKey[row.getAttribute("data-k")];
         var s1 = row.querySelector(".ov-gold");
@@ -1243,6 +1259,13 @@ export const PAGE_HTML = `<!doctype html>
         var nsl = ns.querySelector(".ov-slot") || ns;
         nsl.style.animationDelay = i * SLIDE_STAG + "ms";
         nsl.classList.add("sl-in");
+        /* 새 칸은 제 차례가 올 때까지 옛 배경을 붙잡습니다 — 폭 0 짜리 애니메이션이라
+           끝나는 순간 클래스가 정한 색으로 바로 떨어집니다. 첫 줄은 붙잡을 것이 없습니다.
+           들어오는 글자(sl-in)도 같은 늦춤을 쓰므로, 기둥은 새 값이 뜨기 시작할 때 갈립니다 */
+        if (i && keepBg[i] && !noMo) {
+          ns.style.setProperty("--hold-c", keepBg[i]);
+          ns.style.animation = "ov-col-hold " + i * SLIDE_STAG + "ms linear";
+        }
         s1.parentNode.replaceChild(ns, s1);
       });
       var old = document.querySelector(".ov-total");
@@ -1259,6 +1282,11 @@ export const PAGE_HTML = `<!doctype html>
         [].forEach.call(document.querySelectorAll(".sl-in"), function (el) {
           el.classList.remove("sl-in");
           el.style.animationDelay = "";
+        });
+        /* 다 끝난 뒤 붙잡기도 걷습니다 — 이미 끝난 애니메이션이라 그림은 안 변합니다 */
+        [].forEach.call(document.querySelectorAll(".ov-row > .ov-gold"), function (el) {
+          el.style.animation = "";
+          el.style.removeProperty("--hold-c");
         });
         if (cb) cb();
       }, span);
