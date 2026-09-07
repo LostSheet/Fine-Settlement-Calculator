@@ -5725,6 +5725,34 @@ export default function GoldSettlement() {
   /* 내 줄과 내 벌금 — 자수 카드 위에 적습니다 */
   const myRow = confessTab && you.rowId ? rows.find((x) => x.id === you.rowId) : null;
   const myGold = myRow ? itemGold(myRow) : 0;
+  /* 내 자수가 서버를 돌아 방장 장부에 적힌 순간 — 그 칸이 한 번 번쩍입니다 (2026-09-09 사용자 확정 '라').
+     낙관 갱신이 없어서(§3.6) 누른 것과 반영된 것 사이에 틈이 있고, 그 틈을 이 번쩍임이 메웁니다.
+     방장 화면에서 자수로 바뀐 칸이 번쩍이는 것(.gs-hit-conf)과 같은 몫입니다 */
+  const cfSeen = useRef({});
+  const [cfFlash, setCfFlash] = useState(null);
+  useEffect(() => {
+    if (!myRow) {
+      cfSeen.current = {};
+      return;
+    }
+    let up = null;
+    const next = {};
+    cols.forEach((c) => {
+      const n = num(myRow.counts[c.id]);
+      next[c.id] = n;
+      /* 처음 본 칸은 번쩍이지 않습니다 — 화면에 들어설 때 이미 쌓여 있던 숫자입니다 */
+      if (cfSeen.current[c.id] != null && n > cfSeen.current[c.id]) up = c.id;
+    });
+    cfSeen.current = next;
+    if (up) setCfFlash({ id: up, t: Date.now() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRow, cols]);
+  /* 번쩍임이 끝나면 걷습니다 — 안 걷으면 칸마다 다 쓴 겹장이 하나씩 남습니다 */
+  useEffect(() => {
+    if (!cfFlash) return;
+    const t = setTimeout(() => setCfFlash(null), 1200);
+    return () => clearTimeout(t);
+  }, [cfFlash]);
   /* 자리 고르기 (§3.2, 2026-09-05) — 방장 앱이 확실히 앉힐 수 있는 경우(닉 일치·이름 적힌 빈 줄 없음)엔
      3초를 기다립니다: 그 사이 선택지가 번쩍였다 사라지지 않게. 방장이 없거나 3초가 지나면 본인이 고릅니다 */
   const myNick = ((you && you.nick) || "").trim();
@@ -6464,7 +6492,14 @@ export default function GoldSettlement() {
     live.current.n[row.id + ":" + col.id] = before + 1;
     live.current.total[row.id] = after;
     bump(row.id, col.id, 1, gold);
+    /* 룰렛 결과도 '방금 바뀐' 카드에 남깁니다 (2026-09-08 사용자 지적) — 판을 바꾼 건은
+       클릭이든 룰렛이든 되돌리는 자리가 같아야 하는데, 여기만 카드에 안 실려서
+       방금 돌린 판을 그 자리에서 못 되돌렸습니다. cancelEntry 는 rowId·colId·n·delta 로
+       돌아가니 룰렛 줄도 그대로 되돌아갑니다(그래서 n 을 1 로 남겨 둔 것입니다) */
+    const id = "L" + seq.current++;
+    notePress(id);
     appendLog({
+      id,
       kind: "roulette",
       rowId: row.id,
       colId: col.id,
@@ -8722,18 +8757,9 @@ export default function GoldSettlement() {
                 무활동 24시간 자동 중단이 맡습니다 */}
             {!readOnly && (
               <div className="gs-mastverbs">
-                {/* 판 기록 문 — 같은 목록을 로비도 연다 (§3.0·§5.4). 기록이 없으면 문도 없습니다 */}
-                {gensList().length > 0 && (
-                  <span className="gs-tip">
-                    <button className="gs-lbgensbtn" onClick={() => setGensOpen(true)} aria-label="판 기록">
-                      <IconHistory />
-                      <b>{gensList().length}</b>
-                    </button>
-                    <span className="gs-tip-body gs-tip-l" role="tooltip">
-                      판 기록
-                    </span>
-                  </span>
-                )}
+                {/* (폐기 2026-09-08 사용자 확정) 마스트의 판 기록 문 — 대기실과 벌금표에는
+                    없어도 됩니다. 판 화면에서 할 일은 지금 판이지 지난 판이 아니고,
+                    같은 목록을 여는 문이 로비에 이미 있습니다 (§3.0·§5.4) */}
                 {/* 준비 상태의 유일한 채운 버튼 — 판에 불을 켭니다 (§3.4). 빈 칸은 (모험가N)으로
                     판에 들어가니 이름이 없어도 시작할 수 있습니다 */}
                 {ready ? (
@@ -8824,60 +8850,81 @@ export default function GoldSettlement() {
                   /* 칸에 굳힌 금액(sums) — 단가를 '이제부터만' 바꾼 뒤에도 방장 표와 같은 숫자입니다.
                      (버그 기록 2026-09-06) 횟수 × 지금 단가로 계산해 3만×3 + 5만×2 = 19만이 25만으로 보였다 */
                   const gold = cellGold(myRow, c.id, priceG);
+                  /* 되돌릴 수 있는 30초 — 남은 시간은 칸 아래 눈금의 길이가 말합니다 (초 숫자를 안 씁니다) */
+                  const left = roul ? 0 : cfLeft(c.id);
+                  const cf = cfRef.current[c.id];
+                  const undoN = left > 0 && cf ? cf.n : 0;
                   return (
-                    <button
+                    /* 열 하나 = 벌금표의 머리(항목명·단가) + 그 아래 칸. 칸 사이 틈이 없어서
+                       머리줄(1.5px)이 열들을 가로질러 한 줄로 이어집니다 — 방장 표의 thead 와 같은 모양 */
+                    <div
                       key={c.id}
-                      className={"gs-confcard gs-confcard-" + c.id + (lock ? " gs-confcard-off" : "")}
-                      disabled={lock}
-                      onClick={() => !lock && sendConfess(myRow.id, c.id, 1)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        /* 0회에서 더 뺄 것은 없습니다 — 서버까지 갔다가 버려지는 요청입니다 */
-                        if (!lock && n > 0) sendConfess(myRow.id, c.id, -1);
-                      }}
-                      aria-label={nm + " 1회 추가 (우클릭: 1회 빼기)"}
+                      className={"gs-cf gs-confcard-" + c.id + (undoN > 0 ? " gs-cf-livecol" : "")}
                     >
-                      {/* 카드 B (2026-09-06 사용자 확정) — 이름 옆에 단가를 또렷하게, 회수가 주인공, 금액은 그 결과.
-                          룩은 벌금표 칸의 결(가는 테두리, 둥근 금테 없음).
-                          (폐기 2026-09-05 안) 금액 46px 이 주인공 · 회수와 단가는 11.5px 한 줄 — 사용자: 단가를 보이게 해 달란 것이지
-                          회수를 줄이라는 뜻이 아니었고, 단가도 너무 작았다 */}
-                      <span className="gs-confhead">
-                        <span className="gs-confname">{roul ? "◎ " + nm : nm}</span>
-                        <span className="gs-confunit">
-                          <small>{roul ? "나온 숫자 ×" : "1회"}</small>
+                      <div className="gs-cf-head">
+                        <div className="gs-cf-name">{roul ? "◎ " + nm : nm}</div>
+                        <div className="gs-cf-price">
+                          <span>{roul ? "나온 숫자 ×" : "1회"}</span>
                           <u>{man(priceG)}</u>
-                          <small>G</small>
-                        </span>
-                      </span>
-                      {roul ? (
-                        <>
-                          <span className={"gs-confgold2" + (gold > 0 ? "" : " zero")}>{man(gold)}</span>
-                          <span className="gs-conflock">룰렛은 방장이 돌려요</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className={"gs-confn" + (n > 0 ? "" : " zero")}>
-                            {commafy(n)}
-                            <em>회</em>
+                          <span>G</span>
+                        </div>
+                      </div>
+                      <div className="gs-cf-body">
+                        <button
+                          className={
+                            "gs-cf-cell" +
+                            (n > 0 ? " gs-cf-on" : "") +
+                            (undoN > 0 ? " gs-cf-live" : "") +
+                            (lock ? " gs-cf-off" : "")
+                          }
+                          disabled={lock}
+                          onClick={() => !lock && sendConfess(myRow.id, c.id, 1)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            /* 0회에서 더 뺄 것은 없습니다 — 서버까지 갔다가 버려지는 요청입니다 */
+                            if (!lock && n > 0) sendConfess(myRow.id, c.id, -1);
+                          }}
+                          aria-label={nm + " 1회 추가 (우클릭: 1회 빼기)"}
+                        >
+                          {/* 숫자가 주인공 — 아직 안 센 칸은 방장 표처럼 옅은 ＋ 하나입니다.
+                              key={n} 은 숫자가 바뀔 때마다 톡 튀게 합니다(방장 표의 .gs-hit-num 과 같은 규칙) */}
+                          {roul ? (
+                            <span className="gs-cf-lock">룰렛은 방장이 돌려요</span>
+                          ) : n > 0 ? (
+                            <span className="gs-cf-num" key={n}>
+                              {commafy(n)}
+                              <em>회</em>
+                            </span>
+                          ) : (
+                            <span className="gs-cf-ghost" aria-hidden="true">
+                              ＋
+                            </span>
+                          )}
+                          <span className={"gs-cf-amt" + (gold > 0 ? "" : " zero")}>{man(gold)}</span>
+                          {undoN > 0 && (
+                            <i
+                              className="gs-cf-tick"
+                              style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }}
+                              aria-hidden="true"
+                            />
+                          )}
+                          {/* 장부에 적힌 순간의 번쩍임 — 새로 붙었다 사라지므로 애니메이션이 매번 다시 돕니다 */}
+                          {cfFlash && cfFlash.id === c.id && (
+                            <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />
+                          )}
+                        </button>
+                      </div>
+                      {/* 발치 한 줄 — 자리를 늘 비워 두어 떴다 사라져도 화면이 안 밀립니다 (2026-09-09 사용자 지적).
+                          (폐기 2026-09-09) 되돌리기 칩(알약) — 버튼처럼 생겼는데 눌리면 +1 이었고, 뜰 때마다 카드가 67px 길어졌습니다.
+                          문구 초안 */}
+                      <div className="gs-cf-foot">
+                        {undoN > 0 ? (
+                          <span role="status">
+                            방금 <b>+{undoN}</b> · 되돌릴 수 있어요
                           </span>
-                          <span className={"gs-confgold2" + (gold > 0 ? "" : " zero")}>{man(gold)}</span>
-                          {/* 되돌리기 칩 (2026-09-07 사용자: 30초 타이머가 안 보이고, 연타를 정정할 수 있다는 걸 알려야 한다) —
-                              되돌릴 수 있는 개수와 남은 초, 아래 막대. 새로 누르면 30초가 다시 찹니다(서버 규칙과 동일). 문구 초안 */}
-                          {(() => {
-                            const left = cfLeft(c.id);
-                            if (!left) return null;
-                            const cf = cfRef.current[c.id];
-                            return (
-                              <span className="gs-confundo" role="status">
-                                <span aria-hidden="true">↶</span>
-                                <b>+{cf.n}</b> 되돌리기 · {Math.ceil(left / 1000)}초
-                                <i className="gs-confundo-bar" style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }} aria-hidden="true" />
-                              </span>
-                            );
-                          })()}
-                        </>
-                      )}
-                    </button>
+                        ) : null}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -10952,6 +10999,9 @@ export default function GoldSettlement() {
                 {e.kind === "confess" && (
                   <span className="gs-press-conf">{e.n < 0 ? "자수 정정" : "자수"}</span>
                 )}
+                {/* 룰렛으로 붙은 건도 갈라 봅니다 — 안 그러면 누른 적 없는 줄이 끼어든 것으로
+                    읽힙니다. 자수 칩과 같은 자리·같은 결. 라벨은 초안 (2026-09-08) */}
+                {e.kind === "roulette" && <span className="gs-press-conf">룰렛</span>}
                 <i>{e.item}</i>
                 <u className={e.delta < 0 ? "dn" : undefined}>
                   {(e.delta > 0 ? "+" : "−") + man(Math.abs(e.delta))}
@@ -14802,10 +14852,10 @@ const LOOK_PRESETS = [
   { id: "bars", name: "기본", look: { t: "bars", alpha: 10 } },
   { id: "goat", name: "어두운 판", look: { t: "dark", alpha: 25 } },
   { id: "light25", name: "밝은 판", look: { t: "light", alpha: 25 } },
-  { id: "clear", name: "판 없이 · 밝은 글자", look: { t: "clear" } },
-  { id: "cleardark", name: "판 없이 · 진한 글자", look: { t: "cleardark" } },
+  /* (폐기 2026-09-08 사용자 확정) 판 없이 · 밝은 글자 / 판 없이 · 진한 글자 — 테마는 셋으로.
+     page.js 의 clear·cleardark 규칙은 남겨 둡니다: 주소에 t=clear 를 적어 둔 소스가 살아 있고,
+     그 파라미터는 계정 외형보다 우선이라 지우면 그 소스가 조용히 다른 그림이 됩니다 */
 ];
-const LOOK_OPEN = 3; // 처음부터 보이는 개수
 /* 투명도를 조절할 수 있는 테마 — 바탕이 있는 것들입니다. 막대 테마는 막대마다 바탕이 있어 같이 듭니다 */
 const isPanelLook = (lk) => !!lk && (lk.t === "dark" || lk.t === "light" || lk.t === "bars");
 /* 서버가 읽는 키는 t·bg·s 셋뿐입니다 — 앱이 쓰는 alpha(판 투명도)와 bg 는 서로 뒤집힌 값입니다 */
@@ -14816,18 +14866,14 @@ const lookIn = (srv) => {
 const sameLook = (a, b) =>
   !!a && !!b && a.t === b.t && !!a.line === !!b.line && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
 
+/* 테마 셋 · 투명도는 접지 않습니다 (2026-09-08 사용자 확정).
+   접을 것이 없어져서 '다른 테마와 투명도' 단추도 같이 없앴습니다 — 셋 다 바탕이 있는 테마라
+   투명도는 늘 조절됩니다. (폐기) 앞의 셋만 펼치고 나머지는 접기 · 판 없는 테마에서 잠기던 슬라이더 */
 function LookPicker({ look, onPick }) {
-  const [more, setMore] = useState(false);
-  /* 접혀 있어도 지금 고른 테마는 늘 보입니다 — 현재 값이 안 보이면 안 되니까요 */
-  const shown = more
-    ? LOOK_PRESETS
-    : LOOK_PRESETS.filter(
-        (pr, i) => i < LOOK_OPEN || sameLook(look, pr.look)
-      );
   return (
     <>
       <div className="gs-lookgrid" role="group" aria-label="오버레이 테마">
-        {shown.map((pr) => (
+        {LOOK_PRESETS.map((pr) => (
           <button
             key={pr.id}
             className={"gs-lookchip" + (sameLook(look, pr.look) ? " on" : "")}
@@ -14840,28 +14886,21 @@ function LookPicker({ look, onPick }) {
           </button>
         ))}
       </div>
-      <button className="gs-lookmore" onClick={() => setMore((v) => !v)}>
-        {more ? "접기" : "다른 테마와 투명도"}
-      </button>
-      {more && (
-      <div className={"gs-lookalpha" + (isPanelLook(look) ? "" : " off")}>
+      <div className="gs-lookalpha">
         <span className="gs-caplab">배경 투명도</span>
         <div className="gs-seg gs-seg-sm" role="group" aria-label="배경 투명도">
           {/* 10 은 기본(막대) 테마의 기본값 90% 자리입니다 (2026-09-08) — 판 테마에서도 씁니다 */}
           {[0, 10, 25, 50, 75, 100].map((a) => (
             <button
               key={a}
-              disabled={!isPanelLook(look)}
-              className={isPanelLook(look) && (look.alpha ?? 25) === a ? "on" : ""}
+              className={(look.alpha ?? 25) === a ? "on" : ""}
               onClick={() => onPick({ ...look, alpha: a })}
             >
               {a}
             </button>
           ))}
         </div>
-        {!isPanelLook(look) && <span className="gs-lookalpha-note">판이 있는 테마에서 조절돼요</span>}
       </div>
-      )}
     </>
   );
 }
@@ -16013,10 +16052,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 물음은 경고가 아닙니다 — 빨강은 되돌릴 수 없는 것에만 씁니다 */
 .gs-obs-why{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--gold);
   cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0}
-.gs-lookmore{display:block; margin-top:9px; border:0; background:transparent; font:inherit;
-  font-size:12px; color:var(--ink-2); cursor:pointer; text-decoration:underline;
-  text-underline-offset:3px; padding:2px 0}
-.gs-lookmore:hover{color:var(--ink)}
+/* (폐기 2026-09-08) .gs-lookmore — '다른 테마와 투명도' 단추. 테마가 셋뿐이고 투명도가 밖으로 나와 접을 것이 없습니다 */
 /* 첫 칸에도 칸막이를 — 위 내용(주소·복사)과 붙어 있으면 어디부터가 생김새인지 안 보입니다 */
 .gs-obs-look{margin-top:18px; padding-top:14px;
   border-top:1px dotted rgba(var(--ink-rgb),.28)}
@@ -16047,11 +16083,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .sw-goat b{background:rgba(20,17,14,.75); color:#f5f0e6}
 .sw-light25 b{background:rgba(248,244,236,.75); color:#221c14}
 .sw-light0 b{background:rgba(248,244,236,1); color:#221c14}
-.sw-clear b{color:#f5f0e6; text-shadow:0 0 5px rgba(0,0,0,.95), 0 1px 2px rgba(0,0,0,.95)}
-.sw-cleardark b{color:#171310; text-shadow:0 0 5px rgba(255,255,255,.95), 0 1px 2px rgba(255,255,255,.95)}
 .gs-lookalpha{display:flex; align-items:center; gap:10px; margin-top:10px}
-.gs-lookalpha.off{opacity:.45}
-.gs-lookalpha-note{font-size:11px; color:var(--ink-2)}
 .gs-ro-look{flex:none}
 /* 예시 줄 — 이름만 채우는 프리셋과 달리 표 전체 예시라는 구분선 */
 .gs-crewdemo{border-top:1px dotted rgba(var(--ink-rgb),.3); margin-top:2px; padding-top:2px}
@@ -17797,45 +17829,69 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-conf-howto{margin:0 0 14px; font-size:12px; line-height:1.75; color:var(--ink-2)}
 .gs-conf-howto.gs-cellnote{margin:0 0 14px; text-align:left; margin-left:0}
 .gs-conf-howto b{color:var(--ink-body); font-weight:600}
-.gs-confgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px}
-/* 카드 B (2026-09-06) — 벌금표 칸의 결. (폐기) 둥근 금테 카드 */
-.gs-confcard{font:inherit; cursor:pointer; color:var(--ink); text-align:center;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-  min-height:120px; padding:14px 12px 12px; border-radius:3px;
-  border:1px solid rgba(var(--ink-rgb),.28); background:rgba(var(--lift-rgb),.3)}
-.gs-confcard:hover{background:rgba(var(--gold-rgb),.1); border-color:rgba(var(--gold-rgb),.7)}
-.gs-confhead{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; justify-content:center}
-/* 단가 — 벌금표 머리의 단가(.gs-in-price)와 같은 모양: 모노·금색·점선 밑줄. (폐기 2026-09-06 당일) 13.5px 평문 — 구분이 안 되고 작았다 */
-.gs-confunit{display:inline-flex; align-items:baseline; gap:4px}
-.gs-confunit small{font-size:11.5px; color:var(--ink-2)}
-.gs-confunit u{text-decoration:none; font-family:var(--mono); font-size:15px; color:var(--gold); padding:0 1px} /* 밑줄 없음 — 고칠 수 있는 것처럼 보였다 (2026-09-06 사용자) */
-.gs-confcard-off .gs-confunit u{color:var(--ink-2)}
-.gs-confgold2{font-family:var(--mono); font-size:17px; color:var(--gold); margin-top:2px}
-.gs-confgold2.zero{opacity:.4}
 .gs-conf-note{margin:-8px 0 14px; font-size:12px; line-height:1.75; color:var(--ink-2)}
-.gs-confcard:active{transform:translateY(1px)}
-.gs-confcard-off{cursor:default; opacity:.62; border-color:rgba(var(--ink-rgb),.18);
-  background:rgba(var(--ink-rgb),.05)}
-.gs-confcard-off:hover{background:rgba(var(--ink-rgb),.05); border-color:rgba(var(--ink-rgb),.18)}
-.gs-confcard-off:active{transform:none}
-.gs-confname{font-family:'Gowun Batang',serif; font-size:19px; font-weight:700}
-.gs-confcard-off .gs-confname{color:var(--ink-2)}
-.gs-confprice{font-size:11.5px; color:var(--ink-2); margin-top:1px}
-/* 내 벌금 — 카드의 주인공. 방송 화면에서도 읽히게 큽니다 */
-.gs-confgold{font-family:var(--mono); font-size:46px; line-height:1.1; margin-top:8px; color:var(--gold)}
-.gs-confgold.zero{color:rgba(var(--ink-rgb),.32)}
-.gs-confcard .gs-confprice{margin-top:6px}
-.gs-confn{font-family:var(--mono); font-size:34px; line-height:1.15; margin-top:6px}
-.gs-confn em{font-style:normal; font-family:'IBM Plex Sans KR',sans-serif; font-size:13px;
-  color:var(--ink-2); margin-left:3px}
-.gs-confn.zero{color:rgba(var(--ink-rgb),.32)}
-.gs-conflock{font-size:11px; color:var(--ink-2); margin-top:8px}
-/* 되돌리기 칩 (2026-09-07) — 개수·남은 초·막대. 카드(버튼) 안의 표시일 뿐 따로 눌리지 않습니다 */
-.gs-confundo{position:relative; display:inline-flex; align-items:center; gap:6px; margin-top:10px; padding:4px 10px 5px 8px;
-  border:1px solid rgba(var(--gold-rgb),.6); border-radius:99px; font-size:12px; line-height:1.3; color:var(--ink);
-  background:rgba(var(--gold-rgb),.08); overflow:hidden; white-space:nowrap}
-.gs-confundo b{color:var(--gold); font-family:var(--mono); font-weight:600}
-.gs-confundo-bar{position:absolute; left:0; bottom:0; height:2px; background:var(--gold)}
+/* 열 하나 = 벌금표의 머리(항목명·단가) + 그 아래 칸입니다. 칸 사이에 틈이 없어서 머리줄(1.5px)이
+   열들을 가로질러 한 줄로 이어집니다 — 방장 표의 thead 와 같은 모양 (2026-09-09 사용자 확정 '라').
+   최소 폭 150px = 방장 표의 항목 열(124px)에 좌우 여백을 더한 값.
+   (폐기 2026-09-09) 카드 B — 테두리 친 상자 그리드(gap 12px)에 되돌리기 칩(알약). 판 화면은 장부인데 자수만
+   상자였고, 칩은 버튼처럼 생겼는데 눌리면 +1 이었으며, 뜰 때마다 카드가 67px 길어져 아래를 밀었습니다 */
+.gs-confgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0}
+.gs-cf{position:relative; display:flex; flex-direction:column; min-width:0}
+/* 머리 — 방장 표의 열머리(.gs-colh)와 같은 값. 아래 정렬이라 이름 길이가 달라도 머리줄이 안 흔들립니다
+   (방장 표 thead 의 vertical-align:bottom 과 같은 규칙) */
+.gs-cf-head{min-height:62px; padding:0 6px 8px; text-align:center;
+  display:flex; flex-direction:column; justify-content:flex-end;
+  border-bottom:1.5px solid var(--ink)}
+.gs-cf-name{font-size:25px; font-weight:700; line-height:1.2}
+.gs-cf-price{display:flex; align-items:center; justify-content:center; gap:3px;
+  font-size:11px; color:var(--ink-2); margin-top:3px; white-space:nowrap}
+/* 단가에 점선 밑줄은 안 씁니다 — 밑줄은 '고칠 수 있다'는 뜻입니다 (2026-09-06 사용자) */
+.gs-cf-price u{text-decoration:none; font-family:var(--mono); font-size:12.5px; color:var(--gold)}
+/* 칸 둘레의 틈 — 방장 표의 .gs-hitwrap 여백과 같은 값이라 두 화면의 칸 간격이 같습니다 */
+.gs-cf-body{padding:6px 4px 0}
+/* 칸 — 방장 카운터 표의 .gs-hit 그대로: 안 센 칸은 점선에 옅은 ＋, 한 번이라도 세면 실선에 진한 바탕 */
+.gs-cf-cell{font:inherit; color:var(--ink); cursor:pointer; position:relative; overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:100%; min-height:56px; padding:8px 10px 9px; border-radius:3px;
+  border:1px dashed rgba(var(--kraftdk-rgb),.85); background:var(--cell)}
+/* hover 는 잉크색입니다 — 금색은 '되돌릴 수 있는 30초'에만 써서 둘이 안 겹칩니다 */
+.gs-cf-cell:hover{background:var(--cell-hover); border-color:var(--ink)}
+.gs-cf-cell:active{transform:scale(.96)}
+.gs-cf-on{border-style:solid; background:var(--cell-on)}
+.gs-cf-ghost{font-size:18px; line-height:1; color:var(--gold)}
+.gs-cf-cell:hover .gs-cf-ghost{color:var(--ink-2)}
+/* 폭 5ch 를 예약해 두면 자릿수가 늘어도 열이 안 밀립니다 (방장 표와 같은 값) */
+.gs-cf-num{min-width:5ch; text-align:center; white-space:nowrap; font-family:var(--mono);
+  font-size:25px; line-height:1; color:var(--ink); animation:gs-npop .16s ease-out}
+.gs-cf-num em{font-style:normal; font-size:12px; color:var(--ink-2); margin-left:5px}
+/* 항목별 금액 — 방장 입력 표의 .gs-cnt-amt 와 같은 크기. 내 벌금 합계는 카드 머리에 28px 로 따로 있습니다 */
+.gs-cf-amt{font-family:var(--mono); font-size:11px; color:var(--gold); min-height:15px; line-height:15px}
+.gs-cf-amt.zero{opacity:.35}
+/* 못 누르는 칸(룰렛·방장 부재) — 방장 표에서 남의 칸이 물러나는 것(.gs-hit-far)과 같은 흐림 */
+.gs-cf-off{opacity:.55; cursor:default}
+.gs-cf-off:hover{background:var(--cell); border-color:rgba(var(--kraftdk-rgb),.85)}
+.gs-cf-off:active{transform:none}
+.gs-cf-lock{font-size:11px; color:var(--ink-2)}
+/* 되돌릴 수 있는 30초 — 금테를 두르고 칸 바닥의 눈금이 줄어듭니다. 남은 초를 숫자로 안 쓰는 것은
+   30초가 재서 쓰는 시간이 아니라 "아직 괜찮다"는 판단이기 때문입니다 (2026-09-09 사용자 확정 '라') */
+.gs-cf-live{border-style:solid; border-color:var(--gold);
+  box-shadow:0 0 0 1px rgba(var(--gold-rgb),.35); border-bottom-color:rgba(var(--gold-rgb),.3)}
+/* 눈금은 아래 테두리 바로 안쪽에 겹칩니다 — 테두리 자체가 닳는 것처럼 보이게 */
+.gs-cf-tick{position:absolute; left:0; bottom:0; height:2px; background:var(--gold)}
+/* 장부에 적힌 순간의 번쩍임 — 방장 화면에서 자수로 바뀐 칸이 하는 것(.gs-hit-conf)과 같은 얼굴.
+   낙관 갱신이 없어서 누른 것과 반영된 것 사이에 틈이 있고, 그 틈을 이것이 메웁니다 */
+.gs-cf-flash{position:absolute; inset:0; border-radius:2px; pointer-events:none;
+  animation:gs-cfflash 1.1s ease-out}
+@keyframes gs-cfflash{
+  0%{background:rgba(var(--gold-rgb),.55); box-shadow:0 0 0 3px rgba(var(--gold-rgb),.4)}
+  100%{background:transparent; box-shadow:0 0 0 0 rgba(var(--gold-rgb),0)}
+}
+/* 발치 한 줄 — 자리를 늘 비워 두어 떴다 사라져도 화면이 안 밀립니다 (2026-09-09 사용자 지적). 문구 초안 */
+.gs-cf-foot{height:15px; margin-top:5px; padding:0 4px; text-align:center;
+  font-size:11px; line-height:15px; color:var(--ink-2); opacity:0; transition:opacity .3s}
+.gs-cf-livecol .gs-cf-foot{opacity:1}
+.gs-cf-foot b{font-family:var(--mono); color:var(--gold); font-weight:600}
+@media (prefers-reduced-motion:reduce){ .gs-cf-num{animation:none} .gs-cf-flash{animation:none} }
 /* 자수 탭은 파티원의 기본 화면이라, 탭 줄에서도 금색으로 먼저 눈에 듭니다 */
 .gs-tab-confess{border-color:rgba(var(--gold-rgb),.55)}
 .gs-tab-confess.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
