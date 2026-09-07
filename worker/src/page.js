@@ -46,7 +46,7 @@ export const PAGE_HTML = `<!doctype html>
   .ov-name-t{font-size:4.2vw; font-weight:600; letter-spacing:.03em;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   /* line-height 를 줄과 같은 1.2 로 못 박습니다 (2026-09-08 사용자 지적: 머리의 금색 칸도
-     숫자가 바뀐 뒤 아주 살짝 내려온다). 여기만 `normal` 이라 1.2em 짜리 굴림 칸(.ov-mvbox)과
+     숫자가 바뀐 뒤 아주 살짝 내려온다). 여기만 normal 이라 1.2em 짜리 굴림 칸(.ov-mvbox)과
      달랐고, 총액이 굴러가고 평문으로 바뀌는 순간 글자가 0.83px 내려앉았습니다(배율 1.911 실측).
      줄에서 고친 것과 같은 종류입니다 — 굴림 칸이 앉는 자리는 어디든 줄 높이가 같아야 합니다 */
   .ov-total{font-size:3.4vw; font-weight:600; color:var(--gold); line-height:1.2;
