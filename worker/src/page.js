@@ -29,7 +29,7 @@ export const PAGE_HTML = `<!doctype html>
   /* 글자색은 판 안에서 다시 풉니다 — body 에서 굳히면 테마가 .ov 의 --ink 를
      바꿔도 이미 늦어서, 밝은 판이 밝은 글자(안 보임)로 나옵니다 */
   .ov{width:fit-content; min-width:36vw; max-width:100vw; padding:1.2vw 1.9vw 1.2vw 1.6vw;
-    position:relative; will-change:transform; color:var(--ink)}
+    position:relative; will-change:transform; color:var(--ink); transition:opacity .18s ease}
   /* 총액을 금액 열과 같은 선에 세웁니다 — 증감액 열 10.5 + 열 간격 1.6 + 줄 안쪽 여백 .4 */
   /* 총액도 금액 열과 같은 선에 — 줄 안쪽 여백(.4vw)만 빼면 됩니다 */
   /* position:relative — 밑의 구분선(::after)이 판 전체가 아니라 이 줄에 붙게 */
@@ -73,7 +73,7 @@ export const PAGE_HTML = `<!doctype html>
   .ov-cnum{width:6.4vw; flex:none; text-align:center; font-size:3.4vw;
     font-variant-numeric:tabular-nums; opacity:.9}
   .ov-cnum.rl{color:var(--ink)}
-  .ov-cnum.z{opacity:.3} /* 0 은 흐리게 보이되 읽힙니다 (2026-09-06: 빈칸 → 0) */
+  .ov-cnum.z{opacity:.45} /* 0 은 흐리게 보이되 읽힙니다 (2026-09-06: 빈칸 → 0). .3 은 어두운 장면에서 빈칸과 구분이 안 됐다 (2026-09-08 → .45) */
   /* 글자 크기는 fitCheads 가 칸에 맞춰 정합니다 (1.6~2.6vw). 여기 값은 그 전의 밑값 */
   .ov-chead{width:6.4vw; flex:none; text-align:center; font-size:1.6vw; opacity:.8;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -100,7 +100,7 @@ export const PAGE_HTML = `<!doctype html>
     padding:.1vw .8vw; background:rgba(20,17,14,.72)} /* 각진 칩 (2026-09-08) — 판 위에 직접 얹히는 조각이라 막대와 같은 결로 */
   /* 밝은 판·진한 글자 테마에서는 칩도 밝게 */
   html[data-t="light"] .ov-delta, html[data-t="cleardark"] .ov-delta{background:rgba(248,244,236,.85)}
-  .ov-delta.plus{color:#8fd89b}
+  .ov-delta.plus{color:#6fb4ff} /* 뜻색 한 벌 (2026-09-08) — 순액과 같은 파랑·산호 */
   /* 비어 있을 때는 칩 배경만 남지 않도록 아예 감춥니다 */
   .ov-delta:empty{display:none}
   /* 순액이 꺼져 있으면 칩은 판 바깥(투명 영역)으로 나갑니다 — 카드를 넓히지 않으니
@@ -126,7 +126,7 @@ export const PAGE_HTML = `<!doctype html>
      칸의 배경(합계 기둥)까지 반쯤 지워져 기둥에 구멍이 뚫립니다. --slop 하나로 통일합니다 */
   .ov-slot{display:block; width:100%; opacity:var(--slop,1)}
   .ov-gold.as-cnt{color:var(--ink); --slop:.92}
-  .ov-gold.as-cnt.z{--slop:.3}
+  .ov-gold.as-cnt.z{--slop:.45}
   .ov-gold.as-net{color:var(--ink); --slop:.5}
   .ov-gold.as-net.plus{color:#6fb4ff; --slop:1}
   .ov-gold.as-net.minus{color:#ff7d6b; --slop:1}
@@ -151,8 +151,11 @@ export const PAGE_HTML = `<!doctype html>
      막을 깔면 그 상자 전체가 어두워질 뿐, 얻는 게 없습니다. */
   /* 카드는 한 칸에 겹쳐 쌓입니다(grid) — 다음 카드가 옛 카드 위에서 번져 나오고 옛 것은 그 뒤에 걷힙니다.
      (폐기 2026-09-07) 컨테이너를 비웠다가 다시 채우던 것 — 카드 사이 0.2초 동안 뒤의 벌금판 글자가 비쳐 보여 부자연스러웠다(사용자) */
+  /* 안전 영역 (2026-09-08 사용자 확정) — 뜨는 것은 소스 가장자리에서 짧은 변의 4% 안쪽에.
+     (폐기) padding:2% — 폭 기준이라 넓고 낮은 소스에서 위아래가 좁았다.
+     transform:scale(--bs) — 카드는 판과 같은 배율로 커집니다. 판에 붙는 것은 판 배율, 소스를 덮는 것(룰렛)은 소스 단위 */
   #ovfx:not(:empty){position:fixed; inset:0; z-index:3; display:grid;
-    place-items:center; padding:2%;
+    place-items:center; padding:4vmin; transform:scale(var(--bs, 1));
     pointer-events:none; animation:ov-spin-in .18s ease-out}
   #ovfx > .ov-fx{grid-area:1/1}
   /* 평평하게 — 조명·광택 없이 색 하나와 얇은 테두리로만 */
@@ -162,19 +165,39 @@ export const PAGE_HTML = `<!doctype html>
      그쪽이 제 블록을 갖습니다. (폐기) 둥근 상자 + 금색 얇은 테두리 — 판이 둥근 반투명이던 시절의 마감 */
   .ov-fx.roul{box-shadow:0 0 0 .26vw rgba(232,198,106,.85)}
   .ov-fx.roul b::before{content:"◎ "; color:#dcae5e}
-  .ov-fx{max-width:86%; text-align:center; color:#ece4d6;
-    animation:ov-fx-in .2s cubic-bezier(.2,1.3,.4,1);
+  /* 최대 폭은 소스의 86% — #ovfx 가 --bs 만큼 커지므로 배율로 되돌려 잽니다 (2026-09-08).
+     (근거) 카드는 vw 그대로였고 판은 fitBoard 배율을 받아서, 세로로 긴 소스에서 카드가 줄 한 칸보다 작았습니다
+     (실측 375×812: 이름 0.75×, 값 0.49×. 1280×720 에서는 1.69×·1.11× — 소스마다 비율이 달랐다) */
+  .ov-fx{max-width:calc(86% / var(--bs, 1)); text-align:center; color:#ece4d6; position:relative;
     background:none; border:0; padding:0}
+  /* 왼쪽 크림 띠 — 머리줄 칸과 같은 [띠][칸] (2026-09-08 사용자 확정 ㉢). 그림자가 아니라 ::before 인 이유:
+     bump 가 box-shadow 를 움직여서, 그림자 띠는 부풀 때마다 사라졌다 돌아옵니다 */
+  .ov-fx::before{content:""; position:absolute; top:0; bottom:0; right:100%; width:.45vw;
+    background:rgba(245,240,230,.5)}
   /* 카드가 이어질 땐 카드 한 장을 그대로 두고 속만 바꿉니다 (2026-09-07 사용자 확정: 카드는 한 장, 대신 다른 사건임을 알린다).
      옛 글이 0.07초 사라진 뒤 새 글이 0.14초 나타나고(두 글이 겹치지 않음), 그 순간 카드가 4% 부풀며 테두리가 금색으로
      번쩍합니다 — 그것이 "다른 건"이라는 신호. 글은 움직이지 않습니다(사용자: 글이 흐를 이유가 없다).
      (폐기, 같은 날) 새 카드를 옛 카드 위에 내려앉히기 · 새 카드를 투명에서 겹치기 · 비웠다 채우기 — 겹치거나 판이 비쳤다 */
   .ov-fx-body{display:block}
   .ov-fx-body.fade{animation:ov-fx-fade .07s ease-in forwards}
-  .ov-fx-body.rise{animation:ov-fx-rise .14s ease-out}
   @keyframes ov-fx-fade{to{opacity:0}}
   @keyframes ov-fx-rise{from{opacity:0}}
-  .ov-fx.bump{animation:ov-fx-bump .28s ease-out}
+  /* 등장은 펼침 (2026-09-08 사용자 확정 ⓒ) — 이름 칸이 아래서 스프링으로 앉고(0.32초), 0.1초 뒤 금색 칸이
+     그 아래로 펼쳐집니다(0.24초). 알림의 문장(누가 → 얼마)이 박자에서도 같은 순서입니다.
+     linear() 스프링은 Chromium 113+ — OBS 30(CEF 103)은 @supports 를 못 지나 베지어로 갑니다.
+     (폐기) 가운데서 .86 → 1 로 부풀던 ov-fx-in */
+  .ov-fx b{animation:ov-fx-name .32s cubic-bezier(.22,1.2,.36,1) both}
+  @supports (animation-timing-function:linear(0,1)){
+    .ov-fx b{animation-timing-function:linear(0,.42 10%,.8 20%,1.03 34%,1.045 42%,1.01 58%,.995 72%,1)}}
+  @keyframes ov-fx-name{from{opacity:0; transform:translateY(1.2vw) scale(.96)} to{opacity:1; transform:none}}
+  .ov-fx span{transform-origin:50% 0; animation:ov-fx-gold .24s cubic-bezier(.2,.9,.3,1) .1s both}
+  @keyframes ov-fx-gold{from{transform:scaleY(0)} to{transform:scaleY(1)}}
+  /* 다음 카드: 글은 제자리(투명도만 0.14초), 금색 칸만 접혔다 펴집니다(0.04초 뒤 0.22초).
+     부풀림은 그 뒤 0.26초에 — 등장과 강조가 겹치지 않게 (2026-09-08 사용자: 동시에 나오는 게 아쉽다).
+     시점은 타이머가 아니라 animation-delay 로 — 안 보이는 페이지에서 타이머는 뭉칩니다 */
+  .ov-fx-body.rise b{animation:ov-fx-rise .14s ease-out both}
+  .ov-fx-body.rise span{animation:ov-fx-gold .22s cubic-bezier(.2,.9,.3,1) .04s both}
+  .ov-fx.bump{animation:ov-fx-bump .28s ease-out .26s}
   /* 각진 링으로 (2026-09-08) — 테두리가 없어져서 번쩍임은 바깥 그림자 하나가 맡습니다.
      연출 자체는 그대로입니다: 4% 부풀며 한 번 번쩍이는 것이 "다른 건"이라는 신호 */
   @keyframes ov-fx-bump{
@@ -183,18 +206,21 @@ export const PAGE_HTML = `<!doctype html>
   .ov-fx b{display:block; font-size:6.4vw; font-weight:700; line-height:1.1;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     background:#17130e; padding:2.6vw 5vw}
-  .ov-fx span{display:block; font-size:4.2vw; white-space:nowrap; font-weight:800;
-    background:#e8c66a; color:#17130e; padding:1.5vw 5vw;
-    border-top:.6vw solid rgba(245,240,230,.75)}
+  /* 값이 주인공 (2026-09-08 사용자 확정 ㉢) — 항목은 이름 옆 꼬리표(절반 크기), 금색 칸에는 금액만 이름 크기로.
+     시청자가 웃는 건 이름이고 놀라는 건 금액인데 금액이 조연(4.2vw)이었습니다. 띠는 머리줄과 같은 .45vw */
+  .ov-fx b small{font-size:.5em; font-weight:600; opacity:.72; margin-left:.55em; letter-spacing:.02em}
+  .ov-fx span{display:block; font-size:6.4vw; white-space:nowrap; font-weight:800; line-height:1.1;
+    font-variant-numeric:tabular-nums;
+    background:#e8c66a; color:#17130e; padding:1.6vw 5vw;
+    border-top:.45vw solid rgba(245,240,230,.75)}
   /* 금색 바탕에서는 어두운 판의 청·녹·적이 떠 버립니다 — 밝은 판 테마에서 이미 검증한
      값을 그대로 씁니다(크림 바탕 명도대비 4.8~4.9). §4.4 밝은 판의 색과 같은 가족입니다 */
   .ov-fx em{font-style:normal; font-weight:800}
   .ov-fx.up em{color:#2f7a4d}
   .ov-fx.dn em{color:#b8462f}
-  @keyframes ov-fx-in{from{opacity:0; transform:scale(.86)} to{opacity:1; transform:scale(1)}}
-  /* 마지막 카드는 번져 사라집니다 — 뚝 꺼지지 않게 (2026-09-07) */
-  .ov-fx.out{animation:ov-fx-out .17s ease-in forwards}
-  @keyframes ov-fx-out{to{opacity:0; transform:scale(.94)}}
+  /* 마지막 카드는 온 방향의 반대로 — 살짝 내려가며 0.16초 (2026-09-08). 뚝 꺼지지 않게 (2026-09-07) */
+  .ov-fx.out{animation:ov-fx-out .16s ease-in forwards}
+  @keyframes ov-fx-out{to{opacity:0; transform:translateY(1vw) scale(.97)}}
 
   /* 금액 스와이프 — 오르면 위로, 깎이면 아래로. 가운데에 증감을 한 번 보여 주고 멈춥니다 */
   /* 두루마리 창 — 한 줄 높이만 남기고 나머지는 잘라 냅니다.
@@ -210,8 +236,8 @@ export const PAGE_HTML = `<!doctype html>
     overflow:hidden; clip-path:inset(0); vertical-align:bottom; line-height:0}
   .ov-mvreel{position:absolute; top:0; left:0; right:0; display:flex; flex-direction:column}
   .ov-mvreel > i{font-style:normal; display:block; height:1.2em; line-height:1.2em}
-  .ov-mvreel.up > i.d{color:#8fd89b}
-  .ov-mvreel.dn > i.d{color:#e59a90}
+  .ov-mvreel.up > i.d{color:#6fb4ff} /* 뜻색 한 벌 (2026-09-08) — 순액과 같은 파랑·산호 */
+  .ov-mvreel.dn > i.d{color:#ff7d6b}
   .ov-mvreel.up{animation:ov-mv-up var(--mvdur,1120ms) cubic-bezier(.3,0,.2,1) forwards}
   .ov-mvreel.dn{animation:ov-mv-dn var(--mvdur,1120ms) cubic-bezier(.3,0,.2,1) forwards}
   @keyframes ov-mv-up{
@@ -222,7 +248,8 @@ export const PAGE_HTML = `<!doctype html>
     75%{transform:translateY(-33.333%)} 100%{transform:translateY(0)}}
   @media (prefers-reduced-motion:reduce){
     .ov-mvreel.up,.ov-mvreel.dn{animation-duration:1ms}
-    .ov-fx,.ov-fx.out,.ov-fx.bump,.ov-fx-body.rise{animation:none}
+    .ov-fx,.ov-fx b,.ov-fx span,.ov-fx.out,.ov-fx.bump,
+    .ov-fx-body.rise,.ov-fx-body.rise b,.ov-fx-body.rise span{animation:none}
     .ov-fx-body.fade{display:none}
   }
 
@@ -239,13 +266,19 @@ export const PAGE_HTML = `<!doctype html>
      판(.ov-sp)이 이미 불투명해서 원판 뒤는 그것으로 가려집니다. */
   /* 룰렛은 카드 위입니다 (2026-09-08 사용자 지적 → 고침, §4.4 규칙 3).
      둘 다 z-index:3 이었고 #ovfx 가 DOM 에서 뒤라, 떠 있던 클릭 알림이 원판을 덮었습니다 */
+  /* 안전 영역 4vmin (2026-09-08 사용자 확정) — 카드(#ovfx)와 같은 규칙. (폐기) 2% 는 폭 기준이라 낮은 소스에서 위아래가 좁았다 */
   #ovspin:not(:empty){position:fixed; inset:0; z-index:4; display:flex;
-    align-items:center; justify-content:center; padding:2%;
+    align-items:center; justify-content:center; padding:4vmin;
     animation:ov-spin-in .18s ease-out}
+  /* 무대가 열리면 판은 물러납니다 (2026-09-08 사용자 확정) — 막을 까는 게 아니라(게임은 그대로) 우리 판만 30% 로.
+     상자 폭이 내용대로 좁아지면 표가 양옆으로 보이는데, 그때 표가 또렷하면 원판과 숫자가 싸웁니다.
+     클래스는 drawPlay 가 답니다 — :has() 는 OBS 30(CEF 103)에 없습니다 */
+  html.spin-on .ov{opacity:.3}
   @keyframes ov-spin-in{from{opacity:0} to{opacity:1}}
   /* 각진 평면 상자 (2026-09-08 사용자 확정) — 원판은 그대로 두고 담는 상자만 바꿉니다.
      (폐기) 둥근 모서리 · 방사형 그라데이션 · 안팎 그림자 — 조명과 광택이 있던 마감 */
-  .ov-sp{position:relative; display:flex; width:96%; max-height:100%; text-align:center;
+  /* 폭은 내용대로 (2026-09-08 사용자 확정) — 원판·트랙·이름줄이 필요한 만큼만. (폐기) width:96% — 넓은 소스에서 옆으로 빈 상자 */
+  .ov-sp{position:relative; display:flex; width:auto; max-width:92%; max-height:100%; text-align:center;
     color:#ece4d6; background:#17130e;
     border:calc(var(--u)*.4) solid rgba(232,198,106,.75)}
   /* 늘 세로 한 줄 — 이름 줄, 원판 무대, 트랙 순서 */
@@ -389,7 +422,7 @@ export const PAGE_HTML = `<!doctype html>
     100%{box-shadow:inset 0 0 0 100vmax rgba(232,198,106,0)}
   }
   .ov-delta.plus,.ov-delta.minus{animation:ov-rise 4.2s ease-out forwards}
-  .ov-delta.minus{color:#e0776b}
+  .ov-delta.minus{color:#ff7d6b}
   @keyframes ov-rise{
     0%{opacity:0; transform:translateY(calc(-50% + .7vw))}
     9%{opacity:1; transform:translateY(-50%)}
@@ -399,8 +432,10 @@ export const PAGE_HTML = `<!doctype html>
 
   /* 순위 변동 — 몇 계단 올랐는지 잠깐 보여주고 지웁니다 */
   .ov-move.up,.ov-move.down{animation:ov-hold 6s ease-out forwards}
-  .ov-move.up{color:#8fd89b}
-  .ov-move.down{color:#e59a90}
+  /* 뜻색은 한 벌 (2026-09-08 사용자 확정) — 순위 이동·증감 칩도 순액과 같은 파랑·산호.
+     (폐기) 초록·분홍 — 뜻(올랐다·내렸다)이 달라 두 벌이었는데, 나란히에서 한 줄에 네 색이 섰다 */
+  .ov-move.up{color:#6fb4ff}
+  .ov-move.down{color:#ff7d6b}
   @keyframes ov-hold{0%,82%{opacity:1} 100%{opacity:0}}
 
   /* 투명 테마 — 글자 외곽을 여러 겹 눌러 게임 화면 위에서도 버팁니다 */
@@ -1388,6 +1423,8 @@ export const PAGE_HTML = `<!doctype html>
   var drawPlay = function () {
     var sbox = document.getElementById("ovspin");
     if (!sbox) return;
+    /* 무대가 열려 있는 동안 판을 물리는 표시 (2026-09-08) — CSS 의 html.spin-on .ov */
+    root.classList.toggle("spin-on", !!play);
     if (!play) { sbox.innerHTML = ""; playKey = null; return; }
     if (playKey !== play.sp.sid && !play.who) {
       playKey = play.sp.sid;
@@ -1893,7 +1930,8 @@ export const PAGE_HTML = `<!doctype html>
     var bh = window.innerHeight || 400;
     var u = Math.min(bw, bh) / 100;
     var W = bw / u, H = bh / u;
-    var wu = Math.max(30, Math.min(72, H - 34, W - 10));
+    /* 원판의 몫 — 세로에서 이름줄·트랙·여백으로 44u 를 남깁니다 (2026-09-08 사용자 확정. 폐기: 34u — 상자가 위아래에 딱 붙었다) */
+    var wu = Math.max(30, Math.min(72, H - 44, W - 16));
     var sz = (wu * u).toFixed(1);
     var stage = sp.look === "num"
       ? '<div class="ov-reel"><span class="ov-reel-line"></span>' +
@@ -2086,9 +2124,10 @@ export const PAGE_HTML = `<!doctype html>
   var fxBodyHtml = function (e, extra) {
     var up = e.g > 0;
     return '<div class="ov-fx-body' + (extra ? " " + extra : "") + '">' +
-      "<b>" + esc(e.n) + "</b>" +
-      "<span>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + ' <em>' + (up ? "+" : "\u2212") +
-      manShort(Math.abs(e.g)) + "</em></span></div>";
+      /* 이름 칸: 이름 + 항목 꼬리표. 금색 칸: 금액만 (2026-09-08 사용자 확정 ㉢ 값이 주인공).
+         정정은 꼬리표 앞에 붙습니다. (폐기) 금색 칸에 "항목 +금액" 한 줄 — 문장처럼 읽혔다 */
+      "<b>" + esc(e.n) + "<small>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + "</small></b>" +
+      "<span><em>" + (up ? "+" : "−") + manShort(Math.abs(e.g)) + "</em></span></div>";
   };
   var fxCardHtml = function (e) { return '<div class="ov-fx ' + fxCls(e) + '">' + fxBodyHtml(e, "") + "</div>"; };
 
@@ -2411,6 +2450,8 @@ export const PAGE_HTML = `<!doctype html>
     el.style.transform =
       "translate(" + (window.innerWidth - w * scale) / 2 + "px," +
       (window.innerHeight - h * scale) / 2 + "px) scale(" + scale + ")";
+    /* 카드가 판과 같은 배율로 커지도록 남깁니다 (2026-09-08) — #ovfx 가 transform:scale(var(--bs)) 로 받습니다 */
+    root.style.setProperty("--bs", scale.toFixed(4));
     /* 첫 배치는 튀지 않게 전환 없이, 그 뒤(인원·열 변경)부터 부드럽게 */
     /* 미리보기 팝업만: 처음 한 번 창 높이를 판에 맞춰 남는 여백을 없앱니다 */
     if (isPreview && !fitted && window.opener) {
