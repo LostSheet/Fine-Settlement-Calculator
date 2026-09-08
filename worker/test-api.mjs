@@ -108,6 +108,13 @@ const open = (path) =>
       } catch (err) {
         return;
       }
+      /* 방장 앱과 똑같이, 받은 자수에 바로 답합니다 (LIVE-SPEC §2.4).
+         이게 없으면 3초 뒤 서버가 서기를 죽은 것으로 보고 소켓을 닫습니다 */
+      if (box.autoSeen && m.kind === "confess") {
+        try {
+          ws.send(JSON.stringify({ kind: "seen" }));
+        } catch (err) {}
+      }
       const w = box.waiters.find((x) => x.pred(m));
       if (w) {
         clearTimeout(w.timer);
@@ -154,6 +161,9 @@ const waitClosed = (box, ms = 4000) =>
   });
 
 /* ---------------- 시나리오 ---------------- */
+
+/* 왕복 감시(LIVE-SPEC §2.4)의 3초보다 넉넉히 — 이 시간이 지나도 조용해야 통과입니다 */
+const SCRIBE_ACK_WAIT = 4200;
 
 const S = Date.now().toString(36).slice(-6); // 다시 돌려도 안 겹치게
 const acct = (p) => p + S;
@@ -276,13 +286,24 @@ const main = async () => {
   await step("my/room: 로그인 없으면 401", async () => {
     eq((await api("POST", "/api/my/room")).status, 401, "status");
   });
-  await step("invite: 10분짜리 8자 코드", async () => {
+  /* 코드의 시계는 발급이 아니라 **부를 때**부터 돕니다 (2026-09-08 사용자 확정) —
+     발급은 armed:false·exp:0 이고, [디코 메시지 복사]가 /invite-arm 으로 켭니다.
+     앱이 하는 그대로 두 번에 나눠 부릅니다 */
+  await step("invite: 발급은 시계가 안 돈다 (armed:false)", async () => {
     const r = await api("POST", "/api/r/" + room + "/invite", { token: A.token });
     eq(r.status, 200, "status");
     expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(r.data.invite.code), "코드 8자: " + r.data.invite.code);
+    eq(!!r.data.invite.armed, false, "armed");
+    eq(r.data.invite.exp, 0, "exp");
+    invite = r.data.invite.code;
+  });
+  await step("invite-arm: 부르는 순간부터 10분", async () => {
+    const r = await api("POST", "/api/r/" + room + "/invite-arm", { token: A.token });
+    eq(r.status, 200, "status");
+    eq(r.data.invite.code, invite, "같은 코드");
+    eq(!!r.data.invite.armed, true, "armed");
     const left = r.data.invite.exp - Date.now();
     expect(Math.abs(left - 10 * 60 * 1000) < 60000, "만료가 10분이 아님: " + left);
-    invite = r.data.invite.code;
   });
   await step("invite: 방장 아니면 403", async () => {
     await reg(B);
@@ -327,6 +348,8 @@ const main = async () => {
     expect(invite !== old, "새 코드가 같음");
     const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: old } });
     eq(r.status, 403, "status");
+    /* 새로 받은 코드도 불러야 시계가 돕니다 (2026-09-08) — 앱의 [디코 메시지 복사] 자리 */
+    await api("POST", "/api/r/" + room + "/invite-arm", { token: A.token });
   });
   /* 링크는 초대장입니다 (§3.3, 2026-09-05) — 유효한 코드면 바로 앉고, 방장 수락이 없습니다 */
   await step("join: 유효한 링크면 바로 앉음(st ok)", async () => {
@@ -483,6 +506,7 @@ const main = async () => {
   head("서기 채널(WS)");
   await step("scribe: 방장 세션으로 붙으면 members 목록", async () => {
     scribe = await open("/api/r/" + room + "/scribe?s=" + A.token);
+    scribe.autoSeen = true; // 방장 앱처럼 자수에 답합니다 (LIVE-SPEC §2.4)
     const m = await scribe.want((x) => x.kind === "members");
     expect(Array.isArray(m.list), "list 가 배열이 아님");
     eq(m.list.length, 2, "멤버 수");
@@ -1176,7 +1200,9 @@ const main = async () => {
   /* 코드 = 판이 열려 있다 (2026-09-06 모델: 문은 판이 있을 때만) — 앱의 새 판 만들기처럼 로비를 먼저 엽니다 */
   const codeOf = async (u, rm) => {
     await api("POST", "/api/r/" + rm + "/lobby", { token: u.token, body: { open: true, cap: 8 } });
-    return (await api("POST", "/api/r/" + rm + "/invite", { token: u.token, body: {} })).data.invite.code;
+    await api("POST", "/api/r/" + rm + "/invite", { token: u.token, body: {} });
+    /* 발급만으로는 시계가 안 돕니다 — 부르는 순간(복사)이 /invite-arm 입니다 (2026-09-08) */
+    return (await api("POST", "/api/r/" + rm + "/invite-arm", { token: u.token, body: {} })).data.invite.code;
   };
 
   const P = await anon(); // 방장
@@ -1643,9 +1669,12 @@ const main = async () => {
   });
   await step("페이지: 대기실 렌더와 §8 문구가 들어 있음", async () => {
     const p = await pageOf("/r/" + room);
-    expect(p.html.indexOf("대기실 ") > 0, "대기실 제목이 없음");
-    /* 방송 화면의 대기실 아래 한 줄 — 앱의 대기 배너와 달리 이건 방송용 문구입니다 */
-    expect(p.html.indexOf("모이는 중이에요…") > 0, "대기실 오버레이 문구가 없음");
+    expect(p.html.indexOf("대기실") > 0, "대기실 제목이 없음");
+    /* 방송 화면의 대기실 발치 한 줄 — 상황마다 다릅니다 (OBS-SPEC §4.3 B안, 2026-09-08 확정).
+       (폐기 2026-09-08) `모이는 중이에요…` 하나 — 누가 들어왔는지도 몇 자리가 남았는지도
+       안 보였고 사람이 없을 때도 같은 말이 떴습니다 */
+    for (const t of ["파티원을 기다려요", "자리 남았어요", "곧 시작해요"])
+      expect(p.html.indexOf(t) > 0, "대기실 문구가 없음: " + t);
     expect(
       p.html.indexOf("이 주소만으로는 판을 볼 수 없어요. 자수 화면의 '내 방송용 주소'를 넣어주세요.") > 0,
       "/r/ 침묵 예외 문구가 없음"
@@ -1695,6 +1724,128 @@ const main = async () => {
       const r = await api(method, path, { body: method === "POST" ? {} : undefined });
       eq(r.status, 404, "status");
     });
+
+  /* ---- 실시간 경로 (LIVE-SPEC) ----
+     자수와 판 푸시가 소켓으로 오갑니다. HTTP 라우트는 그대로 남아 있고(옛 앱 호환)
+     위의 confess·state 시험이 그 길을 계속 지킵니다. 여기서는 소켓 길만 봅니다.
+     방을 따로 씁니다 — 왕복 감시 시험이 서기 소켓을 죽이기 때문입니다 */
+  head("소켓 경로 — 자수와 판 푸시 (LIVE-SPEC §2)");
+  {
+    const H = await anon(); // 방장
+    const M = await anon(); // 파티원
+    let hRoom = null;
+    let hScribe = null;
+    let mView = null;
+
+    await step("준비: 방·초대·착석·판 한 장", async () => {
+      hRoom = await roomOf(H);
+      const code = await codeOf(H, hRoom);
+      const j = await api("POST", "/api/r/" + hRoom + "/join", {
+        token: M.token,
+        body: { j: code },
+      });
+      eq(j.status, 200, "join status");
+      eq(j.data.st, "ok", "st");
+      hScribe = await open("/api/r/" + hRoom + "/scribe?s=" + H.token);
+      hScribe.autoSeen = true;
+      await hScribe.want((x) => x.kind === "members");
+      mView = await open("/api/r/" + hRoom + "/live?s=" + M.token);
+      await mView.want((x) => x.kind === "hello");
+      const r = await api("PUT", "/api/r/" + hRoom + "/state", {
+        token: H.token,
+        body: {
+          state: { board: [], cols: [], rows2: [{ rowId: "r1", n: M.nick }], full: { log: [] } },
+          bindings: { [M.id]: "r1" },
+        },
+      });
+      eq(r.status, 200, "state status");
+      const you = await mView.want((x) => x.kind === "you");
+      eq(you.you.rowId, "r1", "내 줄");
+    });
+
+    await step("자수 소켓: 서기에 전달되고 보낸 사람에게 confess-ok", async () => {
+      mView.ws.send(JSON.stringify({ kind: "confess", cid: "q1", rowId: "r1", colId: "c1", dir: 1 }));
+      const m = await hScribe.want((x) => x.kind === "confess");
+      eq(m.acct, M.id, "acct");
+      eq(m.rowId, "r1", "rowId");
+      eq(m.dir, 1, "dir");
+      const ok = await mView.want((x) => x.kind === "confess-ok" && x.cid === "q1");
+      expect(!!ok, "confess-ok 가 와야 함");
+    });
+
+    await step("자수 소켓: 남의 줄이면 nope(forbidden), 서기엔 안 감", async () => {
+      mView.ws.send(JSON.stringify({ kind: "confess", cid: "q2", rowId: "r9", colId: "c1", dir: 1 }));
+      const n = await mView.want((x) => x.kind === "nope");
+      eq(n.cid, "q2", "cid");
+      eq(n.why, "not your row", "why");
+      eq(n.status, 403, "status");
+    });
+
+    await step("자수 소켓: dir 이 ±1 이 아니면 nope(bad request)", async () => {
+      mView.ws.send(JSON.stringify({ kind: "confess", cid: "q3", rowId: "r1", colId: "c1", dir: 7 }));
+      const n = await mView.want((x) => x.kind === "nope");
+      eq(n.why, "bad request", "why");
+      eq(n.status, 400, "status");
+    });
+
+    await step("판 푸시 소켓: 서기가 보낸 판이 구독자에게 그대로 간다", async () => {
+      hScribe.ws.send(
+        JSON.stringify({ kind: "state", state: { board: [], cols: [{ t: "지각", r: 0 }], full: { log: [] } } })
+      );
+      const st = await mView.want((x) => x.kind === "state" && x.state && (x.state.cols || []).length);
+      eq(st.state.cols[0].t, "지각", "판 내용");
+      eq(st.scribeOn, true, "scribeOn 동봉");
+    });
+
+    await step("판 푸시 소켓: 뷰어가 state 를 보내도 무시된다", async () => {
+      mView.ws.send(JSON.stringify({ kind: "state", state: { cols: [{ t: "위조", r: 0 }] } }));
+      await sleep(400);
+      const r = await api("GET", "/api/r/" + hRoom + "/read", { token: H.token });
+      eq(r.data.state.cols[0].t, "지각", "뷰어가 판을 바꿔치기 못 해야 함");
+    });
+
+    /* 여기서부터 서기 소켓이 죽습니다 — 이 방을 쓰는 시험은 여기가 마지막입니다 */
+    await step("왕복 감시: 방장이 답을 안 하면 nope + 서기 소켓이 닫힌다 (§2.4)", async () => {
+      hScribe.autoSeen = false; // 방장 PC 가 죽은 흉내 — 소켓은 열려 있지만 답이 없습니다
+      mView.ws.send(JSON.stringify({ kind: "confess", cid: "q9", rowId: "r1", colId: "c1", dir: 1 }));
+      await hScribe.want((x) => x.kind === "confess"); // 넘어가긴 합니다
+      /* 두 걸음입니다: 서버가 받았다고 먼저 답하고(되돌리기 창의 셈이 여기서 시작),
+         방장이 3초 안에 답을 안 하면 그 뒤에 아니었다고 알립니다 */
+      await mView.want((x) => x.kind === "confess-ok" && x.cid === "q9");
+      const n = await mView.want((x) => x.kind === "nope" && x.cid === "q9", 6000);
+      eq(n.why, "scribe-off", "why");
+      eq(n.status, 409, "status");
+      await waitClosed(hScribe, 6000);
+    });
+
+    await step("왕복 감시: 서기가 닫히면 구독자에게 presence false", async () => {
+      const p = await mView.want((x) => x.kind === "presence", 6000);
+      eq(p.scribeOn, false, "scribeOn");
+    });
+
+    await step("왕복 감시: 서기가 다시 붙으면 자수가 다시 통한다", async () => {
+      const again = await open("/api/r/" + hRoom + "/scribe?s=" + H.token);
+      again.autoSeen = true;
+      await again.want((x) => x.kind === "members");
+      mView.ws.send(JSON.stringify({ kind: "confess", cid: "qA", rowId: "r1", colId: "c1", dir: 1 }));
+      const m = await again.want((x) => x.kind === "confess");
+      eq(m.rowId, "r1", "rowId");
+      const ok = await mView.want((x) => x.kind === "confess-ok" && x.cid === "qA");
+      expect(!!ok, "confess-ok 가 와야 함");
+      /* 이번에는 방장이 답했으니 뒤따르는 nope 가 없어야 합니다 */
+      await sleep(SCRIBE_ACK_WAIT);
+      expect(
+        !mView.msgs.some((x) => x.kind === "nope" && x.cid === "qA"),
+        "답을 했는데도 nope 가 옴"
+      );
+      await again.close();
+    });
+
+    await step("정리: 소켓 닫기", async () => {
+      await mView.close();
+      expect(true, "닫힘");
+    });
+  }
 
   /* ---- CORS ---- */
   head("CORS");

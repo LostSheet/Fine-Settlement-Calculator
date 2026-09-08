@@ -48,6 +48,12 @@ const CONFESS_PER_MIN = 20;
 /* 자수 되돌리기 창 (§3.6, 2026-09-05) — 내가 방금 올린 것만 30초 안에 −1 로 되돌립니다.
    그 뒤의 조정은 방장의 일입니다. 자기 벌금을 나중에 슬쩍 깎는 길을 막습니다 */
 const CONFESS_UNDO_MS = 30 * 1000;
+/* 자수의 왕복이 방장 생사의 증거입니다 (LIVE-SPEC §2.4). 소켓이 열려 있다는 사실은
+   증거가 못 됩니다 — 방장의 인터넷이나 PC 가 죽으면 닫힘 신호가 안 오고, ping 은
+   런타임이 대신 답해서(하이버네이션 유지) 서버가 그것으로도 생사를 못 봅니다.
+   자수를 서기에게 넘긴 뒤 이 시간 안에 판이 안 돌아오면 서기를 죽은 것으로 봅니다.
+   왕복이 0.2~0.3초로 줄어든 뒤의 값이라 열 배 여유입니다 */
+const SCRIBE_ACK_MS = 3000;
 /* 지목 초대는 1분짜리 실시간 악수입니다 (§3.3) — 만료를 알리는 배관은 없고,
    지난 것은 읽을 때 버립니다. 다시 지목하면 그만입니다 */
 const INV_MS = 60 * 1000;
@@ -1178,29 +1184,7 @@ export class Room {
        읽는 건 명단을 줄에 잇는 데 쓰는 rows2 하나뿐입니다 */
     if (path === "/state" && req.method === "PUT") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
-      const state = b.state === undefined ? null : b.state;
-      const moved = [];
-      if (b.bindings && typeof b.bindings === "object") {
-        for (const [acct, rowId] of Object.entries(b.bindings)) {
-          const m = await S.get("m:" + acct);
-          if (!m) continue;
-          const v = typeof rowId === "string" && rowId ? rowId : null;
-          if (m.rowId === v) continue;
-          m.rowId = v;
-          await S.put("m:" + acct, m);
-          moved.push([acct, m]);
-        }
-      }
-      /* 닉네임 매칭 재연결은 폐기했습니다 (§3.2·§3.7). 연결은 판의 행이 아니라 로비의
-         자리에 살아서, '처음부터'로 판이 갈려도 방장 앱이 자리에서 뽑은 bindings 를
-         그대로 실어 보냅니다 — 서버가 이름을 보고 짐작할 일이 없습니다. */
-      await S.put({ state, stateAt: now });
-      await this.arm();
-      const on = this.scribeOn();
-      const paused = await S.get("paused");
-      this.toViewers({ kind: "state", state, scribeOn: on, paused: paused ? { why: paused.why } : null });
-      // 줄이 바뀐 사람은 자기 줄을 다시 알아야 자수를 누를 수 있습니다
-      for (const [acct, m] of moved) this.toAcct(acct, { kind: "you", you: youOf(m) });
+      await this.doState(b, now);
       return json({ ok: true, watchers: this.ctx.getWebSockets().length });
     }
 
@@ -1515,42 +1499,13 @@ export class Room {
       return json({ ok: true });
     }
 
-    /* 자수 — 서버는 적지 않고 서기에게 넘깁니다. 장부의 원본은 방장 앱입니다 */
+    /* 자수 — 서버는 적지 않고 서기에게 넘깁니다. 장부의 원본은 방장 앱입니다.
+       소켓이 주 통로이고(LIVE-SPEC §2.1) 이 길은 소켓이 없을 때와 옛 앱을 위해 남습니다 */
     if (path === "/confess" && req.method === "POST") {
       if (!me) return json({ error: "unauthorized" }, 401);
-      const m = await S.get("m:" + me.id);
-      if (!m || m.st !== "ok") return json({ error: "forbidden" }, 403);
-      const dir = Number(b.dir);
-      const colId = String(b.colId == null ? "" : b.colId);
-      if ((dir !== 1 && dir !== -1) || !colId || colId.length > 64)
-        return json({ error: "bad request" }, 400);
-      if (!m.rowId || b.rowId !== m.rowId) return json({ error: "not your row" }, 403);
-      // 얼어 있는 판에는 아무것도 못 적습니다 — 방장이 이어가면 다시 눌립니다 (§3.4)
-      if (await S.get("paused")) return json({ error: "paused" }, 409);
-      let g = (await S.get("cg:" + me.id)) || { n: 0, until: 0 };
-      if (g.until <= now) g = { n: 0, until: now + 60000 };
-      g.n++;
-      await S.put("cg:" + me.id, g);
-      if (g.n > CONFESS_PER_MIN) return json({ error: "slow down" }, 429);
-      if (!this.scribeOn()) return json({ error: "scribe-off" }, 409);
-      /* 되돌리기는 방금(30초 안) 올린 만큼만 — 항목별로 올린 수와 마지막 시각을 기억합니다 */
-      const ck = "cf:" + me.id + ":" + colId;
-      const cf = (await S.get(ck)) || { n: 0, t: 0 };
-      if (dir === -1) {
-        if (cf.n <= 0 || now - cf.t > CONFESS_UNDO_MS) return json({ error: "late" }, 409);
-        await S.put(ck, { n: cf.n - 1, t: cf.t });
-      } else {
-        await S.put(ck, { n: (now - cf.t > CONFESS_UNDO_MS ? 0 : cf.n) + 1, t: now });
-      }
-      this.toScribe({
-        kind: "confess",
-        acct: me.id,
-        nick: m.nick,
-        rowId: m.rowId,
-        colId,
-        dir,
-        t: now,
-      });
+      await this.checkAck(now);
+      const r = await this.doConfess(me, b, now);
+      if (!r.ok) return json({ error: r.error }, r.status);
       return json({ ok: true });
     }
 
@@ -1637,8 +1592,166 @@ export class Room {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  webSocketMessage() {
-    /* 구독자는 읽기 전용 — 어떤 메시지도 상태를 못 바꿉니다 */
+  /* ---------- 판 푸시와 자수의 몸통 ----------
+     HTTP 와 소켓이 같은 함수를 부릅니다 (LIVE-SPEC §3). 검사를 두 벌로 만들면
+     갈라지고, 갈라지면 소켓 쪽만 느슨해지는 사고가 납니다 */
+
+  /* 방장 앱이 미는 스냅샷. 서버는 판을 해석하지 않고 그대로 나릅니다 —
+     읽는 건 명단을 줄에 잇는 데 쓰는 bindings 하나뿐입니다 */
+  async doState(b, now) {
+    const S = this.ctx.storage;
+    const state = b.state === undefined ? null : b.state;
+    const moved = [];
+    if (b.bindings && typeof b.bindings === "object") {
+      for (const [acct, rowId] of Object.entries(b.bindings)) {
+        const m = await S.get("m:" + acct);
+        if (!m) continue;
+        const v = typeof rowId === "string" && rowId ? rowId : null;
+        if (m.rowId === v) continue;
+        m.rowId = v;
+        await S.put("m:" + acct, m);
+        moved.push([acct, m]);
+      }
+    }
+    /* 닉네임 매칭 재연결은 폐기했습니다 (§3.2·§3.7). 연결은 판의 행이 아니라 로비의
+       자리에 살아서, '처음부터'로 판이 갈려도 방장 앱이 자리에서 뽑은 bindings 를
+       그대로 실어 보냅니다 — 서버가 이름을 보고 짐작할 일이 없습니다. */
+    await S.put({ state, stateAt: now });
+    /* 판이 돌아왔습니다 — 서기가 살아 있다는 증거입니다 (LIVE-SPEC §2.4) */
+    await this.clearAck();
+    await this.arm();
+    const on = this.scribeOn();
+    const paused = await S.get("paused");
+    this.toViewers({ kind: "state", state, scribeOn: on, paused: paused ? { why: paused.why } : null });
+    // 줄이 바뀐 사람은 자기 줄을 다시 알아야 자수를 누를 수 있습니다
+    for (const [acct, m] of moved) this.toAcct(acct, { kind: "you", you: youOf(m) });
+  }
+
+  /* 자수 한 건. 통과하면 서기에게 넘기고 왕복 감시를 겁니다 */
+  async doConfess(me, b, now, cid) {
+    const S = this.ctx.storage;
+    const m = await S.get("m:" + me.id);
+    if (!m || m.st !== "ok") return { ok: false, error: "forbidden", status: 403 };
+    const dir = Number(b.dir);
+    const colId = String(b.colId == null ? "" : b.colId);
+    if ((dir !== 1 && dir !== -1) || !colId || colId.length > 64)
+      return { ok: false, error: "bad request", status: 400 };
+    if (!m.rowId || b.rowId !== m.rowId) return { ok: false, error: "not your row", status: 403 };
+    // 얼어 있는 판에는 아무것도 못 적습니다 — 방장이 이어가면 다시 눌립니다 (§3.4)
+    if (await S.get("paused")) return { ok: false, error: "paused", status: 409 };
+    let g = (await S.get("cg:" + me.id)) || { n: 0, until: 0 };
+    if (g.until <= now) g = { n: 0, until: now + 60000 };
+    g.n++;
+    await S.put("cg:" + me.id, g);
+    if (g.n > CONFESS_PER_MIN) return { ok: false, error: "slow down", status: 429 };
+    if (!this.scribeOn()) return { ok: false, error: "scribe-off", status: 409 };
+    /* 되돌리기는 방금(30초 안) 올린 만큼만 — 항목별로 올린 수와 마지막 시각을 기억합니다 */
+    const ck = "cf:" + me.id + ":" + colId;
+    const cf = (await S.get(ck)) || { n: 0, t: 0 };
+    if (dir === -1) {
+      if (cf.n <= 0 || now - cf.t > CONFESS_UNDO_MS) return { ok: false, error: "late", status: 409 };
+      await S.put(ck, { n: cf.n - 1, t: cf.t });
+    } else {
+      await S.put(ck, { n: (now - cf.t > CONFESS_UNDO_MS ? 0 : cf.n) + 1, t: now });
+    }
+    this.toScribe({
+      kind: "confess",
+      acct: me.id,
+      nick: m.nick,
+      rowId: m.rowId,
+      colId,
+      dir,
+      t: now,
+    });
+    await this.waitAck(me.id, cid == null ? null : String(cid).slice(0, 40), now);
+    return { ok: true };
+  }
+
+  /* ---------- 왕복 감시 (LIVE-SPEC §2.4) ----------
+     기다리는 자수를 저장에 적어 둡니다. 타이머는 흔한 경우를 빨리 잡고, 저장은
+     DO 가 잠들어 타이머를 잃었을 때 다음 사건에서 잡습니다 */
+  async waitAck(acct, cid, now) {
+    if (await this.ctx.storage.get("ack")) return; // 먼저 기다리는 건이 있으면 그것이 대표합니다
+    await this.ctx.storage.put("ack", { acct, cid, at: now });
+    try {
+      clearTimeout(this.ackTimer);
+      this.ackTimer = setTimeout(() => {
+        this.checkAck(Date.now()).catch(() => {});
+      }, SCRIBE_ACK_MS + 100);
+    } catch (e) {
+      /* 타이머를 못 걸어도 다음 사건에서 걸립니다 */
+    }
+  }
+  async clearAck() {
+    try {
+      clearTimeout(this.ackTimer);
+    } catch (e) {}
+    this.ackTimer = null;
+    if (await this.ctx.storage.get("ack")) await this.ctx.storage.delete("ack");
+  }
+  async checkAck(now) {
+    const a = await this.ctx.storage.get("ack");
+    if (!a) return;
+    if ((now || Date.now()) - a.at < SCRIBE_ACK_MS) return;
+    await this.ctx.storage.delete("ack");
+    /* 넘겼는데 판이 안 돌아왔습니다 — 방장은 없는 것으로 봅니다.
+       보낸 사람에게 한 줄 주고, 서기 소켓을 닫아 전원의 화면이 같이 잠기게 합니다 */
+    this.toAcct(a.acct, { kind: "nope", cid: a.cid, why: "scribe-off", status: 409 });
+    this.killScribe("no-ack");
+  }
+  /* 서기 소켓을 닫습니다. 방장이 살아 있었다면 곧 다시 붙고, 붙는 즉시 판을 한 장
+     밀어서(LIVE-SPEC §2.2) 저절로 회복됩니다 */
+  killScribe(why) {
+    let had = false;
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = tagOf(ws);
+      if (!a || a.k !== "scribe") continue;
+      had = true;
+      try {
+        ws.close(1011, why);
+      } catch (e) {}
+    }
+    if (had) this.bcast({ kind: "presence", scribeOn: false });
+  }
+
+  /* 뷰어는 자수 하나만, 서기는 판 하나만 보낼 수 있습니다 (LIVE-SPEC §2.1·§2.2).
+     그 밖의 메시지는 v2 §4.2 대로 전부 무시합니다. ping 은 런타임이 대신 답합니다 */
+  async webSocketMessage(ws, msg) {
+    if (typeof msg !== "string" || msg === "ping") return;
+    if (msg.length > MAX_STATE_BYTES) return;
+    const a = tagOf(ws);
+    if (!a) return;
+    let m = null;
+    try {
+      m = JSON.parse(msg);
+    } catch (e) {
+      return;
+    }
+    if (!m || typeof m !== "object") return;
+    const now = Date.now();
+
+    if (a.k === "scribe" && m.kind === "state") {
+      // 서기 소켓은 붙을 때 방장임이 확인된 소켓입니다 (socket())
+      await this.doState(m, now);
+      return;
+    }
+    /* 방장 앱이 자수를 받았다고 답한 것입니다 (LIVE-SPEC §2.4). 판 푸시만으로는 모자랍니다 —
+       방장 앱이 받은 자수를 조용히 버리는 길이 있어서(0회에서 빼기, 지금 판에 없는 항목)
+       그때는 판이 안 바뀌고, 살아 있는 방장을 죽은 것으로 볼 뻔했습니다 */
+    if (a.k === "scribe" && m.kind === "seen") {
+      await this.clearAck();
+      return;
+    }
+    if (a.k === "v" && a.acct && m.kind === "confess") {
+      await this.checkAck(now);
+      const cid = m.cid == null ? null : m.cid;
+      const r = await this.doConfess({ id: a.acct }, m, now, cid);
+      /* HTTP 의 200·에러와 같은 자리입니다 — 되돌리기 창의 셈은 서버가 받아 준 순간부터
+         돕니다 (v2 §3.6). 소켓에는 응답이 없으니 한 줄을 따로 보냅니다 */
+      if (r.ok) this.send(ws, { kind: "confess-ok", cid });
+      else this.send(ws, { kind: "nope", cid, why: r.error, status: r.status });
+      return;
+    }
   }
   webSocketClose(ws) {
     this.gone(ws);

@@ -193,6 +193,12 @@ const CARRY_REASON = "'메모장'에서 이관";
    기타 사유 칸은 암살·지각 같은 '왜'의 자리라, '어떻게'(경로)는 기록이 말하게 둡니다. */
 const ADJUST_REASON = "조정";
 const LOG_CAP = 200; // 기록은 최근 200줄만 남깁니다 (공유 링크엔 안 담김)
+/* 되살릴 수 없는 기록 줄 (LIVE-SPEC §6.2, 2026-09-08 사용자 확정) — 무슨 일이 있었는지는
+   보여야 하지만, 지워진 열·사람을 되살리는 일은 역분개(그 줄의 변화량만 반대로)로는 안 됩니다.
+   되살리기는 되돌리기 배너의 몫입니다 */
+const NO_UNDO = new Set(["col-del", "row-del", "extra-edit"]);
+/* 판 전체에서 빠진 것이라 '그래서 얼마'가 한 사람의 총액이 아닙니다 */
+const NO_AFTER = new Set(["col-del", "row-del"]);
 /* 방송에 실어 보내는 연출거리 개수 — 이보다 오래된 건 이미 흘러간 것으로 봅니다 */
 const FX_CAP = 12;
 
@@ -4488,6 +4494,9 @@ export default function GoldSettlement() {
     live.current.n[row.id + ":" + col.id] = before + d;
     live.current.total[row.id] = after;
     bump(row.id, col.id, d, gold);
+    /* 자수는 남이 기다리는 사건입니다 — 이번 한 장은 디바운스를 건너뜁니다 (LIVE-SPEC §2.3).
+       효과가 렌더 뒤에 돌아야 방금 적은 기록이 실리므로, 여기서는 표시만 켭니다 */
+    wantNow.current = true;
     const id = "L" + seq.current++;
     /* 자수도 '방금 바뀐' 카드에 섞습니다 — 되돌리는 자리가 이미 거기라서 새 장치를 안 만듭니다 */
     notePress(id);
@@ -4557,6 +4566,30 @@ export default function GoldSettlement() {
     paused: (p) => setPaused(p || null),
   };
 
+  /* 서기 소켓 손잡이 — 판 푸시가 이 길로 나갑니다 (LIVE-SPEC §2.2).
+     소켓이 안 열려 있으면 지금까지 쓰던 HTTP 로 떨어집니다 */
+  const scribeWsRef = useRef(null);
+  /* 지금 밀어도 되는 상태인가 — 소켓이 붙는 순간에도 봐야 해서 거울로 들고 갑니다 */
+  const pushOkRef = useRef(false);
+  /* 판 한 장을 서버로. 소켓이 먼저이고, 없으면 HTTP 입니다.
+     소켓 전송에는 응답이 없어서, 보내는 도중 끊기면 그 한 장이 조용히 사라집니다 —
+     그래서 소켓이 붙는 즉시 한 장을 다시 밉니다 (아래 onopen) */
+  const sendState = (snap) => {
+    if (!auth || !relay.room) return;
+    const ws = scribeWsRef.current;
+    if (ws && ws.readyState === 1) {
+      try {
+        ws.send(JSON.stringify({ kind: "state", state: snap }));
+        return;
+      } catch (e) {
+        /* 소켓이 방금 죽었습니다 — 아래 HTTP 로 갑니다 */
+      }
+    }
+    roomApi.putState(auth.token, relay.room, snap).catch(() => {
+      /* 인터넷이 끊겨도 기록은 계속됩니다. 다음 변경 때 다시 시도합니다. */
+    });
+  };
+
   /* --- 서기 소켓: 로그인해서 방이 있는 동안 상시 연결 ---
      송출 토글과 상관없습니다 (§5.7). 이 소켓이 곧 "방장이 앉아 있다"이고 파티원의
      자수가 이걸 타고 옵니다 — 방송을 안 띄운다고 자수가 멈출 이유가 없습니다 */
@@ -4577,8 +4610,17 @@ export default function GoldSettlement() {
         return;
       }
       ws.onopen = () => {
+        scribeWsRef.current = ws;
         setScribeLive(true);
         wait = 1000;
+        /* 붙는 즉시 판을 한 장 밉니다 (LIVE-SPEC §2.2) — 끊겨 있는 동안의 마지막 변경이
+           영영 안 올라가는 길을 막고, 서버가 왕복 감시로 소켓을 닫았을 때 저절로
+           회복되는 길이기도 합니다 */
+        if (pushOkRef.current && pushRef.current) {
+          try {
+            ws.send(JSON.stringify({ kind: "state", state: pushRef.current() }));
+          } catch (e) {}
+        }
       };
       beat = setInterval(() => {
         if (ws && ws.readyState === 1) ws.send("ping");
@@ -4602,14 +4644,22 @@ export default function GoldSettlement() {
         else if (m.kind === "seat") scribeRef.current.seat(m.acct, m.nick, m.rowId);
         else if (m.kind === "lobby") scribeRef.current.lobby(m.lobby);
         else if (m.kind === "paused") scribeRef.current.paused(m.paused);
-        else if (m.kind === "confess")
+        else if (m.kind === "confess") {
           scribeRef.current.confess(m.rowId, m.colId, m.dir != null ? m.dir : m.n);
+          /* 받았다고 바로 답합니다 (LIVE-SPEC §2.4) — 이 한 줄이 "방장이 살아 있다"의 증거입니다.
+             판 푸시로 대신할 수 없습니다: 0회에서 빼기처럼 장부가 안 바뀌는 자수가 있어서,
+             그때는 판이 안 나가고 살아 있는 방장이 죽은 것으로 보입니다 */
+          try {
+            if (ws && ws.readyState === 1) ws.send(JSON.stringify({ kind: "seen" }));
+          } catch (e2) {}
+        }
       };
       ws.onclose = () => {
         clearInterval(beat);
         /* 우리가 갈아 끼우려고 닫은 소켓이면 여기서 상태를 건드리면 안 됩니다 —
            옛 소켓의 close 가 새 소켓의 open 보다 늦게 오면 방 칩이 '연결 끊김'에 눌어붙습니다 */
         if (stop) return;
+        if (scribeWsRef.current === ws) scribeWsRef.current = null;
         setScribeLive(false);
         setTimeout(connect, wait);
         /* 서기가 끊긴 동안은 파티원의 자수가 통째로 막힙니다 — 오래 기다리면 안 됩니다 */
@@ -4626,6 +4676,7 @@ export default function GoldSettlement() {
       stop = true;
       clearInterval(beat);
       setScribeLive(false);
+      scribeWsRef.current = null;
       try {
         if (ws) {
           ws.onclose = null;
@@ -4884,24 +4935,33 @@ export default function GoldSettlement() {
     t: Date.now(),
   });
 
-  /* --- 방장: 바뀔 때마다 밀어 올립니다 (디바운스 300ms) --- */
+  /* --- 방장: 바뀔 때마다 밀어 올립니다 ---
+     디바운스 300ms 는 **연타를 묶으려고** 있는 것입니다. 남이 기다리는 사건에는 쓸 이유가
+     없어서, 자수 반영과 룰렛 국면은 기다리지 않고 바로 나갑니다 (LIVE-SPEC §2.3) */
   const pushTimer = useRef(null);
   const pushRef = useRef(null);
   pushRef.current = liveSnapshot;
+  /* 이번 변경은 기다리지 않는다 — applyConfess 가 켭니다. 효과가 렌더 뒤에 돌아야
+     방금 적은 기록이 실리므로, 여기서 켜고 효과에서 끕니다 */
+  const wantNow = useRef(false);
+  const lastSpinSig = useRef(null);
   useEffect(() => {
     /* 송출 토글은 폐지했습니다 (§5.7) — 판이 있으면 나가고 없으면 안 나갑니다 */
+    pushOkRef.current = !!canPush && (roundLive || lobbyOn);
     if (!canPush) return;
     /* 판이 닫혔거나 얼어 있으면 밀지 않습니다 — 서버에 남은 마지막 한 장(끝난 판·굳은 판)이
        파티원 화면과 오버레이의 그림입니다 (§3.4). 모으는 중이면 대기실을 밉니다 */
     if (!roundLive && !lobbyOn) return;
+    /* 룰렛은 국면이 바뀔 때마다 즉시 — 방송과 파티원 화면이 방장과 같은 박자로 돌아야 합니다 */
+    const spinSig = spin
+      ? [spin.sid, spin.phase, !!spin.rolling, spin.skipAt, !!spin.fast, !!spin.out].join("|")
+      : "";
+    const spinMoved = lastSpinSig.current !== null && lastSpinSig.current !== spinSig;
+    lastSpinSig.current = spinSig;
+    const now = wantNow.current || spinMoved;
+    wantNow.current = false;
     clearTimeout(pushTimer.current);
-    pushTimer.current = setTimeout(() => {
-      roomApi
-        .putState(auth.token, relay.room, pushRef.current())
-        .catch(() => {
-          /* 인터넷이 끊겨도 기록은 계속됩니다. 다음 변경 때 다시 시도합니다. */
-        });
-    }, 300);
+    pushTimer.current = setTimeout(() => sendState(pushRef.current()), now ? 0 : 300);
     return () => clearTimeout(pushTimer.current);
   }, [canPush, relay.room, lobbyOn, lobbyCap, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, relay.fx, relay.mv,
       /* 연출거리는 기록에서 나옵니다 — 표가 안 바뀌는 취소도 방송에는 알려야 해서 */
@@ -5525,6 +5585,27 @@ export default function GoldSettlement() {
     return Math.max(0, CONFESS_UNDO_MS - (Date.now() - cf.t));
   };
   /* 자수 — 낙관 갱신을 하지 않습니다. 방장이 장부에 적고 푸시로 돌아온 것만 화면에 뜹니다 */
+  /* 서버가 받아 준 자수 — HTTP 의 200 과 소켓의 confess-ok 가 같이 옵니다 */
+  const confessOk = (colId, dir) => {
+    noteCf(colId, dir);
+    /* 되돌린 본인에게도 한 줄 — 숫자만 줄면 "잘못 눌렀나"가 됩니다 (2026-09-05, §8 초안) */
+    if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
+  };
+  /* 거절 — HTTP 의 에러와 소켓의 nope 가 같이 옵니다. 갈래를 한 벌로 둡니다 */
+  const confessFail = (code, status, msg) => {
+    /* 되돌리기 창(30초)을 넘긴 −1 — 서버가 거릅니다 (§3.6, 2026-09-05). 문구는 §8 초안 */
+    if (code === "late")
+      /* 토스트로 (2026-09-07 사용자) — 쪽지로 띄우면 생겼다 사라지며 화면이 통째로 밀렸다 */
+      return say("자수는 30초 안에만 되돌릴 수 있어요 — 그 뒤는 방장에게 말해 주세요.", 5000);
+    if (status === 409 || code === "scribe-off") {
+      setScribeOn(false);
+      setConfessErr("방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요.");
+    } else setConfessErr(msg || "지금은 누를 수 없어요.");
+  };
+  /* 보내 놓고 답을 기다리는 자수 — cid 로 짝을 맞춥니다 (LIVE-SPEC §2.1) */
+  const cfSent = useRef({});
+  /* 뷰어 소켓 손잡이 — 자수가 이 길로 나갑니다 */
+  const liveWsRef = useRef(null);
   const sendConfess = (rowId, colId, dir) => {
     if (!auth || !liveRoom) return;
     /* 지금 판에 없는 항목으로는 안 보냅니다 — 방장 장부에 적힐 곳이 없는 자수는
@@ -5539,23 +5620,24 @@ export default function GoldSettlement() {
       if (tutorialRef.current) tutHit((dir > 0 ? "confess:" : "unconfess:") + colId); // 파티원 튜토리얼 1·3·4걸음
       return;
     }
+    /* 판을 보고 있으면 뷰어 소켓이 이미 붙어 있고, 붙을 때 자격 확인이 끝나 있습니다 —
+       그 길로 보내면 HTTP 왕복과 계정부 조회가 통째로 빠집니다 (LIVE-SPEC §2.1) */
+    const ws = liveWsRef.current;
+    if (ws && ws.readyState === 1) {
+      const cid = "q" + seq.current++;
+      try {
+        cfSent.current[cid] = { colId, dir };
+        ws.send(JSON.stringify({ kind: "confess", cid, rowId, colId, dir }));
+        return;
+      } catch (e) {
+        delete cfSent.current[cid];
+        /* 소켓이 방금 죽었습니다 — 아래 HTTP 로 갑니다 */
+      }
+    }
     roomApi
       .confess(auth.token, liveRoom, rowId, colId, dir)
-      .then(() => {
-        noteCf(colId, dir);
-        /* 되돌린 본인에게도 한 줄 — 숫자만 줄면 "잘못 눌렀나"가 됩니다 (2026-09-05, §8 초안) */
-        if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
-      })
-      .catch((e) => {
-      /* 되돌리기 창(30초)을 넘긴 −1 — 서버가 거릅니다 (§3.6, 2026-09-05). 문구는 §8 초안 */
-      if (e && e.code === "late")
-        /* 토스트로 (2026-09-07 사용자) — 쪽지로 띄우면 생겼다 사라지며 화면이 통째로 밀렸다 */
-        return say("자수는 30초 안에만 되돌릴 수 있어요 — 그 뒤는 방장에게 말해 주세요.", 5000);
-      if (e && (e.status === 409 || e.code === "scribe-off")) {
-        setScribeOn(false);
-        setConfessErr("방장이 자리를 비웠어요 — 돌아오면 다시 누를 수 있어요.");
-      } else setConfessErr(e.message || "지금은 누를 수 없어요.");
-    });
+      .then(() => confessOk(colId, dir))
+      .catch((e) => confessFail(e && e.code, e && e.status, e && e.message));
   };
   /* 판 도중 합류 — 어느 줄이 나인지 본인이 고릅니다 (§3.2). 계정 안 붙은 줄만
      후보이고, 고른 줄에 쌓인 벌금은 그대로 이어받습니다. 한 번 고르면 서버가
@@ -5958,6 +6040,10 @@ export default function GoldSettlement() {
         setTimeout(connect, wait);
         return;
       }
+      /* 자수가 이 소켓으로 나갑니다 (LIVE-SPEC §2.1) */
+      ws.onopen = () => {
+        liveWsRef.current = ws;
+      };
       beat = setInterval(() => {
         if (ws && ws.readyState === 1) ws.send("ping");
       }, 50000);
@@ -5965,6 +6051,20 @@ export default function GoldSettlement() {
         if (ev.data === "pong") return;
         try {
           const m = JSON.parse(ev.data);
+          /* 보낸 자수의 답 — 되돌리기 창의 셈은 서버가 받아 준 순간부터 돕니다 (v2 §3.6) */
+          if (m.kind === "confess-ok") {
+            const s = cfSent.current[m.cid];
+            delete cfSent.current[m.cid];
+            if (s) confessOk(s.colId, s.dir);
+            wait = 1000;
+            return;
+          }
+          if (m.kind === "nope") {
+            if (m.cid) delete cfSent.current[m.cid];
+            confessFail(m.why, m.status, "");
+            wait = 1000;
+            return;
+          }
           if (m.kind === "dead") {
             setLiveState("dead");
             /* 방이 사라져도 마지막 판은 남깁니다 — 정산은 아직 안 끝났을 수 있습니다 */
@@ -6048,6 +6148,9 @@ export default function GoldSettlement() {
       };
       ws.onclose = () => {
         clearInterval(beat);
+        if (liveWsRef.current === ws) liveWsRef.current = null;
+        /* 답을 못 받은 자수는 짝을 잃습니다 — 쌓이지 않게 비웁니다 */
+        cfSent.current = {};
         if (stop) return;
         setLiveState((v) => (v === "dead" ? v : "connecting"));
         setTimeout(connect, wait);
@@ -6063,6 +6166,7 @@ export default function GoldSettlement() {
     return () => {
       stop = true;
       clearInterval(beat);
+      liveWsRef.current = null;
       try {
         ws && ws.close();
       } catch (e) {}
@@ -6815,9 +6919,24 @@ export default function GoldSettlement() {
     const who = rows.find((x) => x.id === id);
     const nm = (who && who.name) || "이름 없는 인원";
     takeSnap("인원 삭제", `${nm}${josa(nm, "을", "를")} 지웠어요.`);
+    /* 그 사람의 총액이 통째로 빠집니다 — 한 줄 남깁니다 (LIVE-SPEC §6.2).
+       취소 버튼은 안 붙습니다 — 지운 줄을 되살리는 길이 역분개에는 없습니다 */
+    const goneG = who ? liveTotal(who) : 0;
     setRows((prev) => prev.filter((x) => x.id !== id));
     dropSeat(id);
     setOpenRow((o) => (o === id ? null : o));
+    if (goneG)
+      appendLog({
+        id: "L" + seq.current++,
+        kind: "row-del",
+        rowId: "",
+        colId: "",
+        n: 0,
+        delta: -goneG,
+        name: seatName(who, rows.indexOf(who)),
+        item: "",
+        after: 0,
+      });
   };
   /* 판이 살아 있는 동안 자리와 줄은 id 로 1:1 입니다. 메모장 모드처럼 줄을 통째로
      다시 짜는 길이 있어서, 마지막에 한 번 맞춰 둡니다 — 표시 이름의 원본은 방장 장부라
@@ -6894,17 +7013,46 @@ export default function GoldSettlement() {
           : x
       )
     );
+  /* 금액 칸에 손을 얹은 순간의 값 — 손을 뗄 때 이것과 견줍니다 (LIVE-SPEC §6.2) */
+  const exGrab = useRef({});
+  const grabExtra = (rowId, exId) => {
+    const row = rows.find((x) => x.id === rowId);
+    const ex = row && extrasOf(row).find((e) => e.id === exId);
+    if (ex) exGrab.current[exId] = Math.round(goldOf(ex.amount));
+  };
+  /* 손을 뗐을 때 — 감면 한도를 맞추고, 금액이 바뀌었으면 기록에 한 줄 남깁니다.
+     타이핑마다가 아니라 손을 뗄 때 한 번입니다. 사유만 고친 것은 돈이 안 움직이니 안 남습니다.
+     취소 버튼은 안 붙습니다 (2026-09-08 사용자 확정) */
   const clampExtra = (rowId, exId) => {
     const row = rows.find((x) => x.id === rowId);
     const ex = row && extrasOf(row).find((e) => e.id === exId);
+    const was = exGrab.current[exId];
+    delete exGrab.current[exId];
     if (!ex) return;
     const want = Math.round(goldOf(ex.amount));
-    if (want >= 0) return;
-    /* 이 건을 뺀 나머지 벌금까지가 감면 한도입니다 */
-    const g = clampCut(want, itemGold(row) - want);
-    if (g === want) return;
-    patchExtra(rowId, exId, "amount", commafy(g));
-    sayLog(man(-want) + " 중 벌금이 있는 " + man(-g) + "만 깎였어요 — 남은 몫은 사라져요.");
+    let g = want;
+    if (want < 0) {
+      /* 이 건을 뺀 나머지 벌금까지가 감면 한도입니다 */
+      g = clampCut(want, itemGold(row) - want);
+      if (g !== want) {
+        patchExtra(rowId, exId, "amount", commafy(g));
+        sayLog(man(-want) + " 중 벌금이 있는 " + man(-g) + "만 깎였어요 — 남은 몫은 사라져요.");
+      }
+    }
+    if (readOnly || was == null || was === g) return;
+    /* rows 에는 타이핑한 값(want)이 이미 들어 있습니다 — 자른 값(g)으로 바꿔 총액을 냅니다 */
+    const after = itemGold(row) - want + g;
+    live.current.total[row.id] = after;
+    appendLog({
+      kind: "extra-edit",
+      rowId,
+      exId,
+      delta: g - was,
+      name: seatName(row, rows.indexOf(row)),
+      item: ex.reason ? "기타(" + ex.reason + ")" : "기타",
+      reason: ex.reason,
+      after,
+    });
   };
   const delExtra = (rowId, exId) => {
     const row = rows.find((x) => x.id === rowId);
@@ -7000,6 +7148,13 @@ export default function GoldSettlement() {
     const col = cols.find((c) => c.id === id);
     const cn = (col && col.name) || "이름 없는 항목";
     takeSnap("항목 삭제", `항목 '${cn}'${josa(cn, "을", "를")} 지웠어요.`);
+    /* 이 열이 들고 있던 돈이 전원에게서 빠집니다 — '전체' 한 줄로 남깁니다 (LIVE-SPEC §6.2).
+       사람마다 한 줄이면 여덟 줄이 한꺼번에 쌓여서, 비움과 같은 문법을 씁니다.
+       취소 버튼은 안 붙습니다 — 지운 열을 되살리는 길이 역분개에는 없습니다 */
+    const goneG = rows.reduce(
+      (a, x) => a + cellGold(x, id, Math.round(goldOf((col || {}).price))),
+      0
+    );
     setCols((prev) => prev.filter((c) => c.id !== id));
     setRows((prev) =>
       prev.map((x) => {
@@ -7008,6 +7163,18 @@ export default function GoldSettlement() {
         return { ...x, counts: rest, sums: restSums };
       })
     );
+    if (goneG)
+      appendLog({
+        id: "L" + seq.current++,
+        kind: "col-del",
+        rowId: "",
+        colId: "",
+        n: 0,
+        delta: -goneG,
+        name: "",
+        item: cn,
+        after: 0,
+      });
   };
 
   // 실제로 쓰기 시작할 때. 인원·숫자는 비우고 항목은 기본값으로 되돌립니다.
@@ -9933,6 +10100,7 @@ export default function GoldSettlement() {
                             onAdd={(amount, reason) => addExtra(row.id, amount, reason)}
                             onPatch={(exId, key, v) => patchExtra(row.id, exId, key, v)}
                             onFix={(exId) => clampExtra(row.id, exId)}
+                            onGrab={(exId) => grabExtra(row.id, exId)}
                             onRemove={(ex) => askDelExtra(row, ex)}
                             onClose={() => setOpenRow(null)}
                           />
@@ -10371,12 +10539,15 @@ export default function GoldSettlement() {
                   <span className="gs-log-t">{hhmm(en.t)}</span>
                   <span
                     className={
-                      "gs-log-nm" + (en.kind === "price" || en.kind === "clear" ? " gs-log-sys" : "")
+                      "gs-log-nm" +
+                      (en.kind === "price" || en.kind === "clear" || en.kind === "col-del"
+                        ? " gs-log-sys"
+                        : "")
                     }
                   >
                     {en.kind === "price"
                       ? en.item || "항목"
-                      : en.kind === "clear"
+                      : en.kind === "clear" || en.kind === "col-del"
                       ? en.name || "전체"
                       : en.name || "이름 없음"}
                   </span>
@@ -10405,9 +10576,18 @@ export default function GoldSettlement() {
                     {/* 판은 그대로 두고 숫자만 리셋한 자리 — 결과지에는 무영향입니다 (§3.4) */}
                     {en.kind === "clear" &&
                       `비움 ${en.item ? en.item + " " : ""}${signedMan(en.delta)}`}
+                    {/* 돈이 움직이는데 안 남던 셋 (LIVE-SPEC §6.2) — 취소 버튼은 안 붙습니다 */}
+                    {en.kind === "col-del" &&
+                      `항목 삭제 — ${en.item || "항목"} ${signedMan(en.delta)}`}
+                    {en.kind === "row-del" && `인원 삭제 ${signedMan(en.delta)}`}
+                    {en.kind === "extra-edit" &&
+                      `${en.item || "기타"} 수정 ${signedMan(en.delta)}`}
                   </span>
-                  {en.kind !== "price" && <span className="gs-log-after">→ {man(en.after)}</span>}
+                  {en.kind !== "price" && !NO_AFTER.has(en.kind) && (
+                    <span className="gs-log-after">→ {man(en.after)}</span>
+                  )}
                   {en.kind !== "cancel" &&
+                    !NO_UNDO.has(en.kind) &&
                     !readOnly &&
                     !en.cancelled &&
                     rows.some((x) => x.id === en.rowId) && (
@@ -15036,7 +15216,9 @@ function Amount({ v, sign, className = "" }) {
 }
 
 /* 기타 벌금 편집기 — 표 안의 칸을 누르면 그 아래로 펼쳐집니다 */
-function Discretion({ who, extras, onAdd, onPatch, onFix, onRemove, onClose }) {
+/* onGrab — 금액 칸에 손을 얹은 순간의 값을 위에서 기억해 둡니다. 손을 뗄 때 그 값과
+   견줘서 기록에 한 줄 남길지 정합니다 (LIVE-SPEC §6.2). 타이핑마다가 아닙니다 */
+function Discretion({ who, extras, onAdd, onPatch, onFix, onGrab, onRemove, onClose }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
 
@@ -15072,6 +15254,7 @@ function Discretion({ who, extras, onAdd, onPatch, onFix, onRemove, onClose }) {
                 value={e.amount}
                 signed
                 onChange={(v) => onPatch(e.id, "amount", v)}
+                onFocus={() => onGrab && onGrab(e.id)}
                 onBlur={() => onFix(e.id)}
                 aria-label="기타 벌금 금액"
               />
