@@ -213,11 +213,12 @@ export const PAGE_HTML = `<!doctype html>
     font-variant-numeric:tabular-nums;
     background:#e8c66a; color:#17130e; padding:1.6vw 5vw;
     border-top:.45vw solid rgba(245,240,230,.75)}
-  /* 금색 바탕에서는 어두운 판의 청·녹·적이 떠 버립니다 — 밝은 판 테마에서 이미 검증한
-     값을 그대로 씁니다(크림 바탕 명도대비 4.8~4.9). §4.4 밝은 판의 색과 같은 가족입니다 */
+  /* 금색 바탕 위의 뜻색 — 파랑·산호를 어둡게 (2026-09-08 사용자 확정). 뜻 하나에 색 하나, 밝기만 바탕에 맞춥니다.
+     (폐기) 밝은 판의 초록·적 #2f7a4d/#b8462f — "크림 바탕 명도대비 4.8~4.9" 는 크림에서 잰 값이고
+     금색 #e8c66a 위에서는 3.2 였다. #1a4f80 은 5.1, #8f331f 는 4.8 (표의 #6fb4ff 는 1.3 이라 못 쓴다) */
   .ov-fx em{font-style:normal; font-weight:800}
-  .ov-fx.up em{color:#2f7a4d}
-  .ov-fx.dn em{color:#b8462f}
+  .ov-fx.up em{color:#1a4f80}
+  .ov-fx.dn em{color:#8f331f}
   /* 마지막 카드는 온 방향의 반대로 — 살짝 내려가며 0.16초 (2026-09-08). 뚝 꺼지지 않게 (2026-09-07) */
   .ov-fx.out{animation:ov-fx-out .16s ease-in forwards}
   @keyframes ov-fx-out{to{opacity:0; transform:translateY(1vw) scale(.97)}}
@@ -491,14 +492,21 @@ export const PAGE_HTML = `<!doctype html>
      빈 등수·변동 칸은 없앱니다 — 이름 열이 flex:1 이라 뒤의 열은 그대로 맞습니다 */
   html[data-t="bars"] .ov-head > .ov-rank,
   html[data-t="bars"] .ov-head > .ov-move{display:none}
+  /* 머리줄 글자 (2026-09-08 사용자 확정, 목업 A) — 크기를 올리고 무게를 한 단계 내립니다.
+     방송에서 판이 500px 이면 머리줄 글자는 15~25px 로 나오는데, 그 크기에서 700~800 은 고딕 A1 의
+     속공간(벌·금·순·위·잡·죽)이 메워져 덩어리로 보이고 송출 인코딩이 한 번 더 뭉갭니다.
+     (폐기) 제목 3.3vw/700/.05em · 총액 3.4vw/800 · 라벨 상한 2.2vw/700 · 슬라이드 라벨 3.4vw/700 */
   html[data-t="bars"] .ov-name-t, html[data-t="bars"] .ov-lobby-t{margin-left:0;
-    font-size:3.3vw; font-weight:700; letter-spacing:.05em}
+    font-size:3.8vw; font-weight:600; letter-spacing:.03em}
   /* 금색 블록 — 합계와 대기실 인원이 같은 자리에 섭니다. 왼쪽 띠는 box-shadow 라
      자리를 안 먹습니다: 열 간격을 그대로 덮어서 칸 정렬이 안 틀어집니다.
      ::before 를 안 쓰는 이유도 있습니다 — .ov-chead 에 overflow:hidden 이 걸려 있어서
      칸 바깥에 그린 ::before 는 통째로 잘립니다 (2026-09-08 목업에서 실제로 안 보였습니다) */
+  /* 총액은 4vw/700 (2026-09-08) — 목업 A 의 3.8 은 무게가 내려간 만큼 커진 게 안 보였다(사용자).
+     한 눈금 더 올리되 줄의 금액(4.4vw)보다는 작게 — 머리와 줄의 위계는 남깁니다.
+     열 폭(--goldw)은 줄 글자로 "9999만"을 재 두어서 4vw 의 총액은 1억 전까지 그 안에 듭니다 */
   html[data-t="bars"] .ov-total, html[data-t="bars"] .ov-lobby-n{
-    background:var(--gold); color:#17130e; opacity:1; font-weight:800;
+    background:var(--gold); color:#17130e; opacity:1; font-size:4vw; font-weight:700;
     align-self:stretch; display:flex; align-items:center; justify-content:flex-end;
     min-width:9.5vw; position:relative;
     /* 세로 여백은 반드시 긴 이름으로 — margin 단축을 쓰면 아래 :last-child 의
@@ -510,16 +518,20 @@ export const PAGE_HTML = `<!doctype html>
      항목·순액일 땐 이름입니다. 이름일 때까지 금색이면 "금색 = 돈"이 흐려지고, 나란히에서
      같은 단어(잡힘)가 어두운 색면에 크림 글자인 것과도 어긋납니다.
      그래서 라벨일 때는 라벨의 옷 — 어두운 색면에 크림 글자 — 을 입습니다 */
+  /* 머리줄 라벨 칸은 불투명 (2026-09-08 사용자 확정) — 줄의 칸(등수·이름·기둥)은 .55 그대로 두어 게임이
+     비치는 건 지키고, 이름표인 머리줄만 늘 같은 얼굴을 갖습니다. 반투명이면 뒤의 게임이 밝을 때
+     크림 글자의 대비가 죽었습니다(사용자 방송 화면). 라벨은 3.8vw/600 */
   html[data-t="bars"] .ov-total.as-lab{
-    background:rgba(8,7,6,.55); color:rgba(245,240,230,.92); font-weight:700;
+    background:#17130e; color:rgba(245,240,230,.92); font-size:3.8vw; font-weight:600;
     /* 라벨일 땐 띠도 라벨 두께로 — 두꺼운 띠는 노란 칸의 짝입니다 */
     box-shadow:-.22vw 0 0 0 rgba(245,240,230,.5)}
   /* 금색 블록 안의 증감은 어두운 짝으로 (2026-09-08 사용자 지적: 황색 띠에 녹색이 안 보인다).
      총액이 굴러갈 때 그 사이에 끼는 증감 한 줄(.ov-mvreel > i.d)이 금색 바탕에 떠 버립니다.
-     녹색과 적색은 한 쌍이라 같이 내립니다 — 밝은 판 테마에서 크림 바탕에 대고 검증한 값
-     (--up #2f7a4d / --dn #b8462f)을 그대로 씁니다. 어두운 막대 위의 밝은 짝은 그대로입니다 */
-  html[data-t="bars"] .ov-total .ov-mvreel.up > i.d{color:#2f7a4d}
-  html[data-t="bars"] .ov-total .ov-mvreel.dn > i.d{color:#b8462f}
+     뜻색은 한 벌 — 금색 위에서도 파랑·산호, 톤만 어둡게 (2026-09-08 사용자 확정).
+     (폐기) 밝은 판의 --up #2f7a4d / --dn #b8462f — "4.8~4.9" 는 크림 바탕에서 잰 값이었고
+     금색 #e8c66a 위에서는 3.2 였다. #1a4f80 은 5.1, #8f331f 는 4.8 */
+  html[data-t="bars"] .ov-total .ov-mvreel.up > i.d{color:#1a4f80}
+  html[data-t="bars"] .ov-total .ov-mvreel.dn > i.d{color:#8f331f}
   /* 칠해진 값 칸은 글자 뒤에 1.6vw 를 둡니다 (2026-09-08 사용자 지적: 글자가 칸 끝에 딱 붙는다).
      1.6vw 는 줄의 오른쪽 안쪽 여백과 같은 값이라, 블록 안의 글자가 아래 금액들과 같은 선에서
      끝납니다. content-box 라 그 여백이 --goldw 를 안 먹습니다 — border-box 로 두면 그 폭에
@@ -557,8 +569,10 @@ export const PAGE_HTML = `<!doctype html>
   html[data-t="bars"] .ov-head > .ov-nethead{
     align-self:stretch; display:flex; align-items:center; position:relative;
     margin-top:-1vw; margin-bottom:-1vw; /* 단축 금지 — :last-child 의 margin-right 를 지웁니다 */
-    opacity:1; font-weight:700; color:rgba(245,240,230,.92);
-    background:rgba(8,7,6,.55);
+    /* 600/.04em, 불투명 (2026-09-08 사용자 확정) — 작은 라벨은 굵기보다 크기와 자간이 먼저 읽힙니다.
+       바탕은 라벨 칸(.ov-total.as-lab)과 같은 이유로 불투명. (폐기) 700 · rgba(8,7,6,.55) */
+    opacity:1; font-weight:600; letter-spacing:.04em; color:rgba(245,240,230,.92);
+    background:#17130e;
     box-shadow:-.22vw 0 0 0 rgba(245,240,230,.5)}
   html[data-t="bars"] .ov-head > .ov-chead{justify-content:center}
   html[data-t="bars"] .ov-head > .ov-nethead{justify-content:flex-end}
@@ -1125,8 +1139,11 @@ export const PAGE_HTML = `<!doctype html>
        상한을 2.2 로 낮춘 건 라벨 칸에 색이 깔리면서입니다 — 2.6 이면 칸 안 좌우 여백이
        0.6vw 밖에 안 남아 글자가 색면에 꽉 낍니다. 칸 폭은 항목 칸(6.4vw)을 자로 씁니다:
        순액 칸은 더 넓지만 그 폭에 맞춰 키우면 순액만 유독 커집니다 */
-    var MAXV = 2.2, MINV = 1.6;
-    var box = 6.4 * (window.innerWidth / 100); // 칸 폭(px). 배율 전 레이아웃 기준
+    /* 상한 3.0 (2026-09-08 사용자 확정, 목업 A) — 2.2 는 두 글자 라벨도 칸의 70% 만 써서 방송에서 제일 작은
+       글자였다. 자(box)는 칸 폭 6.4 에서 좌우 숨통 .25 씩을 뺀 5.9 — 두 글자가 3.0 으로 꽉 차면 색면에
+       끼어 보여서, 상한은 3.0 이되 실제로는 그 안에서 한 눈금 줄어 앉습니다 */
+    var MAXV = 3.0, MINV = 1.6;
+    var box = 5.9 * (window.innerWidth / 100); // 칸 폭(6.4vw) 안쪽 자리(px). 배율 전 레이아웃 기준
     if (!box) return;
     [].forEach.call(document.querySelectorAll(".ov-chead, .ov-nethead"), function (el) {
       /* 잘린 채로 재면 칸 폭이 그대로 나옵니다 — 잠깐 풀어서 진짜 폭을 잽니다.
@@ -1134,7 +1151,10 @@ export const PAGE_HTML = `<!doctype html>
       el.style.fontSize = MAXV + "vw";
       el.style.width = "auto";
       el.style.overflow = "visible";
-      var need = el.offsetWidth;
+      /* 글자 폭만 잽니다 (2026-09-08) — 순액 칸은 마지막 칸이라 오른쪽에 1.6vw 여백이 붙는데, 그걸 포함해 재면
+         같은 두 글자인 순액만 잡힘·죽음보다 작게 앉았습니다(실측 2.28 대 2.92vw). 상한 2.2 시절엔 둘 다 상한에 걸려 안 보였다 */
+      var cs = getComputedStyle(el);
+      var need = el.offsetWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
       el.style.width = "";
       el.style.overflow = "";
       el.style.fontSize =
@@ -1271,7 +1291,10 @@ export const PAGE_HTML = `<!doctype html>
        .ov-slot 은 속(content-box) 폭 그대로라 --goldw 가 아직 없을 때도 맞습니다 */
     var boxEl = el.querySelector(".ov-slot") || el;
     var box = boxEl.offsetWidth, need = inner.scrollWidth;
-    if (box && need > box) el.style.fontSize = Math.max(2.0, (3.4 * box) / need).toFixed(2) + "vw";
+    /* 기준 크기는 CSS 에서 읽습니다 (2026-09-08) — 막대 테마의 라벨은 3.8vw, 다른 테마는 3.4vw 라
+       상수로 박아 두면 한쪽이 틀립니다 */
+    var baseVw = parseFloat(getComputedStyle(el).fontSize) / (window.innerWidth / 100) || 3.4;
+    if (box && need > box) el.style.fontSize = Math.max(2.0, (baseVw * box) / need).toFixed(2) + "vw";
   };
   /* 지표를 바꿉니다 — 값이 왼쪽으로 나가고(줄마다 30ms 늦게) 새 값이 오른쪽에서 들어옵니다 */
   var slideTo = function (to, cb) {
