@@ -164,7 +164,7 @@ export const PAGE_HTML = `<!doctype html>
      금색 값 블록, 사이에 크림색 띠. 방송에서 정작 봐야 하는 건 아래 줄(항목 + 금액)이라
      그쪽이 제 블록을 갖습니다. (폐기) 둥근 상자 + 금색 얇은 테두리 — 판이 둥근 반투명이던 시절의 마감 */
   .ov-fx.roul{box-shadow:0 0 0 .26vw rgba(232,198,106,.85)}
-  .ov-fx.roul b::before{content:"◎ "; color:#dcae5e}
+  .ov-fx.roul b::before{content:"◎ "; color:#e8c66a}
   /* 최대 폭은 소스의 86% — #ovfx 가 --bs 만큼 커지므로 배율로 되돌려 잽니다 (2026-09-08).
      (근거) 카드는 vw 그대로였고 판은 fitBoard 배율을 받아서, 세로로 긴 소스에서 카드가 줄 한 칸보다 작았습니다
      (실측 375×812: 이름 0.75×, 값 0.49×. 1280×720 에서는 1.69×·1.11× — 소스마다 비율이 달랐다) */
@@ -280,10 +280,19 @@ export const PAGE_HTML = `<!doctype html>
   /* 폭은 내용대로 (2026-09-08 사용자 확정) — 원판·트랙·이름줄이 필요한 만큼만. (폐기) width:96% — 넓은 소스에서 옆으로 빈 상자 */
   .ov-sp{position:relative; display:flex; width:auto; max-width:92%; max-height:100%; text-align:center;
     color:#ece4d6; background:#17130e;
-    border:calc(var(--u)*.4) solid rgba(232,198,106,.75)}
+    box-shadow:calc(var(--u)*-.9) 0 0 0 rgba(245,240,230,.5)}
+  /* 룰렛 상자의 마감 (2026-09-08 사용자 확정, 목업 ㉤) — 표·카드의 문법으로: 테두리 대신 왼쪽 크림 띠(머리줄 금색 칸과
+     같은 비율), 바늘은 크림, 칩은 테두리 대신 채운 칸 + 얇은 띠, 허브는 평평하게(금색 링은 유지), 금색은 #e8c66a 하나로
+     (눈금·링·슬롯·결과·◎), 원판 글자는 고딕 A1 800. 원판 자체(칸 색·새틴·눈금·바늘 자리)와 결과 덮개는 그대로.
+     (폐기) 금색 테두리 상자 · 빨간 바늘 #ff5a3c · #dcae5e 계열의 둘째 금색 · 허브의 방사형 조명 · 고운바탕 —
+     판이 둥글고 반투명하던 시절의 마감이 상자만 각져진 채 남아, 룰렛이 뜨는 순간 화면의 결이 바뀌었다.
+     고운바탕은 애초에 링크로 안 받고 있어서 시스템 바탕체로 떨어져 있었다 */
   /* 늘 세로 한 줄 — 이름 줄, 원판 무대, 트랙 순서 */
   .ov-sp{flex-direction:column; align-items:center; justify-content:center;
-    gap:calc(var(--u)*1.6); padding:calc(var(--u)*5) calc(var(--u)*2.4) calc(var(--u)*2.2)}
+    gap:calc(var(--u)*1.6); padding:calc(var(--u)*4.4) calc(var(--u)*2.8)}
+  /* 위아래 여백을 같게 4.4u (2026-09-08 사용자 확정) — (폐기) 위 5u / 아래 2.2u: 어느 소스에서나 칩 아래가 답답했고,
+     넓은 소스에서는 상자가 낮아져 그것이 가장자리로 보였다(실측 이름줄 위 5.4u, 칩 아래 2.6u). 원판의 몫(H-44)이
+     이만큼을 이미 남겨 두어 원판은 안 줄어든다 */
   .ov-sp-info{display:flex; flex-direction:row; align-items:baseline;
     justify-content:center; gap:calc(var(--u)*1.6); min-width:0; max-width:96%}
   /* 원판 무대 — 크기는 spinHtml 이 계산해 줍니다. 결과가 이 위에 겹칩니다 */
@@ -308,20 +317,20 @@ export const PAGE_HTML = `<!doctype html>
   .ov-tchip,.ov-tslot{width:calc(var(--u)*11); height:calc(var(--u)*5.4);
     flex:none; display:flex; align-items:center; justify-content:center;
     font-size:calc(var(--u)*2.8); font-weight:700; overflow:hidden; white-space:nowrap}
-  .ov-tchip{background:#241d18; border:1px solid rgba(220,174,94,.55)}
-  .ov-tchip.pass{color:#ff9d92; border-color:#a44f46}
-  .ov-tchip.mult{color:#f7b458; border-color:#b97f37}
-  .ov-tslot{border:1px dashed rgba(220,174,94,.3)}
-  .ov-tslot.next{border-color:rgba(220,174,94,.8);
+  .ov-tchip{background:#241d18; border:0; box-shadow:calc(var(--u)*-.3) 0 0 0 rgba(245,240,230,.5)}
+  .ov-tchip.pass{color:#ff9d92}
+  .ov-tchip.mult{color:#f7b458}
+  .ov-tslot{border:1px dashed rgba(232,198,106,.3)}
+  .ov-tslot.next{border-color:rgba(232,198,106,.8);
     animation:ov-slotpulse 1s ease-in-out infinite}
   @keyframes ov-slotpulse{0%,100%{background:transparent}
-    50%{background:rgba(220,174,94,.14)}}
+    50%{background:rgba(232,198,106,.14)}}
   /* 물리 룰렛 — 바늘은 12시에 고정, 원판이 돌아 당첨 칸이 그 아래로 옵니다 */
   .ov-wheel{position:relative; width:100%; height:100%}
   /* 림 눈금 — 비율 1짜리 칸(12.857°)에 하나씩 맞는 금색 점 띠 */
   .ov-wheel::before{content:""; position:absolute; inset:calc(var(--u)*-1.8*var(--wu,1));
     border-radius:50%; pointer-events:none;
-    background:repeating-conic-gradient(rgba(220,174,94,.9) 0 1.1deg,
+    background:repeating-conic-gradient(rgba(232,198,106,.9) 0 1.1deg,
       transparent 1.1deg 12.857deg);
     -webkit-mask:radial-gradient(circle, transparent 0 calc(var(--u)*24*var(--wu,1)),
       #000 calc(var(--u)*24*var(--wu,1)) calc(var(--u)*24.8*var(--wu,1)), transparent calc(var(--u)*24.8*var(--wu,1)));
@@ -329,7 +338,7 @@ export const PAGE_HTML = `<!doctype html>
       #000 calc(var(--u)*24*var(--wu,1)) calc(var(--u)*24.8*var(--wu,1)), transparent calc(var(--u)*24.8*var(--wu,1)))}
   .ov-w-disc{position:absolute; inset:0; border-radius:50%;
     will-change:transform; backface-visibility:hidden; transform:translateZ(0);
-    box-shadow:0 0 0 calc(var(--u)*.9*var(--wu,1)) #3a2e25, 0 0 0 calc(var(--u)*1.1*var(--wu,1)) rgba(220,174,94,.75),
+    box-shadow:0 0 0 calc(var(--u)*.9*var(--wu,1)) #3a2e25, 0 0 0 calc(var(--u)*1.1*var(--wu,1)) rgba(232,198,106,.75),
       0 calc(var(--u)*1.2) calc(var(--u)*3.6) rgba(0,0,0,.55),
       inset 0 0 calc(var(--u)*3) rgba(0,0,0,.28)}
   /* 답이 없는 동안 끝없이 도는 원판 */
@@ -341,7 +350,7 @@ export const PAGE_HTML = `<!doctype html>
     transform:translateX(-50%); z-index:2;
     border-left:calc(var(--u)*1.6*var(--wu,1)) solid transparent;
     border-right:calc(var(--u)*1.6*var(--wu,1)) solid transparent;
-    border-top:calc(var(--u)*3.2*var(--wu,1)) solid #ff5a3c;
+    border-top:calc(var(--u)*3.2*var(--wu,1)) solid #f5f0e6;
     filter:drop-shadow(0 .2vw .3vw rgba(0,0,0,.5))}
   /* 릴 창 — 숫자만 모드. 이웃 면이 위아래로 흐릿하게 스칩니다 */
   .ov-reel{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -356,18 +365,18 @@ export const PAGE_HTML = `<!doctype html>
   .ov-reel-n.big.longer{font-size:calc(var(--u)*4.2*var(--wu,1))}
   .ov-reel-n.big{max-width:94%; overflow:hidden; text-overflow:ellipsis;
     font-size:calc(var(--u)*11*var(--wu,1)); color:#fff;
-    text-shadow:0 0 calc(var(--u)*3) rgba(220,174,94,.4)}
+    text-shadow:0 0 calc(var(--u)*3) rgba(232,198,106,.4)}
   .ov-reel-line{position:absolute; left:6%; right:6%; top:50%; height:calc(var(--u)*10*var(--wu,1));
     transform:translateY(-50%); pointer-events:none;
-    border-top:1px solid rgba(220,174,94,.4); border-bottom:1px solid rgba(220,174,94,.4)}
+    border-top:1px solid rgba(232,198,106,.4); border-bottom:1px solid rgba(232,198,106,.4)}
   /* 안내·수식·변화 — 자리를 미리 잡아 둬 판이 안 출렁입니다 */
   .ov-sp-gone{position:absolute; left:50%; bottom:calc(var(--u)*2); z-index:5;
     transform:translateX(-50%); white-space:nowrap;
-    font-size:calc(var(--u)*2.6); font-weight:700; color:#dcae5e;
-    background:rgba(12,10,8,.85); border:1px solid rgba(220,174,94,.5);
+    font-size:calc(var(--u)*2.6); font-weight:700; color:#e8c66a;
+    background:rgba(12,10,8,.85); border:1px solid rgba(232,198,106,.5);
     padding:calc(var(--u)*.7) calc(var(--u)*2.2)} /* 각진 알약 (2026-09-08) */
   .ov-sp-gone:empty{display:none}
-  .ov-sp-out{font-size:calc(var(--u)*5); font-weight:800; color:#dcae5e;
+  .ov-sp-out{font-size:calc(var(--u)*5); font-weight:800; color:#e8c66a;
     height:calc(var(--u)*6.4); display:flex; align-items:center; justify-content:center;
     overflow:hidden; white-space:nowrap}
   .ov-sp-out em{font-style:normal; font-size:calc(var(--u)*2.6); font-weight:400;
@@ -382,8 +391,9 @@ export const PAGE_HTML = `<!doctype html>
   .ov-w-lab{position:absolute; inset:0; pointer-events:none}
   .ov-w-lab i{position:absolute; right:50%; top:calc(var(--u)*1.4*var(--wu,1)); font-style:normal;
     transform:rotate(-90deg); transform-origin:right center;
-    font-family:'Gowun Batang','Batang',serif; font-size:calc(var(--u)*3.4*var(--wu,1)); font-weight:800;
-    color:#f4d98c; white-space:nowrap; max-width:calc(var(--u)*17*var(--wu,1));
+    font-family:'Gothic A1','Malgun Gothic',sans-serif; font-size:calc(var(--u)*3.4*var(--wu,1)); font-weight:800;
+    letter-spacing:.02em;
+    color:#f0d68a; white-space:nowrap; max-width:calc(var(--u)*17*var(--wu,1));
     overflow:hidden; text-overflow:ellipsis;
     text-shadow:-1px 0 0 #241206, 1px 0 0 #241206, 0 -1px 0 #241206, 0 1px 0 #241206,
       0 1px 3px rgba(0,0,0,.4)}
@@ -395,8 +405,8 @@ export const PAGE_HTML = `<!doctype html>
   .ov-w-hub{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     width:calc(var(--u)*13*var(--wu,1)); height:calc(var(--u)*13*var(--wu,1)); border-radius:50%; z-index:2;
     pointer-events:none;
-    background:radial-gradient(circle at 34% 30%, #4a3c30, #241d17 70%);
-    border:calc(var(--u)*.35) solid #dcae5e;
+    background:#241d17;
+    border:calc(var(--u)*.35) solid #e8c66a;
     box-shadow:0 calc(var(--u)*.4) calc(var(--u)*1.2) rgba(0,0,0,.5);
     display:flex; align-items:center; justify-content:center; overflow:hidden}
   .ov-w-hit{color:#fff; font-size:calc(var(--u)*5.2*var(--wu,1)); font-weight:800; line-height:1;
