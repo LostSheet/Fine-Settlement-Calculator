@@ -1503,7 +1503,7 @@ export class Room {
        소켓이 주 통로이고(LIVE-SPEC §2.1) 이 길은 소켓이 없을 때와 옛 앱을 위해 남습니다 */
     if (path === "/confess" && req.method === "POST") {
       if (!me) return json({ error: "unauthorized" }, 401);
-      await this.checkAck(now);
+      this.checkAck(now);
       const r = await this.doConfess(me, b, now);
       if (!r.ok) return json({ error: r.error }, r.status);
       return json({ ok: true });
@@ -1618,7 +1618,7 @@ export class Room {
        그대로 실어 보냅니다 — 서버가 이름을 보고 짐작할 일이 없습니다. */
     await S.put({ state, stateAt: now });
     /* 판이 돌아왔습니다 — 서기가 살아 있다는 증거입니다 (LIVE-SPEC §2.4) */
-    await this.clearAck();
+    this.clearAck();
     await this.arm();
     const on = this.scribeOn();
     const paused = await S.get("paused");
@@ -1663,38 +1663,40 @@ export class Room {
       dir,
       t: now,
     });
-    await this.waitAck(me.id, cid == null ? null : String(cid).slice(0, 40), now);
+    this.waitAck(me.id, cid == null ? null : String(cid).slice(0, 40), now);
     return { ok: true };
   }
 
   /* ---------- 왕복 감시 (LIVE-SPEC §2.4) ----------
-     기다리는 자수를 저장에 적어 둡니다. 타이머는 흔한 경우를 빨리 잡고, 저장은
-     DO 가 잠들어 타이머를 잃었을 때 다음 사건에서 잡습니다 */
-  async waitAck(acct, cid, now) {
-    if (await this.ctx.storage.get("ack")) return; // 먼저 기다리는 건이 있으면 그것이 대표합니다
-    await this.ctx.storage.put("ack", { acct, cid, at: now });
+     기다리는 자수는 **메모리에만** 둡니다. 저장에 적으면 자수 한 번에 쓰기가 둘 늘어
+     무료 플랜의 병목(하루 10만 줄)이 그만큼 깎입니다.
+     DO 가 잠들어 이 값과 타이머를 잃어도 잃는 것이 거의 없습니다 — 다음 자수가 제 감시를
+     새로 걸고, 그때 3초 뒤에 똑같이 잡힙니다. 늦어지는 것은 자수 한 번어치뿐입니다. */
+  waitAck(acct, cid, now) {
+    if (this.ackWait) return; // 먼저 기다리는 건이 있으면 그것이 대표합니다
+    this.ackWait = { acct, cid, at: now };
     try {
       clearTimeout(this.ackTimer);
       this.ackTimer = setTimeout(() => {
-        this.checkAck(Date.now()).catch(() => {});
+        this.checkAck(Date.now());
       }, SCRIBE_ACK_MS + 100);
     } catch (e) {
-      /* 타이머를 못 걸어도 다음 사건에서 걸립니다 */
+      /* 타이머를 못 걸어도 다음 자수의 처음에서 걸립니다 */
     }
   }
-  async clearAck() {
+  clearAck() {
     try {
       clearTimeout(this.ackTimer);
     } catch (e) {}
     this.ackTimer = null;
-    if (await this.ctx.storage.get("ack")) await this.ctx.storage.delete("ack");
+    this.ackWait = null;
   }
-  async checkAck(now) {
-    const a = await this.ctx.storage.get("ack");
+  checkAck(now) {
+    const a = this.ackWait;
     if (!a) return;
     if ((now || Date.now()) - a.at < SCRIBE_ACK_MS) return;
-    await this.ctx.storage.delete("ack");
-    /* 넘겼는데 판이 안 돌아왔습니다 — 방장은 없는 것으로 봅니다.
+    this.ackWait = null;
+    /* 넘겼는데 답이 안 왔습니다 — 방장은 없는 것으로 봅니다.
        보낸 사람에게 한 줄 주고, 서기 소켓을 닫아 전원의 화면이 같이 잠기게 합니다 */
     this.toAcct(a.acct, { kind: "nope", cid: a.cid, why: "scribe-off", status: 409 });
     this.killScribe("no-ack");
@@ -1739,11 +1741,11 @@ export class Room {
        방장 앱이 받은 자수를 조용히 버리는 길이 있어서(0회에서 빼기, 지금 판에 없는 항목)
        그때는 판이 안 바뀌고, 살아 있는 방장을 죽은 것으로 볼 뻔했습니다 */
     if (a.k === "scribe" && m.kind === "seen") {
-      await this.clearAck();
+      this.clearAck();
       return;
     }
     if (a.k === "v" && a.acct && m.kind === "confess") {
-      await this.checkAck(now);
+      this.checkAck(now);
       const cid = m.cid == null ? null : m.cid;
       const r = await this.doConfess({ id: a.acct }, m, now, cid);
       /* HTTP 의 200·에러와 같은 자리입니다 — 되돌리기 창의 셈은 서버가 받아 준 순간부터
