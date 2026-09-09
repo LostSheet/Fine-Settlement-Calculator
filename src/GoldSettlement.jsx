@@ -4961,7 +4961,19 @@ export default function GoldSettlement() {
     const now = wantNow.current || spinMoved;
     wantNow.current = false;
     clearTimeout(pushTimer.current);
-    pushTimer.current = setTimeout(() => sendState(pushRef.current()), now ? 0 : 300);
+    /* 즉시는 **타이머를 안 거치고** 바로 보냅니다. setTimeout(…, 0) 도 타이머라서, 방장 탭이
+       가려져 있으면(방장은 게임을 전체화면으로 띄웁니다) 브라우저가 늦출 수 있는 것이 됩니다 —
+       그러면 디바운스를 없앤 뜻이 사라집니다. 효과는 소켓 메시지가 부른 렌더 뒤에 돌고 렌더는
+       타이머가 아니라, 이 길에는 늦출 것이 없습니다.
+       (그래서 여기서 pushRef 는 방금 적은 기록까지 든 최신 판입니다)
+       실측 2026-09-09: 방장 탭을 가린 채 파티원 자수 왕복 31~80ms. 같은 상태에서 setTimeout(0)
+       자체는 안 늦었으므로 이 창에서 제한이 실제로 걸리지는 않았습니다 — 타이머를 뺀 것은
+       걸릴 수 있는 길을 아예 안 만들어 두는 쪽입니다. */
+    if (now) {
+      sendState(pushRef.current());
+      return;
+    }
+    pushTimer.current = setTimeout(() => sendState(pushRef.current()), 300);
     return () => clearTimeout(pushTimer.current);
   }, [canPush, relay.room, lobbyOn, lobbyCap, cols, rows, feePercent, unit, splitMode, relay.look, relay.ov, relay.fx, relay.mv,
       /* 연출거리는 기록에서 나옵니다 — 표가 안 바뀌는 취소도 방송에는 알려야 해서 */
