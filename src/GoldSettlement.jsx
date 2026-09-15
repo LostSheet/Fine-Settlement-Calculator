@@ -6122,6 +6122,33 @@ export default function GoldSettlement() {
     const waitN = (members || []).filter((m) => m.st === "req").length;
     return { away: false, text: "내 판 · " + seats.length + "자리" + (waitN ? " · " + waitN + "명 기다림" : "") };
   })();
+  /* 입력 단위 분절 컨트롤 (§3.12.7) — 직각 2px, 선택 칸은 잉크로 채운다. 예시는 알약 없이 모노 글자 */
+  const unitSeg = (solo) => (
+    <span className={"gs-unitseg" + (solo ? " gs-unitseg-solo" : "")} role="radiogroup" aria-label="입력 단위">
+      <span className="gs-caplab">입력 단위</span>
+      <span className="gs-segbox">
+        {UNITS.map((u) => (
+          <button
+            key={u.v}
+            type="button"
+            className={"gs-segbtn" + (unit === u.v ? " on" : "")}
+            aria-pressed={unit === u.v}
+            onClick={() => !readOnly && setUnit(u.v)}
+          >
+            {u.label}
+          </button>
+        ))}
+      </span>
+      <span className="gs-unitex-line" aria-hidden="true">
+        {(UNIT_EX[unit] || []).map(([typed, gold], k) => (
+          <span key={typed}>
+            {k > 0 ? " · " : ""}
+            <i>{typed}</i> → <b>{gold}</b>
+          </span>
+        ))}
+      </span>
+    </span>
+  );
   /* [디코 메시지 복사] (§3.12.5) — 방 하나에 링크 하나. 코드도 arm 도 없다 */
   const copyInvite = () => {
     const a = authRef.current;
@@ -8912,10 +8939,11 @@ export default function GoldSettlement() {
               const running = !(vlobby && vlobby.cap);
               return (
                 <>
-                  <p className="gs-invite-sub">
-                    {running ? "진행 중 · " : ""}
-                    {seated}명 앉음 · 빈 자리 {empty}
-                  </p>
+                  {list.length > 0 && (
+                    <p className="gs-invite-sub">
+                      {seated}명 앉음{empty > 0 ? " · 빈 자리 " + empty : ""}
+                    </p>
+                  )}
                   {list.length > 0 && (
                     <p className="gs-invite-names">
                       {list.map((x, i) => (
@@ -9600,30 +9628,8 @@ export default function GoldSettlement() {
           </div>
         )}
         {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
-        <div className="gs-unitbar">
-          <span className="gs-caplab">입력 단위</span>
-          {UNITS.map((u) => (
-            <label key={u.v} className={unit === u.v ? "on" : ""}>
-              <input
-                type="radio"
-                name="gs-unit"
-                checked={unit === u.v}
-                onChange={() => !readOnly && setUnit(u.v)}
-              />
-              {u.label}
-            </label>
-          ))}
-          {/* 설명 문장은 뺐습니다 — 친 숫자 → 그 금액 칩이 이미 같은 말을 합니다 */}
-          <span className="gs-unitnote">
-            {(UNIT_EX[unit] || []).map(([typed, gold]) => (
-              <b className="gs-unitex" key={typed}>
-                <i>{typed}</i>
-                <em aria-hidden="true">→</em>
-                <span>{gold}</span>
-              </b>
-            ))}
-          </span>
-        </div>
+        {/* 입력 단위 (§3.12.7) — 메모장 모드에는 표 바가 없어 표 위에 홀로 선다. 카운터 모드는 표 바 안 */}
+        {simple && unitSeg(true)}
         {/* 누르는 것(복사)은 왼쪽, 읽는 것(조작법)은 오른쪽 — 손이 가는 쪽에 버튼을 둡니다 */}
         {!simple && (
           <div className="gs-tablebar">
@@ -9649,6 +9655,7 @@ export default function GoldSettlement() {
               )}
               {!(ready || guestLobby) && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
             </span>
+            {unitSeg(false)}
             {ready || guestLobby ? (
               /* 준비 상태 — 복사할 숫자가 없습니다. 방장의 안내는 자리 띠가 대신하고(2026-09-05), 파티원은 대기실 수 (§5.3) */
               ready && auth && !guestLobby ? null : (
@@ -16750,6 +16757,59 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-sysbar .gs-qm:hover,.gs-sysbar .gs-viewseg:hover{border-color:rgba(var(--ink-rgb),.3)}
 /* 하는 일(왼쪽)과 나(오른쪽)를 가르는 실선 */
 .gs-sysbar-sep{width:1px; height:18px; background:rgba(var(--ink-rgb),.18); flex:none}
+/* ── §3.12.7 판 라벨 · 초대 쪽지 · 계정 칩 · 둥근 네모 초상화 · 대기 줄 · 입력 단위 ──
+   규칙 하나: 알약과 금색을 걷고, 직각에 2px, 잉크 선, 종이 바탕. 앱의 상태 칩·표가 이미 이 규칙이다 */
+.gs-boardlabel{display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px; margin-left:12px;
+  border:1px solid rgba(var(--ink-rgb),.4); border-radius:2px; background:rgba(var(--lift-rgb),.22);
+  font-size:12.5px; letter-spacing:.03em; color:var(--ink); white-space:nowrap}
+.gs-boardlabel-sq{width:8px; height:8px; background:rgba(var(--ink-rgb),.35); flex:none}
+.gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px}
+/* 남의 판 — 라벨과 시스템 줄 밑선만 파란색. 줄 전체를 칠하지 않는다 */
+.gs-sysbar-away{border-bottom:2px solid var(--blue)}
+.gs-sysbar-away .gs-boardlabel{border-color:var(--blue); color:var(--blue); background:rgba(var(--blue-rgb),.08)}
+.gs-sysbar-away .gs-boardlabel-sq{background:var(--blue)}
+.gs-sysbar-away .gs-boardlabel .gs-btn{color:var(--blue); border-color:rgba(var(--blue-rgb),.6)}
+.gs-invbtn.on{background:rgba(var(--ink-rgb),.08)}
+/* 초대 쪽지 — 잉크 선에 2px, 얕은 그림자, 명조 제목, 점선 아래 모노 바닥글 */
+.gs-invpop.gs-invnote{width:min(400px, 92vw); border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; padding:14px 16px;
+  box-shadow:0 8px 22px rgba(var(--shadow-rgb),.22)}
+.gs-invnote-h{margin:0 0 4px; font-family:'Gowun Batang',serif; font-size:15px; font-weight:700; color:var(--ink)}
+.gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-invnote-acts{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+.gs-invnote-foot{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3);
+  font-family:var(--mono); font-size:11px; color:var(--ink-2); letter-spacing:.02em}
+/* 디스코드 단추 — 상표색 하나만 쓴다 */
+.gs-dcbtn{background:#5865f2 !important; color:#fff !important; border-color:#5865f2 !important}
+.gs-dcbtn::before{content:""; width:12px; height:12px; border-radius:3px; background:rgba(255,255,255,.9);
+  display:inline-block; margin-right:6px; flex:none}
+.gs-acctchip{display:inline-flex; align-items:center; gap:7px; height:32px; padding:0 10px 0 4px; border:1px solid rgba(var(--ink-rgb),.25);
+  border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer; white-space:nowrap}
+.gs-acctchip:hover{border-color:rgba(var(--ink-rgb),.5)}
+/* 초상화 — 둥근 네모(한 변의 4분의 1), 1px 잉크 선. 디스코드 원본 파일이 정사각형이라 충돌이 없다 */
+.gs-ava{display:inline-block; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.35); box-sizing:border-box;
+  object-fit:cover; background:var(--paper-2); vertical-align:middle; flex:none}
+.gs-ava-txt{background:var(--paper-2)}
+.gs-rowi-ava .gs-ava{width:18px; height:18px; border-radius:5px}
+.gs-conf-who .gs-ava{align-self:center}
+.gs-waithead{display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--ink-2); letter-spacing:.04em}
+.gs-waithead .gs-btn{margin-left:auto}
+.gs-waitline .gs-ava{margin-right:2px}
+.gs-waitto{font-size:11.5px; color:var(--ink-2); margin-left:auto; margin-right:6px}
+.gs-waitto-none{color:var(--red)}
+.gs-invite-acts{display:flex; justify-content:center; gap:8px; margin-top:14px}
+.gs-nickform{display:flex; flex-direction:column; gap:12px; margin-top:12px}
+.gs-in-nick{height:38px; font-size:18px; text-align:center; letter-spacing:.1em}
+/* 입력 단위 — 표 바 오른쪽의 분절 컨트롤. 상자와 알약은 폐기 */
+.gs-unitseg{display:inline-flex; align-items:center; gap:8px; font-size:11.5px; color:var(--ink-2); flex-wrap:wrap}
+.gs-unitseg-solo{display:flex; margin:0 0 12px}
+.gs-segbox{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px; overflow:hidden}
+.gs-segbtn{font:inherit; font-size:12px; padding:3px 9px; border:0; border-left:1px solid rgba(var(--ink-rgb),.25);
+  background:transparent; color:var(--ink-2); cursor:pointer; letter-spacing:.02em}
+.gs-segbtn:first-child{border-left:0}
+.gs-segbtn.on{background:var(--chip-bg); color:var(--chip-fg); font-weight:600}
+.gs-unitex-line{font-family:var(--mono); letter-spacing:.02em; white-space:nowrap}
+.gs-unitex-line i{font-style:normal; color:var(--ink-body)}
+.gs-unitex-line b{color:var(--gold); font-weight:700}
 .gs-sysbar .gs-roomchip{height:32px; padding:0 11px}
 .gs-sysbar .gs-backrow{margin:0 0 0 -4px}
 /* 제목 줄 — 파티명 상자와 높이가 맞도록, 제목의 옛 윗여백(장식 줄 시절)을 걷어냅니다 */
