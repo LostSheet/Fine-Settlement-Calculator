@@ -30,11 +30,7 @@ const UNITS = [
 ];
 /* 입력 단위 예시 — 친 숫자와 그게 되는 금액을 짝으로 보여 줍니다.
    문장 안에 점으로 늘어놓으면 어디까지가 한 짝인지 안 읽혀서 칩으로 끊었습니다. */
-const UNIT_EX = {
-  "100000": [["5", "50만"], ["1.5", "15만"]],
-  "10000": [["5", "5만"], ["2.32", "2만 3,200"]],
-  "1": [["50,000", "50,000"]],
-};
+/* (폐기 2026-09-16) UNIT_EX — 입력 단위 예시표. 예시 줄 자체를 없앴다 */
 
 /* 셋째 항목은 이름을 비워 둡니다 — 플레이스홀더가 "여기에 항목을 만드세요"를 말해 줍니다 */
 /* 기본 항목 셋. 마지막은 룰렛입니다 — 비율은 안 적으면 기본 비율을 씁니다. */
@@ -6159,14 +6155,7 @@ export default function GoldSettlement() {
           </button>
         ))}
       </span>
-      <span className="gs-unitex-line" aria-hidden="true">
-        {(UNIT_EX[unit] || []).map(([typed, gold], k) => (
-          <span key={typed}>
-            {k > 0 ? " · " : ""}
-            <i>{typed}</i> → <b>{gold}</b>
-          </span>
-        ))}
-      </span>
+      {/* (폐기 2026-09-16) 단위 예시 "5 → 5만 · 2.32 → 2만 3,200" — 사용자: 룩이 나쁘다, 없앤다 */}
     </span>
   );
   /* [디코 메시지 복사] (§3.12.5) — 방 하나에 링크 하나. 코드도 arm 도 없다 */
@@ -8564,51 +8553,51 @@ export default function GoldSettlement() {
               )}
             </span>
           )}
+          {/* [초대] (§3.12.7) — 판 라벨 오른쪽 (2026-09-16 사용자). 연동 전엔 문 하나, 연동 뒤엔 디코 메시지 복사. 쪽지 모양 팝오버 */}
+          {!readOnly && !genView && (
+            <span className="gs-invwrap gs-invwrap-l" ref={invWrapRef}>
+              <button
+                className={"gs-btn gs-btn-ghost gs-invbtn" + (invOpen ? " on" : "")}
+                onClick={() => setInvOpen((v) => !v)}
+                aria-haspopup="dialog"
+                aria-expanded={invOpen}
+              >
+                초대
+              </button>
+              {invOpen && (
+                <div className="gs-invpop gs-invnote" role="dialog" aria-label="초대">
+                  {!auth || !auth.dc ? (
+                    <>
+                      <h4 className="gs-invnote-h">초대하려면 Discord 연동이 필요해요</h4>
+                      <p className="gs-invnote-p">
+                        초대 링크, 파티원의 자수와 방송은 디스코드 계정에 붙어요. 혼자 세고 방송에 띄우는 건 지금처럼 로그인 없이 돼요.
+                      </p>
+                      <div className="gs-invnote-acts">
+                        <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
+                          Discord 연동
+                        </button>
+                      </div>
+                      <div className="gs-invnote-foot">지금 표와 방송 주소는 그대로 따라가요</div>
+                    </>
+                  ) : (
+                    <>
+                      <h4 className="gs-invnote-h">파티원 부르기</h4>
+                      <p className="gs-invnote-p">
+                        Discord에 붙일 초대 메시지를 복사해요. 지난 판 사람은 앱만 열면 자기 줄이고, 처음 오는 사람은 표 아래 대기 줄에 서요.
+                      </p>
+                      <div className="gs-invnote-acts">
+                        <button className="gs-btn gs-invdiscbtn" onClick={copyInvite}>
+                          {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
+                        </button>
+                      </div>
+                      <div className="gs-invnote-foot">링크는 늘 같아요 · 채널에 핀 해 두면 다음 판도 그걸 눌러요</div>
+                    </>
+                  )}
+                </div>
+              )}
+            </span>
+          )}
           <div className="gs-sysbar-r">
-            {/* [초대] (§3.12.7) — 연동 전엔 문 하나, 연동 뒤엔 디코 메시지 복사. 쪽지 모양 팝오버 */}
-            {!readOnly && !genView && (
-              <span className="gs-invwrap" ref={invWrapRef}>
-                <button
-                  className={"gs-btn gs-btn-ghost gs-invbtn" + (invOpen ? " on" : "")}
-                  onClick={() => setInvOpen((v) => !v)}
-                  aria-haspopup="dialog"
-                  aria-expanded={invOpen}
-                >
-                  초대
-                </button>
-                {invOpen && (
-                  <div className="gs-invpop gs-invnote" role="dialog" aria-label="초대">
-                    {!auth || !auth.dc ? (
-                      <>
-                        <h4 className="gs-invnote-h">초대하려면 Discord 연동이 필요해요</h4>
-                        <p className="gs-invnote-p">
-                          초대 링크, 파티원의 자수와 방송은 디스코드 계정에 붙어요. 혼자 세고 방송에 띄우는 건 지금처럼 로그인 없이 돼요.
-                        </p>
-                        <div className="gs-invnote-acts">
-                          <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
-                            Discord 연동
-                          </button>
-                        </div>
-                        <div className="gs-invnote-foot">지금 표와 방송 주소는 그대로 따라가요</div>
-                      </>
-                    ) : (
-                      <>
-                        <h4 className="gs-invnote-h">파티원 부르기</h4>
-                        <p className="gs-invnote-p">
-                          Discord에 붙일 초대 메시지를 복사해요. 지난 판 사람은 앱만 열면 자기 줄이고, 처음 오는 사람은 표 아래 대기 줄에 서요.
-                        </p>
-                        <div className="gs-invnote-acts">
-                          <button className="gs-btn gs-invdiscbtn" onClick={copyInvite}>
-                            {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
-                          </button>
-                        </div>
-                        <div className="gs-invnote-foot">링크는 늘 같아요 · 채널에 핀 해 두면 다음 판도 그걸 눌러요</div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </span>
-            )}
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리. 버튼은 이것 하나고(§5.7)
                 비로그인도 이 문으로 들어갑니다 — 주소 발급은 창 안 [내 방송용 주소
                 받기]가 대문을 엽니다. 얼굴은 고정 라벨 + 송출 점: 상태어는 창 첫 줄과
@@ -11166,7 +11155,7 @@ export default function GoldSettlement() {
         <div className="gs-modal">
           <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="별명">
             <h3>표에 오를 별명을 정해요</h3>
-            <p>2~3글자예요. 디스코드 이름은 길어서 표에 못 올라가요. 처음 한 번만 정하면 되고, 나중에 오른쪽 위 내 초상화를 눌러 바꿀 수 있어요.</p>
+            <p>2~3글자예요. 디스코드 이름은 길어서 표에 못 올라가요. 처음 한 번만 정하면 되고, 나중에 오른쪽 위 내 이름을 눌러 바꿀 수 있어요.</p>
             <form
               className="gs-nickform"
               onSubmit={(e) => {
@@ -16852,9 +16841,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   background:transparent; color:var(--ink-2); cursor:pointer; letter-spacing:.02em}
 .gs-segbtn:first-child{border-left:0}
 .gs-segbtn.on{background:var(--chip-bg); color:var(--chip-fg); font-weight:600}
-.gs-unitex-line{font-family:var(--mono); letter-spacing:.02em; white-space:nowrap}
-.gs-unitex-line i{font-style:normal; color:var(--ink-body)}
-.gs-unitex-line b{color:var(--gold); font-weight:700}
+/* (폐기 2026-09-16) .gs-unitex-line — 단위 예시 줄 */
 .gs-sysbar .gs-roomchip{height:32px; padding:0 11px}
 .gs-sysbar .gs-backrow{margin:0 0 0 -4px}
 /* 제목 줄 — 파티명 상자와 높이가 맞도록, 제목의 옛 윗여백(장식 줄 시절)을 걷어냅니다 */
@@ -18081,6 +18068,9 @@ tr.gs-row-arrive th.gs-stick{box-shadow:inset 3px 0 0 var(--gold)}
 /* 물건 셋·상태 셋 (2026-09-06): 로비 얼굴 · 헤더 칩 · [시작] 글로우 · 시작 전 이름 칸 · 퇴장 태그 */
 /* 2026-09-06 밤: 헤더 초대 코드 팝오버 · 전부 비우기 · 이어서 칩 */
 .gs-invwrap{position:relative; display:inline-flex}
+/* 라벨 오른쪽의 [초대] (2026-09-16) — 팝오버는 왼쪽 모서리 기준 */
+.gs-invwrap-l{margin-left:8px}
+.gs-invwrap-l .gs-invpop{right:auto; left:0}
 /* [?] 팝오버 감싸개 — 이게 없으면 팝오버 기준이 페이지 전체가 되어 맨 아래에 그려짐 (2026-09-06 운영에서 발견) */
 .gs-helpwrap{position:relative; display:inline-flex}
 .gs-invbtn{display:inline-flex; align-items:center; gap:6px; height:32px; padding-top:0; padding-bottom:0}
