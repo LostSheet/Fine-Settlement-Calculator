@@ -75,6 +75,20 @@ const REISSUE_PER_WINDOW = 5;
 /* 게스트가 닉을 안 보냈을 때의 이름. 예전 값은 "방장"이었는데, 게스트로도 남의 파티에
    들어갈 수 있게 되면서 명단에 방장이 둘 앉는 그림이 됐습니다 (§3.11) */
 const ANON_NICK = "손님";
+/* 디스코드 연동 (§3.12.1·§3.12.9). 상태값 10분, 1회용 코드 2분. 범위는 identify 하나 */
+const DS_MS = 10 * 60 * 1000;
+const DCX_MS = 2 * 60 * 1000;
+const DISCORD_AUTH = "https://discord.com/oauth2/authorize";
+const DISCORD_TOKEN = "https://discord.com/api/oauth2/token";
+const DISCORD_ME = "https://discord.com/api/users/@me";
+/* 접속 기반 송출 (§3.12.6) — 마지막 앱 소켓이 끊기고 이만큼 지나야 "안 붙어 있음"으로 봅니다.
+   새로고침 한 번에 방송이 내 판으로 깜빡였다 돌아오지 않게 하는 여유입니다 */
+const PRESENCE_GRACE_MS = 20 * 1000;
+/* 앱이 돌아갈 곳 — 운영은 page.js 의 APP_URL, 로컬 워커(127.0.0.1:8787)면 로컬 앱 */
+const appOrigin = (req) => {
+  const h = new URL(req.headers.get("x-origin") || req.url).hostname;
+  return h === "127.0.0.1" || h === "localhost" ? "http://localhost:5175/" : APP_URL;
+};
 
 const RE_ID = /^[a-z0-9]{4,20}$/;
 const RE_NICK = /^[가-힣a-zA-Z0-9]{2,3}$/;
@@ -143,7 +157,12 @@ export default {
       new RegExp(`^/api/o/${TOK20}/resolve$`).test(p) ||
       /^\/api\/j\/[A-Z0-9]{8}\/resolve$/i.test(p)
     )
-      return accountsDO(env).fetch(new Request("https://do" + p, req));
+    {
+      /* 쿼리(디스코드 콜백의 code·state)와 공개 출처(콜백 주소·앱 주소 계산)를 DO 에 넘깁니다 (§3.12.9) */
+      const fwd = new Request("https://do" + p + url.search, req);
+      fwd.headers.set("x-origin", url.origin);
+      return accountsDO(env).fetch(fwd);
+    }
 
     // 내 방 — 계정마다 하나, 처음 필요할 때 만듭니다
     if (p === "/api/my/room" && req.method === "POST") {
@@ -157,7 +176,7 @@ export default {
     // 방 API
     const api = p.match(
       new RegExp(
-        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end|look|invite-arm)$`
+        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end|look|invite-arm|round)$`
       )
     );
     if (api) {
@@ -185,6 +204,8 @@ export default {
       }
       const iu = new URL("https://do/" + kind);
       if (q.get("j")) iu.searchParams.set("j", q.get("j"));
+      /* 오버레이 소켓(OBS 토큰으로 온 것)은 접속으로 세지 않습니다 (§3.12.6) */
+      if (kind === "live" && q.get("o")) iu.searchParams.set("o", "1");
       if (me) {
         iu.searchParams.set("acct", me.id);
         iu.searchParams.set("nick", me.nick || "");
@@ -410,6 +431,123 @@ export class Accounts {
       return json({ ok: true });
     }
 
+    /* ── 디스코드 연동 (§3.12.1·§3.12.9) ──
+       begin: 세션이 있으면 그 계정(익명이든 옛 정식이든)에 붙입니다. 없으면 로그인/새 계정.
+       callback: 디스코드가 돌아오는 곳. 코드→토큰→/users/@me 뒤 계정을 찾거나 만들거나 이관하고,
+                 세션은 주소에 싣지 않고 2분짜리 1회용 코드로 앱에 넘깁니다(#dc=).
+       finish: 앱이 그 코드로 세션을 받습니다. */
+    if (p === "/api/auth/discord/begin" && (req.method === "POST" || req.method === "GET")) {
+      const cid = this.env.DISCORD_CLIENT_ID;
+      const fake = !!this.env.DISCORD_DEV_FAKE;
+      if (!cid && !fake) return json({ error: "discord off" }, 503);
+      const u = await this.session(req, now);
+      const state = rid(24);
+      const ret = typeof b.live === "string" && /^[A-Z0-9]{6}$/i.test(b.live) ? b.live.toUpperCase() : "";
+      await S.put("ds:" + state, { t: now, link: u ? u.id : null, ret });
+      const origin = req.headers.get("x-origin") || new URL(req.url).origin;
+      const cb = origin + "/api/auth/discord/callback";
+      if (fake) return json({ url: origin + "/api/auth/discord/fake?state=" + state });
+      const q = new URLSearchParams({
+        client_id: cid, response_type: "code", redirect_uri: cb, scope: "identify", state, prompt: "none",
+      });
+      return json({ url: DISCORD_AUTH + "?" + q.toString() });
+    }
+    /* 개발용 가짜 동의 창 — DISCORD_DEV_FAKE 가 .dev.vars 에 있을 때만 존재합니다. 운영에는 이 변수가 없습니다 */
+    if (p === "/api/auth/discord/fake" && req.method === "GET") {
+      if (!this.env.DISCORD_DEV_FAKE) return json({ error: "not found" }, 404);
+      const state = url.searchParams.get("state") || "";
+      const html = `<!doctype html><meta charset="utf-8"><title>가짜 Discord</title>
+<body style="font:15px system-ui;padding:32px;max-width:420px">
+<h2>가짜 Discord 동의 창 (개발 전용)</h2>
+<form method="GET" action="/api/auth/discord/callback">
+<input type="hidden" name="state" value="${state}">
+<p><label>디스코드 아이디(숫자) <input name="fid" value="100000000000000001" style="width:100%"></label></p>
+<p><label>표시 이름 <input name="fname" value="테스터" style="width:100%"></label></p>
+<p><label>아바타 해시 <input name="fava" value="a1b2c3" style="width:100%"></label></p>
+<button name="code" value="fake" type="submit" style="font-size:16px;padding:8px 16px">승인</button>
+</form></body>`;
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+    }
+    if (p === "/api/auth/discord/callback" && req.method === "GET") {
+      const state = url.searchParams.get("state") || "";
+      const code = url.searchParams.get("code") || "";
+      const ds = state ? await S.get("ds:" + state) : null;
+      if (ds) await S.delete("ds:" + state);
+      const back = (frag) => new Response(null, { status: 302, headers: { location: appOrigin(req) + "#" + frag } });
+      if (!ds || ds.t + DS_MS < now || !code) return back("dcerr=state");
+      let du = null;
+      if (this.env.DISCORD_DEV_FAKE && code === "fake") {
+        du = {
+          id: String(url.searchParams.get("fid") || "").replace(/\D/g, "") || "1",
+          global_name: url.searchParams.get("fname") || "테스터",
+          avatar: url.searchParams.get("fava") || null,
+        };
+      } else {
+        const cid = this.env.DISCORD_CLIENT_ID;
+        const sec = this.env.DISCORD_CLIENT_SECRET;
+        if (!cid || !sec) return back("dcerr=off");
+        try {
+          const tr = await fetch(DISCORD_TOKEN, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              client_id: cid, client_secret: sec, grant_type: "authorization_code", code,
+              redirect_uri: (req.headers.get("x-origin") || new URL(req.url).origin) + "/api/auth/discord/callback",
+            }),
+          });
+          const tk = tr.ok ? await tr.json() : null;
+          if (!tk || !tk.access_token) return back("dcerr=token");
+          const mr = await fetch(DISCORD_ME, { headers: { authorization: "Bearer " + tk.access_token } });
+          du = mr.ok ? await mr.json() : null;
+        } catch (e) {
+          du = null;
+        }
+        if (!du || !du.id) return back("dcerr=me");
+      }
+      const did = String(du.id);
+      const dc = { id: did, avatar: du.avatar || null, name: String(du.global_name || du.username || "") };
+      let id = await S.get("d:" + did);
+      let u = id ? await S.get("u:" + id) : null;
+      if (u) {
+        /* 이미 이 디스코드로 만든 계정이 있다. 지금 브라우저의 계정(link)이 다른 것이면 그리로 이관한다 (§3.12.1) */
+        if (ds.link && ds.link !== u.id) await this.mergeInto(ds.link, u, req, now);
+        u.dc = dc;
+        u.seen = now;
+        await S.put("u:" + u.id, u);
+      } else if (ds.link && (u = await S.get("u:" + ds.link))) {
+        /* 이 브라우저의 계정이 디스코드 계정이 된다 — 표·방송 주소 그대로 (upgrade 문법) */
+        u.dc = dc;
+        u.seen = now;
+        delete u.anon;
+        await S.put("u:" + u.id, u);
+        await S.put("d:" + did, u.id);
+      } else {
+        /* 새 계정 — 별명은 연동 뒤 처음 한 번 직접 정한다 (§3.12.1) */
+        id = await this.freeId();
+        if (!id) return back("dcerr=alloc");
+        const pw = hex(crypto.getRandomValues(new Uint8Array(32)));
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const obsToken = await this.freeToken();
+        u = { id, nick: ANON_NICK, salt: hex(salt), ph: await derive(salt, pw), created: now, seen: now, obsToken, cur: null, room: null, dc };
+        await S.put({ ["u:" + id]: u, ["t:" + obsToken]: id, ["d:" + did]: id });
+        await this.arm();
+      }
+      const dcx = rid(24);
+      await S.put("dcx:" + dcx, { id: u.id, t: now });
+      return back("dc=" + dcx + (ds.ret ? "&live=" + ds.ret : ""));
+    }
+    if (p === "/api/auth/discord/finish" && req.method === "POST") {
+      const code = String(b.code || "");
+      const x = code ? await S.get("dcx:" + code) : null;
+      if (x) await S.delete("dcx:" + code);
+      if (!x || x.t + DCX_MS < now) return json({ error: "expired" }, 403);
+      const u = await S.get("u:" + x.id);
+      if (!u) return json({ error: "not found" }, 404);
+      const token = rid(32);
+      await S.put("s:" + token, { id: u.id, exp: now + SESSION_MS });
+      return json({ id: u.id, nick: u.nick, token, obsToken: u.obsToken, dc: u.dc || null, nickSet: !!u.nickSet, cur: u.cur || null });
+    }
+
     if (p === "/api/auth/me" && req.method === "GET") {
       const u = await this.session(req, now);
       if (!u) return json({ error: "unauthorized" }, 401);
@@ -422,6 +560,8 @@ export class Accounts {
         cur: u.cur || null,
         seen: u.seen,
         anon: !!u.anon,
+        dc: u.dc || null,
+        nickSet: !!u.nickSet,
       };
       if (u.look) out.look = u.look;
       /* 함께한 사람과 대기 중인 지목 초대를 같이 싣습니다 (§4 라운드 B).
@@ -485,6 +625,7 @@ export class Accounts {
       if (!u) return json({ error: "unauthorized" }, 401);
       const nick = String(b.nick || "").trim();
       if (!RE_NICK.test(nick)) return json({ error: "bad nick" }, 400);
+      u.nickSet = true;
       u.nick = nick;
       await S.put("u:" + u.id, u);
       if (u.cur) {
@@ -543,7 +684,8 @@ export class Accounts {
     if (res && req.method === "GET") {
       const id = await S.get("t:" + res[1]);
       const u = id ? await S.get("u:" + id) : null;
-      if (!u || !u.cur) return json({ error: "not found" }, 404);
+      const at = u ? await this.roomOf(u) : null;
+      if (!u || !at) return json({ error: "not found" }, 404);
       /* seen 은 "1년 미사용 계정 삭제"용이라 분 단위 정밀도가 필요 없습니다.
          오버레이가 볼 것이 없으면 이 주소를 1분마다 다시 묻는데, 그때마다 쓰면
          켜 둔 채 방치된 OBS 소스 하나가 하루 1,440번씩 이 DO(전역 하나)에
@@ -553,7 +695,7 @@ export class Accounts {
         await S.put("u:" + id, u);
       }
       // 외형이 저장돼 있으면 같이 보냅니다 — 오버레이가 주소를 안 고치고 갈아입습니다
-      return u.look ? json({ roomId: u.cur, look: u.look }) : json({ roomId: u.cur });
+      return u.look ? json({ roomId: at, look: u.look }) : json({ roomId: at });
     }
 
     /* ---- 내부: 메인 fetch 전용 ---- */
@@ -611,20 +753,9 @@ export class Accounts {
       const acct = String(b.acct || "");
       const room = String(b.room || "");
       if (!acct || !room) return json({ error: "bad json" }, 400);
-      const k = "rm:a:" + acct;
-      const prev = await S.get(k);
-      await S.put(k, room);
-      if (!prev || prev === room) return json({ ok: true, left: null });
-      try {
-        await this.env.ROOM.get(this.env.ROOM.idFromName(prev)).fetch("https://do/seat-drop", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ acct }),
-        });
-      } catch (e) {
-        /* 옛 방이 없어졌어도 색인은 이미 새 방을 가리킵니다 */
-      }
-      return json({ ok: true, left: prev });
+      /* (폐기 2026-09-15) 파티 하나 규칙 — 다른 방의 자리를 걷지 않습니다 (§3.12.5). 색인은 마지막 방으로만 남깁니다 */
+      await S.put("rm:a:" + acct, room);
+      return json({ ok: true, left: null });
     }
     /* 자리에서 빠졌습니다 (본인 [나가기]·방장 내보내기) — 색인도 같이 놓습니다 */
     if (p === "/seat-clear") {
@@ -639,8 +770,31 @@ export class Accounts {
     if (p === "/obs-verify") {
       const id = typeof b.token === "string" ? await S.get("t:" + b.token) : null;
       const u = id ? await S.get("u:" + id) : null;
-      if (!u || !u.cur) return json({ error: "not found" }, 404);
-      return json({ id: u.id, nick: u.nick, roomId: u.cur });
+      const at = u ? await this.roomOf(u) : null;
+      if (!u || !at) return json({ error: "not found" }, 404);
+      return json({ id: u.id, nick: u.nick, roomId: at });
+    }
+    /* 접속 방 (§3.12.6) — Room 이 계정의 첫 앱 소켓·마지막 끊김을 알립니다.
+       바뀌면 그 계정의 오버레이가 붙어 있을 방(전에 비추던 곳)에 다시 붙으라고 말합니다 */
+    if (p === "/presence") {
+      const acct = String(b.acct || "");
+      const room = String(b.room || "");
+      if (!acct || !room) return json({ error: "bad json" }, 400);
+      const u = await S.get("u:" + acct);
+      if (!u) return json({ error: "not found" }, 404);
+      const k = "p:" + acct;
+      const prev = await S.get(k);
+      const before = (prev && prev.room) || u.room || null;
+      if (b.on) {
+        if (prev && prev.room === room) return json({ ok: true });
+        await S.put(k, { room, t: now });
+      } else {
+        if (!prev || prev.room !== room) return json({ ok: true });
+        await S.delete(k);
+      }
+      const after = b.on ? room : u.room || null;
+      if (before && before !== after) this.ctx.waitUntil(this.rehome(before, acct));
+      return json({ ok: true });
     }
 
     if (p === "/touch") {
@@ -686,6 +840,49 @@ export class Accounts {
   }
 
   /* 그 방에서 내가 어떤 상태인지 한 줄 — 방이 없어졌거나 못 닿으면 조용히 null 입니다 */
+  /* 이 계정의 방송 주소가 비추는 방 — 접속 방, 없으면 내 방 (§3.12.6) */
+  async roomOf(u) {
+    const pr = await this.ctx.storage.get("p:" + u.id);
+    return (pr && pr.room) || u.room || null;
+  }
+  async rehome(room, acct) {
+    try {
+      await this.env.ROOM.get(this.env.ROOM.idFromName(room)).fetch("https://do/obs-rehome", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acct }),
+      });
+    } catch (e) {}
+  }
+  /* 이 브라우저의 계정(from)을 이미 있는 디스코드 계정(into)으로 이관 (§3.12.1).
+     방송 주소는 별칭으로 옮겨 두 PC 의 OBS 가 다 돌고, 방이 있으면 방장 자격도 넘어갑니다 */
+  async mergeInto(from, into, req, now) {
+    const S = this.ctx.storage;
+    const a = await S.get("u:" + from);
+    if (!a || from === into.id) return;
+    if (a.obsToken && a.obsToken !== into.obsToken) await S.put("t:" + a.obsToken, into.id);
+    const rooms = [];
+    if (a.room) {
+      await S.put("rm:" + a.room, into.id);
+      if (!into.room) into.room = a.room;
+      rooms.push(a.room);
+    }
+    if (a.cur && !into.cur) into.cur = a.cur;
+    if (a.cur && !rooms.includes(a.cur)) rooms.push(a.cur);
+    if (a.look && !into.look) into.look = a.look;
+    for (const room of rooms) {
+      try {
+        await this.env.ROOM.get(this.env.ROOM.idFromName(room)).fetch("https://do/acct-renamed", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ from, to: into.id, nick: into.nick }),
+        });
+      } catch (e) {}
+    }
+    for (const [k, v] of await S.list({ prefix: "s:" })) if (v && v.id === from) await S.put(k, { id: into.id, exp: v.exp });
+    await S.delete(["u:" + from, "lg:" + from, "rm:a:" + from, "f:" + from, "p:" + from]);
+  }
+
   async seatInfo(room, id) {
     try {
       const r = await this.env.ROOM.get(this.env.ROOM.idFromName(room)).fetch("https://do/seat-of", {
@@ -1006,6 +1203,9 @@ export class Room {
         full: !!v.full,
         /* 지금 붙어 있는지 — 방장 표의 아이디 표시가 이걸로 흐려집니다 (§5.6) */
         on: this.acctOn(k.slice(2)),
+        /* 이번 판에 앱을 연 적이 있는지는 seen 과 round.at 을 견줘 앱이 압니다 (§3.12.3). 화면에는 안 그립니다 */
+        seen: v.seen || 0,
+        ava: v.ava || null,
       });
     return out;
   }
@@ -1014,8 +1214,14 @@ export class Room {
     return this.ctx.getWebSockets().some((ws) => {
       if (ws === except) return false;
       const a = tagOf(ws);
-      return !!a && a.k === "v" && a.acct === acct;
+      return !!a && a.k === "v" && a.acct === acct && !a.o;
     });
+  }
+  /* 접속 방 알림 (§3.12.6) — 첫 앱 소켓이 붙으면 바로, 마지막이 끊기면 여유 뒤에 */
+  async presence(acct, on, req) {
+    const room = await this.roomId(req);
+    if (!room || !acct) return;
+    await this.toAccounts("/presence", { acct, room, on: !!on });
   }
 
   async isOwner(me) {
@@ -1284,7 +1490,28 @@ export class Room {
 
     if (path === "/members" && req.method === "GET") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
-      return json({ list: await this.members() });
+      const round = (await S.get("round")) || null;
+      return json({ list: await this.members(), roundAt: round ? round.at : 0 });
+    }
+    /* [비우기] = 판의 경계 (§3.12.2·§3.12.3). 그 뒤 앱을 연 사람만 "이번 판에 온 사람"입니다 */
+    if (path === "/round" && req.method === "POST") {
+      if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
+      await S.put("round", { at: now });
+      return json({ ok: true, roundAt: now });
+    }
+    /* 오버레이 다시 붙기 (§3.12.6) — 이 계정의 OBS 소켓만 닫습니다. 페이지는 닫히면 주소를 다시 풀어 새 방을 찾습니다 */
+    if (path === "/obs-rehome") {
+      const { acct } = await req.json().catch(() => ({}));
+      if (typeof acct !== "string" || !acct) return json({ error: "bad json" }, 400);
+      for (const ws of this.ctx.getWebSockets()) {
+        const a = tagOf(ws);
+        if (!a || a.k !== "v" || a.acct !== acct || !a.o) continue;
+        this.send(ws, { kind: "you", you: null });
+        try {
+          ws.close(1000, "rehome");
+        } catch (e) {}
+      }
+      return json({ ok: true });
     }
 
     // 수락 / 내보내기·거절·해제 — 전부 이 방 범위이고 가역입니다
@@ -1298,11 +1525,15 @@ export class Room {
            거절되고, 자리를 하나 비운 뒤에도 그 사람은 다시 눌러야 합니다.
            방장이 대기실 첫 자리를 차지하므로 +1 합니다 (§3-2).
            로비가 닫힌 뒤(출발 후) 합류에는 정원이 없습니다 — 대기실 정원이지 파티 정원이 아닙니다 */
-        if (m.st !== "ok") {
-          const lobby = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
-          if (lobby.open) {
-            const seated = (await this.members()).filter((x) => x.st === "ok").length + 1;
-            if (seated >= lobby.cap) return json({ error: "full" }, 409);
+        /* 자리 내주기 (§3.12.4): 방장이 고른 줄에 다른 사람이 앉아 있으면 그 사람은 자리 없는 회원이 됩니다.
+           벌금이 적힌 줄을 내주지 않는 판단은 표를 가진 앱이 합니다 */
+        if (typeof b.rowId === "string" && b.rowId) {
+          for (const [k, v] of await S.list({ prefix: "m:" })) {
+            const other = k.slice(2);
+            if (other === acct || !v || v.rowId !== b.rowId) continue;
+            const nv = { ...v, rowId: null };
+            await S.put(k, nv);
+            this.toAcct(other, { kind: "you", you: youOf(nv) });
           }
         }
         m.st = "ok";
@@ -1389,88 +1620,16 @@ export class Room {
         }
         return json({ ok: true, st: cur.st, you: youOf(cur), already: true });
       }
-      /* 문은 판이 있을 때만 열립니다 (2026-09-06 모델) — 초대가 유효한지가 먼저고(무효·만료는 그 말로), 그 다음
-         판이 있는지입니다. 앱은 `지금은 열린 판이 없어요.` 한 줄을 띄우고, 방장이 새 판을 만들면 같은 링크로 다시 옵니다 */
-      const noParty = async () => !(await this.hasParty());
-      /* (a) 지목 초대 — 자리도 그때 정해져 있어서 그대로 앉히고, 서기에게 알려
-         장부의 줄까지 잇게 합니다. 유효하지 않으면 여기서 끝입니다 (앱은 만료 문구를 띄웁니다) */
-      if (b.inv) {
-        const iv = await this.toAccounts("/inv-take", {
-          to: me.id,
-          from: owner,
-          room: req.headers.get("x-room") || "",
-        });
-        if (!iv || !iv.ok) return json({ error: "invite" }, 403);
-        if (await noParty()) return json({ error: "no party" }, 409);
-        /* 초대는 자리를 잡아 두지 않습니다 — 예약하면 여럿을 부른 순간 방이 잠기고,
-           1분짜리 초대가 그동안 자리를 죽입니다. 그래서 문 앞에서 다시 셉니다.
-           그 사이 자리가 없어졌으면 튕기지 않고 **신청으로 내려앉힙니다** (§3.3):
-           방장이 콕 집어 부른 사람이라 조용히 돌려보내면 방장은 "왜 안 오지",
-           받은 사람은 "왜 안 되지"가 됩니다. 내려앉히면 방장 신청 칸에 뜨고,
-           인원 수를 늘려 [수락]하면 그대로 들어옵니다 */
-        const lobby = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
-        let full = false;
-        if (lobby.open) {
-          const seated = (await this.members()).filter((x) => x.st === "ok").length + 1;
-          full = seated >= lobby.cap;
-        }
-        const m = full
-          ? { nick: me.nick, rowId: null, st: "req", t: now, inv: 1 }
-          : { nick: me.nick, rowId: iv.seat || null, st: "ok", t: now };
-        await S.put("m:" + me.id, m);
-        if (!full) {
-          /* 지목 초대 수락도 st:"ok" 가 되는 순간입니다 — 딴 파티에 있었으면 여기서 옮겨집니다 */
-          await this.claimSeat(me.id, req);
-          await this.arm();
-          /* 관계는 앉았을 때 생깁니다 — 내려앉은 사람은 방장이 수락하는 순간에 생깁니다 */
-          await this.toAccounts("/mated", { a: owner, b: me.id });
-        }
-        /* inv:1 — 방장 앱이 "그냥 신청"과 "내가 부른 사람인데 자리가 없었다"를 가릅니다 */
-        this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: m.st, seat: m.rowId, inv: 1 });
-        return json({ ok: true, st: m.st, you: youOf(m), seat: m.rowId, full });
-      }
-      const code = String(b.j || "").toUpperCase();
-      /* (b) 노크 — 문 앞에 서는 것이라 취소·거절 전까지 유지됩니다 (§3.3) */
-      if (!code) {
-        const r = await this.toAccounts("/mate-of", { a: owner, b: me.id });
-        if (!r || !r.yes) return json({ error: "invite" }, 403);
-        if (await noParty()) return json({ error: "no party" }, 409);
-        const m = { nick: me.nick, rowId: null, st: "req", t: now };
-        await S.put("m:" + me.id, m);
-        this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "req", knock: 1 });
-        return json({ ok: true, st: "req", you: youOf(m) });
-      }
-      /* (c) 링크 신청. 지난 코드와 애초에 안 맞는 코드는 사람이 할 일이 같아도 말이
-         다릅니다 (§8: `초대가 만료됐어요…` / `이 초대는 쓸 수 없어요…`) */
-      const inv = await S.get("invite");
-      if (!inv || code !== inv.code) return json({ error: "invite" }, 403);
-      if (!this.inviteOk(inv, now)) return json({ error: "expired" }, 403);
-      if (await noParty()) return json({ error: "no party" }, 409);
-      const lobby = (await S.get("lobby")) || { open: false, cap: 8, since: 0 };
-      let full = false;
-      if (lobby.open) {
-        const seated = (await this.members()).filter((x) => x.st === "ok").length + 1;
-        full = seated >= lobby.cap;
-      }
-      /* 내보냈던 사람은 즉시 착석이 아니라 방장 승인입니다 (§3.3, 2026-09-05 표준화) */
+      /* 코드 없는 링크 (§3.12.5). 처음 온 사람은 늘 요청으로 서고 방장이 [받기]로 앉힙니다.
+         내보냈던 사람도 같은 줄에 kicked 표시로 섭니다. 판이 있는지는 묻지 않습니다 — owner 가 있으면 열린 방입니다.
+         (폐기 2026-09-15) 지목 초대(inv)·함께한 사람 노크(mate-of)·10분 코드·대기실 정원 */
       const kicked = !!(await S.get("x:" + me.id));
-      const st = full || kicked ? "req" : "ok";
-      const m = { nick: me.nick, rowId: null, st, t: now };
+      const m = { nick: me.nick, rowId: null, st: "req", t: now };
       if (kicked) m.kicked = 1;
-      else if (full) m.full = 1;
+      if (b.ava && typeof b.ava === "object") m.ava = { id: String(b.ava.id || ""), a: b.ava.a ? String(b.ava.a) : null };
       await S.put("m:" + me.id, m);
-      if (st === "ok") {
-        /* st:"ok" 가 되는 순간 — 파티 하나 규칙·자동 중단 무장·함께한 사람 관계 (§3.3) */
-        await this.claimSeat(me.id, req);
-        await this.arm();
-        await this.toAccounts("/mated", { a: owner, b: me.id });
-      }
-      /* 자리는 방장 앱이 §3.2 규칙으로 고릅니다(seat: null) — 지목 초대 수락과 같은 길 */
-      this.toScribe({
-        kind: "join", acct: me.id, nick: me.nick, st, seat: null, link: 1,
-        kicked: kicked ? 1 : 0, full: full ? 1 : 0,
-      });
-      return json({ ok: true, st, you: youOf(m), full, kicked });
+      this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "req", seat: null, link: 1, kicked: kicked ? 1 : 0, full: 0, ava: m.ava || null });
+      return json({ ok: true, st: "req", you: youOf(m), full: false, kicked });
     }
 
     /* [나가기]와 [신청 취소]가 같은 길입니다 — st:"req" 도 여기서 지워집니다 (§4.2 라운드 B).
@@ -1564,10 +1723,26 @@ export class Room {
     }
     if (!ok) return this.deny(client, server, why);
 
-    server.serializeAttachment({ k: "v", acct: me ? me.id : null });
+    const isObs = url.searchParams.get("o") === "1";
+    const firstApp = !!me && !isObs && !this.acctOn(me.id);
+    server.serializeAttachment({ k: "v", acct: me ? me.id : null, o: isObs ? 1 : 0 });
     this.ctx.acceptWebSocket(server);
     /* 파티원이 붙었습니다 — 방장 앱의 접속 표시 (§5.6) */
-    if (me) this.toScribe({ kind: "viewer", acct: me.id, on: true });
+    if (me && !isObs) this.toScribe({ kind: "viewer", acct: me.id, on: true });
+    if (me && !isObs && me.id !== owner) {
+      /* 이번 판에 앱을 연 사람 (§3.12.3) — 화면엔 안 그리고 [받기]의 기본 자리에만 씁니다 */
+      const mm = await S.get("m:" + me.id);
+      if (mm) {
+        mm.seen = Date.now();
+        await S.put("m:" + me.id, mm);
+      }
+      /* 접속 방 (§3.12.6) — 방장 자신은 내 방이 기본이라 알릴 것이 없습니다 */
+      if (firstApp && this.presTimers && this.presTimers[me.id]) {
+        clearTimeout(this.presTimers[me.id]);
+        delete this.presTimers[me.id];
+      }
+      if (firstApp) this.ctx.waitUntil(this.presence(me.id, true, req));
+    }
     const on = this.scribeOn();
     const pz = await S.get("paused");
     const paused = pz ? { why: pz.why } : null;
@@ -1578,7 +1753,9 @@ export class Room {
       paused,
       ownerNick: (await S.get("ownerNick")) || "",
     });
-    this.send(server, { kind: "state", state: (await S.get("state")) || null, scribeOn: on, paused });
+    /* 요청 중인 사람에게는 판을 보내지 않습니다 (§3.12.5) — 받기 전에는 표를 못 봅니다 */
+    if (!(you && you.st === "req"))
+      this.send(server, { kind: "state", state: (await S.get("state")) || null, scribeOn: on, paused });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -1765,7 +1942,21 @@ export class Room {
     const a = tagOf(ws);
     /* 파티원 소켓이 끊기면 방장에게 접속 표시를 내립니다 — 다른 탭이 남아 있으면 그대로 켜져 있습니다 */
     if (a && a.k === "v" && a.acct) {
-      this.toScribe({ kind: "viewer", acct: a.acct, on: this.acctOn(a.acct, ws) });
+      if (a.o) return;
+      const still = this.acctOn(a.acct, ws);
+      this.toScribe({ kind: "viewer", acct: a.acct, on: still });
+      /* 마지막 앱 소켓이 끊겼다 — 여유 뒤에도 안 돌아오면 접속 방을 내립니다 (§3.12.6).
+         DO 는 타이머가 걸린 동안 깨어 있지만 20초라 비용이 없습니다 */
+      if (!still) {
+        const owner = await this.ctx.storage.get("owner");
+        if (a.acct === owner) return;
+        this.presTimers = this.presTimers || {};
+        if (this.presTimers[a.acct]) clearTimeout(this.presTimers[a.acct]);
+        this.presTimers[a.acct] = setTimeout(() => {
+          delete this.presTimers[a.acct];
+          if (!this.acctOn(a.acct)) this.ctx.waitUntil(this.presence(a.acct, false, null));
+        }, PRESENCE_GRACE_MS);
+      }
       return;
     }
     if (!a || a.k !== "scribe") return;

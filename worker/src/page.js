@@ -2504,6 +2504,7 @@ export const PAGE_HTML = `<!doctype html>
     ? "지금 들어가 있는 파티가 없어요. 초대를 받아 참여하면 다시 보여요."
     : "이 주소만으로는 판을 볼 수 없어요. 자수 화면의 '내 방송용 주소'를 넣어주세요.";
   var NOTICE = NOTICE_HOME;
+  var rehome = false; // 명단에서 빠졌거나 접속 방이 바뀌었다 — 닫힌 뒤 주소부터 다시 푼다
   var maybeNotice = function () {
     if (!dead || !window.obsstudio || typeof window.obsstudio.getStatus !== "function") return;
     try {
@@ -2613,7 +2614,8 @@ export const PAGE_HTML = `<!doctype html>
         } else if (m.kind === "you") {
           /* 명단에서 빠졌습니다(내보내기·나가기). 이미 붙어 있는 줄은 서버가 안 끊으므로
              여기서 떼고 다시 물어봅니다 — 자격이 없으면 그 답이 denied 로 와서 침묵합니다 */
-          if (!m.you) { try { ws.close(); } catch (e2) {} }
+          /* /o/ 는 방이 바뀌었을 수 있습니다 (§3.12.6 다시 붙기) — 같은 방에 다시 붙지 말고 주소부터 다시 풉니다 */
+          if (!m.you) { rehome = !!OTOK; try { ws.close(); } catch (e2) {} }
           return;
         } else if (m.kind === "state") {
           onState(m.state || {});
@@ -2629,6 +2631,7 @@ export const PAGE_HTML = `<!doctype html>
       /* 자격이 없으면 다시 붙지 않습니다. 다만 방송용 주소는 방이 바뀌었을 수 있어
          1분마다 어느 방인지부터 다시 묻습니다 */
       if (dead) { if (OTOK) setTimeout(boot, bootWait()); return; }
+      if (rehome) { rehome = false; bootTries = 0; setTimeout(boot, 300); return; }
       setTimeout(connect, wait);
       wait = Math.min(wait * 2, 15000);
     };
