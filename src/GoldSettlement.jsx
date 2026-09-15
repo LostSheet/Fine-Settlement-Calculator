@@ -369,8 +369,9 @@ const CAST_WHY = {
   down: "서버와 연결이 끊겨서 갱신이 멈췄어요. 마지막으로 보낸 판이 그대로 떠 있어요.",
   /* (폐기 2026-09-05) idle `이 주소에는 내가 있는 판이 그대로 떠요. 지금은 판에 있지 않아요.` — 방장이 제
      시작 전 판을 보며 읽으면 틀린 말이었다. 이 문장들은 방장만 봅니다(파티원 툴팁은 따로) — [시작]을 써도 됩니다 */
-  idle: "아직 시작 전이에요 — 지난 판이 있으면 그게 떠 있고, [시작]을 누르면 이 판이 나가요.",
-  recruit: "대기실이 나가고 있어요 — 모이는 사람이 방송에 보여요. [시작]을 누르면 이 판이 나가요.",
+  /* 판의 상태가 없어졌다 (§3.12.2) — 판은 늘 이 주소에 나가고, 이름도 숫자도 없으면 아무것도 안 그린다 */
+  idle: "이 판이 이 주소에 나가요. 이름이나 숫자가 없으면 방송에는 아무것도 안 그려요.",
+  recruit: "이 판이 이 주소에 나가요. 이름이나 숫자가 없으면 방송에는 아무것도 안 그려요.",
   on: "이번 판이 이 주소에 나오고 있어요. 방송에 안 보이면 OBS 쪽 소스를 확인해 주세요.",
 };
 const FILL_NAME = (k) => "(모험가" + k + ")";
@@ -1317,7 +1318,7 @@ const maskUrl = (u) => {
    (폐기, 같은 날) `🔔 …` 로 시작하던 마스크드 링크 — 이모지 때문에 디스코드가 안 풀었다. 문구는 초안 */
 const inviteMsg = (hostNick, url) =>
   /* 문구는 디스코드 기준 (§3.12.5). 코드·10분 얘기가 없다 */
-  `${hostNick}네 벌금 파티 초대예요.\n👉 [눌러서 참여하기](<${url}>)\n방송에 띄우려면 로그인해서 내 방송 주소를 OBS에 한 번만 넣어요.`;
+  `${hostNick}네 벌금팟 · Discord 연동으로 참여하세요.\n👉 [눌러서 참여하기](<${url}>)\n처음이면 방장이 받아 주는 대로 앉고, 방송에 띄우려면 내 방송 주소를 OBS에 한 번만 넣어요.`;
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -2032,6 +2033,11 @@ export default function GoldSettlement() {
          주소에 적는다. (폐기 2026-09-05) sessionStorage gs-home 표시 — 주소 #lobby 가 그 뜻을 말한다 */
       route: readRoute(),
       atLobby: false, // 로비 폐기 (§3.12) — 화면은 벌금판 하나
+      /* 내 판을 만든 적이 있는가 — 남의 판에 앉은 사람이 앱을 열 때 자기 자리로 갈지(내 판이 백지면) 가르는 데 쓴다 (§3.12.5) */
+      made:
+        (data.log || []).length > 0 ||
+        (partyReg && partyReg.list.some((x) => x.gen && (!x.host || x.host === x.me))) ||
+        (data.rows || []).some((x, i) => i > 0 && (x.name || "").trim() && !isFillName(x.name)),
     };
   }
 
@@ -3313,7 +3319,9 @@ export default function GoldSettlement() {
   const [atLobby, setAtLobby] = useState(!!boot.current.atLobby);
   /* 도착(주소가 비어 있던 부트)에서만 "앉은 파티 → 그 파티" 자동 입장을 합니다 (§3.0). 주소에 화면이
      적혀 있으면(새로고침·뒤로가기·브랜드로 온 로비) 그 화면을 지킵니다 — 옛 gs-home 표시의 자리 */
-  const arrival = useRef(!(boot.current.route && boot.current.route.view));
+  /* 앱을 연 사람이 남의 판에 앉아 있으면 그 자리로 (§3.12.5). #board 는 로비가 없어진 뒤 뜻이 없어 도착으로 친다 */
+  const arrival = useRef(!(boot.current.route && boot.current.route.view === "gen"));
+  const madeRef = useRef(!!boot.current.made);
   /* 판 존재 표시의 최신값 (2026-09-06 모델) — 화면 이동 판정이 렌더 밖에서 봅니다 */
   const boardOnRef = useRef(false);
   const [meSeat, setMeSeat] = useState(null); // 서버가 아는 내 자리 {st, live, round} — 로비 복귀 줄 (round = 진행 중, 2026-09-06)
@@ -3563,6 +3571,8 @@ export default function GoldSettlement() {
       seat &&
       seat.st === "ok" &&
       arrival.current &&
+      /* 내 판을 만든 적이 없으면(백지) 앉아 있는 판으로 (§3.12.5). 내 판이 있는 방장은 내 판에서 시작한다 */
+      !madeRef.current &&
       /* 내 판이 있으면 남의 파티로 잡아채지 않습니다 (방 하나 규칙, 2026-09-07) — 허브가 두 곳을 다 보여 줍니다 */
       !boardOnRef.current
     ) {
@@ -13891,10 +13901,12 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
             {/* 계정 줄은 제목 바로 아래입니다 (2026-09-05 확정) — 맨 아래에 두면 아무도
                 못 봅니다. 닉이 곧 벌금판의 내 이름이라 "내가 누구로 있는지"가 먼저입니다 */}
             <div className="gs-acct-row">
-              <Ava id={auth.id} nick={auth.nick} size={30} />
+              {auth.dc ? <DcAva dc={auth.dc} size={30} /> : <Ava id={auth.id} nick={auth.nick} size={30} />}
               <b className="gs-acct-nick2">{auth.nick}</b>
               {auth.anon ? (
-                <span className="gs-acct-badge">게스트</span>
+                <span className="gs-acct-badge">로그인 없이</span>
+              ) : auth.dc ? (
+                <span className="gs-acct-badge">Discord 연동</span>
               ) : (
                 /* 아이디도 방송에 새면 좋을 게 없습니다 — 주소처럼 가려 둡니다 */
                 <span className="gs-acct-idm">{auth.id.slice(0, 2) + "••••"}</span>
@@ -13956,16 +13968,12 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
                   {/* 2026-09-08 사용자 지정 문구. 로비 줄과 같은 이야기를, 아이디를 만들지 정하는
                       자리라 잃는 것까지 적습니다.
                       (폐기) `가입 없이 쓰는 중이에요 — 아이디를 정하면 다른 컴퓨터에서도 같은 주소를 쓸 수 있어요.` */}
-                  아이디를 만들면 방송용 주소를 계속 유지할 수 있어요. 게스트 주소는 이
-                  브라우저에만 남아서, 브라우저를 정리하거나 컴퓨터를 바꾸면 주소를 다시
-                  발급받아야 해요.{" "}
-                  {/* 게스트에게 필요한 건 "아이디를 만들면 뭐가 다른가" — 쓰는 방식 비교 창은 주소 상자 아래로 갔습니다 (2026-09-06 오후 사용자 확정) */}
-                  <button className="gs-auth-linkb" onClick={() => setShowAcct(true)}>
-                    아이디를 만들면 뭐가 달라져요?
-                  </button>
+                  {/* §3.12.1 — 가입은 디스코드 연동뿐. 잃는 것과 얻는 것을 한 줄에 */}
+                  이 주소는 이 브라우저에만 남아요. 브라우저 데이터를 지우면 사라져요. Discord를 연동하면 다른 PC에서도 같은
+                  주소를 쓰고, 초대와 자수도 돼요.
                 </span>
-                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onUpgrade}>
-                  아이디 만들기
+                <button className="gs-btn gs-btn-sm gs-dcbtn" onClick={onUpgrade}>
+                  Discord 연동
                 </button>
               </div>
             )}
