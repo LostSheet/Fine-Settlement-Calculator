@@ -1510,7 +1510,8 @@ export class Room {
     }
     /* 오버레이 다시 붙기 (§3.12.6) — 이 계정의 OBS 소켓만 닫습니다. 페이지는 닫히면 주소를 다시 풀어 새 방을 찾습니다 */
     if (path === "/obs-rehome") {
-      const { acct } = await req.json().catch(() => ({}));
+      /* 본문은 위에서 이미 b 로 읽었다 — req.json() 을 다시 부르면 빈 객체가 와서 400 으로 새고 오버레이가 영영 안 옮겨진다 (2026-09-16 실측) */
+      const acct = b && b.acct;
       if (typeof acct !== "string" || !acct) return json({ error: "bad json" }, 400);
       for (const ws of this.ctx.getWebSockets()) {
         const a = tagOf(ws);
