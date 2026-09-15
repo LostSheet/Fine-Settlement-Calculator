@@ -443,7 +443,9 @@ export class Accounts {
       const u = await this.session(req, now);
       const state = rid(24);
       const ret = typeof b.live === "string" && /^[A-Z0-9]{6}$/i.test(b.live) ? b.live.toUpperCase() : "";
-      await S.put("ds:" + state, { t: now, link: u ? u.id : null, ret });
+      /* 로컬 앱은 localhost·127.0.0.1 두 출처를 오가며 검증한다 — 온 곳으로 돌려보낸다. 운영 주소는 APP_URL 하나라 무시한다 */
+      const app = typeof b.app === "string" && /^http:\/\/(localhost|127\.0\.0\.1):\d{2,5}\/[A-Za-z0-9._\-\/]*$/.test(b.app) ? b.app : "";
+      await S.put("ds:" + state, { t: now, link: u ? u.id : null, ret, app });
       const origin = req.headers.get("x-origin") || new URL(req.url).origin;
       const cb = origin + "/api/auth/discord/callback";
       if (fake) return json({ url: origin + "/api/auth/discord/fake?state=" + state });
@@ -473,7 +475,8 @@ export class Accounts {
       const code = url.searchParams.get("code") || "";
       const ds = state ? await S.get("ds:" + state) : null;
       if (ds) await S.delete("ds:" + state);
-      const back = (frag) => new Response(null, { status: 302, headers: { location: appOrigin(req) + "#" + frag } });
+      const back = (frag) =>
+        new Response(null, { status: 302, headers: { location: ((ds && ds.app) || appOrigin(req)) + "#" + frag } });
       if (!ds || ds.t + DS_MS < now || !code) return back("dcerr=state");
       let du = null;
       if (this.env.DISCORD_DEV_FAKE && code === "fake") {
