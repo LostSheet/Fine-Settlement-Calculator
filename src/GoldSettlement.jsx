@@ -7797,8 +7797,8 @@ export default function GoldSettlement() {
         ),
         act: boardOpened
           ? { label: "들어가기", ghost: false, on: rejoinNow }
-          : { label: "로비로", ghost: true, on: leaveEnded },
-        act2: boardOpened ? { label: "로비로", on: leaveEnded } : null,
+          : { label: "내 판으로", ghost: true, on: leaveEnded },
+        act2: boardOpened ? { label: "내 판으로", on: leaveEnded } : null,
       };
     }
     return null;
@@ -9418,7 +9418,7 @@ export default function GoldSettlement() {
               {kickedOut && !denied && <p className="gs-empty-sub">방장이 다시 받으면 들어갈 수 있어요.</p>}
               <div className="gs-join-acts gs-blocked-acts">
                 <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={goLobby}>
-                  로비로
+                  내 판으로
                 </button>
                 {meCur && meCur !== liveRoom && (
                   <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => enterRoom(meCur, { push: true })}>
@@ -11166,7 +11166,7 @@ export default function GoldSettlement() {
         <div className="gs-modal">
           <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="별명">
             <h3>표에 오를 별명을 정해요</h3>
-            <p>2~3글자예요. 디스코드 이름은 길어서 표에 못 올라가요. 처음 한 번만 정하면 되고, 나중에 초상화를 눌러 바꿀 수 있어요.</p>
+            <p>2~3글자예요. 디스코드 이름은 길어서 표에 못 올라가요. 처음 한 번만 정하면 되고, 나중에 오른쪽 위 내 초상화를 눌러 바꿀 수 있어요.</p>
             <form
               className="gs-nickform"
               onSubmit={(e) => {
@@ -16231,7 +16231,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowmeta{margin-right:auto; flex:none; display:inline-flex; align-items:center; gap:4px; padding-left:4px}
 /* i 하나 — 사람이 앉은 줄. 호버(title)에 닉 · 아이디. 끊긴 사람은 흐려집니다.
    (2026-09-06) 파란 테두리 → 잉크 톤. 이름 옆의 작은 표시가 표의 팔레트 밖 색을 쓰면 그것만 튄다 */
-.gs-rowi{width:18px; height:18px; border-radius:50%; border:1px solid rgba(var(--ink-rgb),.3); color:var(--ink-2); padding:0; font:inherit;
+.gs-rowi{width:18px; height:18px; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.3); color:var(--ink-2); padding:0; font:inherit;
   background:rgba(var(--ink-rgb),.05); display:inline-grid; place-items:center; cursor:pointer; line-height:0;
   transition:color .15s, border-color .15s}
 .gs-rowi:not([aria-haspopup]){cursor:default}
@@ -16828,7 +16828,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ava{display:inline-block; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.35); box-sizing:border-box;
   object-fit:cover; background:var(--paper-2); vertical-align:middle; flex:none}
 .gs-ava-txt{background:var(--paper-2)}
-.gs-rowi-ava .gs-ava{width:18px; height:18px; border-radius:5px}
+.gs-rowi-ava .gs-ava{width:18px; height:18px; border-radius:25%}
+/* 초상화가 든 자리 단추는 테두리·바탕·여백 없이 초상화 그 자체 (2026-09-16 사용자 지적: 네모 둘레에 여백이 생겼다) */
+.gs-rowi-ava:has(.gs-ava){width:18px; height:18px; border:0; background:transparent; padding:0; border-radius:25%; box-shadow:none; overflow:hidden}
+.gs-rowi-ava:has(.gs-ava) .gs-ava{border:0}
 .gs-conf-who .gs-ava{align-self:center}
 .gs-waithead{display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--ink-2); letter-spacing:.04em}
 .gs-waithead .gs-btn{margin-left:auto}
@@ -16836,8 +16839,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-waitto{font-size:11.5px; color:var(--ink-2); margin-left:auto; margin-right:6px}
 .gs-waitto-none{color:var(--red)}
 .gs-invite-acts{display:flex; justify-content:center; gap:8px; margin-top:14px}
-.gs-nickform{display:flex; flex-direction:column; gap:12px; margin-top:12px}
-.gs-in-nick{height:38px; font-size:18px; text-align:center; letter-spacing:.1em}
+/* 별명 창 — 입력칸과 [저장]이 한 줄 (2026-09-16 사용자 지적: 자리표시가 잘리고 단추가 딴 줄이었다) */
+.gs-nickform{display:flex; flex-direction:row; align-items:center; gap:10px; margin-top:14px}
+.gs-nickform .gs-in-nick{flex:1 1 auto; width:auto; min-width:0; height:38px; padding:0 12px; font-size:17px; text-align:left; letter-spacing:.06em}
+.gs-nickform .gs-dialog-btns{margin:0; flex:none}
 /* 입력 단위 — 표 바 오른쪽의 분절 컨트롤. 상자와 알약은 폐기 */
 .gs-unitseg{display:inline-flex; align-items:center; gap:8px; font-size:11.5px; color:var(--ink-2); flex-wrap:wrap}
 .gs-unitseg-solo{display:flex; margin:0 0 12px}
@@ -18024,7 +18029,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-lh-norec{padding:16px}
 .gs-lh-getaddr{width:100%; margin-top:2px}
 /* 아바타 한 벌 (2026-09-07 ③) — 글자 원, 계정 색(--h), 방장 금테 */
-.gs-ava{font-style:normal; border-radius:50%; display:inline-grid; place-items:center; flex:none; line-height:1;
+.gs-ava{font-style:normal; border-radius:25%; display:inline-grid; place-items:center; flex:none; line-height:1;
   font-family:'Gowun Batang',serif; font-weight:700; color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border:1px solid rgba(var(--ink-rgb),.2)}
 .gs-ava-host{border-color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 속을 채워 작아도 사람으로 읽힙니다. (폐기) 계정 색 글자 원 */
@@ -18394,8 +18399,9 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* 칸 — 방장 카운터 표의 .gs-hit 그대로: 안 센 칸은 점선에 옅은 ＋, 한 번이라도 세면 실선에 진한 바탕 */
 .gs-cf-cell{font:inherit; color:var(--ink); cursor:pointer; position:relative; overflow:hidden;
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-  width:100%; min-height:56px; padding:8px 10px 9px; border-radius:3px;
+  width:100%; min-height:62px; padding:8px 10px 9px; border-radius:3px;
   border:1px dashed rgba(var(--kraftdk-rgb),.85); background:var(--cell)}
+/* (2026-09-16) min-height 56 → 62: ＋ 상태와 숫자 상태의 높이가 달라 누를 때마다 6px 밀렸다 */
 /* hover 는 잉크색입니다 — 금색은 '되돌릴 수 있는 30초'에만 써서 둘이 안 겹칩니다 */
 .gs-cf-cell:hover{background:var(--cell-hover); border-color:var(--ink)}
 .gs-cf-cell:active{transform:scale(.96)}
