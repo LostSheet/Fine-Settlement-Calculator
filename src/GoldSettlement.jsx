@@ -378,6 +378,14 @@ const FILL_NAME = (k) => "(모험가" + k + ")";
 /* 예전 이름들도 자리표시로 알아봐야 합니다 — 저장된 표를 열었을 때 그대로 남으면
    지우지도 못하고 진짜 이름처럼 굴러다닙니다. */
 const isFillName = (s) => /^\((이름(입력|없음)|모험가)\d+\)$/.test(s || "");
+/* 내 판을 만든 적이 있는가 (§3.12.5) — 기록이 있거나 2번 줄부터 진짜 이름이 적혀 있으면.
+   자리표시 8줄에 숫자 0인 판은 백지다 — 판은 늘 켜져 있어서 roundLive 로는 못 가른다 */
+const madeOf = (sv) =>
+  !!(
+    sv &&
+    (((sv.log || []).length > 0) ||
+      (Array.isArray(sv.rows) && sv.rows.some((x, i) => i > 0 && (x.name || "").trim() && !isFillName(x.name))))
+  );
 /* 이름 없는 자리는 화면에서도 판에서도 이 이름으로 부릅니다 (§3.1) — 괄호가
    "아직 이름을 안 정한 자리, 자동으로 차거나 나중에 고치는 칸"을 그 자리에서 말합니다.
    게임 캐릭터 이름을 빌리면 진짜 사람처럼 읽혀서 못 씁니다(실리안 여덟 명은 폐기). */
@@ -1894,7 +1902,8 @@ export default function GoldSettlement() {
     if (liveRoom && !own && !obsToken && !DEMO && canOwnUrl && typeof window !== "undefined") {
       const rel = loadRelay();
       const sv = loadSaved();
-      const hasBoard = !!rel.boardOn || !!(sv && sv.roundLive && Array.isArray(sv.rows) && sv.rows.length);
+      /* (폐기 2026-09-15) 초대 보류 — 판은 늘 켜져 있어 모두가 "판이 있는 사람"이 됐다. 내 판이 있는 사람에게는 옮기기 카드가 묻는다 (§3.12.5) */
+      const hasBoard = false;
       if (hasBoard) {
         try {
           localStorage.setItem("goldSettlement.pendingJoin", JSON.stringify({ room: liveRoom, code: readJoinCode() || "", t: Date.now() }));
@@ -1933,6 +1942,7 @@ export default function GoldSettlement() {
         seats: [],
         liveRoom: liveRoom || null,
         joinCode: readJoinCode(),
+        made: madeOf(loadSaved()),
         /* hashchange 비교용 — 주소에서 코드를 지운 뒤의 값입니다. 원본(joinCode)과 갈라 두지 않으면
            지우는 순간 "주소가 바뀌었다"고 판단해 스스로 새로고침합니다 */
         hashJoin: null,
@@ -3571,10 +3581,9 @@ export default function GoldSettlement() {
       seat &&
       seat.st === "ok" &&
       arrival.current &&
-      /* 내 판을 만든 적이 없으면(백지) 앉아 있는 판으로 (§3.12.5). 내 판이 있는 방장은 내 판에서 시작한다 */
-      !madeRef.current &&
-      /* 내 판이 있으면 남의 파티로 잡아채지 않습니다 (방 하나 규칙, 2026-09-07) — 허브가 두 곳을 다 보여 줍니다 */
-      !boardOnRef.current
+      /* 내 판을 만든 적이 없으면(백지) 앉아 있는 판으로 (§3.12.5). 내 판이 있는 방장은 내 판에서 시작한다.
+         (폐기 2026-09-15) boardOn 조건 — 판은 늘 있어서 boardOn 이 뜻을 잃었다 */
+      !madeRef.current
     ) {
       arrival.current = false;
       /* 방장은 자기 방 명단(members)에 없어 seat 가 비므로, 이 조건은 남의 방에 앉은 사람만 통과합니다 —
@@ -5849,7 +5858,8 @@ export default function GoldSettlement() {
      누가 부르는지와 문 하나. [참여하기] → 시작하기 랜딩 → 자동 착석(§3.3) */
   /* 끝난 판이 마지막 한 장이어도 초대장이 먼저입니다 — 초대받은 사람이 남의 끝난 정산표를 먼저 볼 이유가 없습니다 */
   /* 링크를 눌렀을 때 세 경우 (§3.12.5): 연동 전 → 디스코드 카드 · 다른 판에 있던 사람 → 옮기기 카드 · 그 밖에는 카드 없이 바로 */
-  const moveNeeded = !!(auth && auth.dc && meCur && liveRoom && meCur !== liveRoom && meSeat && meSeat.st === "ok");
+  const seatedElse = !!(meCur && liveRoom && meCur !== liveRoom && meSeat && meSeat.st === "ok");
+  const moveNeeded = !!(auth && auth.dc && (seatedElse || madeRef.current));
   const gateKind = !auth || !auth.dc ? "discord" : moveNeeded ? "move" : null;
   useEffect(() => {
     if (!viewer || !liveRoom || liveRoom === DEMO_ROOM || joinOk || !auth || !auth.dc || !meReady || moveNeeded) return;
@@ -7507,6 +7517,7 @@ export default function GoldSettlement() {
     if (coachSeen("askMember")) return;
     const t = setTimeout(() => {
       coachDone("askMember");
+      if (TUTORIALS_OFF) return;
       setHelpAuto(true);
       setHelpOpen(true);
     }, 1500);
@@ -8665,9 +8676,12 @@ export default function GoldSettlement() {
               {helpOpen && !DEMO && (
                 <div className="gs-invpop gs-helppop" role="dialog" aria-label="튜토리얼">
                   <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
+                  {TUTORIALS_OFF && (
+                    <p className="gs-guide-foot">튜토리얼은 새 화면에 맞춰 다시 만드는 중이에요. 초대는 시스템 줄의 [초대], 방송 주소는 [OBS 공유 설정]에 있어요.</p>
+                  )}
                   {/* 행 = 이름 + 칩(추천·봤어요) + 역할 한 줄 + 서브, 오른쪽에 [보기]/[다시 보기] (2026-09-06 낮 사용자: 시인성·역할 설명).
                       역할 문구 — 파티원은 사용자 지정, 방장은 초안. (폐기, 같은 날) 한 줄에 이름·서브·버튼 안 `추천` */}
-                  {[
+                  {TUTORIALS_OFF ? null : [
                     { k: "host", name: "방장 튜토리얼", role: "판을 열고 파티원을 부르는 사람", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
                     { k: "member", name: "파티원 튜토리얼", role: "초대를 받은 사람", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
                     /* 혼자 쓰기 (2026-09-07 밤 사용자 확정) — 대기실의 [혼자 세기]와 짝입니다. 되짚을 자리가 여기입니다 */
@@ -8970,7 +8984,9 @@ export default function GoldSettlement() {
             {gateKind === "move" ? (
               <>
                 <p className="gs-invite-sub">
-                  지금은 {seatedName || "다른 판"}에 있어요. 옮기면 내 방송에 이 판이 나가요. 원래 판 자리는 그대로예요.
+                  {seatedElse
+                    ? "지금은 " + (seatedName || "다른 판") + "에 있어요. 옮기면 내 방송에 이 판이 나가요. 원래 판 자리는 그대로예요."
+                    : "내 판을 두고 옮겨요. 옮기면 내 방송에 이 판이 나가고, 내 판의 파티원 자수는 돌아올 때까지 멈춰요. 내 판은 그대로 남아요."}
                 </p>
                 <div className="gs-invite-acts">
                   <button className="gs-btn gs-btn-ghost" onClick={leaveToLobby}>
@@ -14921,6 +14937,9 @@ function MouseIcon({ side }) {
    걸음 종류: wait(표적을 눌러야 넘어감) · action(가리키기, [다음]/[다음 장]) · wait:"auto"(기다림, 잠김).
    ch 는 장 번호(0부터). enter/exit 은 걸음에 들어설 때·나갈 때 하는 일. 문구는 전부 초안 */
 /* 파티원 화면은 4장 — 파티원을 모은 직후, 벌금 세기 전에 (2026-09-06 낮 사용자 확정; (폐기) 맨 끝 8장) */
+/* 튜토리얼 잠금 (2026-09-15) — 걸음표가 로비·대기실·[시작]·[정산 끝내기]를 가리켜서, §3.12 화면에서는 표적이 없다.
+   새 걸음표를 쓸 때까지 [튜토리얼]은 안내 한 줄만 보여 주고 저절로 열리지 않는다 */
+const TUTORIALS_OFF = true;
 const TOUR_CHAPTERS = ["판 만들기", "항목과 단가", "파티원 모으기", "파티원 화면", "벌금 세기", "정산 보기", "방송에 띄우기", "끝내기와 기록"];
 const HOST_STEPS = [
   /* 1장 */

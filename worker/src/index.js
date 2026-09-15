@@ -574,9 +574,15 @@ export class Accounts {
       /* 내가 앉아 있는 방이 지금 어떤지 — 정산이 끝난 뒤 [닫기]로 자기 앱에 돌아온 사람은
          명단에 그대로 남아 있습니다(§1). 그 방에서 판이 다시 열리면 앱이 카드 하나로
          알려야 해서, 열 때와 초점이 돌아올 때 이 응답이 그것을 싣습니다 (§3.4·§8) */
-      if (u.cur) {
-        const seat = await this.seatInfo(u.cur, u.id);
-        if (seat) out.seat = seat;
+      /* 앉아 있는 방 (§3.12.5) — 마지막으로 앉은 방(rm:a:)이 진본이고, cur 는 앱이 마지막으로 연 방일 뿐이라 덮일 수 있다.
+         앉아 있으면 그 방을 cur 로 돌려주어 앱이 그 자리로 간다 */
+      const seatRoom = (await S.get("rm:a:" + u.id)) || u.cur || null;
+      if (seatRoom) {
+        const seat = await this.seatInfo(seatRoom, u.id);
+        if (seat) {
+          out.seat = seat;
+          if (seat.st === "ok") out.cur = seatRoom;
+        }
       }
       return json(out);
     }
@@ -824,7 +830,7 @@ export class Accounts {
         u.room = roomId;
         await S.put("rm:" + roomId, u.id);
       }
-      u.cur = u.room;
+      if (!u.cur) u.cur = u.room; // 앉아 있는 남의 판(cur)을 내 방을 열었다고 덮지 않는다 (§3.12.5 — 앱을 열면 자기 자리로)
       u.seen = now;
       await S.put("u:" + u.id, u);
       return json({ roomId: u.room });

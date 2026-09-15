@@ -7,7 +7,7 @@
 
 	// 디스코드 연동 (§3.12.9). 아이디는 비밀이 아니라 여기, 시크릿은 `wrangler secret put DISCORD_CLIENT_SECRET`.
 	// 로컬은 worker/.dev.vars 에 DISCORD_CLIENT_SECRET= 또는 DISCORD_DEV_FAKE=1 (가짜 동의 창, 개발 전용).
-	"vars": { "DISCORD_CLIENT_ID": "" },
+	"vars": { "DISCORD_CLIENT_ID": "1549436417510346835" },
 
 	// SQLite 백엔드 Durable Object — 무료 플랜에서 쓸 수 있는 형태입니다
 	// v2: 계정·세션·방송용 토큰을 담는 Accounts 하나가 늘었습니다 (idFromName("global"))
