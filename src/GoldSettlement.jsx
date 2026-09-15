@@ -10014,11 +10014,19 @@ export default function GoldSettlement() {
                                 </span>
                               );
                             }
-                            const host = i === 0 && rows2v.some((k) => k.rowId === row.id && k.a);
+                            /* 파티원 화면의 초상화 (§3.12.3) — 방장이 판에 실어 보낸 rows2.ava 로 그린다. 계정 아이디는 여전히 안 온다 */
+                            const r2v = rows2v.find((k) => k.rowId === row.id);
+                            const host = i === 0 && !!(r2v && r2v.a);
                             const mine = !!you && you.rowId === row.id;
-                            if (!host && !mine) return null;
+                            const ava = r2v && r2v.ava && r2v.ava.id ? r2v.ava : null;
+                            if (!host && !mine && !ava) return null;
                             return (
                               <span className="gs-rowmeta">
+                                {ava && (
+                                  <span className="gs-rowi gs-rowi-ava gs-rowi-ro" aria-hidden="true">
+                                    <DcAva dc={{ id: ava.id, avatar: ava.a }} size={18} className="gs-ava-sm" />
+                                  </span>
+                                )}
                                 {host && <span className="gs-lb-tag">방장</span>}
                                 {mine && <span className="gs-lb-tag">나</span>}
                               </span>
@@ -16227,6 +16235,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   background:rgba(var(--ink-rgb),.05); display:inline-grid; place-items:center; cursor:pointer; line-height:0;
   transition:color .15s, border-color .15s}
 .gs-rowi:not([aria-haspopup]){cursor:default}
+/* 파티원 화면의 초상화 자리 — 단추가 아니라 span 이라 같은 상자 규칙을 직접 준다 */
+.gs-rowi-ro{display:inline-flex; align-items:center; justify-content:center; cursor:default}
 .gs-rowmeta:hover .gs-rowi,.gs-rowi:focus-visible{color:var(--gold); border-color:rgba(var(--gold-rgb),.7)}
 .gs-rowmeta-off .gs-rowi{opacity:.4; border-style:dashed}
 .gs-rowi:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
