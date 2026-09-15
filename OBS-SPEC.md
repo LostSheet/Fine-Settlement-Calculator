@@ -178,6 +178,16 @@
 - Room: `m:{acct}.seen`(마지막 뷰어 소켓 붙은 시각), `round={at}`([비우기] 때 `POST /round`), `members()`에 `seen`·`ava`, `roundAt` 동봉. `/join`은 코드 없이 `st:"req"`(자리 있으면 already). `party`/`lobby` 문은 안 쓴다 — owner만 있으면 열린 방. `/member approve`의 `rowId`가 남의 자리면 그 사람의 `rowId`를 비운다(자리 내주기). `/end`는 90일 정리 전용.
 - page.js: `#j` 의존 제거. 빈 판(이름도 숫자도 없음)은 그리지 않는다.
 
+**구현 메모 (2026-09-16, 워커 6162308 이후 · 앱 8dce569까지)**
+
+- 연동 시작: `POST /api/auth/discord/begin {app?, ret?}` — `app`은 돌아올 앱 주소(`http://(localhost|127.0.0.1):포트/…`만 허용; 운영은 `APP_URL`), `ret`은 링크로 온 방(콜백이 `#dc=코드&live=방`으로 되돌린다). 세션이 있으면 그 계정에 연동하고, 이미 다른 계정에 묶인 디스코드면 `mergeInto`로 지금 계정을 그 계정에 이관(방송 주소 별칭 `t:`, 방 소유 `rm:`, 세션 재작성).
+- 개발용 가짜 동의창: `worker/.dev.vars`에 `DISCORD_DEV_FAKE=1`이면 `begin`이 `/api/auth/discord/fake`(fid·fname·fava 폼)로 보낸다. 진짜 시험은 같은 파일에 `DISCORD_CLIENT_SECRET=…`를 두고 `DISCORD_DEV_FAKE`를 지운다.
+- 디스코드 앱 등록(사용자 몫): Client ID는 `wrangler.jsonc` vars, 시크릿은 `wrangler secret put DISCORD_CLIENT_SECRET`(운영 설정 완료 2026-09-16). Redirect URI 두 개 — `https://live.lostark-sheet.workers.dev/api/auth/discord/callback`, `http://127.0.0.1:8787/api/auth/discord/callback`. 범위 `identify`만.
+- `/api/auth/me`: `dc`·`nickSet`·자리(`rm:a:{계정}`이 가리키는 방의 `st:"ok"` 자리만 `cur`로). `/own-room`은 `cur`를 덮지 않는다(내 판을 여는 것은 자리를 버리는 일이 아니다).
+- 접속: `POST /api/auth/presence {acct, room, on}` → `p:{acct}`; 소켓이 끊기면 20초 뒤 off(`PRESENCE_GRACE_MS`). 방이 바뀌면 `/obs-rehome`이 그 계정 오버레이 소켓에 `you:null`을 보내 닫고, page.js는 `rehome` 표시로 300ms 뒤 다시 붙어 새 방을 푼다.
+- 앱: 뷰어 소켓은 `you`(자리·요청)나 오버레이 진입이 있어야 붙는다. 링크 합류는 `auth.dc`가 있어야 보낸다(`ava` 동봉). `#dc=코드`는 `finish`로 바꿔 저장하고 해시를 지운 뒤 다시 연다. 옮기기 카드는 다른 판에 앉아 있거나 내 판이 백지가 아닐 때(`madeOf`: 기록이 있거나 2번 줄부터 진짜 이름). 튜토리얼은 `TUTORIALS_OFF`로 잠금(걸음표가 옛 화면을 가리킨다).
+- 시험: `worker/test-v3.mjs`(18항목, 워커 dev 8787 필요). 브라우저 두 사람 시험은 `http://localhost:5175`(방장)와 `http://127.0.0.1:5175`(파티원) — 저장소가 갈린다.
+
 ### 3.8 물건 셋 · 상태 셋 (2026-09-06 확정·구현 — 이 절이 §3.0~3.4 위에 선다)
 
 목업: https://claude.ai/code/artifact/136ffdef-af25-46fc-8dd7-70a3535e07fa (방장·파티원 두 페이지)
