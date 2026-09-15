@@ -5874,9 +5874,9 @@ export default function GoldSettlement() {
     !genView &&
     !joinOk &&
     !kickedOut &&
-    !(you && you.st) &&
-    /* 로그인 상태면 이미 멤버인지부터 — 소켓의 hello 가 답할 때까지 초대장을 번쩍이지 않습니다 */
-    (!auth || liveState !== "connecting");
+    !(you && you.st);
+  /* (폐기 2026-09-15) "소켓이 connecting 이면 카드를 안 띄운다" — 뷰어 소켓은 자리(요청)가 생긴 뒤에 붙으므로(§3.12.5)
+     그 조건이면 옮기기 카드가 영영 안 뜬다. 이미 멤버인지는 gateKind(meReady·meSeat)가 가른다 */
   const guestWaiting = !!you && you.st === "ok" && !!vlobby;
   /* 끝난 판에는 자수가 없습니다 — 더 셀 것이 없어서요. 표 세 장은 그대로 봅니다 */
   const guestPlaying = !!you && you.st === "ok" && !vlobby && !ended && !genView;
@@ -7821,9 +7821,12 @@ export default function GoldSettlement() {
      장부 로그에 `비움` 한 줄이 남습니다 (§3.4). 파티원의 "방금 바뀐" 카드에도 뜹니다 */
   const wipeCounts = () => {
     if (readOnly) return;
-    takeSnap("비우기", "숫자만 비웠어요. 이름과 자리는 그대로예요.");
+    /* 기록이 있으면 판 기록에 남기고 새 판을 연다 — 이때는 되돌리기를 주지 않는다 (되돌리면 같은 판이 기록과 표에 둘로 남는다).
+       기록이 없으면 숫자만 지우는 것이라 되돌리기를 준다 (§3.12.2) */
+    const hasLog = (log || []).length > 0;
+    if (!hasLog) takeSnap("비우기", "숫자를 비웠어요. 이름과 자리는 그대로예요.");
     /* 지금 표를 결과지째 판 기록으로 넘기고 새 판 열쇠를 쥔다 — 자리·이름·항목은 그대로 */
-    const nm = (log || []).length ? closeRound() : null;
+    const nm = hasLog ? closeRound() : null;
     const gid = newRoundId();
     setRows((prev) =>
       prev.map((x) => ({ ...x, counts: simple ? { [SIMPLE_ID]: "" } : {}, sums: {}, extras: [] }))
@@ -7835,7 +7838,7 @@ export default function GoldSettlement() {
     setRoundName(defaultRoundName());
     setPaused(null);
     if (auth && relay.room && !tutorialRef.current) roomApi.round(auth.token, relay.room).catch(() => {});
-    if (typeof nm === "string") say("지난 판을 판 기록에 남겼어요 — " + nm, 6000);
+    if (nm) say(typeof nm === "string" ? "지난 판을 판 기록에 남겼어요 — " + nm : "지난 판을 판 기록에 남겼어요.", 6000);
   };
   const askWipeCounts = () =>
     setAsk({
@@ -8843,9 +8846,8 @@ export default function GoldSettlement() {
               /* 문 앞에 서 있는 상태입니다 — 노크든 링크 신청이든 기다리는 것은 같습니다.
                  취소는 본인 몫이라 옆에 [신청 취소]가 섭니다 (§3.3) */
               /* (폐기 2026-09-05) `참여를 신청했어요 — {닉}님이 수락하면 들어가요.` — 왜 기다리는지로 말합니다 */
-              you.kicked
-                ? "방장이 받아 주면 들어가요."
-                : "자리가 다 찼어요 — 방장이 자리를 만들면 들어가요."
+              /* (폐기 2026-09-15) "자리가 다 찼어요 — 방장이 자리를 만들면 들어가요" — 정원이 없어졌다. 들어오는 사람은 모두 방장의 [받기]를 기다린다 (§3.12.4) */
+              "방장이 받아 주면 자리에 앉아요."
             ) : guestWaiting ? (
               <>
                 <b>자리에 앉았어요</b> — 방장이 시작하면 함께 시작돼요.
