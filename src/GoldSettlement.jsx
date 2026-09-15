@@ -8547,10 +8547,8 @@ export default function GoldSettlement() {
           <button className="gs-sysbrand" onClick={goBoard} aria-label="내 판으로">
             벌금 정산
           </button>
-          {/* 지금 어느 화면인지 — 브랜드 옆 한 마디: 로비 / 벌금판 (2026-09-05) */}
-          {!inviteGate && (
-            <span className="gs-sysscreen">{genView ? "판 기록" : showLobby ? "로비" : "벌금판"}</span>
-          )}
+          {/* (폐기 2026-09-16) 화면 이름 "벌금판"/"로비" — 화면이 하나라 말할 것이 없다(사용자). 판 기록을 볼 때만 어디인지 적는다 */}
+          {!inviteGate && genView && <span className="gs-sysscreen">판 기록</span>}
           {/* 파티 칩 하나 (2026-09-07 사용자 확정: 헤더 리뉴얼 — 방은 하나) — 지금 내가 속한 방 하나만 말하고, 누르면 파티 허브.
               로비에서는 없습니다(로비 2열이 같은 허브). (폐기, 같은 날) liveAway·memberAway·readyAway 세 칩 — 내 판 모집 중 + 남의 파티 착석이면 둘이 나란히 섰다.
               (폐기 2026-09-05) 파티 칩(`내 파티 · n명 ●`·`{방장}네 파티`)과 파티 서랍 */}
@@ -9215,7 +9213,7 @@ export default function GoldSettlement() {
               </div>
             )}
             <div className="gs-conf-who">
-              {auth && auth.dc ? <DcAva dc={auth.dc} size={24} /> : null}
+              {auth && auth.dc ? <DcAva dc={auth.dc} size={28} /> : null}
               <b>{myRow ? seatName(myRow, rows.indexOf(myRow)) : you.nick || "나"}</b>
               <span className="gs-conf-tag">나</span>
               <span className="gs-conf-sum">
@@ -9966,6 +9964,8 @@ export default function GoldSettlement() {
                               if (!st || !st.acct) return null;
                               const mem = members.find((k) => k.acct === st.acct);
                               const off = !!mem && mem.on === false;
+                              /* 방장은 명단에 없어 초상화가 명단에서 안 온다 — 내 계정의 것을 쓴다 (2026-09-16 사용자 지적: 방장 줄만 실루엣이었다) */
+                              const pic = mem && mem.ava && mem.ava.id ? { id: mem.ava.id, avatar: mem.ava.a } : i === 0 && auth && auth.dc ? auth.dc : null;
                               const masked = st.acct.slice(0, 2) + "••••";
                               /* 글자(아이디)는 이름 칸을 너무 먹었습니다 — 표시는 i 하나, 내용은 호버에 (2026-09-05) */
                               /* 브라우저 title 은 늦고 못생겼습니다 — 앱의 툴팁(.gs-tip)으로 즉답 */
@@ -9983,10 +9983,10 @@ export default function GoldSettlement() {
                                     {/* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 초상화가 없는 자리라 글자를 넣지 않습니다.
                                         (폐기 2026-09-07) 계정 색 글자 원 — 이름 옆에 같은 글자가 한 번 더 나와 조잡했다(사용자).
                                         (폐기 2026-09-06) 선으로 그린 사람 아이콘 — 속이 비어 작을 때 안 읽혔다 */}
-                                    {mem && mem.ava && mem.ava.id ? (
-                                      <DcAva dc={{ id: mem.ava.id, avatar: mem.ava.a }} size={18} className="gs-ava-sm" />
+                                    {pic ? (
+                                      <DcAva dc={pic} size={24} className="gs-ava-sm" />
                                     ) : (
-                                    <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
+                                    <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
                                       <g fill="currentColor">
                                         <circle cx="10" cy="6.4" r="3.4" />
                                         <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
@@ -10024,7 +10024,7 @@ export default function GoldSettlement() {
                               <span className="gs-rowmeta">
                                 {ava && (
                                   <span className="gs-rowi gs-rowi-ava gs-rowi-ro" aria-hidden="true">
-                                    <DcAva dc={{ id: ava.id, avatar: ava.a }} size={18} className="gs-ava-sm" />
+                                    <DcAva dc={{ id: ava.id, avatar: ava.a }} size={24} className="gs-ava-sm" />
                                   </span>
                                 )}
                                 {host && <span className="gs-lb-tag">방장</span>}
@@ -10430,7 +10430,7 @@ export default function GoldSettlement() {
               return (
                 <div key={"w:" + p.acct} className="gs-waitrow">
                   <div className="gs-waitline">
-                    {p.ava && p.ava.id ? <DcAva dc={{ id: p.ava.id, avatar: p.ava.a }} size={20} className="gs-ava-sm" /> : null}
+                    {p.ava && p.ava.id ? <DcAva dc={{ id: p.ava.id, avatar: p.ava.a }} size={24} className="gs-ava-sm" /> : null}
                     <b>{nick}</b>
                     <span className="gs-waitwhy">{waitWhy(p)}</span>
                     {tgt ? <span className="gs-waitto">{tgt.label}</span> : <span className="gs-waitto gs-waitto-none">빈 줄이 없어요</span>}
@@ -16231,12 +16231,13 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowmeta{margin-right:auto; flex:none; display:inline-flex; align-items:center; gap:4px; padding-left:4px}
 /* i 하나 — 사람이 앉은 줄. 호버(title)에 닉 · 아이디. 끊긴 사람은 흐려집니다.
    (2026-09-06) 파란 테두리 → 잉크 톤. 이름 옆의 작은 표시가 표의 팔레트 밖 색을 쓰면 그것만 튄다 */
-.gs-rowi{width:18px; height:18px; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.3); color:var(--ink-2); padding:0; font:inherit;
+.gs-rowi{width:24px; height:24px; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.3); color:var(--ink-2); padding:0; font:inherit;
   background:rgba(var(--ink-rgb),.05); display:inline-grid; place-items:center; cursor:pointer; line-height:0;
   transition:color .15s, border-color .15s}
 .gs-rowi:not([aria-haspopup]){cursor:default}
 /* 파티원 화면의 초상화 자리 — 단추가 아니라 span 이라 같은 상자 규칙을 직접 준다 */
 .gs-rowi-ro{display:inline-flex; align-items:center; justify-content:center; cursor:default}
+/* 초상화 크기 (2026-09-16 사용자: 글자 높이만큼) — 줄·대기 줄 24, 자수 카드 28, 계정 칩 24 */
 .gs-rowmeta:hover .gs-rowi,.gs-rowi:focus-visible{color:var(--gold); border-color:rgba(var(--gold-rgb),.7)}
 .gs-rowmeta-off .gs-rowi{opacity:.4; border-style:dashed}
 .gs-rowi:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
@@ -16828,9 +16829,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ava{display:inline-block; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.35); box-sizing:border-box;
   object-fit:cover; background:var(--paper-2); vertical-align:middle; flex:none}
 .gs-ava-txt{background:var(--paper-2)}
-.gs-rowi-ava .gs-ava{width:18px; height:18px; border-radius:25%}
+.gs-rowi-ava .gs-ava{width:24px; height:24px; border-radius:25%}
 /* 초상화가 든 자리 단추는 테두리·바탕·여백 없이 초상화 그 자체 (2026-09-16 사용자 지적: 네모 둘레에 여백이 생겼다) */
-.gs-rowi-ava:has(.gs-ava){width:18px; height:18px; border:0; background:transparent; padding:0; border-radius:25%; box-shadow:none; overflow:hidden}
+.gs-rowi-ava:has(.gs-ava){width:24px; height:24px; border:0; background:transparent; padding:0; border-radius:25%; box-shadow:none; overflow:hidden}
 .gs-rowi-ava:has(.gs-ava) .gs-ava{border:0}
 .gs-conf-who .gs-ava{align-self:center}
 .gs-waithead{display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--ink-2); letter-spacing:.04em}
@@ -18033,7 +18034,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
   font-family:'Gowun Batang',serif; font-weight:700; color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border:1px solid rgba(var(--ink-rgb),.2)}
 .gs-ava-host{border-color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 속을 채워 작아도 사람으로 읽힙니다. (폐기) 계정 색 글자 원 */
-.gs-rowi-ava{width:20px; height:20px; color:var(--ink-2); background:rgba(var(--ink-rgb),.05); border-color:rgba(var(--ink-rgb),.3)}
+.gs-rowi-ava{width:24px; height:24px; color:var(--ink-2); background:rgba(var(--ink-rgb),.05); border-color:rgba(var(--ink-rgb),.3)}
 .gs-rowmeta:hover .gs-rowi-ava,.gs-rowi-ava:focus-visible{color:var(--gold); border-color:rgba(var(--gold-rgb),.9)}
 .gs-rowi-ava.gs-rowi-host{border-color:var(--gold); color:var(--gold)}
 /* 허브 머리 — 팝오버의 나 한 줄 */
