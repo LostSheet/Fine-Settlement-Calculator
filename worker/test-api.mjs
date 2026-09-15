@@ -94,6 +94,9 @@ const open = (path) =>
       new Promise((done) => {
         if (box.closed) return done();
         ws.addEventListener("close", () => done(), { once: true });
+        /* 서버가 먼저 닫기 프레임을 보낸 소켓(CLOSING)에는 close() 가 아무것도 안 합니다. 로컬 런타임은
+           하이버네이션 소켓의 손잡이를 한참 안 놓아 close 이벤트가 안 올 수 있어 잠깐만 기다립니다 (2026-09-16 실측) */
+        if (ws.readyState >= 2) return void setTimeout(done, 1500);
         try {
           ws.close();
         } catch (e) {
@@ -144,21 +147,8 @@ const waitClosing = (box, ms = 3000) =>
     tick();
   });
 
-/* 손잡이가 실제로 놓일 때까지 — 로컬 wrangler 는 닫기 악수를 마치는 데 10초쯤 걸립니다
-   (워커가 늦게 닫는 게 아니라 로컬 런타임이 TCP 를 늦게 놓습니다) */
-const waitClosed = (box, ms = 4000) =>
-  new Promise((ok, no) => {
-    if (box.closed) return ok(true);
-    const t = setTimeout(() => no(new Error("소켓이 " + ms + "ms 안에 안 닫힘")), ms);
-    box.ws.addEventListener(
-      "close",
-      () => {
-        clearTimeout(t);
-        ok(true);
-      },
-      { once: true }
-    );
-  });
+/* (폐기 2026-09-16) waitClosed — 손잡이가 실제로 놓일 때까지 기다리던 것. 로컬 wrangler 가 하이버네이션 소켓의
+   TCP 를 닫기 프레임 뒤 25초가 지나도 안 놓아(실측) 검사가 될 수 없습니다. 서버 몫은 닫기 프레임까지라 waitClosing 만 봅니다 */
 
 /* ---------------- 시나리오 ---------------- */
 
@@ -189,7 +179,7 @@ const main = async () => {
   let room = null;
   let invite = null;
   let vB = null;
-  let vJ = null;
+  let vO = null;
   let vD = null;
   let scribe = null;
 
@@ -336,28 +326,16 @@ const main = async () => {
 
   /* ---- 참여 ---- */
   head("참여(join)");
-  await step("join: 초대 코드 없이 → 403", async () => {
+  /* (폐기 2026-09-15) 코드 없는 join 403·죽은 코드 403·유효한 링크 즉시 착석·정원 만석 req/409 —
+     §3.12.5 에서 입장은 코드 없는 링크 하나고, 새 사람은 늘 요청(req)으로 서서 방장의 [받기]로만 앉는다. 정원도 없다 */
+  await step("join: 코드 없는 링크 → 요청(req), 방장이 받기 전엔 자리 없음", async () => {
     const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: {} });
-    eq(r.status, 403, "status");
-    eq(r.data.error, "invite", "error");
-  });
-  await step("join: 재발급으로 죽은(만료된) 코드 → 403", async () => {
-    const old = invite;
-    const r2 = await api("POST", "/api/r/" + room + "/invite", { token: A.token });
-    invite = r2.data.invite.code;
-    expect(invite !== old, "새 코드가 같음");
-    const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: old } });
-    eq(r.status, 403, "status");
-    /* 새로 받은 코드도 불러야 시계가 돕니다 (2026-09-08) — 앱의 [디코 메시지 복사] 자리 */
-    await api("POST", "/api/r/" + room + "/invite-arm", { token: A.token });
-  });
-  /* 링크는 초대장입니다 (§3.3, 2026-09-05) — 유효한 코드면 바로 앉고, 방장 수락이 없습니다 */
-  await step("join: 유효한 링크면 바로 앉음(st ok)", async () => {
-    const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: invite } });
     eq(r.status, 200, "status");
-    eq(r.data.st, "ok", "st");
+    eq(r.data.st, "req", "st");
     eq(r.data.you.nick, B.nick, "you.nick");
     eq(r.data.you.rowId, null, "아직 줄 없음");
+    eq(r.data.full, false, "정원은 없다");
+    eq(r.data.kicked, false, "kicked");
   });
   await step("member approve: 수락하면 자리에 앉음(st ok)", async () => {
     const r = await api("POST", "/api/r/" + room + "/member", {
@@ -367,21 +345,12 @@ const main = async () => {
     eq(r.status, 200, "status");
     eq(r.data.member.st, "ok", "st");
   });
-  await step("join: 정원이 차 있으면 신청으로 내려앉고, 수락에서도 409", async () => {
+  await step("join: 두 번째 사람도 요청으로 서고 수락으로 앉는다 — 정원 없음", async () => {
     await reg(C);
-    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: {} });
     eq(j.status, 200, "신청 자체는 됨");
     eq(j.data.st, "req", "st");
-    eq(j.data.full, true, "full");
-    const r = await api("POST", "/api/r/" + room + "/member", {
-      token: A.token,
-      body: { acct: C.id, action: "approve" },
-    });
-    eq(r.status, 409, "status");
-    eq(r.data.error, "full", "error");
-  });
-  await step("join: 정원을 늘리면 수락됨", async () => {
-    await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: true, cap: 8 } });
+    eq(j.data.full, false, "full");
     const r = await api("POST", "/api/r/" + room + "/member", {
       token: A.token,
       body: { acct: C.id, action: "approve" },
@@ -390,7 +359,7 @@ const main = async () => {
     eq(r.data.member.st, "ok", "st");
   });
   await step("join: 이미 멤버면 현 상태를 그대로 돌려줌", async () => {
-    const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: { j: "ZZZZZZZZ" } });
+    const r = await api("POST", "/api/r/" + room + "/join", { token: B.token, body: {} });
     eq(r.status, 200, "status");
     eq(r.data.st, "ok", "st");
     eq(r.data.already, true, "already");
@@ -400,7 +369,7 @@ const main = async () => {
     const r = await fetch(BASE + "/api/r/" + room + "/join", {
       method: "POST",
       headers: { "content-type": "application/json", "x-acct": A.id, "x-nick": "abc" },
-      body: JSON.stringify({ j: invite }),
+      body: JSON.stringify({}),
     });
     eq(r.status, 401, "status");
   });
@@ -417,14 +386,16 @@ const main = async () => {
     const st = await vB.want((m) => m.kind === "state");
     eq(st.state, null, "아직 판 없음");
   });
-  await step("WS ?j=: 초대만 있으면 you 는 null (읽기 전용)", async () => {
-    vJ = await open("/api/r/" + room + "/live?j=" + invite);
-    const hello = await vJ.want((m) => m.kind === "hello");
-    eq(hello.you, null, "you");
-    eq((await vJ.want((m) => m.kind === "state")).state, null, "접속 직후 판");
+  /* (폐기 2026-09-15) WS ?j= 초대 코드 구독 — §3.12.5 에서 코드가 없다. 읽기 전용 구독자는 방송용 토큰(?o=)뿐이다 */
+  await step("WS ?o=: 방장 방송용 토큰 — hello 에 you(방장, st ok) + 판", async () => {
+    vO = await open("/api/r/" + room + "/live?o=" + A.obsToken);
+    const hello = await vO.want((m) => m.kind === "hello");
+    eq(hello.you && hello.you.st, "ok", "you.st");
+    eq(hello.you.nick, A.nick, "you.nick");
+    eq((await vO.want((m) => m.kind === "state")).state, null, "접속 직후 판");
   });
-  await step("WS: 코드도 세션도 없으면 denied(invite) 후 닫힘", async () => {
-    const bad = await open("/api/r/" + room + "/live?j=ZZZZZZZZ");
+  await step("WS: 세션도 방송용 토큰도 없으면 denied(invite) 후 닫힘", async () => {
+    const bad = await open("/api/r/" + room + "/live");
     const m = await bad.want((x) => x.kind === "denied");
     eq(m.why, "invite", "why");
     await bad.close();
@@ -457,8 +428,8 @@ const main = async () => {
     eq(st.scribeOn, false, "scribeOn 동봉");
     const you = await vB.want((m) => m.kind === "you");
     eq(you.you.rowId, "r1", "내 줄");
-    const jst = await vJ.want((m) => m.kind === "state");
-    expect(!!jst.state, "초대 뷰어도 판을 받아야 함");
+    const jst = await vO.want((m) => m.kind === "state");
+    expect(!!jst.state, "오버레이 뷰어도 판을 받아야 함");
   });
   await step("state PUT: 방장 아니면 403", async () => {
     eq(
@@ -524,30 +495,42 @@ const main = async () => {
     await bad.close();
   });
 
-  /* ---- 출발 후 합류 ---- */
-  head("출발 후 합류 — 신청과 수락");
-  await step("join: 출발 후(로비 닫힘) 링크 합류는 정원 없이 바로 앉음(st ok)", async () => {
+  /* ---- 판 도중 합류 ---- */
+  head("판 도중 합류 — 요청과 받기");
+  /* (폐기 2026-09-15) 출발 후(로비 닫힘) 링크 합류 즉시 착석 — §3.12.5 에서 새 사람의 입장은 늘 요청이고 [받기]로만 앉는다 */
+  await step("join: 판 도중에 와도 요청(req) — 서기에 join 통지, 초상화(ava) 동봉", async () => {
     await reg(D);
-    const r = await api("POST", "/api/r/" + room + "/join", { token: D.token, body: { j: invite } });
+    const r = await api("POST", "/api/r/" + room + "/join", {
+      token: D.token,
+      body: { ava: { id: "300", a: "h3" } },
+    });
     eq(r.status, 200, "status");
-    eq(r.data.st, "ok", "st");
-    eq(r.data.you.rowId, null, "줄은 본인이 고른다 (§3.2)");
+    eq(r.data.st, "req", "st");
+    eq(r.data.you.rowId, null, "받기 전엔 줄 없음");
     const m = await scribe.want((x) => x.kind === "join");
     eq(m.acct, D.id, "acct");
     eq(m.nick, D.nick, "nick");
-    eq(m.st, "ok", "st");
+    eq(m.st, "req", "st");
     eq(m.link, 1, "link");
+    eq(m.ava && m.ava.id, "300", "ava.id");
   });
-  await step("members: 합류자가 목록에 st ok 로 보임", async () => {
+  await step("members: 요청자가 목록에 st req 로 보이고 roundAt 이 동봉된다", async () => {
     const r = await api("GET", "/api/r/" + room + "/members", { token: A.token });
     eq(r.status, 200, "status");
+    expect("roundAt" in r.data, "roundAt 이 없음");
     const d = r.data.list.find((x) => x.acct === D.id);
-    eq(d.st, "ok", "st");
+    eq(d.st, "req", "st");
     eq(d.nick, D.nick, "nick");
+    eq(d.ava && d.ava.id, "300", "ava.id");
+  });
+  await step("WS: 요청 중(req)인 사람에게는 hello 만 가고 판(state)은 안 간다", async () => {
+    vD = await open("/api/r/" + room + "/live?s=" + D.token);
+    const hello = await vD.want((m) => m.kind === "hello");
+    eq(hello.you.st, "req", "you.st");
+    await new Promise((ok) => setTimeout(ok, 600));
+    expect(!vD.msgs.some((m) => m.kind === "state"), "요청자에게 판이 감: " + JSON.stringify(vD.msgs));
   });
   await step("member approve: 당사자 소켓에 you 통지", async () => {
-    vD = await open("/api/r/" + room + "/live?s=" + D.token);
-    await vD.want((m) => m.kind === "hello");
     const r = await api("POST", "/api/r/" + room + "/member", {
       token: A.token,
       body: { acct: D.id, action: "approve" },
@@ -629,7 +612,7 @@ const main = async () => {
   /* A8 — 통지만 하고 소켓을 열어 두면, 브라우저가 끊김을 알아챌 때까지 2~3초 동안
      못 보는 판이 화면에 남습니다 (§4.2) */
   await step("member remove: 통지 뒤 그 계정의 뷰어 소켓을 닫음", async () => {
-    const j = await api("POST", "/api/r/" + room + "/join", { token: D.token, body: { j: invite } });
+    const j = await api("POST", "/api/r/" + room + "/join", { token: D.token, body: {} });
     eq(j.status, 200, "다시 신청");
     /* 내보냈던 사람은 같은 링크로 와도 즉시 착석이 아니라 방장 승인입니다 (§3.3, 2026-09-05 표준화) */
     eq(j.data.st, "req", "내보냈던 사람은 승인 대기");
@@ -649,10 +632,9 @@ const main = async () => {
     eq(r.status, 200, "status");
     const m = await v.want((x) => x.kind === "you");
     eq(m.you, null, "you 통지가 먼저");
-    const ms = await waitClosing(v, 3000); // 서버가 닫기 프레임을 보낸 시각
+    const ms = await waitClosing(v, 3000); // 서버가 닫기 프레임을 보낸 시각 — 여기까지가 서버 몫입니다
     expect(ms < 3000, "닫기까지 " + ms + "ms");
-    await waitClosed(v, 20000); // 손잡이가 실제로 놓일 때까지
-    expect(v.closed, "소켓이 안 닫힘");
+    await v.close();
   });
 
   /* ---- 자수 ---- */
@@ -820,12 +802,12 @@ const main = async () => {
   });
   await step("presence: 서기 1→0 전환도 알림", async () => {
     await scribe.close();
-    const m = await vJ.want((x) => x.kind === "presence" && x.scribeOn === false);
+    const m = await vO.want((x) => x.kind === "presence" && x.scribeOn === false);
     eq(m.scribeOn, false, "scribeOn");
   });
 
   await vB.close();
-  await vJ.close();
+  await vO.close();
 
   /* ---- 판의 수명 (§3.4) ----
      사람 정리는 본인 [나가기]와 방장 내보내기(개별)뿐입니다. 해산(전원 킥) 동사는 없고,
@@ -935,8 +917,9 @@ const main = async () => {
     eq(r.status, 200, "status");
     const y = await vC.want((x) => x.kind === "you");
     eq(y.you, null, "you 통지가 먼저");
-    await waitClosed(vC, 20000);
-    expect(vC.closed, "소켓이 안 닫힘");
+    const ms = await waitClosing(vC, 3000); // 서버가 닫기 프레임을 보냈는지
+    expect(ms < 3000, "닫기까지 " + ms + "ms");
+    await vC.close();
     const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
     expect(!after.some((x) => x.acct === C.id), "명단에서 안 빠짐");
   });
@@ -948,17 +931,12 @@ const main = async () => {
     const after = (await api("GET", "/api/r/" + room + "/members", { token: A.token })).data.list;
     eq(after.length, 0, "명단이 안 비었음");
   });
-  await step("문은 판이 있을 때만 — 판이 없으면 코드가 맞아도 /join 은 409 no party", async () => {
-    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
-    eq(j.status, 409, "판 없는 방에 들어감");
-    eq(j.data.error, "no party", "error");
-  });
-  await step("새 판(lobby open) 뒤엔 들어가고, 지난 판의 내보냄 표시는 사라져 즉시 착석", async () => {
-    const lb = await api("POST", "/api/r/" + room + "/lobby", { token: A.token, body: { open: true, cap: 8 } });
-    eq(lb.status, 200, "lobby");
-    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: { j: invite } });
+  /* (폐기 2026-09-15) 판 없는 방 /join 409 no party · 새 판(lobby open) 뒤 즉시 착석 — §3.12.9 에서 party/lobby 문은 안 쓴다(owner 만 있으면 열린 방), 새 사람은 늘 요청이다 */
+  await step("내보냄 표시는 판의 것 — 해산 뒤에 오면 kicked 없이 요청으로 선다", async () => {
+    const j = await api("POST", "/api/r/" + room + "/join", { token: C.token, body: {} });
     eq(j.status, 200, "join");
-    eq(j.data.st, "ok", "내보냄 표시가 판을 넘어 남아 req 가 됨");
+    eq(j.data.st, "req", "st");
+    eq(j.data.kicked, false, "내보냄 표시가 판을 넘어 남음");
   });
   await step("GET invite: 지금 코드를 그대로 준다", async () => {
     const r = await api("GET", "/api/r/" + room + "/invite", { token: A.token });
@@ -1184,12 +1162,10 @@ const main = async () => {
     eq(r.data.error, "not anon", "error");
   });
 
-  /* ---- 함께한 사람·지목 초대·노크 (§3.3 라운드 B) ---- */
-  head("함께한 사람과 지목 초대");
-  /* 여기서는 익명 계정을 씁니다 — 관계를 여럿 만들어야 하는데 선해시가 계정마다
-     31만 번이라, 가입으로 서른 몇을 만들면 검사가 몇 분씩 걸립니다.
-     서버 쪽에서는 익명도 그냥 계정 하나라 관계·초대 경로가 똑같습니다 (§3-11) */
-  const MATES = 30;
+  /* (폐기 2026-09-15) 지목 초대·노크·관계(함께한 사람 30명·/api/invite·inv:1 수락·초대 리밋·60초 만료) — §3.12 에서 초대는
+     방마다 링크 하나, 코드·지목·노크가 없다. 아래 절들이 쓰는 익명 계정 도우미만 남깁니다 */
+  /* 여기서부터는 익명 계정을 씁니다 — 선해시가 계정마다 31만 번이라, 가입으로 여럿을 만들면 검사가 몇 분씩 걸립니다.
+     서버 쪽에서는 익명도 그냥 계정 하나라 참여·착석 경로가 똑같습니다 (§3-11) */
   const anon = async () => {
     const r = await api("POST", "/api/auth/anon", { body: {} });
     expect(r.status === 200, "anon → " + r.status + " " + JSON.stringify(r.data));
@@ -1197,263 +1173,90 @@ const main = async () => {
   };
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
   const roomOf = async (u) => (await api("POST", "/api/my/room", { token: u.token })).data.roomId;
-  /* 코드 = 판이 열려 있다 (2026-09-06 모델: 문은 판이 있을 때만) — 앱의 새 판 만들기처럼 로비를 먼저 엽니다 */
-  const codeOf = async (u, rm) => {
-    await api("POST", "/api/r/" + rm + "/lobby", { token: u.token, body: { open: true, cap: 8 } });
-    await api("POST", "/api/r/" + rm + "/invite", { token: u.token, body: {} });
-    /* 발급만으로는 시계가 안 돕니다 — 부르는 순간(복사)이 /invite-arm 입니다 (2026-09-08) */
-    return (await api("POST", "/api/r/" + rm + "/invite-arm", { token: u.token, body: {} })).data.invite.code;
+
+  /* ---- 디스코드 연동 (§3.12.1·§3.12.9) ----
+     .dev.vars 의 DISCORD_DEV_FAKE 로 도는 가짜 동의 창을 앱이 밟는 그대로 밟습니다 — begin → callback(code=fake) → finish.
+     세션은 주소에 안 실리고 2분짜리 1회용 코드(#dc=)로만 앱에 건너갑니다 */
+  head("디스코드 연동(개발용 가짜 동의)");
+  const FID = "9" + Date.now(); // 이번 실행만의 디스코드 아이디
+  const dcCode = async (token, fid) => {
+    const b = await api("POST", "/api/auth/discord/begin", { token, body: {} });
+    expect(b.status === 200 && b.data && b.data.url, "begin → " + b.status + " " + JSON.stringify(b.data));
+    const state = new URL(b.data.url).searchParams.get("state");
+    expect(state, "state 가 없음: " + b.data.url);
+    const q = new URLSearchParams({ state, code: "fake", fid, fname: "테스터", fava: "a1b2c3" });
+    const cb = await fetch(BASE + "/api/auth/discord/callback?" + q.toString(), { redirect: "manual" });
+    eq(cb.status, 302, "callback status");
+    const loc = cb.headers.get("location") || "";
+    const m = loc.match(/#dc=([A-Z0-9]+)/);
+    expect(m, "1회용 코드가 없음: " + loc);
+    return m[1];
   };
-
-  const P = await anon(); // 방장
-  const Q = await anon(); // 함께할 사람
-  const Z = await anon(); // 관계가 없는 사람
-  const pRoom = await roomOf(P);
-  const pCode = await codeOf(P, pRoom);
-  let qRoom = null;
-  let pScribe = null;
-  let expAt = 0; // 만료 검사용 — 초대를 쏜 시각
-  let pInv = 0; // 방장이 이번 분에 쏜 초대 수 (리밋 검사용)
-
-  await step("관계: 링크로 한 번 함께하면 양쪽 목록에 생긴다", async () => {
-    const j = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: { j: pCode } });
-    eq(j.status, 200, "join");
-    eq(j.data.st, "ok", "st"); // 링크 = 초대장 (§3.3, 2026-09-05) — 관계는 앉는 순간 생긴다
-    const a = await api("POST", "/api/r/" + pRoom + "/member", {
-      token: P.token,
-      body: { acct: Q.id, action: "approve" },
-    });
-    eq(a.status, 200, "approve");
-    const meP = await api("GET", "/api/auth/me", { token: P.token });
-    const meQ = await api("GET", "/api/auth/me", { token: Q.token });
-    expect((meP.data.mates || []).some((x) => x.id === Q.id), "방장 목록에 없음");
-    const mine = (meQ.data.mates || []).find((x) => x.id === P.id);
-    expect(mine, "파티원 목록에 없음: " + JSON.stringify(meQ.data.mates));
-    eq(mine.room, pRoom, "함께한 사람의 방");
-    eq(mine.nick, P.nick, "함께한 사람의 닉");
-  });
-
-  /* 만료는 60초를 실제로 기다려야 확인됩니다 — 여기서 하나 쏴 두고,
-     나머지 검사를 다 돌린 뒤 이 절의 끝에서 남은 시간만 기다립니다 */
-  await step("만료 준비: 함께한 사람에게 초대를 하나 쏴 둔다", async () => {
-    qRoom = await roomOf(Q);
-    const r = await api("POST", "/api/invite", { token: Q.token, body: { to: P.id } });
-    eq(r.status, 200, "status");
-    expAt = Date.now();
-  });
-
-  await step("나가도 관계는 남는다", async () => {
-    eq(
-      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
-      200,
-      "leave"
-    );
-    const meQ = await api("GET", "/api/auth/me", { token: Q.token });
-    expect((meQ.data.mates || []).some((x) => x.id === P.id), "관계가 사라짐");
-  });
-
-  await step("초대: 함께한 사람에게 자리를 지정해 쏜다", async () => {
-    const r = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id, seat: "r7" } });
-    pInv++;
-    eq(r.status, 200, "status");
-    eq(r.data.seat, "r7", "seat");
-  });
-  await step("초대: 함께한 사람이 아니면 403", async () => {
-    const r = await api("POST", "/api/invite", { token: P.token, body: { to: Z.id } });
-    eq(r.status, 403, "status");
-    eq(r.data.error, "not mate", "error");
-  });
-  await step("/me: 대기 중인 지목 초대가 실린다", async () => {
-    const me = await api("GET", "/api/auth/me", { token: Q.token });
-    const iv = (me.data.invites || []).find((x) => x.from === P.id);
-    expect(iv, "초대가 안 보임: " + JSON.stringify(me.data.invites));
-    eq(iv.room, pRoom, "room");
-    eq(iv.seat, "r7", "seat");
-    eq(iv.fromNick, P.nick, "fromNick");
-  });
-  await step("수락: 방장 수락 없이 바로 자리에 앉고 서기에 통지된다", async () => {
-    pScribe = await open("/api/r/" + pRoom + "/scribe?s=" + encodeURIComponent(P.token));
-    await pScribe.want((x) => x.kind === "members");
-    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: { inv: 1 } });
-    eq(r.status, 200, "status");
-    eq(r.data.st, "ok", "st");
-    eq(r.data.you.rowId, "r7", "rowId");
-    const j = await pScribe.want((x) => x.kind === "join");
-    eq(j.st, "ok", "서기 통지 st");
-    eq(j.seat, "r7", "서기 통지 seat");
-  });
-  await step("수락: 한 번 쓴 초대는 사라진다", async () => {
-    const me = await api("GET", "/api/auth/me", { token: Q.token });
-    expect(!(me.data.invites || []).some((x) => x.from === P.id), "초대가 남아 있음");
-  });
-
-  /* ---- 초대는 자리를 예약하지 않는다 — 문 앞에서 다시 센다 (§3.3) ----
-     부를 때는 자리가 있었는데 오는 사이 찼으면 튕기지 않고 신청으로 내려앉힌다.
-     방장이 콕 집어 부른 사람이라 조용히 돌려보내면 양쪽 다 왜 안 됐는지 모른다 */
-  await step("가득 참 준비: 자리를 비우고 정원 1로 로비를 연다", async () => {
-    eq(
-      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
-      200,
-      "leave"
-    );
-    /* 정원 1 = 방장 한 자리 — 남은 빈 칸이 없다 */
-    eq(
-      (await api("POST", "/api/r/" + pRoom + "/lobby", { token: P.token, body: { open: true, cap: 1 } }))
-        .status,
-      200,
-      "lobby"
-    );
-  });
-  await step("수락: 그 사이 자리가 차면 신청으로 내려앉는다 (튕기지 않음)", async () => {
-    const s = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id, seat: "r7" } });
-    pInv++;
-    eq(s.status, 200, "초대 발송");
-    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: { inv: 1 } });
-    eq(r.status, 200, "튕기지 않고 200");
-    eq(r.data.st, "req", "st");
-    eq(r.data.full, true, "full");
-    eq(r.data.you.rowId, null, "자리는 아직 없음");
-  });
-  await step("수락: 서기에 inv 표시가 붙은 신청으로 통지된다", async () => {
-    const j = await pScribe.want((x) => x.kind === "join");
-    eq(j.st, "req", "st");
-    eq(j.inv, 1, "inv 표시");
-  });
-  await step("members: 내려앉은 신청은 inv 로 갈라 보인다", async () => {
-    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
-    const q = list.find((x) => x.acct === Q.id);
-    eq(q.st, "req", "st");
-    eq(q.inv, true, "inv");
-  });
-  await step("내려앉은 사람에겐 자리가 아직 없다", async () => {
-    /* 관계는 여기서 볼 수 없다 — 지목 초대는 애초에 함께한 사람에게만 가므로
-       P·Q 는 이미 관계가 있다. 볼 수 있는 것은 자리를 안 잡았다는 것 하나다 */
-    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
-    eq(list.find((x) => x.acct === Q.id).rowId, null, "rowId");
-  });
-  await step("인원 수를 늘려 수락하면 그대로 들어오고 inv 표시가 걷힌다", async () => {
-    await api("POST", "/api/r/" + pRoom + "/lobby", { token: P.token, body: { open: true, cap: 4 } });
-    const r = await api("POST", "/api/r/" + pRoom + "/member", {
-      token: P.token,
-      body: { acct: Q.id, action: "approve", rowId: "r7" },
-    });
-    eq(r.status, 200, "status");
-    eq(r.data.member.st, "ok", "st");
-    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
-    eq(list.find((x) => x.acct === Q.id).inv, false, "inv 가 안 걷힘");
-  });
-  await step("가득 참 정리: 로비를 닫는다", async () => {
-    eq(
-      (await api("POST", "/api/r/" + pRoom + "/lobby", { token: P.token, body: { open: false } }))
-        .status,
-      200,
-      "lobby"
-    );
-  });
-
-  await step("노크 준비: 나갔다 다시 문 앞에 선다", async () => {
-    eq(
-      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
-      200,
-      "leave"
-    );
-  });
-  await step("노크: 관계 없는 계정의 코드 없는 join → 403", async () => {
-    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Z.token, body: {} });
-    eq(r.status, 403, "status");
-  });
-  await step("노크: 함께한 사람의 코드 없는 join → 신청(req)", async () => {
-    const r = await api("POST", "/api/r/" + pRoom + "/join", { token: Q.token, body: {} });
-    eq(r.status, 200, "status");
-    eq(r.data.st, "req", "st");
-    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
+  await step("begin: 개발용이면 가짜 동의 창 주소를 준다 (세션 없이도)", async () => {
+    const b = await api("POST", "/api/auth/discord/begin", { body: {} });
+    eq(b.status, 200, "status");
     expect(
-      list.some((m) => m.acct === Q.id && m.st === "req"),
-      "신청 칸에 없음: " + JSON.stringify(list)
+      b.data.url.indexOf("/api/auth/discord/fake?state=") > 0,
+      "가짜 동의 창 주소가 아님: " + b.data.url
     );
   });
-  await step("신청 취소: /leave 가 st:req 도 지운다", async () => {
-    eq(
-      (await api("POST", "/api/r/" + pRoom + "/leave", { token: Q.token, body: {} })).status,
-      200,
-      "leave"
+  await step("callback: 상태값이 틀리면 앱으로 dcerr=state", async () => {
+    const cb = await fetch(BASE + "/api/auth/discord/callback?state=nope&code=fake", { redirect: "manual" });
+    eq(cb.status, 302, "status");
+    expect(
+      (cb.headers.get("location") || "").indexOf("#dcerr=state") > 0,
+      "location: " + cb.headers.get("location")
     );
-    const list = (await api("GET", "/api/r/" + pRoom + "/members", { token: P.token })).data.list;
-    expect(!list.some((m) => m.acct === Q.id), "신청이 남아 있음");
+  });
+  await step("연동: 이 브라우저의 계정(U)이 디스코드 계정이 된다 — finish 가 세션·dc·nickSet 을 준다", async () => {
+    const code = await dcCode(U.token, FID);
+    const f = await api("POST", "/api/auth/discord/finish", { body: { code } });
+    eq(f.status, 200, "finish status");
+    eq(f.data.id, U.id, "같은 계정");
+    eq(f.data.obsToken, N.obsToken, "방송용 주소 유지");
+    eq(f.data.dc && f.data.dc.id, FID, "dc.id");
+    eq(f.data.nickSet, false, "별명은 아직 안 정함");
+    eq((await api("POST", "/api/auth/discord/finish", { body: { code } })).status, 403, "1회용 코드 재사용");
+    const me = await api("GET", "/api/auth/me", { token: f.data.token });
+    eq(me.status, 200, "me status");
+    eq(me.data.id, U.id, "me.id");
+    eq(me.data.dc && me.data.dc.id, FID, "me.dc.id");
+    eq(me.data.nickSet, false, "me.nickSet");
+  });
+  await step("nick: 별명을 정하면 nickSet 이 켜진다", async () => {
+    eq((await api("POST", "/api/auth/nick", { token: U.token, body: { nick: U.nick } })).status, 200, "nick");
+    eq((await api("GET", "/api/auth/me", { token: U.token })).data.nickSet, true, "nickSet");
+  });
+  await step("같은 디스코드로 다른 PC 에서 연동하면 그 계정이 이긴다 — 세션·방송용 주소가 옮겨간다", async () => {
+    const W = await anon(); // 다른 PC 의 익명 계정
+    const code = await dcCode(W.token, FID);
+    const f = await api("POST", "/api/auth/discord/finish", { body: { code } });
+    eq(f.status, 200, "finish status");
+    eq(f.data.id, U.id, "디스코드 계정으로 이관");
+    const me = await api("GET", "/api/auth/me", { token: W.token });
+    eq(me.status, 200, "옛 세션이 살아 있음");
+    eq(me.data.id, U.id, "옛 세션도 그 계정");
+    const res = await api("GET", "/api/o/" + W.obsToken + "/resolve");
+    eq(res.status, 200, "옛 방송용 주소도 살아 있음");
+    eq(res.data.roomId, N.room, "그 계정의 방을 가리킴");
   });
 
-  await step("초대 리밋: 분당 10회를 넘기면 429", async () => {
-    for (; pInv < 10; pInv++) {
-      const r = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id } });
-      eq(r.status, 200, "리밋 안쪽 " + (pInv + 1) + "회");
-    }
-    const over = await api("POST", "/api/invite", { token: P.token, body: { to: Q.id } });
-    eq(over.status, 429, "11회째");
-  });
-
-  await step("함께한 사람: 최근 순 30명, 넘치면 오래된 것부터 밀린다", async () => {
-    const H = await anon();
-    const hRoom = await roomOf(H);
-    const code = await codeOf(H, hRoom);
-    /* 정원은 대기실(로비 열림)의 것입니다 — 판을 시작해 로비를 닫으면 합류에 정원이 없습니다 (2026-09-06 모델) */
-    await api("PUT", "/api/r/" + hRoom + "/state", { token: H.token, body: { state: { board: [], roundId: "m1" } } });
-    await api("POST", "/api/r/" + hRoom + "/lobby", { token: H.token, body: { open: false } });
-    const guests = [];
-    for (let i = 0; i <= MATES; i++) {
-      const g = await anon();
-      guests.push(g);
-      eq(
-        (await api("POST", "/api/r/" + hRoom + "/join", { token: g.token, body: { j: code } })).status,
-        200,
-        "join " + i
-      );
-      eq(
-        (await api("POST", "/api/r/" + hRoom + "/member", {
-          token: H.token,
-          body: { acct: g.id, action: "approve" },
-        })).status,
-        200,
-        "approve " + i
-      );
-    }
-    const me = await api("GET", "/api/auth/me", { token: H.token });
-    const ids = (me.data.mates || []).map((x) => x.id);
-    eq(ids.length, MATES, "목록 길이");
-    expect(!ids.includes(guests[0].id), "제일 오래된 사람이 안 밀림");
-    eq(ids[0], guests[MATES].id, "제일 최근 사람이 맨 앞");
-  });
-
-  await step("만료: 60초 지난 초대는 /me 에서 사라진다", async () => {
-    const left = 61000 - (Date.now() - expAt);
-    if (left > 0) await sleep(left);
-    const me = await api("GET", "/api/auth/me", { token: P.token });
-    expect(!(me.data.invites || []).some((x) => x.from === Q.id), "만료된 초대가 남아 있음");
-  });
-  await step("만료: 지난 초대로 수락하면 403", async () => {
-    const r = await api("POST", "/api/r/" + qRoom + "/join", { token: P.token, body: { inv: 1 } });
-    eq(r.status, 403, "status");
-  });
-  if (pScribe) await pScribe.close();
-
-  /* ---- 파티 하나 규칙 (§3.3) ----
-     어느 방에서든 st:"ok" 가 되는 순간 서버가 그 계정의 다른 방 착석을 지우고 그쪽에
-     통지합니다. 클라이언트 보정에 기대지 않습니다 — 한 사람이 두 방에 동시에 앉는
-     구멍이 실제로 있었습니다. */
-  head("파티 하나 규칙 — 두 방에 동시에 못 앉는다");
+  /* ---- 여러 방에 앉기 (§3.12.5) ----
+     (폐기 2026-09-15) 파티 하나 규칙 — 둘째 방에 앉는 순간 서버가 첫 방 착석을 지우고 양쪽에 통지하던 것.
+     이제 한 사람이 여러 방장의 판에 자리를 가질 수 있습니다. 자리가 빠지는 길은 본인 [나가기]·방장 [내보내기]·
+     같은 줄에 [받기]로 자리를 내주는 것(§3.12.4)뿐이고, 방송과 자수는 앱이 붙어 있는 판 하나에만 갑니다 (§3.12.6) */
+  head("여러 방에 앉기 — 파티 하나 규칙 폐기");
   const H1 = await anon(); // 첫 방장
   const H2 = await anon(); // 둘째 방장
-  const G1 = await anon(); // 옮겨 다니는 사람
+  const G1 = await anon(); // 두 방에 앉는 사람
   const r1 = await roomOf(H1);
   const r2 = await roomOf(H2);
   let s1 = null;
 
   await step("준비: 첫 방에 앉는다", async () => {
-    const c1 = await codeOf(H1, r1);
-    eq(
-      (await api("POST", "/api/r/" + r1 + "/join", { token: G1.token, body: { j: c1 } })).status,
-      200,
-      "join"
-    );
+    const j = await api("POST", "/api/r/" + r1 + "/join", { token: G1.token, body: {} });
+    eq(j.status, 200, "join");
+    eq(j.data.st, "req", "st");
     eq(
       (await api("POST", "/api/r/" + r1 + "/member", {
         token: H1.token,
@@ -1463,20 +1266,17 @@ const main = async () => {
       "approve"
     );
     const list = (await api("GET", "/api/r/" + r1 + "/members", { token: H1.token })).data.list;
-    expect(list.some((m) => m.acct === G1.id && m.st === "ok"), "첫 방에 안 앉음");
+    expect(list.some((m) => m.acct === G1.id && m.st === "ok" && m.rowId === "r3"), "첫 방에 안 앉음");
   });
 
-  await step("둘째 방에 앉는 순간 첫 방 착석이 지워지고 양쪽에 통지된다", async () => {
+  await step("둘째 방에 앉아도 첫 방 자리는 그대로 — 첫 방엔 left 도 you=null 도 안 간다", async () => {
     s1 = await open("/api/r/" + r1 + "/scribe?s=" + encodeURIComponent(H1.token));
     await s1.want((x) => x.kind === "members");
     const gv = await open("/api/r/" + r1 + "/live?s=" + encodeURIComponent(G1.token));
     await gv.want((x) => x.kind === "hello");
-    const c2 = await codeOf(H2, r2);
-    eq(
-      (await api("POST", "/api/r/" + r2 + "/join", { token: G1.token, body: { j: c2 } })).status,
-      200,
-      "둘째 방 신청"
-    );
+    const j = await api("POST", "/api/r/" + r2 + "/join", { token: G1.token, body: {} });
+    eq(j.status, 200, "둘째 방 신청");
+    eq(j.data.st, "req", "st");
     eq(
       (await api("POST", "/api/r/" + r2 + "/member", {
         token: H2.token,
@@ -1485,48 +1285,26 @@ const main = async () => {
       200,
       "둘째 방 수락"
     );
-    const left = await s1.want((x) => x.kind === "left" && x.acct === G1.id);
-    eq(left.acct, G1.id, "첫 방장에게 left 통지");
-    const y = await gv.want((x) => x.kind === "you");
-    eq(y.you, null, "본인 화면에 you=null");
-    /* 통지 뒤에 소켓을 닫습니다 — 안 닫으면 못 보는 판이 화면에 몇 초 남습니다 (§4.2) */
-    await waitClosing(gv, 20000);
+    await sleep(600);
+    expect(!s1.msgs.some((x) => x.kind === "left" && x.acct === G1.id), "첫 방장에게 left 가 감");
+    expect(!gv.msgs.some((x) => x.kind === "you" && !x.you), "첫 방 소켓에 you=null 이 감");
+    expect(!gv.closed && gv.ws.readyState === 1, "첫 방 소켓이 닫힘");
     await gv.close();
     const l1 = (await api("GET", "/api/r/" + r1 + "/members", { token: H1.token })).data.list;
-    expect(!l1.some((m) => m.acct === G1.id), "첫 방에 아직 앉아 있음: " + JSON.stringify(l1));
+    expect(l1.some((m) => m.acct === G1.id && m.st === "ok" && m.rowId === "r3"), "첫 방 자리가 사라짐: " + JSON.stringify(l1));
     const l2 = (await api("GET", "/api/r/" + r2 + "/members", { token: H2.token })).data.list;
     expect(l2.some((m) => m.acct === G1.id && m.st === "ok"), "둘째 방에 안 앉음");
   });
 
-  await step("지목 초대 수락도 같은 규칙 — 앞 파티에서 자동으로 빠진다", async () => {
-    const s2 = await open("/api/r/" + r2 + "/scribe?s=" + encodeURIComponent(H2.token));
-    await s2.want((x) => x.kind === "members");
-    eq(
-      (await api("POST", "/api/invite", { token: H1.token, body: { to: G1.id, seat: "r5" } })).status,
-      200,
-      "지목 초대"
-    );
-    const j = await api("POST", "/api/r/" + r1 + "/join", { token: G1.token, body: { inv: 1 } });
-    eq(j.status, 200, "수락");
-    eq(j.data.st, "ok", "st");
-    const left = await s2.want((x) => x.kind === "left" && x.acct === G1.id);
-    eq(left.acct, G1.id, "둘째 방장에게 left 통지");
-    await s2.close();
-    const l2 = (await api("GET", "/api/r/" + r2 + "/members", { token: H2.token })).data.list;
-    expect(!l2.some((m) => m.acct === G1.id), "둘째 방에 아직 앉아 있음: " + JSON.stringify(l2));
-    const l1 = (await api("GET", "/api/r/" + r1 + "/members", { token: H1.token })).data.list;
-    expect(l1.some((m) => m.acct === G1.id && m.st === "ok"), "첫 방에 안 앉음");
-  });
-
   /* ---- /me 가 싣는 내 자리 (§3.4·§8) ----
-     정산이 끝난 뒤 [닫기]로 자기 앱에 돌아온 사람은 명단에 그대로 남습니다.
-     그 방의 판이 다시 살아나면 앱이 `판이 시작됐어요.` 카드를 세워야 하는데,
-     그 근거가 이 응답입니다. */
-  head("/me — 내가 앉아 있는 방의 판 상태");
-  await step("/me: 살아 있는 판이면 seat.live 가 참", async () => {
+     [닫기]로 자기 앱에 돌아온 사람은 명단에 그대로 남습니다. 그 방의 판이 다시 살아나면 앱이
+     `판이 시작됐어요.` 카드를 세워야 하는데, 그 근거가 이 응답입니다.
+     여러 방에 앉아 있으면 마지막으로 앉은 방(rm:a:)이 진본입니다 (§3.12.5) — G1 은 r2 가 마지막입니다 */
+  head("/me — 마지막으로 앉은 방의 판 상태");
+  await step("/me: 살아 있는 판이면 seat.live 가 참 (마지막으로 앉은 방 r2)", async () => {
     eq(
-      (await api("PUT", "/api/r/" + r1 + "/state", {
-        token: H1.token,
+      (await api("PUT", "/api/r/" + r2 + "/state", {
+        token: H2.token,
         body: { state: { board: [], roundId: "g1" } },
       })).status,
       200,
@@ -1538,12 +1316,13 @@ const main = async () => {
     eq(me.data.seat.st, "ok", "st");
     eq(me.data.seat.live, true, "live");
     eq(me.data.seat.round, true, "round");
-    eq(me.data.seat.ownerNick, H1.nick, "ownerNick");
+    eq(me.data.seat.ownerNick, H2.nick, "ownerNick");
+    eq(me.data.cur, r2, "앉아 있는 방이 cur 로 온다");
   });
   await step("/me: 시작 전(state.lobby)은 live 지만 round 는 아니다 (2026-09-06)", async () => {
     eq(
-      (await api("PUT", "/api/r/" + r1 + "/state", {
-        token: H1.token,
+      (await api("PUT", "/api/r/" + r2 + "/state", {
+        token: H2.token,
         body: { state: { board: [], roundId: "g1", lobby: { open: true } } },
       })).status,
       200,
@@ -1553,8 +1332,8 @@ const main = async () => {
     eq(me.data.seat.live, true, "live");
     eq(me.data.seat.round, false, "round");
     eq(
-      (await api("PUT", "/api/r/" + r1 + "/state", {
-        token: H1.token,
+      (await api("PUT", "/api/r/" + r2 + "/state", {
+        token: H2.token,
         body: { state: { board: [], roundId: "g1" } },
       })).status,
       200,
@@ -1563,8 +1342,8 @@ const main = async () => {
   });
   await step("/me: 정산이 끝난 판(end)은 live 가 아니다", async () => {
     eq(
-      (await api("PUT", "/api/r/" + r1 + "/state", {
-        token: H1.token,
+      (await api("PUT", "/api/r/" + r2 + "/state", {
+        token: H2.token,
         body: { state: { board: [], roundId: "g1", end: 1 } },
       })).status,
       200,
@@ -1575,25 +1354,25 @@ const main = async () => {
   });
   await step("/me: 얼어 있는 판도 live 가 아니다", async () => {
     eq(
-      (await api("PUT", "/api/r/" + r1 + "/state", {
-        token: H1.token,
+      (await api("PUT", "/api/r/" + r2 + "/state", {
+        token: H2.token,
         body: { state: { board: [], roundId: "g2" } },
       })).status,
       200,
       "state new"
     );
-    eq((await api("POST", "/api/r/" + r1 + "/pause", { token: H1.token })).status, 200, "pause");
+    eq((await api("POST", "/api/r/" + r2 + "/pause", { token: H2.token })).status, 200, "pause");
     const me = await api("GET", "/api/auth/me", { token: G1.token });
     eq(me.data.seat.live, false, "live");
   });
   await step("/me: 다시 시작하면 live 로 돌아온다 (카드를 세우는 순간)", async () => {
-    eq((await api("POST", "/api/r/" + r1 + "/resume", { token: H1.token })).status, 200, "resume");
+    eq((await api("POST", "/api/r/" + r2 + "/resume", { token: H2.token })).status, 200, "resume");
     const me = await api("GET", "/api/auth/me", { token: G1.token });
     eq(me.data.seat.live, true, "live");
   });
   await step("나가면 색인도 놓는다 — 그 뒤 /me 의 seat 는 자리 없음", async () => {
     eq(
-      (await api("POST", "/api/r/" + r1 + "/leave", { token: G1.token, body: {} })).status,
+      (await api("POST", "/api/r/" + r2 + "/leave", { token: G1.token, body: {} })).status,
       200,
       "leave"
     );
@@ -1603,31 +1382,7 @@ const main = async () => {
   });
   if (s1) await s1.close();
 
-  /* ---- 초대의 두 실패 (§8) ----
-     `이 초대는 쓸 수 없어요…` 와 `초대가 만료됐어요…` 는 사람이 할 일은 같아도 말이
-     다릅니다. 서버가 갈라서 알려 줘야 앱이 그 둘을 가려 씁니다. */
-  head("초대의 두 실패 — 무효와 만료");
-  await step("join: 재발급으로 죽은 코드는 무효(invite)", async () => {
-    const G2 = await anon();
-    const old = await codeOf(H1, r1);
-    await codeOf(H1, r1); // 재발급 — 옛 코드는 그 자리에서 무효
-    const r = await api("POST", "/api/r/" + r1 + "/join", { token: G2.token, body: { j: old } });
-    eq(r.status, 403, "status");
-    eq(r.data.error, "invite", "error");
-  });
-  await step("join: 아무 코드나 넣어도 무효(invite)", async () => {
-    const G3 = await anon();
-    const r = await api("POST", "/api/r/" + r1 + "/join", { token: G3.token, body: { j: "ZZZZZZZZ" } });
-    eq(r.status, 403, "status");
-    eq(r.data.error, "invite", "error");
-  });
-  /* 만료는 10분을 실제로 기다려야 나오는 답이라, 갈라지는 자리가 코드에 있는지로 봅니다 */
-  await step("코드: 만료는 expired 로 갈라져 나간다 (join · WS)", async () => {
-    const { readFileSync } = await import("node:fs");
-    const src = readFileSync(new URL("./src/index.js", import.meta.url), "utf8");
-    expect(src.indexOf('json({ error: "expired" }, 403)') > 0, "join 의 만료 분기가 없음");
-    expect(src.indexOf('why = "expired"') > 0, "WS 의 만료 분기가 없음");
-  });
+  /* (폐기 2026-09-15) 초대의 두 실패(무효 invite · 만료 expired) — §3.12.5 에서 코드가 없어 /join 은 거절할 초대가 없다 */
 
   /* ---- 옛 주소 (§4.4) ---- */
   head("옛 주소 안내(gone)");
@@ -1638,8 +1393,8 @@ const main = async () => {
     await bad.close();
     expect(bad.closed, "소켓이 안 닫힘");
   });
-  await step("WS: 초대가 없어서 막힌 방은 gone 이 아니라 invite", async () => {
-    const bad = await open("/api/r/" + room + "/live?j=ZZZZZZZZ");
+  await step("WS: 방장이 있는 방에 자격 없이 붙으면 gone 이 아니라 invite", async () => {
+    const bad = await open("/api/r/" + room + "/live");
     const m = await bad.want((x) => x.kind === "denied");
     eq(m.why, "invite", "why");
     await bad.close();
@@ -1737,15 +1492,18 @@ const main = async () => {
     let hScribe = null;
     let mView = null;
 
-    await step("준비: 방·초대·착석·판 한 장", async () => {
+    await step("준비: 방·요청·받기·판 한 장", async () => {
       hRoom = await roomOf(H);
-      const code = await codeOf(H, hRoom);
-      const j = await api("POST", "/api/r/" + hRoom + "/join", {
-        token: M.token,
-        body: { j: code },
-      });
+      /* 코드 없는 링크 (§3.12.5) — 요청으로 서고 방장의 [받기]로 앉습니다 */
+      const j = await api("POST", "/api/r/" + hRoom + "/join", { token: M.token, body: {} });
       eq(j.status, 200, "join status");
-      eq(j.data.st, "ok", "st");
+      eq(j.data.st, "req", "st");
+      const a = await api("POST", "/api/r/" + hRoom + "/member", {
+        token: H.token,
+        body: { acct: M.id, action: "approve" },
+      });
+      eq(a.status, 200, "approve status");
+      eq(a.data.member.st, "ok", "approve st");
       hScribe = await open("/api/r/" + hRoom + "/scribe?s=" + H.token);
       hScribe.autoSeen = true;
       await hScribe.want((x) => x.kind === "members");
@@ -1815,7 +1573,8 @@ const main = async () => {
       const n = await mView.want((x) => x.kind === "nope" && x.cid === "q9", 6000);
       eq(n.why, "scribe-off", "why");
       eq(n.status, 409, "status");
-      await waitClosed(hScribe, 6000);
+      await waitClosing(hScribe, 6000); // 서기 소켓에 닫기 프레임이 갔는지
+      await hScribe.close();
     });
 
     await step("왕복 감시: 서기가 닫히면 구독자에게 presence false", async () => {
