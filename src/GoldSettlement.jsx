@@ -8912,64 +8912,64 @@ export default function GoldSettlement() {
                   <span>{auth.nick}</span>
                 </button>
                 {acctOpen && (
-                  <div className="gs-invpop gs-invnote gs-acctpop" role="dialog" aria-label="계정">
-                    <div className="gs-acctpop-top">
-                      <DcAva dc={myAva(auth)} size={44} />
-                      <b className="gs-acctpop-nick">{auth.nick}</b>
-                      <button
-                        className="gs-btn gs-btn-sm gs-btn-ghost"
-                        onClick={() => {
-                          setAcctOpen(false);
-                          setNickAsk(true);
-                        }}
-                      >
-                        별명 바꾸기
-                      </button>
-                    </div>
-                    <div className="gs-acctpop-line">
-                      {auth.pic ? "지금은 올린 사진이에요." : "초상화는 디스코드 프로필이에요. 디스코드에서 바꾼 뒤 여기서 다시 가져와요."}
-                      <div className="gs-acctpop-acts">
-                        <button
-                          className="gs-btn gs-btn-sm gs-btn-ghost"
-                          disabled={picBusy}
-                          onClick={() => picPick.current && picPick.current.click()}
-                        >
-                          {picBusy ? "올리는 중…" : "사진 올리기"}
-                        </button>
-                        {auth.pic ? (
-                          <button className="gs-btn gs-btn-sm gs-btn-ghost" disabled={picBusy} onClick={() => savePic(null)}>
-                            디스코드 초상화로 되돌리기
-                          </button>
-                        ) : (
-                          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => startDiscord()}>
-                            디스코드에서 다시 가져오기
-                          </button>
-                        )}
-                        <input
-                          ref={picPick}
-                          type="file"
-                          accept="image/*"
-                          hidden
-                          onChange={(e) => {
-                            const f = e.target.files && e.target.files[0];
-                            e.target.value = "";
-                            if (f) uploadPic(f);
-                          }}
-                        />
+                  /* 계정 메뉴 (2026-09-16 사용자: 설명 없이) — 머리(초상화·별명·상태 한 줄) + 동사 셋 + 로그아웃. 문장은 없다 */
+                  <div className="gs-acctmenu" role="menu" aria-label="계정">
+                    <div className="gs-acctmenu-head">
+                      <DcAva dc={myAva(auth)} size={36} />
+                      <div className="gs-acctmenu-who">
+                        <b>{auth.nick}</b>
+                        <span>{auth.pic ? "올린 사진 · Discord 연동됨" : "Discord 연동됨"}</span>
                       </div>
                     </div>
-                    <div className="gs-invnote-foot">
-                      Discord 연동됨 · 별명은 표에, 디스코드 이름은 어디에도 안 나가요 ·{" "}
-                      <button
-                        className="gs-swaplink gs-swaplink-mute"
-                        onClick={() => {
-                          setAcctOpen(false);
-                          askLogout();
-                        }}
-                      >
-                        로그아웃
+                    <button
+                      className="gs-acctmenu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setAcctOpen(false);
+                        setNickAsk(true);
+                      }}
+                    >
+                      별명 바꾸기
+                    </button>
+                    <button
+                      className="gs-acctmenu-item"
+                      role="menuitem"
+                      disabled={picBusy}
+                      onClick={() => picPick.current && picPick.current.click()}
+                    >
+                      {picBusy ? "올리는 중…" : "사진 올리기"}
+                    </button>
+                    {auth.pic ? (
+                      <button className="gs-acctmenu-item" role="menuitem" disabled={picBusy} onClick={() => savePic(null)}>
+                        디스코드 초상화로 되돌리기
                       </button>
-                    </div>
+                    ) : (
+                      <button className="gs-acctmenu-item" role="menuitem" onClick={() => startDiscord()}>
+                        디스코드 초상화 다시 가져오기
+                      </button>
+                    )}
+                    <input
+                      ref={picPick}
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(e) => {
+                        const f = e.target.files && e.target.files[0];
+                        e.target.value = "";
+                        if (f) uploadPic(f);
+                      }}
+                    />
+                    <div className="gs-acctmenu-sep" aria-hidden="true" />
+                    <button
+                      className="gs-acctmenu-item gs-acctmenu-mute"
+                      role="menuitem"
+                      onClick={() => {
+                        setAcctOpen(false);
+                        askLogout();
+                      }}
+                    >
+                      이 브라우저에서 로그아웃
+                    </button>
                   </div>
                 )}
               </span>
@@ -9969,17 +9969,16 @@ export default function GoldSettlement() {
               return (
                 <div key={row.id} className={"gs-cardp" + (ph && !acct ? " gs-cardp-empty" : "")} data-row={row.id}>
                   <div className="gs-cardp-pic">
+                    {/* 초상화가 없으면 누구든 실루엣 (2026-09-16 사용자) — 글자 초상화는 안 쓴다 */}
                     {pic ? (
                       <DcAva dc={pic} size={128} />
-                    ) : acct ? (
+                    ) : (
                       <svg viewBox="0 0 20 20" aria-hidden="true">
                         <g fill="currentColor">
                           <circle cx="10" cy="6.4" r="3.4" />
                           <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
                         </g>
                       </svg>
-                    ) : ph ? null : (
-                      <span className="gs-cardp-letter">{nm.slice(0, 1)}</span>
                     )}
                     {isHostRow && linked && (
                       <span className="gs-crown gs-cardp-crown" aria-label="방장">
@@ -17041,17 +17040,20 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 남의 판 라벨의 실시간 점 (A1) — 붙어 있으면 초록, 끊기면 회색 */
 .gs-boardlabel-dot{width:7px; height:7px; border-radius:50%; background:rgba(var(--ink-rgb),.3); flex:none}
 .gs-boardlabel-dot.on{background:#6fbf73; box-shadow:0 0 0 2px rgba(111,191,115,.25)}
-/* 계정 쪽지 (H1) — 초대 쪽지와 같은 종이, 오른쪽 모서리 기준 */
+/* 계정 메뉴 (2026-09-16) — 쪽지가 아니라 메뉴. 머리 한 줄 + 항목, 설명 문장 없음 */
 .gs-acctwrap{position:relative; display:inline-flex}
 .gs-acctchip.on{border-color:rgba(var(--ink-rgb),.6); background:rgba(var(--ink-rgb),.06)}
-.gs-invpop.gs-acctpop{width:min(340px, 92vw); right:0; left:auto}
-.gs-acctpop-top{display:flex; align-items:center; gap:12px}
-.gs-acctpop-top .gs-btn{margin-left:auto}
-.gs-acctpop-nick{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; color:var(--ink)}
-.gs-acctpop-line{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3); font-size:12.5px; line-height:1.65; color:var(--ink-body)}
-.gs-acctpop-acts{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
-.gs-acctpop .gs-invnote-foot{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap}
-.gs-acctpop .gs-invnote-foot .gs-swaplink{font-size:11px}
+.gs-acctmenu{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:236px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.4);
+  border-radius:2px; box-shadow:0 10px 26px rgba(var(--shadow-rgb),.28); padding:6px 0; text-align:left}
+.gs-acctmenu-head{display:flex; align-items:center; gap:10px; padding:8px 12px 10px; border-bottom:1px solid rgba(var(--ink-rgb),.14); margin-bottom:4px}
+.gs-acctmenu-who{display:flex; flex-direction:column; min-width:0; gap:1px}
+.gs-acctmenu-who b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.gs-acctmenu-who span{font-size:11px; color:var(--ink-2); letter-spacing:.02em}
+.gs-acctmenu-item{display:block; width:100%; text-align:left; font:inherit; font-size:13px; color:var(--ink); background:transparent; border:0; padding:8px 12px; cursor:pointer}
+.gs-acctmenu-item:hover{background:rgba(var(--ink-rgb),.06)}
+.gs-acctmenu-item:disabled{opacity:.5; cursor:default}
+.gs-acctmenu-mute{color:var(--ink-2)}
+.gs-acctmenu-sep{height:1px; background:rgba(var(--ink-rgb),.14); margin:4px 0}
 .gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px}
 /* 남의 판 — 라벨과 시스템 줄 밑선만 파란색. 줄 전체를 칠하지 않는다 */
 .gs-sysbar-away{border-bottom:2px solid var(--blue)}
@@ -18233,7 +18235,7 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-cardp-empty{border-style:dashed; opacity:.7}
 .gs-cardp-add{align-items:center; justify-content:center; border-style:dashed; font:inherit; font-size:13px; color:var(--ink-2); cursor:pointer; min-height:120px; background:transparent}
 .gs-cardp-add:hover{color:var(--ink); border-color:rgba(var(--ink-rgb),.6)}
-.gs-cardp-pic{position:relative; aspect-ratio:4/3; background:rgba(var(--ink-rgb),.06); display:flex; align-items:center; justify-content:center;
+.gs-cardp-pic{position:relative; aspect-ratio:1/1; /* 정사각 — 4:3 은 초상화가 잘렸다(사용자) */ background:rgba(var(--ink-rgb),.06); display:flex; align-items:center; justify-content:center;
   color:rgba(var(--ink-rgb),.35); font-family:'Gowun Batang',serif; font-size:40px; border-bottom:1px solid rgba(var(--ink-rgb),.25); overflow:hidden}
 .gs-cards-wide .gs-cardp-pic{aspect-ratio:1/1}
 .gs-cardp-pic .gs-ava{width:100%; height:100%; border:0; border-radius:0; object-fit:cover}
