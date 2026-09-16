@@ -8931,8 +8931,10 @@ export default function GoldSettlement() {
                     >
                       별명 바꾸기
                     </button>
+                    <div className="gs-acctmenu-sep" aria-hidden="true" />
+                    <div className="gs-acctmenu-cap">초상화</div>
                     <button
-                      className="gs-acctmenu-item"
+                      className="gs-acctmenu-item gs-acctmenu-sub"
                       role="menuitem"
                       disabled={picBusy}
                       onClick={() => picPick.current && picPick.current.click()}
@@ -8940,11 +8942,11 @@ export default function GoldSettlement() {
                       {picBusy ? "올리는 중…" : "사진 올리기"}
                     </button>
                     {auth.pic ? (
-                      <button className="gs-acctmenu-item" role="menuitem" disabled={picBusy} onClick={() => savePic(null)}>
+                      <button className="gs-acctmenu-item gs-acctmenu-sub" role="menuitem" disabled={picBusy} onClick={() => savePic(null)}>
                         디스코드 초상화로 되돌리기
                       </button>
                     ) : (
-                      <button className="gs-acctmenu-item" role="menuitem" onClick={() => startDiscord()}>
+                      <button className="gs-acctmenu-item gs-acctmenu-sub" role="menuitem" onClick={() => startDiscord()}>
                         디스코드 초상화 다시 가져오기
                       </button>
                     )}
@@ -16464,6 +16466,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-drag-none{width:16px; display:inline-block}
 .gs-namecell .gs-in-name{justify-self:end; text-align:right}
 .gs-rowmeta{display:inline-flex; align-items:center; gap:6px; width:48px; flex:none}
+.gs-rowmeta > *{flex:none}
+.gs-rowmeta .gs-rowi{width:24px; min-width:24px; height:24px}
 .gs-rowi-none{width:24px; height:24px; display:inline-block; flex:none}
 .gs-crown{width:18px; height:18px; color:var(--gold); display:inline-flex; align-items:center; justify-content:center; flex:none}
 .gs-crown-none{visibility:hidden}
@@ -17054,6 +17058,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-acctmenu-item:disabled{opacity:.5; cursor:default}
 .gs-acctmenu-mute{color:var(--ink-2)}
 .gs-acctmenu-sep{height:1px; background:rgba(var(--ink-rgb),.14); margin:4px 0}
+/* 계층 — 머리(누구) › 별명(계정의 것) › 초상화 묶음(작은 머리글 + 들여쓴 항목) › 로그아웃(흐리게, 작게) */
+.gs-acctmenu-cap{padding:6px 12px 2px; font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; color:var(--ink-2)}
+.gs-acctmenu-sub{padding-left:22px; font-size:12.5px}
+.gs-acctmenu-mute{font-size:12px; padding-top:7px; padding-bottom:7px}
 .gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px}
 /* 남의 판 — 라벨과 시스템 줄 밑선만 파란색. 줄 전체를 칠하지 않는다 */
 .gs-sysbar-away{border-bottom:2px solid var(--blue)}
