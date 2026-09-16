@@ -179,7 +179,7 @@ export default {
     // 방 API
     const api = p.match(
       new RegExp(
-        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end|look|invite-arm|round)$`
+        `^/api/r/(${ID6})/(state|read|invite|lobby|members|member|seat|join|leave|confess|pause|resume|end|look|invite-arm|round|peek)$`
       )
     );
     if (api) {
@@ -1730,6 +1730,14 @@ export class Room {
        그래서 테마를 고쳐도 OBS 소스를 새로고침해야 반영됐습니다(사용자 지적).
        서버는 여기서도 해석하지 않고 그 계정의 뷰어 소켓에만 그대로 넘깁니다. 폴링은 안 씁니다 —
        켜 둔 채 방치된 소스 하나가 하루 수천 번 서버를 두드리게 되니까요. */
+    /* 들여다보기 (§3.12.5, 2026-09-16) — 링크로 온 사람이 아직 명단에 없어도 방장 별명은 알아야 옮기기 확인창에 이름을 적는다.
+       세션만 있으면 되고, 별명 하나만 준다 */
+    if (path === "/peek" && req.method === "GET") {
+      if (!me) return json({ error: "unauthorized" }, 401);
+      const owner = await S.get("owner");
+      if (!owner) return json({ error: "gone" }, 404);
+      return json({ ownerNick: (await S.get("ownerNick")) || null });
+    }
     if (path === "/look" && req.method === "POST") {
       if (!me) return json({ error: "unauthorized" }, 401);
       const look = b && b.look && typeof b.look === "object" && !Array.isArray(b.look) ? b.look : null;

@@ -1198,6 +1198,8 @@ const roomApi = {
     }),
   /* 들어가는 길 셋 (§3.3) — 링크 코드, 지목 초대(inv), 코드 없는 노크.
      본문이 갈래를 정합니다: 코드가 있으면 신청, inv 면 즉시 입장, 빈 본문이면 노크 */
+  /* 들여다보기 (§3.12.5) — 명단에 없어도 방장 별명 하나. 옮기기 확인창의 제목에 쓴다 */
+  peek: (token, roomId) => callApi("/api/r/" + roomId + "/peek", { token }),
   join: (token, roomId, j, ava) =>
     callApi(`/api/r/${roomId}/join`, { method: "POST", body: ava ? { j, ava } : { j }, token }),
   /* [비우기] = 판의 경계 (§3.12.3) — 그 뒤 앱을 연 사람만 이번 판에 온 사람 */
@@ -5958,22 +5960,40 @@ export default function GoldSettlement() {
   /* 끝난 판이 마지막 한 장이어도 초대장이 먼저입니다 — 초대받은 사람이 남의 끝난 정산표를 먼저 볼 이유가 없습니다 */
   /* 링크를 눌렀을 때 세 경우 (§3.12.5): 연동 전 → 디스코드 카드 · 다른 판에 있던 사람 → 옮기기 카드 · 그 밖에는 카드 없이 바로 */
   const seatedElse = !!(meCur && liveRoom && meCur !== liveRoom && meSeat && meSeat.st === "ok");
-  const moveNeeded = !!(auth && auth.dc && (seatedElse || madeRef.current));
+  /* 이 판에 이미 앉아 있으면 묻지 않는다 (2026-09-16) — 앉아 있는 사람은 앱을 열면 자기 자리 */
+  const seatedHere = !!(meCur && liveRoom && meCur === liveRoom && meSeat && meSeat.st === "ok");
+  const moveNeeded = !!(auth && auth.dc && !seatedHere && (seatedElse || madeRef.current));
   const gateKind = !auth || !auth.dc ? "discord" : moveNeeded ? "move" : null;
   useEffect(() => {
     if (!viewer || !liveRoom || liveRoom === DEMO_ROOM || joinOk || !auth || !auth.dc || !meReady || moveNeeded) return;
     setJoinOk(true);
   }, [viewer, liveRoom, joinOk, auth && auth.dc && auth.dc.id, meReady, moveNeeded]);
-  const inviteGate =
+  const gateBase =
     viewer &&
     (!!liveRoom || DEMO_CH4) &&
-    (gateKind === "discord" || (meReady && gateKind === "move") || DEMO_CH4) &&
     (!demoRoom || DEMO_CH4) &&
     !denied &&
     !genView &&
     !joinOk &&
     !kickedOut &&
     !(you && you.st);
+  /* 연동 전 초대장은 화면 한 장(현행 유지). 옮기기는 벌금판 위의 확인창 (2026-09-16 사용자) */
+  const inviteGate = gateBase && (gateKind === "discord" || DEMO_CH4);
+  const moveGate = gateBase && !DEMO_CH4 && meReady && gateKind === "move";
+  /* 방장 별명 — 명단에 들기 전엔 소켓이 없어서 peek 로 한 번 묻는다 */
+  useEffect(() => {
+    if (!viewer || !liveRoom || liveRoom === DEMO_ROOM || !auth || ownerNick) return;
+    let gone = false;
+    roomApi
+      .peek(auth.token, liveRoom)
+      .then((r) => {
+        if (!gone && r && r.ownerNick) setOwnerNick(r.ownerNick);
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [viewer, liveRoom, auth && auth.token, ownerNick]);
   /* (폐기 2026-09-15) "소켓이 connecting 이면 카드를 안 띄운다" — 뷰어 소켓은 자리(요청)가 생긴 뒤에 붙으므로(§3.12.5)
      그 조건이면 옮기기 카드가 영영 안 뜬다. 이미 멤버인지는 gateKind(meReady·meSeat)가 가른다 */
   const guestWaiting = !!you && you.st === "ok" && !!vlobby;
@@ -9092,11 +9112,7 @@ export default function GoldSettlement() {
               const running = !(vlobby && vlobby.cap);
               return (
                 <>
-                  {list.length > 0 && (
-                    <p className="gs-invite-sub">
-                      {seated}명 앉음{empty > 0 ? " · 빈 자리 " + empty : ""}
-                    </p>
-                  )}
+                  {/* (폐기 2026-09-16) "n명 앉음 · 빈 자리 m" — 명단에 들기 전엔 셀 근거가 없어 0명으로 나왔다 */}
                   {list.length > 0 && (
                     <p className="gs-invite-names">
                       {list.map((x, i) => (
@@ -11232,6 +11248,32 @@ export default function GoldSettlement() {
         />
       )}
 
+      {moveGate && (
+        <div className="gs-modal">
+          <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="옮기기">
+            <h3>{ownerNick ? ownerNick + "네 벌금팟으로 옮길까요?" : "이 벌금팟으로 옮길까요?"}</h3>
+            <p>
+              {seatedElse
+                ? "지금은 " + (seatedName || "다른 판") + "에 있어요. 옮기면 내 방송에 이 판이 나가요. 원래 판 자리는 그대로예요."
+                : "내 판을 두고 옮겨요. 옮기면 내 방송에 이 판이 나가고, 내 판의 파티원 자수는 돌아올 때까지 멈춰요. 내 판은 그대로 남아요."}
+            </p>
+            <div className="gs-dialog-btns">
+              <button
+                className="gs-btn"
+                onClick={() => {
+                  setJoinOk(true);
+                  window.scrollTo(0, 0);
+                }}
+              >
+                옮기기
+              </button>
+              <button className="gs-btn gs-btn-ghost" onClick={leaveToLobby}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {nickAsk && (
         <div className="gs-modal">
           <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="별명">
@@ -12164,9 +12206,9 @@ function OvColsPreview({ cols, isOff, sumOn, netOn, slide, onItem, onKey }) {
   const [hint, setHint] = useState(null);
   /* 예시 숫자 — 실제 횟수가 아니라 "이 열이 이렇게 보인다"를 위한 자리표시입니다 */
   const EX = [
-    { r: 1, n: "로마러", g: "13만", d: "−6.4만", neg: 1, c: [2, 1, 3], m: "▲1" },
-    { r: 2, n: "조이냥", g: "9만", d: "−2.4만", neg: 1, c: [1, 1, 1], m: "" },
-    { r: 3, n: "하늘", g: "3만", d: "+3.6만", neg: 0, c: [0, 0, 1], m: "▼1" },
+    { r: 1, n: "테스1", g: "13만", d: "−6.4만", neg: 1, c: [2, 1, 3], m: "▲1" },
+    { r: 2, n: "테스2", g: "9만", d: "−2.4만", neg: 1, c: [1, 1, 1], m: "" },
+    { r: 3, n: "테스3", g: "3만", d: "+3.6만", neg: 0, c: [0, 0, 1], m: "▼1" },
   ];
   const zones = [
     ...cols.map((c, i) => ({
@@ -12993,13 +13035,13 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
           aria-label={fxOn(relay) ? "클릭 알림 켠 모습" : "클릭 알림 끈 모습"}
         >
           <div className="gs-fxprev-bg">
-            <span>1 로마러</span>
-            <span>2 조이냥</span>
-            <span>3 하늘</span>
+            <span>1 테스1</span>
+            <span>2 테스2</span>
+            <span>3 테스3</span>
           </div>
           {fxOn(relay) && (
             <div className="gs-fxprev-card">
-              <b>로마러</b>
+              <b>테스1</b>
               <span>죽음 <em>+3만</em></span>
             </div>
           )}
@@ -14236,7 +14278,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
             두 창 모두 OBS 공유 설정 안에서, 자리는 달리). 문구 초안 */}
         <div className="gs-obs-line gs-obs-waysline">
           <span className="gs-obs-linetxt">
-            파티원도 각자 로그인해서 자기 주소를 받아 넣어요. 방장 주소 하나를 다 같이 넣던 방식과 뭐가 다른지는 여기에.
+            파티원도 각자 자기 주소를 받아 넣어요. 방장 주소 하나를 다 같이 넣던 방식과 뭐가 다른지는 여기에.
           </span>
           <button className="gs-auth-linkb gs-obs-lineact" onClick={() => setShowGain(true)}>
             방송 주소, 한 번만 넣으면 돼요
@@ -14345,7 +14387,7 @@ function GainGuide({ onClose }) {
           "가입 없이 = 주소 하나 나눠쓰기" 비교는 없는 방식을 설명하는 글이었습니다.
           이제 말할 것은 둘: ① 1인 1주소 모델이 뭐가 좋은가 ② 아이디는 뭘 더 주는가 */}
       <p className="gs-gain-lead">
-        게스트든 아이디든, 로그인하면 <b>내 방송용 주소</b>가 나와요 — 주소는{" "}
+        [발급]을 누르면 <b>내 방송용 주소</b>가 나와요 — 주소는{" "}
         <b>사람마다 하나씩</b>이에요. 내 주소에는 내가 있는 판이 떠서, OBS에{" "}
         <b>한 번만</b> 넣으면 파티가 바뀌어도 그대로예요. 벌금을 세고 정산하는 데는
         계정이 필요 없어요.
@@ -14363,13 +14405,13 @@ function GainGuide({ onClose }) {
           <p className="gs-gain-sub">방장 주소를 전원이 같이 넣어요 — 지금도 돼요</p>
           <div className="gs-gain-scene" aria-hidden="true">
             <svg viewBox="0 0 240 118">
-              <Bx x={80} y={8} w={80} h={24} t="실리안 주소" src />
+              <Bx x={80} y={8} w={80} h={24} t="테스1 주소" src />
               <Ln x1={120} y1={32} x2={40} y2={78} />
               <Ln x1={120} y1={32} x2={120} y2={78} />
               <Ln x1={120} y1={32} x2={200} y2={78} />
-              <Bx x={8} y={78} w={64} h={24} t="실리안 OBS" />
-              <Bx x={88} y={78} w={64} h={24} t="니나브 OBS" />
-              <Bx x={168} y={78} w={64} h={24} t="웨이 OBS" />
+              <Bx x={8} y={78} w={64} h={24} t="테스1 OBS" />
+              <Bx x={88} y={78} w={64} h={24} t="테스2 OBS" />
+              <Bx x={168} y={78} w={64} h={24} t="테스3 OBS" />
             </svg>
             <p className="gs-gain-scenecap">
               방장 주소 하나를 <b>모두의 OBS</b>에
@@ -14377,8 +14419,8 @@ function GainGuide({ onClose }) {
           </div>
           <div className="gs-gain-scene" aria-hidden="true">
             <svg viewBox="0 0 240 118">
-              <Bx x={20} y={8} w={80} h={24} t="실리안 주소" src />
-              <Bx x={140} y={8} w={80} h={24} t="니나브 주소" src />
+              <Bx x={20} y={8} w={80} h={24} t="테스1 주소" src />
+              <Bx x={140} y={8} w={80} h={24} t="테스2 주소" src />
               <Ln x1={60} y1={32} x2={40} y2={78} dim />
               <Ln x1={60} y1={32} x2={120} y2={78} dim />
               <Ln x1={60} y1={32} x2={200} y2={78} dim />
@@ -14388,9 +14430,9 @@ function GainGuide({ onClose }) {
               <Ln x1={180} y1={32} x2={40} y2={78} dash gold />
               <Ln x1={180} y1={32} x2={120} y2={78} dash gold />
               <Ln x1={180} y1={32} x2={200} y2={78} dash gold />
-              <Bx x={8} y={78} w={64} h={24} t="실리안 OBS" />
-              <Bx x={88} y={78} w={64} h={24} t="니나브 OBS" />
-              <Bx x={168} y={78} w={64} h={24} t="웨이 OBS" />
+              <Bx x={8} y={78} w={64} h={24} t="테스1 OBS" />
+              <Bx x={88} y={78} w={64} h={24} t="테스2 OBS" />
+              <Bx x={168} y={78} w={64} h={24} t="테스3 OBS" />
             </svg>
             <p className="gs-gain-scenecap">
               방장이 바뀌면 <b>전원이 주소를 갈아요</b>
@@ -14410,22 +14452,22 @@ function GainGuide({ onClose }) {
         </div>
         <div className="gs-gain-col">
           <h4>사람마다 자기 주소</h4>
-          <p className="gs-gain-sub">각자 로그인해서 자기 주소를 한 번씩 넣어요</p>
+          <p className="gs-gain-sub">각자 자기 주소를 한 번씩 넣어요</p>
           <div className="gs-gain-scene" aria-hidden="true">
             <svg viewBox="0 0 240 118">
               <rect x="8" y="6" width="224" height="22" rx="3" strokeDasharray="3 3" style={{ fill: "rgba(var(--ink-rgb),.05)", stroke: "rgba(var(--ink-rgb),.25)" }} />
               <text x="120" y="21" textAnchor="middle" style={{ fill: "var(--ink-body)" }}>
-                오늘은 실리안네 파티 → 내일은 니나브네 파티
+                오늘은 테스1네 파티 → 내일은 테스2네 파티
               </text>
-              <Bx x={8} y={44} w={64} h={22} t="실리안 주소" src />
-              <Bx x={88} y={44} w={64} h={22} t="니나브 주소" src />
-              <Bx x={168} y={44} w={64} h={22} t="웨이 주소" src />
+              <Bx x={8} y={44} w={64} h={22} t="테스1 주소" src />
+              <Bx x={88} y={44} w={64} h={22} t="테스2 주소" src />
+              <Bx x={168} y={44} w={64} h={22} t="테스3 주소" src />
               <Ln x1={40} y1={66} x2={40} y2={88} />
               <Ln x1={120} y1={66} x2={120} y2={88} />
               <Ln x1={200} y1={66} x2={200} y2={88} />
-              <Bx x={8} y={88} w={64} h={22} t="실리안 OBS" />
-              <Bx x={88} y={88} w={64} h={22} t="니나브 OBS" />
-              <Bx x={168} y={88} w={64} h={22} t="웨이 OBS" />
+              <Bx x={8} y={88} w={64} h={22} t="테스1 OBS" />
+              <Bx x={88} y={88} w={64} h={22} t="테스2 OBS" />
+              <Bx x={168} y={88} w={64} h={22} t="테스3 OBS" />
             </svg>
             <p className="gs-gain-scenecap">
               파티가 바뀌어도 <b>선은 그대로</b> — 내 주소에 내가 있는 판이 떠요
@@ -14459,11 +14501,11 @@ function GainGuide({ onClose }) {
         </div>
         <div className="gs-gain-col">
           <span className="gs-gain-tag">팟마다</span>
-          <p className="gs-gain-sub">초대 링크 누르고 [참여]</p>
+          <p className="gs-gain-sub">초대 링크 누르고 참여 요청</p>
           <div className="gs-gain-art" aria-hidden="true">
             <span className="gs-gain-src">초대 링크</span>
             <span className="gs-gain-arrow">→</span>
-            <span className="gs-gain-src">참여</span>
+            <span className="gs-gain-src">승인</span>
             <span className="gs-gain-arrow">→</span>
             <span className="gs-gain-src">아까 그 주소에 이번 파티가 뜸</span>
           </div>
@@ -14485,15 +14527,15 @@ function GainGuide({ onClose }) {
    문은 둘 — OBS 공유 설정의 게스트 계정 줄, 랜딩(게스트/가입 고르기). 제목·머리말은 초안. (폐기) 방송 주소 창의 끝 절 */
 function AcctGuide({ onClose }) {
   return (
-    <InfoModal title="아이디를 만들면 뭐가 달라져요?" onClose={onClose} wide>
+    <InfoModal title="Discord를 연동하면 뭐가 달라져요?" onClose={onClose} wide>
       <p className="gs-gain-lead">
-        게스트든 아이디든 <b>내 방송용 주소</b>는 하나씩 나오고, 자수·참여·정산도 똑같아요.
+        연동 전이든 뒤든 <b>내 방송용 주소</b>는 하나예요. 벌금 세기와 정산은 같고, 초대·자수·초상화는 연동 뒤에 돼요.
         {/* (폐기 2026-09-06 오후) 뒷문장 `다른 건 어디서 이어 쓸 수 있느냐예요.` — 사용자: 빼자 */}
       </p>
       <div className="gs-gain-cols">
         <div className="gs-gain-col">
-          <h4>게스트</h4>
-          <p className="gs-gain-sub">이 브라우저에 저장되는 계정</p>
+          <h4>연동 전</h4>
+          <p className="gs-gain-sub">이 브라우저에만 남는 주소</p>
           <div className="gs-gain-art" aria-hidden="true">
             <span className="gs-gain-src">이 브라우저</span>
             <span className="gs-gain-arrow">→</span>
