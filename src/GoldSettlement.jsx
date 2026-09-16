@@ -773,7 +773,7 @@ function decodeState(token) {
       cols,
       rows,
       feePercent: fee || "5",
-      mode: mode === "simple" ? "simple" : "items",
+      mode: mode === "simple" ? "simple" : mode === "cards" ? "cards" : "items",
       unit: UNITS.some((u) => u.v === unit) ? unit : "10000",
     };
   } catch (e) {
@@ -1423,7 +1423,7 @@ function readShared() {
 // 주소에 적힌 모드. 공유 토큰이 없을 때 이걸로 시작합니다.
 function readHashMode() {
   const m = hashParams().get(MODE_KEY);
-  return m === "simple" || m === "items" ? m : null;
+  return m === "simple" || m === "items" || m === "cards" ? m : null;
 }
 
 /* 두 모드가 각자의 주소를 갖도록 해시에 모드를 적어 둡니다.
@@ -1539,7 +1539,7 @@ function loadSaved() {
       ),
       feePercent: typeof s.feePercent === "string" ? s.feePercent : "5",
       splitMode: s.splitMode === "solo" ? "solo" : "pot",
-      mode: s.mode === "simple" ? "simple" : "items",
+      mode: s.mode === "simple" ? "simple" : s.mode === "cards" ? "cards" : "items",
       unit: UNITS.some((u) => u.v === s.unit) ? s.unit : "10000",
       memoFont: clampMemoFont(s.memoFont),
       view: s.view === "scroll" ? "scroll" : "tabs",
@@ -2338,6 +2338,8 @@ export default function GoldSettlement() {
   const seq = useRef(boot.current.seq);
 
   const simple = mode === "simple";
+  /* 카드 모드 (K1, 2026-09-16) — 사람 하나가 카드 하나. 표와 같은 데이터·같은 손짓. 방장 화면만 */
+  const cardsMode = mode === "cards";
   /* 보기 방식은 탭으로 고정했습니다 — 스크롤 보기를 쓰던 브라우저도 조용히 탭으로 */
   const tabbed = true;
   /* 어느 탭을 그릴지는 파티원 자격을 알아야 정해집니다 — showSheet 들은 아래(guestPlaying 뒤)에서 셉니다 */
@@ -2644,6 +2646,21 @@ export default function GoldSettlement() {
   /* 헤더의 초대 코드 팝오버 (2026-09-06 사용자: 공유 창 안은 숨겨져 있다) */
   const [invOpen, setInvOpen] = useState(false);
   /* 계정 쪽지 (H1, 2026-09-16) — 초상화+별명을 누르면. 초상화의 출처와 별명 바꾸기, 올리기·되돌리기·다시 가져오기 */
+  /* 넓게 보기 (W, 2026-09-16) — 벌금판이 창 전체를 쓴다. 전체 화면(F11)이 아니라 창 안. Esc 나 [원래대로]로 돌아온다 */
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    if (!wide) return;
+    const h = (e) => {
+      if (e.key === "Escape") setWide(false);
+    };
+    window.addEventListener("keydown", h);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", h);
+      document.body.style.overflow = prev;
+    };
+  }, [wide]);
   const [acctOpen, setAcctOpen] = useState(false);
   const acctWrapRef = useRef(null);
   const picPick = useRef(null);
@@ -6280,6 +6297,39 @@ export default function GoldSettlement() {
     const waitN = (members || []).filter((m) => m.st === "req").length;
     return { away: false, text: "내 판 · " + seats.length + "자리" + (waitN ? " · 승인 대기 " + waitN + "명" : "") };
   })();
+  /* 모드 세그 — 메모장 · 카운터 · 카드. 마스트와 넓게 보기 머리줄이 같이 쓴다 */
+  const modeSeg = () => (
+    <div className="gs-seg" role="group" aria-label="모드">
+      <button className={simple ? "on" : ""} onClick={() => changeMode("simple")}>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+            <path d="M3 4.2h7M3 8h7M3 11.8h4.5" />
+          </g>
+        </svg>
+        메모장
+      </button>
+      <button className={mode === "items" ? "on" : ""} onClick={() => changeMode("items")}>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+            <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="1.6" />
+            <path d="M8 5.2v5.6M5.2 8h5.6" />
+          </g>
+        </svg>
+        카운터
+      </button>
+      <button className={cardsMode ? "on" : ""} onClick={() => changeMode("cards")}>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+            <rect x="2.2" y="2.2" width="4.8" height="4.8" rx="1" />
+            <rect x="9" y="2.2" width="4.8" height="4.8" rx="1" />
+            <rect x="2.2" y="9" width="4.8" height="4.8" rx="1" />
+            <rect x="9" y="9" width="4.8" height="4.8" rx="1" />
+          </g>
+        </svg>
+        카드
+      </button>
+    </div>
+  );
   /* 입력 단위 분절 컨트롤 (§3.12.7) — 직각 2px, 선택 칸은 잉크로 채운다. 예시는 알약 없이 모노 글자 */
   const unitSeg = (solo) => (
     <span className={"gs-unitseg" + (solo ? " gs-unitseg-solo" : "")} role="radiogroup" aria-label="입력 단위">
@@ -9601,7 +9651,24 @@ export default function GoldSettlement() {
         </section>
       )}
       {showSheet && !showLobby && !inviteGate && !blockedCard && (
-      <section className="gs-mail gs-sheetsec">
+      <section className={"gs-mail gs-sheetsec" + (wide ? " gs-wide" : "")}>
+        {wide && (
+          <div className="gs-widebar">
+            <h2 className="gs-widebar-h">{roundName || ""}</h2>
+            {boardLabel && (
+              <span className={"gs-boardlabel" + (boardLabel.away ? " gs-boardlabel-away" : "")} role="status">
+                <i className="gs-boardlabel-sq" aria-hidden="true" />
+                <span className="gs-boardlabel-t">{boardLabel.text}</span>
+              </span>
+            )}
+            <div className="gs-widebar-r">
+              {!readOnly && modeSeg()}
+              <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(false)}>
+                ⤡ 원래대로
+              </button>
+            </div>
+          </div>
+        )}
         <div className="gs-cardhead">
           <div className="gs-headleft">
             <h2 className="gs-h2">벌금표</h2>
@@ -9692,25 +9759,7 @@ export default function GoldSettlement() {
             <div className="gs-modebar">
               <span className="gs-caplab">모드</span>
               {/* 설명은 옆의 ? 하나가 맡습니다 — 버튼마다 툴팁이 뜨면 누를 때마다 성가십니다 */}
-              <div className="gs-seg" role="group" aria-label="모드">
-                <button className={simple ? "on" : ""} onClick={() => changeMode("simple")}>
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                      <path d="M3 4.2h7M3 8h7M3 11.8h4.5" />
-                    </g>
-                  </svg>
-                  메모장
-                </button>
-                <button className={simple ? "" : "on"} onClick={() => changeMode("items")}>
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                      <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="1.6" />
-                      <path d="M8 5.2v5.6M5.2 8h5.6" />
-                    </g>
-                  </svg>
-                  카운터
-                </button>
-              </div>
+              {modeSeg()}
               {/* 올리면 설명, 더 보고 싶을 때만 선택 화면으로 — 눌러서 화면이 튀지 않게 */}
               <span className="gs-tip gs-tip-act">
                 <span className="gs-guide" role="button" tabIndex={0} aria-label="모드 설명">
@@ -9836,11 +9885,18 @@ export default function GoldSettlement() {
               <span className="gs-tablebar-sep" aria-hidden="true" />
               {unitSeg(false)}
             </span>
-            {/* 설명은 오른쪽 끝 한 줄 — 조작과 같은 줄, 같은 세로 가운데 */}
-            <p className="gs-cellnote">
-              칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-              우클릭하면 1회 빠져요.
-            </p>
+            {/* 오른쪽 끝 — 안내 한 줄 + [넓게] (W). 같은 줄, 같은 세로 가운데 */}
+            <span className="gs-tablebar-end">
+              <p className="gs-cellnote">
+                칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
+                우클릭하면 1회 빠져요.
+              </p>
+              {!readOnly && !wide && (
+                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(true)} title="벌금판을 창 전체로">
+                  ⤢ 넓게
+                </button>
+              )}
+            </span>
           </div>
         )}
 
@@ -9894,6 +9950,110 @@ export default function GoldSettlement() {
             }}
           />
         )}
+        {cardsMode && !readOnly ? (
+          /* 카드 모드 (K1) — 초상화(카드 폭) · 이름 + 합계 · 항목 단추(표의 칸과 같은 물건) · 기타. 넓게 보기에서는 초상화가 정사각·열이 늘어난다 */
+          <div className={"gs-cards" + (wide ? " gs-cards-wide" : "")}>
+            {rows.map((row, i) => {
+              const st = seats.find((k) => k.id === row.id);
+              const acct = st && st.acct;
+              const mem = acct ? members.find((m) => m.acct === acct) : null;
+              const isHostRow = !!(acct && auth && acct === auth.id);
+              const linked = !!(auth && auth.dc);
+              const mine = isHostRow ? myAva(auth) : null;
+              const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : mine && (mine.id || mine.p) ? mine : null;
+              const nm = seatName(row, i);
+              const ph = !(row.name || "").trim() || isFillName(row.name);
+              const ex = extrasOf(row);
+              const exSum = extraSum(row);
+              const open = openRow === row.id;
+              return (
+                <div key={row.id} className={"gs-cardp" + (ph && !acct ? " gs-cardp-empty" : "")} data-row={row.id}>
+                  <div className="gs-cardp-pic">
+                    {pic ? (
+                      <DcAva dc={pic} size={128} />
+                    ) : acct ? (
+                      <svg viewBox="0 0 20 20" aria-hidden="true">
+                        <g fill="currentColor">
+                          <circle cx="10" cy="6.4" r="3.4" />
+                          <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+                        </g>
+                      </svg>
+                    ) : ph ? null : (
+                      <span className="gs-cardp-letter">{nm.slice(0, 1)}</span>
+                    )}
+                    {isHostRow && linked && (
+                      <span className="gs-crown gs-cardp-crown" aria-label="방장">
+                        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                          <path d="M3 15h14l1-8-4 3-4-5-4 5-4-3z" fill="currentColor" />
+                        </svg>
+                      </span>
+                    )}
+                    <span className="gs-cardp-rank" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
+                  </div>
+                  <div className="gs-cardp-head">
+                    <b className={"gs-cardp-name" + (ph ? " ph" : "") + (isHostRow && linked ? " gs-name-me" : "")}>{nm}</b>
+                    <span className="gs-cardp-sum">
+                      {man(Math.max(0, itemGold(row)))}
+                      <em>G</em>
+                    </span>
+                  </div>
+                  <div className={"gs-cardp-items" + (activeCols.length >= 3 ? " three" : "")}>
+                    {activeCols.map((c) => {
+                      const n = num(row.counts[c.id] ?? "");
+                      return (
+                        <button
+                          key={c.id}
+                          className={"gs-hit gs-cardp-hit" + (n > 0 ? " gs-hit-on" : "")}
+                          onClick={() => pressCell(row, c, 1)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            pressCell(row, c, -1);
+                          }}
+                          aria-label={`${nm}의 ${c.name || "항목"} 1회 추가 (우클릭: 1회 빼기)`}
+                        >
+                          <span className="gs-cardp-hitname">
+                            {(c.name || "").trim() || "항목"}
+                            {isRoulette(c) ? "" : " · " + man(Math.round(goldOf(c.price)))}
+                          </span>
+                          {n > 0 ? (
+                            <span className="gs-hit-num" key={n}>
+                              {commafy(n)}
+                              <em>회</em>
+                            </span>
+                          ) : (
+                            <span className="gs-hit-ghost" aria-hidden="true">
+                              {isRoulette(c) ? "◎" : "＋"}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button className="gs-cardp-etc" onClick={() => setOpenRow(open ? null : row.id)} aria-expanded={open}>
+                    기타 {ex.length ? man(exSum) + " · " + ex.length + "건" : "금액 직접"}
+                  </button>
+                  {open && (
+                    <div className="gs-cardp-disc">
+                      <Discretion
+                        who={nm}
+                        extras={ex}
+                        onAdd={(amount, reason) => addExtra(row.id, amount, reason)}
+                        onPatch={(exId, key, v) => patchExtra(row.id, exId, key, v)}
+                        onFix={(exId) => clampExtra(row.id, exId)}
+                        onGrab={(exId) => grabExtra(row.id, exId)}
+                        onRemove={(x) => askDelExtra(row, x)}
+                        onClose={() => setOpenRow(null)}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <button className="gs-cardp gs-cardp-add" onClick={addRow}>
+              + 인원 추가
+            </button>
+          </div>
+        ) : (
         <div className="gs-scroll">
           <table
             ref={gridRef}
@@ -10528,6 +10688,7 @@ export default function GoldSettlement() {
             </tfoot>
           </table>
         </div>
+        )}
         {/* 줄이 없는 사람은 표 아래 (2026-09-06) — [받기]가 규칙대로 앉힙니다(시작 전은 신청만 서고, 진행 중은 처음 온 사람도 섭니다).
             표 밖에 둡니다 — 열이 많아 표가 가로로 스크롤되면 표 안의 줄은 [자리 정하기]가 오른쪽으로 밀려 잘렸다 (같은 날 사용자) */}
         {!readOnly && waitBelow.length > 0 && (
@@ -16308,7 +16469,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-crown{width:18px; height:18px; color:var(--gold); display:inline-flex; align-items:center; justify-content:center; flex:none}
 .gs-crown-none{visibility:hidden}
 /* 나 — 이름 글자 밑 절반의 금색 형광 */
-.gs-in-name.gs-name-me{background:linear-gradient(transparent 58%, rgba(var(--gold-rgb),.38) 58%, rgba(var(--gold-rgb),.38) 92%, transparent 92%)}
+.gs-name-me{background:linear-gradient(transparent 58%, rgba(var(--gold-rgb),.38) 58%, rgba(var(--gold-rgb),.38) 92%, transparent 92%)}
 /* 파티원 화면의 초상화 자리 — 단추가 아니라 span 이라 같은 상자 규칙을 직접 준다 */
 .gs-rowi-ro{display:inline-flex; align-items:center; justify-content:center; cursor:default}
 /* 초상화 크기 (2026-09-16 사용자: 글자 높이만큼) — 줄·대기 줄 24, 자수 카드 28, 계정 칩 24 */
@@ -18055,6 +18216,42 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-tablebar .gs-btn{height:34px; padding-top:0; padding-bottom:0; display:inline-flex; align-items:center; box-sizing:border-box}
 .gs-tablebar .gs-wipebtn{margin-right:0}
 .gs-tablebar-sep{width:1px; height:22px; background:rgba(var(--ink-rgb),.22); margin:0 6px; flex:none}
+.gs-tablebar-end{display:flex; align-items:center; gap:12px}
+.gs-widebtn{white-space:nowrap}
+/* 넓게 보기 (W, 2026-09-16) — 벌금판 섹션이 창 전체를 덮는다. 머리줄: 판 이름 · 판 라벨 · 모드 · [원래대로] */
+.gs-sheetsec.gs-wide{position:fixed !important; inset:0; z-index:90; margin:0 !important; padding:0 22px 24px; background:var(--paper); overflow:auto;
+  display:flex; flex-direction:column; min-width:0; width:auto !important; max-width:none !important}
+.gs-wide .gs-cardhead{display:none}
+.gs-wide > .gs-card{max-width:none !important; width:auto !important; margin:0 !important; flex:1 0 auto}
+.gs-widebar{display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid rgba(var(--ink-rgb),.2); margin-bottom:14px; flex:none}
+.gs-widebar-h{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; margin:0; color:var(--ink)}
+.gs-widebar-r{margin-left:auto; display:flex; align-items:center; gap:10px}
+/* 카드 모드 (K1) */
+.gs-cards{display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px}
+.gs-cards-wide{grid-template-columns:repeat(auto-fill, minmax(260px, 1fr))} /* 1180 → 4열, 1600 → 5열 */
+.gs-cardp{background:var(--paper-2); border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; display:flex; flex-direction:column; overflow:hidden; min-width:0}
+.gs-cardp-empty{border-style:dashed; opacity:.7}
+.gs-cardp-add{align-items:center; justify-content:center; border-style:dashed; font:inherit; font-size:13px; color:var(--ink-2); cursor:pointer; min-height:120px; background:transparent}
+.gs-cardp-add:hover{color:var(--ink); border-color:rgba(var(--ink-rgb),.6)}
+.gs-cardp-pic{position:relative; aspect-ratio:4/3; background:rgba(var(--ink-rgb),.06); display:flex; align-items:center; justify-content:center;
+  color:rgba(var(--ink-rgb),.35); font-family:'Gowun Batang',serif; font-size:40px; border-bottom:1px solid rgba(var(--ink-rgb),.25); overflow:hidden}
+.gs-cards-wide .gs-cardp-pic{aspect-ratio:1/1}
+.gs-cardp-pic .gs-ava{width:100%; height:100%; border:0; border-radius:0; object-fit:cover}
+.gs-cardp-pic > svg{width:38%; height:38%}
+.gs-cardp-crown{position:absolute; left:8px; top:8px; width:22px; height:22px; background:var(--paper); border:1px solid rgba(var(--gold-rgb),.7); border-radius:2px}
+.gs-cardp-rank{position:absolute; right:8px; bottom:6px; font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; color:rgba(var(--ink-rgb),.55)}
+.gs-cardp-head{display:flex; align-items:baseline; gap:8px; padding:10px 12px 6px; min-width:0}
+.gs-cardp-name{font-family:'Gowun Batang',serif; font-size:19px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+.gs-cardp-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
+.gs-cardp-sum{margin-left:auto; font-family:var(--mono); font-size:16px; color:var(--gold); white-space:nowrap}
+.gs-cardp-sum em{font-style:normal; font-size:11px; color:var(--ink-2); margin-left:2px}
+.gs-cardp-items{display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px 12px 6px}
+.gs-cardp-items.three{grid-template-columns:1fr 1fr 1fr}
+.gs-cardp-hit{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:54px; padding:6px 4px; width:100%; min-width:0}
+.gs-cardp-hitname{font-size:11.5px; color:var(--ink-2); letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
+.gs-cardp-etc{margin:2px 12px 10px; font:inherit; font-size:11.5px; color:var(--ink-2); background:transparent; border:1px dashed rgba(var(--ink-rgb),.28); border-radius:2px; padding:5px 8px; text-align:left; cursor:pointer}
+.gs-cardp-etc:hover{color:var(--ink); border-color:rgba(var(--ink-rgb),.5)}
+.gs-cardp-disc{padding:0 12px 10px}
 .gs-tablebar .gs-segbox{height:34px; box-sizing:border-box}
 .gs-tablebar .gs-segbtn{height:100%; padding:0 11px; display:inline-flex; align-items:center; font-size:12.5px}
 .gs-tablebar .gs-cellnote{margin:0; white-space:nowrap}
