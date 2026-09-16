@@ -9809,16 +9809,16 @@ export default function GoldSettlement() {
                 </span>
               )}
               {!(ready || guestLobby) && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
-            </span>
-            {/* 오른쪽 묶음 (2026-09-16) — 위에 입력 단위, 그 밑에 마우스 안내. 둘 다 오른쪽 끝에 맞춘다.
-                (폐기) 세 덩이를 양끝 정렬로 한 줄에 — 입력 단위가 가운데에 떠 있었다(사용자) */}
-            <span className="gs-tablebar-r">
+              {/* 조작은 전부 왼쪽 한 줄 — 동사 둘, 세로선, 입력 단위. 높이 34px 로 맞춘다 (2026-09-16).
+                  (폐기) 입력 단위를 오른쪽에 따로·안내 위에 쌓기 — 세 덩이가 제각각 떠 있었다(사용자) */}
+              <span className="gs-tablebar-sep" aria-hidden="true" />
               {unitSeg(false)}
-              <p className="gs-cellnote">
-                칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-                우클릭하면 1회 빠져요.
-              </p>
             </span>
+            {/* 설명은 오른쪽 끝 한 줄 — 조작과 같은 줄, 같은 세로 가운데 */}
+            <p className="gs-cellnote">
+              칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
+              우클릭하면 1회 빠져요.
+            </p>
           </div>
         )}
 
@@ -17001,7 +17001,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 표 윗줄 — 왼쪽 조작법, 오른쪽 채팅 복사 */
 .gs-tablebar{display:flex; align-items:center; justify-content:space-between; gap:12px;
   margin-bottom:16px}
-.gs-tablebar .gs-cellnote{margin:0 0 8px}
+/* (폐기 2026-09-16) .gs-tablebar .gs-cellnote{margin:0 0 8px} — 위 정리 규칙으로 */
 /* 창 머리 — 제목은 왼쪽, X는 항상 오른쪽 위. 본문만 스크롤됩니다 */
 /* 창 머리 한 벌 — 오버레이 공유 설정 창과 같은 얼굴입니다 (2026-09-05) */
 .gs-dialog-head{display:flex; align-items:center; gap:14px; flex:none;
@@ -18037,9 +18037,13 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-seatclaimcard .gs-seatclaim-lead{margin-top:0}
 /* 판 중 도구줄 — 채팅 복사와 초대 링크가 왼쪽에 나란히 */
 .gs-tablebar-l{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-/* 표 바 오른쪽 묶음 — 입력 단위 위, 마우스 안내 아래, 오른쪽 끝 정렬 (2026-09-16) */
-.gs-tablebar-r{display:flex; flex-direction:column; align-items:flex-end; gap:5px; margin-left:auto}
-.gs-tablebar-r .gs-cellnote{margin:0}
+/* 표 바 (2026-09-16 정리) — 왼쪽: [비우기] [채팅 공유용 복사] │ 입력 단위 [세그], 오른쪽: 마우스 안내. 조작은 전부 34px 한 높이 */
+.gs-tablebar .gs-btn{height:34px; padding-top:0; padding-bottom:0; display:inline-flex; align-items:center; box-sizing:border-box}
+.gs-tablebar .gs-wipebtn{margin-right:0}
+.gs-tablebar-sep{width:1px; height:22px; background:rgba(var(--ink-rgb),.22); margin:0 6px; flex:none}
+.gs-tablebar .gs-segbox{height:34px; box-sizing:border-box}
+.gs-tablebar .gs-segbtn{height:100%; padding:0 11px; display:inline-flex; align-items:center; font-size:12.5px}
+.gs-tablebar .gs-cellnote{margin:0; white-space:nowrap}
 .gs-invbtn-n{margin-left:6px; font-family:var(--mono); font-size:11.5px; color:var(--gold); font-weight:400}
 .gs-invmodal .gs-lbsec{margin-top:12px}
 .gs-easebar{margin-top:12px}
