@@ -1149,6 +1149,8 @@ const authApi = {
       token,
     }),
   discordFinish: (code) => callApi("/api/auth/discord/finish", { method: "POST", body: { code } }),
+  /* 올린 초상화 (§3.12.3, 2026-09-16) — data URL 하나. { clear: true } 면 디스코드 초상화로 되돌린다 */
+  avatar: (token, body) => callApi("/api/auth/avatar", { method: "POST", body, token }),
   /* 지목 초대 — 함께한 사람에게만 갑니다. 자리는 보내는 쪽이 그때 정합니다 (§3.3).
      유효 1분짜리 실시간 악수라, 만료를 알리는 배관은 없습니다 */
   invite: (token, to, seat) =>
@@ -1249,13 +1251,21 @@ function readDcErr() {
 /* 디스코드 초상화 주소 (§3.12.7). 파일은 정사각형이라 둥근 네모로 자릅니다.
    기본 아바타는 디스코드 규칙(id >> 22 % 6)을 BigInt 없이 근사합니다 — 어차피 회색 기본 그림입니다 */
 const dcAvatarUrl = (dc, size) => {
-  if (!dc || !dc.id) return "";
+  if (!dc) return "";
+  /* 올린 사진이 먼저 (§3.12.3) — 판본(p)이 주소에 붙어, 바뀌면 캐시를 안 거치고 새로 받는다 */
+  if (dc.p && dc.u) return RELAY_BASE + "/api/pic/" + dc.u + "?v=" + dc.p;
+  if (!dc.id) return "";
   if (dc.avatar) return "https://cdn.discordapp.com/avatars/" + dc.id + "/" + dc.avatar + ".png?size=" + (size || 64);
   return "https://cdn.discordapp.com/embed/avatars/" + (Number(String(dc.id).slice(-3)) % 6) + ".png";
 };
+/* 명단·판에 실리는 초상화 묶음 {id, a, p, u} → DcAva 가 받는 모양 {id, avatar, p, u} */
+const avaDc = (av) => (av ? { id: av.id || null, avatar: av.a || null, p: av.p || null, u: av.u } : null);
+/* 내 초상화 — 디스코드 계정과 올린 사진(pic 판본)에서 */
+const myAva = (a) => (a ? { id: a.dc ? a.dc.id : null, avatar: a.dc ? a.dc.avatar || null : null, p: a.pic || null, u: a.pic ? a.id : undefined } : null);
+const myAvaWire = (a) => (a ? { id: a.dc ? a.dc.id : null, a: a.dc ? a.dc.avatar || null : null, p: a.pic || null, u: a.pic ? a.id : undefined } : undefined);
 function DcAva({ dc, size, className }) {
   const px = size || 24;
-  if (!dc || !dc.id)
+  if (!dc || (!dc.id && !(dc.p && dc.u)))
     return <span className={"gs-ava gs-ava-txt " + (className || "")} style={{ width: px, height: px }} aria-hidden="true" />;
   return (
     <img
@@ -2631,6 +2641,19 @@ export default function GoldSettlement() {
   const [waitPick, setWaitPick] = useState(null);
   /* 헤더의 초대 코드 팝오버 (2026-09-06 사용자: 공유 창 안은 숨겨져 있다) */
   const [invOpen, setInvOpen] = useState(false);
+  /* 계정 쪽지 (H1, 2026-09-16) — 초상화+별명을 누르면. 초상화의 출처와 별명 바꾸기, 올리기·되돌리기·다시 가져오기 */
+  const [acctOpen, setAcctOpen] = useState(false);
+  const acctWrapRef = useRef(null);
+  const picPick = useRef(null);
+  const [picBusy, setPicBusy] = useState(false);
+  useEffect(() => {
+    if (!acctOpen) return;
+    const h = (e) => {
+      if (acctWrapRef.current && !acctWrapRef.current.contains(e.target)) setAcctOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [acctOpen]);
   const invWrapRef = useRef(null);
   useEffect(() => {
     if (!invOpen) return;
@@ -3443,7 +3466,7 @@ export default function GoldSettlement() {
     authApi
       .discordFinish(code)
       .then((r) => {
-        saveAuth({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: false, dc: r.dc || null, nickSet: !!r.nickSet, via: "discord" });
+        saveAuth({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: false, dc: r.dc || null, nickSet: !!r.nickSet, pic: r.pic || null, via: "discord" });
         clean();
         window.location.reload();
       })
@@ -3472,6 +3495,50 @@ export default function GoldSettlement() {
     putAuth(next);
     authRef.current = next; // 렌더 전에 방을 열어야 해서 ref 를 먼저 맞춘다
     openMyRoom({ via: "anon" });
+  };
+  /* 올린 초상화 (§3.12.3) — 128px 로 줄여 JPEG 데이터 URL 하나로 보낸다. 되돌리기는 clear */
+  const savePic = (data) => {
+    const a = authRef.current;
+    if (!a) return;
+    setPicBusy(true);
+    authApi
+      .avatar(a.token, data ? { data } : { clear: true })
+      .then((r) => {
+        putAuth({ ...authRef.current, pic: (r && r.pic) || null });
+        say(data ? "초상화를 올렸어요." : "디스코드 초상화로 되돌렸어요.");
+      })
+      .catch((e) => say((e && e.message) || "초상화를 바꾸지 못했어요."))
+      .finally(() => setPicBusy(false));
+  };
+  const uploadPic = (file) => {
+    if (!file || !/^image\//.test(file.type)) return say("이미지 파일만 올릴 수 있어요.");
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const N = 128;
+      const c = document.createElement("canvas");
+      c.width = N;
+      c.height = N;
+      const g = c.getContext("2d");
+      /* 가운데를 정사각형으로 잘라 채운다 */
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth - side) / 2;
+      const sy = (img.naturalHeight - side) / 2;
+      g.drawImage(img, sx, sy, side, side, 0, 0, N, N);
+      let q = 0.86;
+      let data = c.toDataURL("image/jpeg", q);
+      while (data.length > 60000 && q > 0.4) {
+        q -= 0.1;
+        data = c.toDataURL("image/jpeg", q);
+      }
+      savePic(data);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      say("이미지를 읽지 못했어요.");
+    };
+    img.src = url;
   };
   const [nickAsk, setNickAsk] = useState(false);
   const [nickDraft, setNickDraft] = useState("");
@@ -3662,6 +3729,7 @@ export default function GoldSettlement() {
           anon: !!m.anon,
           dc: m.dc || auth.dc || null,
           nickSet: !!m.nickSet,
+          pic: m.pic || null,
         });
         takeMe(m);
         /* 오버레이 외형은 계정에 저장돼 있습니다 — 새 기기에서 로그인해도 제 외형으로 돌아옵니다.
@@ -4467,6 +4535,33 @@ export default function GoldSettlement() {
     say((nick || "파티원") + "님이 " + where + "에 앉았어요.", 8000);
   };
   /* 그 자리에 사람을 앉힙니다 — 서버 명단·자리·판의 줄 이름이 같이 움직입니다 */
+  /* 앉는 순간 (C1, 2026-09-16) — 대기 줄의 초상화+이름이 그 줄 이름 칸으로 미끄러져 들어간다. 움직임 줄이기면 건너뛴다 */
+  const flyToRow = (acct, rowId) => {
+    if (typeof window === "undefined" || !document) return;
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const src = document.querySelector('[data-wait="' + acct + '"] .gs-waitname');
+      if (!src) return;
+      const a = src.getBoundingClientRect();
+      const ghost = src.cloneNode(true);
+      ghost.className = "gs-fly";
+      ghost.style.left = a.left + "px";
+      ghost.style.top = a.top + "px";
+      document.body.appendChild(ghost);
+      /* 숨은 탭에서는 rAF 가 안 돌아 유령이 남는다 — 어떤 경우든 1초 뒤엔 치운다 */
+      setTimeout(() => ghost.remove(), 1000);
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const cell = document.querySelector('tr[data-row="' + rowId + '"] .gs-namecell');
+          if (!cell) return ghost.remove();
+          const b = cell.getBoundingClientRect();
+          ghost.style.transform = "translate(" + (b.left + 30 - a.left) + "px," + (b.top + (b.height - a.height) / 2 - a.top) + "px)";
+          ghost.style.opacity = "0.2";
+          setTimeout(() => ghost.remove(), 380);
+        })
+      );
+    } catch (e) {}
+  };
   const seatMember = async (acct, nick, seatId, opts) => {
     if (!auth || (!relay.room && !tutorialRef.current)) return;
     const fresh = seatId === "new";
@@ -4493,6 +4588,7 @@ export default function GoldSettlement() {
           : s
       );
     }
+    flyToRow(acct, id);
     putSeats(next);
     /* 방금 앉은 줄 표시 — 줄이 30초 동안 서서히 옅어지며 밝고, 자리 띠가 '방금 앉았어요'를 30초 말합니다
        (2026-09-06: 3초·10초는 게임을 보다 돌아오면 이미 지나 있었다) */
@@ -4583,7 +4679,7 @@ export default function GoldSettlement() {
   const emptyRowId = () => {
     const r = rows.find((x) => {
       const st = seats.find((k) => k.id === x.id);
-      return st && !st.acct && !st.left && isFillName(x.name) && noFine(x);
+      return st && !st.acct && isFillName(x.name) && noFine(x);
     });
     return r ? r.id : null;
   };
@@ -4599,8 +4695,13 @@ export default function GoldSettlement() {
     return r ? r.id : null;
   };
   /* [받기]의 기본 자리가 어디인지 — 대기 줄에 "달빛 줄에" 로 보입니다 */
+  /* 앉았던 줄 (2026-09-16, 퇴장 상태 폐지) — 그 사람이 앉았다 나간 줄이 아직 비어 있으면 [받기]의 첫 후보. 계정으로 기억하는 것이라 이름 맞추기가 아니다 */
+  const homeRowId = (acct) => {
+    const st = seats.find((k) => !k.acct && k.who === acct);
+    return st && rows.some((x) => x.id === st.id) ? st.id : null;
+  };
   const takeTargetOf = (acct) => {
-    const id = emptyRowId() || absentRowId(acct);
+    const id = homeRowId(acct) || emptyRowId() || absentRowId(acct);
     if (!id) return null;
     const i = rows.findIndex((x) => x.id === id);
     const x = rows[i];
@@ -4609,7 +4710,7 @@ export default function GoldSettlement() {
   const placeAuto = async (acct, nick, opts) => {
     let id;
     if (roundLive) {
-      const id0 = emptyRowId() || absentRowId(acct);
+      const id0 = homeRowId(acct) || emptyRowId() || absentRowId(acct);
       if (!id0) {
         say("빈 줄이 없어요. 줄을 비우거나 [+ 인원 추가]를 눌러 주세요.", 8000);
         return null;
@@ -4816,6 +4917,7 @@ export default function GoldSettlement() {
         else if (m.kind === "viewer")
           setMembers((prev) => prev.map((x) => (x.acct === m.acct ? { ...x, on: !!m.on } : x)));
         else if (m.kind === "nick") scribeRef.current.nick(m.acct, m.nick);
+        else if (m.kind === "ava") setMembers((prev) => prev.map((x) => (x.acct === m.acct ? { ...x, ava: m.ava || null } : x)));
         else if (m.kind === "seat") scribeRef.current.seat(m.acct, m.nick, m.rowId);
         else if (m.kind === "lobby") scribeRef.current.lobby(m.lobby);
         else if (m.kind === "paused") scribeRef.current.paused(m.paused);
@@ -5544,7 +5646,7 @@ export default function GoldSettlement() {
     joinTried.current = liveRoom + (joinCode || "");
     joining.current = true;
     roomApi
-      .join(auth.token, liveRoom, joinCode || "", auth.dc ? { id: auth.dc.id, a: auth.dc.avatar || null } : undefined)
+      .join(auth.token, liveRoom, joinCode || "", auth.dc || auth.pic ? myAvaWire(auth) : undefined)
       .then((r) => {
         joining.current = false;
         setDenied(null);
@@ -6130,9 +6232,10 @@ export default function GoldSettlement() {
     if (viewer) {
       if (!you || !you.st) return null;
       const who = (ownerNick || "방장") + "네 판";
+      /* 라벨이 동작(나가기·신청 취소)과 실시간 점까지 든다 (A1, 2026-09-16) — 쪽지는 없다 */
       return you.st === "ok"
-        ? { away: true, text: who + " · 내 방송에 나가는 중" }
-        : { away: true, text: who + " · 받아 주길 기다리는 중" };
+        ? { away: true, text: who + " · 내 방송에 나가는 중", act: "나가기" }
+        : { away: true, text: who + " · 받아 주길 기다리는 중", act: "신청 취소" };
     }
     if (readOnly) return null;
     const waitN = (members || []).filter((m) => m.st === "req").length;
@@ -8044,16 +8147,13 @@ export default function GoldSettlement() {
   );
   /* 표가 사람을 말합니다 (2026-09-06 모델) — 들어오려는 사람은 전부 표에 섭니다. 자기 줄(퇴장·내보냄으로 남은 장부 줄,
      계정 출처 who)이 있으면 그 줄 밑에 붙고, 없으면 표 맨 아래. 규칙이 자리로 읽히게 하는 것이 요지입니다 */
-  const ownRowOf = (acct) => seats.find((k) => !k.acct && k.left && k.who === acct) || null;
+  /* (폐기 2026-09-16) ownRowOf — 퇴장 줄 밑 요청. 앉았던 줄은 homeRowId 가 [받기]의 기본 자리로만 쓴다 */
   /* 표 아래 줄 — 신청(내보냈던 사람·정원 참)과, 진행 중에 처음 온 사람(`들어왔어요`, [받기]가 첫 빈 줄/새 줄에 앉힘).
      자기 줄이 남아 있는 사람은 그 줄 밑에 붙습니다. 시작 전에 처음 온 사람은 위 효과가 바로 앉혀 여기 서지 않습니다 */
-  const waitAll = [...pending, ...waiting.filter((w) => !!ownRowOf(w.acct)).map((w) => ({ ...w, waiting: true }))];
-  const waitBelow = [
-    ...pending.filter((p) => !ownRowOf(p.acct)),
-    ...(roundLive ? waiting.filter((w) => !ownRowOf(w.acct)).map((w) => ({ ...w, waiting: true })) : []),
-  ];
+  /* 기다리는 사람은 누구든 표 아래 한 곳 (2026-09-16) — 처음 오는 사람도, 나갔다 돌아오는 사람도 */
+  const waitBelow = [...pending, ...waiting.map((w) => ({ ...w, waiting: true }))];
   const waitWhy = (p) =>
-    p.kicked ? "내보냈던 사람이에요" : p.inv ? "초대받고 왔는데 자리가 없었어요" : p.full ? "자리가 다 찼어요" : p.waiting ? "들어왔어요" : "들어오려 해요";
+    p.kicked ? "내보냈던 사람 · 들어오려 해요" : p.inv ? "초대받고 왔는데 자리가 없었어요" : p.full ? "자리가 다 찼어요" : p.waiting ? "들어왔어요" : "들어오려 해요";
   /* 이/가 — 이름 끝 받침으로 (순두부가 · 감독이) */
   const ga = (w) => {
     const c = (w || "").trim().slice(-1).charCodeAt(0);
@@ -8544,11 +8644,15 @@ export default function GoldSettlement() {
           {/* 판 라벨 (§3.12.7) — 읽는 것이지 누르는 것이 아닙니다. 남의 판이면 라벨과 밑선만 파란색 */}
           {boardLabel && !inviteGate && !genView && (
             <span className={"gs-boardlabel" + (boardLabel.away ? " gs-boardlabel-away" : "")} role="status">
-              <i className="gs-boardlabel-sq" aria-hidden="true" />
+              {boardLabel.away ? (
+                <i className={"gs-boardlabel-dot" + (liveState === "on" ? " on" : "")} aria-hidden="true" />
+              ) : (
+                <i className="gs-boardlabel-sq" aria-hidden="true" />
+              )}
               <span className="gs-boardlabel-t">{boardLabel.text}</span>
               {boardLabel.away && (
                 <button className="gs-btn gs-btn-sm gs-btn-ghost gs-boardlabel-leave" onClick={leaveRoom}>
-                  나가기
+                  {boardLabel.act}
                 </button>
               )}
             </span>
@@ -8708,10 +8812,78 @@ export default function GoldSettlement() {
             <span className="gs-sysbar-sep" aria-hidden="true" />
             {/* 계정 (§3.12.7) — 디스코드 초상화와 별명. 로그인했다는 표시는 이것 하나 */}
             {auth && auth.dc && !inviteGate && (
-              <button className="gs-acctchip" onClick={() => setNickAsk(true)} title="별명 바꾸기">
-                <DcAva dc={auth.dc} size={24} />
-                <span>{auth.nick}</span>
-              </button>
+              <span className="gs-acctwrap" ref={acctWrapRef}>
+                <button
+                  className={"gs-acctchip" + (acctOpen ? " on" : "")}
+                  onClick={() => setAcctOpen((v) => !v)}
+                  aria-haspopup="dialog"
+                  aria-expanded={acctOpen}
+                >
+                  <DcAva dc={myAva(auth)} size={24} />
+                  <span>{auth.nick}</span>
+                </button>
+                {acctOpen && (
+                  <div className="gs-invpop gs-invnote gs-acctpop" role="dialog" aria-label="계정">
+                    <div className="gs-acctpop-top">
+                      <DcAva dc={myAva(auth)} size={44} />
+                      <b className="gs-acctpop-nick">{auth.nick}</b>
+                      <button
+                        className="gs-btn gs-btn-sm gs-btn-ghost"
+                        onClick={() => {
+                          setAcctOpen(false);
+                          setNickAsk(true);
+                        }}
+                      >
+                        별명 바꾸기
+                      </button>
+                    </div>
+                    <div className="gs-acctpop-line">
+                      {auth.pic ? "지금은 올린 사진이에요." : "초상화는 디스코드 프로필이에요. 디스코드에서 바꾼 뒤 여기서 다시 가져와요."}
+                      <div className="gs-acctpop-acts">
+                        <button
+                          className="gs-btn gs-btn-sm gs-btn-ghost"
+                          disabled={picBusy}
+                          onClick={() => picPick.current && picPick.current.click()}
+                        >
+                          {picBusy ? "올리는 중…" : "사진 올리기"}
+                        </button>
+                        {auth.pic ? (
+                          <button className="gs-btn gs-btn-sm gs-btn-ghost" disabled={picBusy} onClick={() => savePic(null)}>
+                            디스코드 초상화로 되돌리기
+                          </button>
+                        ) : (
+                          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => startDiscord()}>
+                            디스코드에서 다시 가져오기
+                          </button>
+                        )}
+                        <input
+                          ref={picPick}
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          onChange={(e) => {
+                            const f = e.target.files && e.target.files[0];
+                            e.target.value = "";
+                            if (f) uploadPic(f);
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="gs-invnote-foot">
+                      Discord 연동됨 · 별명은 표에, 디스코드 이름은 어디에도 안 나가요 ·{" "}
+                      <button
+                        className="gs-swaplink gs-swaplink-mute"
+                        onClick={() => {
+                          setAcctOpen(false);
+                          askLogout();
+                        }}
+                      >
+                        로그아웃
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </span>
             )}
             {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
             <span className="gs-viewseg">
@@ -8799,7 +8971,8 @@ export default function GoldSettlement() {
           것만 맡습니다(대기·거절·방장 부재·내 방송용 주소). 방장 부재도 자수 탭에서는 카드가
           말하므로 여기서는 뺍니다 — 같은 말이 화면에 둘이면 하나는 읽히지 않습니다. */}
       {/* 대기실엔 설명 슬립이 없습니다 (2026-09-06) — 칩 '시작 전'과 자리 띠가 말합니다. (폐기) `자리에 앉았어요 — 방장이 시작하면 함께 시작돼요.` */}
-      {readOnly && !genView && !(guestPlaying && liveState !== "dead" && !left && !denied && (scribeOn || showConfess)) && !(guestWaiting && liveState !== "dead" && !denied) && (
+      {/* (A1, 2026-09-16) 쪽지는 라벨이 못 하는 말만 — 요청 중·연결 중·읽기 전용 안내와 [신청 취소]·실시간 줄은 판 라벨로 갔다 */}
+      {readOnly && !genView && (liveState === "dead" || !!denied || demoRoom || !auth || (guestPlaying && !scribeOn && !showConfess)) && (
         <div
           key={roPulse}
           className={
@@ -8829,26 +9002,8 @@ export default function GoldSettlement() {
               <>
                 <b>읽기 전용 화면</b>이에요 — 참여하려면 로그인이 필요해요.
               </>
-            ) : you && you.st === "req" ? (
-              /* 문 앞에 서 있는 상태입니다 — 노크든 링크 신청이든 기다리는 것은 같습니다.
-                 취소는 본인 몫이라 옆에 [신청 취소]가 섭니다 (§3.3) */
-              /* (폐기 2026-09-05) `참여를 신청했어요 — {닉}님이 수락하면 들어가요.` — 왜 기다리는지로 말합니다 */
-              /* (폐기 2026-09-15) "자리가 다 찼어요 — 방장이 자리를 만들면 들어가요" — 정원이 없어졌다. 들어오는 사람은 모두 방장의 [받기]를 기다린다 (§3.12.4) */
-              "방장이 받아 주면 자리에 앉아요."
-            ) : guestWaiting ? (
-              <>
-                <b>자리에 앉았어요</b> — 방장이 시작하면 함께 시작돼요.
-              </>
-            ) : guestPlaying ? (
-              "방장이 자리를 비웠어요."
-            ) : liveState === "on" ? (
-              <>
-                <b>읽기 전용 화면</b>이에요 — 참여하려면 초대가 필요해요.
-              </>
-            ) : liveState === "empty" ? (
-              "아직 기록이 없어요. 장부가 채워지면 여기 실시간으로 보여요."
             ) : (
-              "연결하는 중이에요…"
+              "방장이 자리를 비웠어요."
             )}
           </span>
           {/* 비로그인 파티원의 유일한 다음 걸음 — 배너 안에 둡니다 */}
@@ -8864,23 +9019,7 @@ export default function GoldSettlement() {
               참여하기
             </button>
           )}
-          {you && you.st === "req" && !left && (
-            <button className="gs-btn gs-btn-sm gs-btn-ghost gs-slip-act" onClick={leaveRoom}>
-              신청 취소
-            </button>
-          )}
-          {guestWaiting && (
-            <button className="gs-btn gs-btn-sm gs-btn-ghost gs-slip-act" onClick={leaveRoom}>
-              나가기
-            </button>
-          )}
-          {liveState === "on" && !guestWaiting && (
-            <span className="gs-slip-who">
-              {liveName}
-              <em className="gs-live-dot" key={liveTick} aria-hidden="true" />
-              실시간
-            </span>
-          )}
+          {/* (폐기 2026-09-16, A1) [신청 취소]·[나가기]·"{판} ● 실시간" — 판 라벨이 든다 */}
         </div>
       )}
       {/* (폐기 2026-09-06) 얼림 띠 `잠깐 멈췄어요 — 방장이 이어가면 다시 움직여요.` — 중단이라는 상태가 모델에 없다
@@ -9202,7 +9341,7 @@ export default function GoldSettlement() {
               </div>
             )}
             <div className="gs-conf-who">
-              {auth && auth.dc ? <DcAva dc={auth.dc} size={28} /> : null}
+              {auth && (auth.dc || auth.pic) ? <DcAva dc={myAva(auth)} size={28} /> : null}
               <b>{myRow ? seatName(myRow, rows.indexOf(myRow)) : you.nick || "나"}</b>
               <span className="gs-conf-tag">나</span>
               <span className="gs-conf-sum">
@@ -9671,28 +9810,7 @@ export default function GoldSettlement() {
               {!(ready || guestLobby) && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
             </span>
             {unitSeg(false)}
-            {ready || guestLobby ? (
-              /* 준비 상태 — 복사할 숫자가 없습니다. 방장의 안내는 자리 띠가 대신하고(2026-09-05), 파티원은 대기실 수 (§5.3) */
-              ready && auth && !guestLobby ? null : (
-              <p className="gs-cellnote">
-                {guestLobby ? (
-                  <>
-                    {/* (폐기 2026-09-06) `대기실 n/m 모임` — 자리 띠가 이미 말한다. 접속 표시만 */}
-                    <em className="gs-live-dot" key={liveTick} aria-hidden="true" /> 실시간
-                  </>
-                ) : (
-                  /* (폐기 2026-09-05) 로그인 방장의 `초대 링크를 보내면 파티원이 빈 칸에 앉아요. …` — 자리 띠로 */
-                  /* (폐기 2026-09-06) `이름을 적고 [시작]을 누르면 세기 시작해요.` — 시작 전 이름 칸은 잠겨 있어 앞절이 거짓 */
-                  "[시작]을 누르면 세기 시작해요."
-                )}
-              </p>
-              )
-            ) : (
-              <p className="gs-cellnote">
-                칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-                우클릭하면 1회 빠져요.
-              </p>
-            )}
+            {/* (폐기 2026-09-16, G1) 표 바의 마우스 안내 "칸을 누르면 1회 쌓이고 …" — 설명은 표 바에 있을 이유가 없다. 튜토리얼 몫 */}
           </div>
         )}
 
@@ -9909,7 +10027,7 @@ export default function GoldSettlement() {
                         /* 파티원 화면에서 내 줄 — 이름부터 금색이라 어디를 눌러야 하는지 바로 보입니다 */
                         (you && you.rowId === row.id && readOnly ? " gs-myrow" : "") +
                         /* 방금 앉은 줄 — 3초 금색 (§3.1, 2026-09-05) */
-                        (ready && arrived[row.id] ? " gs-row-arrive" : "")
+                        (arrived[row.id] ? " gs-row-arrive" : "")
                       }
                       onClick={
                         spin && spin.phase === "pick" ? () => pickPassTarget(row) : undefined
@@ -9944,17 +10062,12 @@ export default function GoldSettlement() {
                             if (!readOnly) {
                               const st = seats.find((k) => k.id === row.id);
                               /* 진행 중에 나간 사람의 줄 — 벌금이 붙은 장부 줄이라 남지만, 사람은 없습니다 (§3.4) */
-                              if (st && !st.acct && st.left && roundLive)
-                                return (
-                                  <span className="gs-rowmeta">
-                                    <span className="gs-lb-tag gs-lb-tag-left">퇴장</span>
-                                  </span>
-                                );
+                              /* (폐기 2026-09-16) 퇴장 표 — 나간 사람의 줄은 보통 줄이다. 누가 앉았었는지는 who 로 조용히 기억한다 */
                               if (!st || !st.acct) return null;
                               const mem = members.find((k) => k.acct === st.acct);
                               const off = !!mem && mem.on === false;
                               /* 방장은 명단에 없어 초상화가 명단에서 안 온다 — 내 계정의 것을 쓴다 (2026-09-16 사용자 지적: 방장 줄만 실루엣이었다) */
-                              const pic = mem && mem.ava && mem.ava.id ? { id: mem.ava.id, avatar: mem.ava.a } : i === 0 && auth && auth.dc ? auth.dc : null;
+                              const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : i === 0 && auth ? myAva(auth) : null;
                               const masked = st.acct.slice(0, 2) + "••••";
                               /* 글자(아이디)는 이름 칸을 너무 먹었습니다 — 표시는 i 하나, 내용은 호버에 (2026-09-05) */
                               /* 브라우저 title 은 늦고 못생겼습니다 — 앱의 툴팁(.gs-tip)으로 즉답 */
@@ -10007,13 +10120,13 @@ export default function GoldSettlement() {
                             const r2v = rows2v.find((k) => k.rowId === row.id);
                             const host = i === 0 && !!(r2v && r2v.a);
                             const mine = !!you && you.rowId === row.id;
-                            const ava = r2v && r2v.ava && r2v.ava.id ? r2v.ava : null;
+                            const ava = r2v && r2v.ava && (r2v.ava.id || r2v.ava.p) ? r2v.ava : null;
                             if (!host && !mine && !ava) return null;
                             return (
                               <span className="gs-rowmeta">
                                 {ava && (
                                   <span className="gs-rowi gs-rowi-ava gs-rowi-ro" aria-hidden="true">
-                                    <DcAva dc={{ id: ava.id, avatar: ava.a }} size={24} className="gs-ava-sm" />
+                                    <DcAva dc={avaDc(ava)} size={24} className="gs-ava-sm" />
                                   </span>
                                 )}
                                 {host && <span className="gs-lb-tag">방장</span>}
@@ -10326,36 +10439,7 @@ export default function GoldSettlement() {
                         </td>
                       </tr>
                     )}
-                    {/* 자기 줄이 있는 사람의 요청은 그 줄 밑에 붙습니다 (2026-09-06) — [받기] 한 번에 그 줄로 */}
-                    {!readOnly &&
-                      (() => {
-                        const st = seats.find((k) => k.id === row.id);
-                        const p = st && !st.acct && st.left && st.who ? waitAll.find((q) => q.acct === st.who) : null;
-                        if (!p) return null;
-                        const nick = p.nick || p.acct;
-                        return (
-                          <tr className="gs-subreq" data-row={row.id}>
-                            <td colSpan={30}>
-                              <div className="gs-subline">
-                                <span className="gs-subarrow" aria-hidden="true">↳</span>
-                                <span>
-                                  {p.kicked ? "내보냈던 " : ""}
-                                  <b>{nick}</b>
-                                  {ga(nick)} 돌아오려 해요
-                                </span>
-                                <span className="gs-waitacts">
-                                  <button className="gs-swaplink gs-swaplink-mute" onClick={() => waitDeny(p)}>
-                                    거절
-                                  </button>
-                                  <button className="gs-btn gs-btn-sm" onClick={() => waitPlace(p, row.id)}>
-                                    받기
-                                  </button>
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })()}
+                    {/* (폐기 2026-09-16) 자기 줄 밑에 끼어들던 요청 줄 — 기다리는 사람은 누구든 표 아래 한 곳 */}
                   </Fragment>
                 );
               })}
@@ -10417,10 +10501,12 @@ export default function GoldSettlement() {
               const nick = p.nick || p.acct;
               const tgt = takeTargetOf(p.acct);
               return (
-                <div key={"w:" + p.acct} className="gs-waitrow">
+                <div key={"w:" + p.acct} className="gs-waitrow" data-wait={p.acct}>
                   <div className="gs-waitline">
-                    {p.ava && p.ava.id ? <DcAva dc={{ id: p.ava.id, avatar: p.ava.a }} size={24} className="gs-ava-sm" /> : null}
-                    <b>{nick}</b>
+                    <span className="gs-waitname">
+                      {p.ava && (p.ava.id || p.ava.p) ? <DcAva dc={avaDc(p.ava)} size={24} className="gs-ava-sm" /> : null}
+                      <b>{nick}</b>
+                    </span>
                     <span className="gs-waitwhy">{waitWhy(p)}</span>
                     {tgt ? <span className="gs-waitto">{tgt.label}</span> : <span className="gs-waitto gs-waitto-none">빈 줄이 없어요</span>}
                     <span className="gs-waitacts">
@@ -10985,11 +11071,7 @@ export default function GoldSettlement() {
                       파티에서 내보내기
                     </button>
                   </div>
-                  <div className="gs-obs-acts gs-acts-end">
-                    <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={close}>
-                      닫기
-                    </button>
-                  </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
                 </div>
               </InfoModal>
             );
@@ -11032,11 +11114,7 @@ export default function GoldSettlement() {
                     ))}
                   </div>
                 )}
-                <div className="gs-obs-acts gs-acts-end">
-                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={close}>
-                    닫기
-                  </button>
-                </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
               </div>
             </InfoModal>
           );
@@ -11067,11 +11145,7 @@ export default function GoldSettlement() {
                   </button>
                 ))}
             </div>
-            <div className="gs-obs-acts gs-acts-end">
-              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => setResumePick(false)}>
-                닫기
-              </button>
-            </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
           </div>
         </InfoModal>
       )}
@@ -11128,11 +11202,7 @@ export default function GoldSettlement() {
                     + 새 줄 만들기
                   </button>
                 </div>
-                <div className="gs-obs-acts gs-acts-end">
-                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={close}>
-                    닫기
-                  </button>
-                </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
               </div>
             </InfoModal>
           );
@@ -12821,11 +12891,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
             </div>
           ))
         )}
-        <div className="gs-obs-acts gs-acts-end" style={{ marginTop: 12 }}>
-          <button className="gs-btn gs-btn-sm" onClick={onClose}>
-            닫기
-          </button>
-        </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
       </div>
     </InfoModal>
   );
@@ -13426,11 +13492,7 @@ function SeatPick({ title, nick, seats, onPick, onClose }) {
             </button>
           ))}
         </div>
-        <div className="gs-obs-acts gs-acts-end">
-          <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onClose}>
-            닫기
-          </button>
-        </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
       </div>
     </InfoModal>
   );
@@ -13735,11 +13797,7 @@ function GenModal({ gens, onOpen, onDrop, onClose }) {
       </p>
       <GenList gens={gens} onOpen={onOpen} onDrop={onDrop} />
       {/* 모달의 마무리는 오른쪽 하단입니다 (§9-6) */}
-      <div className="gs-obs-acts gs-acts-end">
-        <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onClose}>
-          닫기
-        </button>
-      </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
     </InfoModal>
   );
 }
@@ -13915,8 +13973,10 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
           <>
             {/* 계정 줄은 제목 바로 아래입니다 (2026-09-05 확정) — 맨 아래에 두면 아무도
                 못 봅니다. 닉이 곧 벌금판의 내 이름이라 "내가 누구로 있는지"가 먼저입니다 */}
+            {/* 연동한 계정의 초상화·별명·로그아웃은 오른쪽 위 계정 쪽지로 옮겼다 (2026-09-16 사용자). 여기엔 연동 전 계정 줄만 */}
+            {!auth.dc && (
+            <>
             <div className="gs-acct-row">
-              {auth.dc ? <DcAva dc={auth.dc} size={30} /> : <Ava id={auth.id} nick={auth.nick} size={30} />}
               <b className="gs-acct-nick2">{auth.nick}</b>
               {auth.anon ? (
                 <span className="gs-acct-badge">로그인 없이</span>
@@ -13976,6 +14036,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
               <p className="gs-acct-note">닉네임은 벌금판에 올라가는 이름이에요.</p>
             )}
             {nickErr && <p className="gs-acct-err">{nickErr}</p>}
+            </>
+            )}
             {/* 익명 계정은 아이디·비밀번호가 없어서 이 브라우저에서만 쓸 수 있습니다 (§3-11) */}
             {auth.anon && (
               <div className="gs-obs-line gs-acct-upline">
@@ -16792,6 +16854,20 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   border:1px solid rgba(var(--ink-rgb),.4); border-radius:2px; background:rgba(var(--lift-rgb),.22);
   font-size:12.5px; letter-spacing:.03em; color:var(--ink); white-space:nowrap}
 .gs-boardlabel-sq{width:8px; height:8px; background:rgba(var(--ink-rgb),.35); flex:none}
+/* 남의 판 라벨의 실시간 점 (A1) — 붙어 있으면 초록, 끊기면 회색 */
+.gs-boardlabel-dot{width:7px; height:7px; border-radius:50%; background:rgba(var(--ink-rgb),.3); flex:none}
+.gs-boardlabel-dot.on{background:#6fbf73; box-shadow:0 0 0 2px rgba(111,191,115,.25)}
+/* 계정 쪽지 (H1) — 초대 쪽지와 같은 종이, 오른쪽 모서리 기준 */
+.gs-acctwrap{position:relative; display:inline-flex}
+.gs-acctchip.on{border-color:rgba(var(--ink-rgb),.6); background:rgba(var(--ink-rgb),.06)}
+.gs-invpop.gs-acctpop{width:min(340px, 92vw); right:0; left:auto}
+.gs-acctpop-top{display:flex; align-items:center; gap:12px}
+.gs-acctpop-top .gs-btn{margin-left:auto}
+.gs-acctpop-nick{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; color:var(--ink)}
+.gs-acctpop-line{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3); font-size:12.5px; line-height:1.65; color:var(--ink-body)}
+.gs-acctpop-acts{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+.gs-acctpop .gs-invnote-foot{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap}
+.gs-acctpop .gs-invnote-foot .gs-swaplink{font-size:11px}
 .gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px}
 /* 남의 판 — 라벨과 시스템 줄 밑선만 파란색. 줄 전체를 칠하지 않는다 */
 .gs-sysbar-away{border-bottom:2px solid var(--blue)}
@@ -18058,9 +18134,14 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-seatstrip .gs-lb-tag{margin-left:2px}
 .gs-lb-tag-host{background:var(--chip-bg); color:var(--chip-fg); border-color:transparent}
 /* 방금 앉은 줄 — 3초 금색으로 밝았다 가라앉습니다 */
-tr.gs-row-arrive td,tr.gs-row-arrive th{animation:gs-arrive 30s ease-out forwards}
-tr.gs-row-arrive th.gs-stick{box-shadow:inset 3px 0 0 var(--gold)}
-@keyframes gs-arrive{0%{background-color:rgba(var(--gold-rgb),.18)} 100%{background-color:rgba(var(--gold-rgb),.05)}}
+/* 방금 앉은 줄 (C1, 2026-09-16) — 바탕색 번쩍임 없이 왼쪽 2px 금선만 30초에 걸쳐 옅어진다 */
+tr.gs-row-arrive th.gs-stick{animation:gs-arrive 30s linear forwards}
+@keyframes gs-arrive{0%{box-shadow:inset 2px 0 0 rgba(var(--gold-rgb),1)} 100%{box-shadow:inset 2px 0 0 rgba(var(--gold-rgb),0)}}
+.gs-waitname{display:inline-flex; align-items:center; gap:8px}
+.gs-fly{position:fixed; z-index:200; pointer-events:none; display:inline-flex; align-items:center; gap:8px; padding:4px 8px; margin:-4px -8px;
+  background:var(--paper); border:1px dashed rgba(var(--ink-rgb),.35); font-size:12.5px; color:var(--ink);
+  transition:transform .34s cubic-bezier(.2,.8,.2,1), opacity .34s}
+.gs-fly b{font-family:'Gowun Batang',serif; font-weight:700; font-size:14px}
 /* 모집 카드 머리 · 상태 칩 · 도구줄 요약 */
 .gs-recruit-head{display:flex; align-items:center; gap:8px}
 .gs-recruit-live{display:inline-flex; align-items:center; gap:7px; color:var(--ink); letter-spacing:.02em; font-size:13px; font-weight:600}
