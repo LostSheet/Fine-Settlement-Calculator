@@ -1332,7 +1332,7 @@ const maskUrl = (u) => {
    (폐기, 같은 날) `🔔 …` 로 시작하던 마스크드 링크 — 이모지 때문에 디스코드가 안 풀었다. 문구는 초안 */
 const inviteMsg = (hostNick, url) =>
   /* 문구는 디스코드 기준 (§3.12.5). 코드·10분 얘기가 없다 */
-  `${hostNick}네 벌금팟 · Discord 연동으로 참여하세요.\n👉 [눌러서 참여하기](<${url}>)\n처음이면 방장이 받아 주는 대로 앉고, 방송에 띄우려면 내 방송 주소를 OBS에 한 번만 넣어요.`;
+  `${hostNick}네 벌금팟 · Discord 연동으로 참여하세요.\n👉 [눌러서 참여하기](<${url}>)\n처음이면 방장 승인 뒤 자리가 정해지고, 방송에 띄우려면 내 방송 주소를 OBS에 한 번만 넣어요.`;
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -3260,7 +3260,7 @@ export default function GoldSettlement() {
     /* (폐기 2026-09-06 낮) enter:"handoff" — 걸음에 들어서자마자 파티원 예시를 얹던 것. 지금은 [실리안의 화면 보기]를 눌러야(onNext) */
     if (st.enter === "wei") {
       tutArrive(2);
-      say(TUT_MEMBERS[2].nick + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
+      say(TUT_MEMBERS[2].nick + "님의 참여 요청이 왔어요 — 표 아래에서 승인해 주세요.", 8000);
     }
     if (st.enter === "soloseed") {
       partyT(tutSoloSeed, 300);
@@ -3899,7 +3899,7 @@ export default function GoldSettlement() {
       /* 방장이 손으로 고쳐 둔 이름은 닉을 따라가지 않습니다 (§3.2) */
       const me = prev[i];
       const name = me.named ? me.name : auth.nick || me.name;
-      if (i === 0 && name === me.name) return;
+      if (name === me.name) return;
       /* 판은 늘 살아 있으니(§3.12.2) 줄을 옮기지 않고 이름만 맞춘다 — 표와 자리의 id 가 어긋나지 않게 */
       if (name !== me.name) {
         putSeats(prev.map((s, k) => (k === i ? { ...s, name } : s)));
@@ -3907,13 +3907,13 @@ export default function GoldSettlement() {
       }
       return;
     }
-    /* 1번 줄에 계정이 없으면 그 줄이 곧 방장 줄이다 (§3.12.2 "첫 줄은 방장"). 줄 id 를 지켜 표와 어긋나지 않는다.
-       방장이 적어 둔 이름은 남기고, 자리표시면 별명으로 바꾼다 */
-    const h = prev[0];
-    if (h && !h.acct) {
+    /* 방장 줄은 첫 줄이 아니라 "내 계정이 붙은 줄"이다 (2026-09-16 사용자: 방장 최상단 폐지). 아직 없으면 계정 없는 첫 줄을 잡고,
+       그것도 없으면 맨 아래에 한 줄 더한다. 방장이 적어 둔 이름은 남기고, 자리표시면 별명으로 바꾼다 */
+    const h = prev.find((s) => !s.acct);
+    if (h) {
       const fill = !(h.name || "").trim() || isFillName(h.name);
       const name = fill ? auth.nick || h.name : h.name;
-      putSeats([{ ...h, acct: auth.id, mem: auth.id, named: !fill, nick: auth.nick || "", name }, ...prev.slice(1)]);
+      putSeats(prev.map((s) => (s.id === h.id ? { ...s, acct: auth.id, mem: auth.id, named: !fill, nick: auth.nick || "", name } : s)));
       if (fill) setRows((rs) => rs.map((x) => (x.id === h.id ? { ...x, name: auth.nick || x.name } : x)));
       return;
     }
@@ -3925,8 +3925,8 @@ export default function GoldSettlement() {
       named: false,
       nick: auth.nick || "",
     };
-    putSeats([seat, ...prev]);
-    setRows((rs) => [{ id: seat.id, name: seat.name, counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] }, ...rs]);
+    putSeats([...prev, seat]);
+    setRows((rs) => [...rs, { id: seat.id, name: seat.name, counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] }]);
   }, [auth && auth.id, auth && auth.nick, readOnly, roundLive, seats.length]);
   /* 명단은 인원 수만큼의 칸입니다 (§3.1) — 빈 칸은 (모험가N) 자리표시로 서서
      "여기가 자동으로 차는구나"를 보여 줍니다. 모자라면 빈 칸을 채워 넣고, 남으면
@@ -4071,7 +4071,7 @@ export default function GoldSettlement() {
     setRoundLive(false);
     setPaused(null);
     setMembers([]);
-    putSeats((prev) => prev.filter((s0, i) => i === 0 && !!s0.acct));
+    putSeats((prev) => prev.filter((s0) => !!s0.acct && !!authRef.current && s0.acct === authRef.current.id));
     boardOnRef.current = true;
     putRelay({ ...relayRef.current, boardOn: true });
     go(VIEW_BOARD);
@@ -4092,7 +4092,7 @@ export default function GoldSettlement() {
     setRoundId("");
     setRoundLive(false);
     setPaused(null);
-    putSeats((prev) => prev.filter((s0, i) => i === 0 && !!s0.acct));
+    putSeats((prev) => prev.filter((s0) => !!s0.acct && !!authRef.current && s0.acct === authRef.current.id));
     boardOnRef.current = false;
     putRelay({ ...relayRef.current, boardOn: false });
     go(VIEW_LOBBY);
@@ -4441,7 +4441,7 @@ export default function GoldSettlement() {
       rows2: nRows.map((x, i) => {
         const s = (list || []).find((k) => k.id === x.id);
         const mm = s && s.acct ? (members || []).find((q) => q.acct === s.acct) : null;
-      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, ava: mm && mm.ava ? mm.ava : undefined };
+      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0, ava: mm && mm.ava ? mm.ava : undefined };
       }),
       look: lookOut(),
       t: Date.now(),
@@ -4503,7 +4503,7 @@ export default function GoldSettlement() {
        아무도 안 앉은 것처럼 보입니다. 바뀔 것이 없으면 prev 를 돌려주므로 돌지 않습니다 */
   }, [memberSig, seats.map((s) => s.id + ":" + (s.acct || "")).join("|"), readOnly, !!auth, roundLive]);
   /* 빈 자리 = 계정이 안 붙은 자리. 첫 자리는 방장 것이라 남에게 안 넘깁니다 (§3.2) */
-  const freeSeats = () => seats.filter((s, i) => i > 0 && !s.acct);
+  const freeSeats = () => seats.filter((s) => !s.acct);
   /* 아이디를 기억하는 자리는 언제나 하나입니다 (§3.2) — 옮기면 옛 자리의 기억을 지웁니다.
      안 지우면 그 사람이 자리를 둘 기억해, 다음 수락 때 방금 떠난 자리로 되돌아갑니다 */
   const forgetElsewhere = (list, acct, keepId) =>
@@ -4529,10 +4529,10 @@ export default function GoldSettlement() {
   const sayJoin = (nick, seatId) => {
     const st = seats.find((k) => k.id === seatId);
     /* 맨 아래 새 줄은 이 렌더의 자리 목록에 아직 없습니다 */
-    if (!st) return say((nick || "파티원") + "님이 새 줄에 앉았어요.", 8000);
+    if (!st) return say((nick || "파티원") + "님을 새 줄에 배정했어요.", 8000);
     const i = seats.indexOf(st);
     const where = st && !isBlankSeat(st) ? "'" + (st.name || "").trim() + "' 줄" : i + 1 + "번 줄";
-    say((nick || "파티원") + "님이 " + where + "에 앉았어요.", 8000);
+    say((nick || "파티원") + "님을 " + where + "에 배정했어요.", 8000);
   };
   /* 그 자리에 사람을 앉힙니다 — 서버 명단·자리·판의 줄 이름이 같이 움직입니다 */
   /* 앉는 순간 (C1, 2026-09-16) — 대기 줄의 초상화+이름이 그 줄 이름 칸으로 미끄러져 들어간다. 움직임 줄이기면 건너뛴다 */
@@ -4618,7 +4618,7 @@ export default function GoldSettlement() {
         await roomApi.member(auth.token, relay.room, acct, "approve", id);
       } catch (e) {
         /* 정원은 서버가 수락 시점에 셉니다 — 방장이 고칠 수 있는 말로 바꿔 줍니다 */
-        say(e && e.status === 409 ? "대기실이 가득 찼어요. 정원을 늘려야 앉힐 수 있어요." : e.message);
+        say(e && e.status === 409 ? "빈 줄이 없어요. [+ 인원 추가]로 줄을 늘려 주세요." : e.message);
         putSeats(seats);
         return;
       }
@@ -4653,7 +4653,7 @@ export default function GoldSettlement() {
     try {
       await roomApi.member(auth.token, relay.room, acct, "approve");
     } catch (e) {
-      say(e && e.status === 409 ? "대기실이 가득 찼어요. 정원을 늘려야 앉힐 수 있어요." : e.message);
+      say(e && e.status === 409 ? "빈 줄이 없어요. [+ 인원 추가]로 줄을 늘려 주세요." : e.message);
       return;
     }
     setMembers((prev) => prev.map((m) => (m.acct === acct ? { ...m, st: "ok" } : m)));
@@ -4822,14 +4822,14 @@ export default function GoldSettlement() {
       if (m.st === "req") {
         /* 표 아래 줄에 섭니다 (2026-09-06) — 카드는 폐기, 토스트 한 번(8초). 방장의 눈은 항목에 가 있어서 한 번은 말해 줍니다 */
         if (m.inv)
-          say((m.nick || m.acct) + "님이 초대를 받고 왔는데 자리가 없어요 — 인원 수를 늘리면 앉아요.", 8000);
-        else if (m.kicked) say((m.nick || m.acct) + "님이 다시 들어오려 해요 — 표 아래에서 받아 주세요.", 8000);
-        else say((m.nick || m.acct) + "님이 들어오려는데 자리가 없어요 — 표 아래에서 받아 주세요.", 8000);
+          say((m.nick || m.acct) + "님의 참여 요청 — 빈 줄이 없어요. [+ 인원 추가]로 줄을 늘려 주세요.", 8000);
+        else if (m.kicked) say((m.nick || m.acct) + "님이 다시 참여를 요청했어요 — 표 아래에서 승인해 주세요.", 8000);
+        else say((m.nick || m.acct) + "님의 참여 요청 — 빈 줄이 없어요. 표 아래에서 승인해 주세요.", 8000);
       } else if (m.st === "ok") {
         /* 시작 전엔 명단을 보는 효과가 앉힙니다 — 여기서도 앉히면 두 번 앉습니다. 진행 중엔 표 아래에 서니 한 번 말해 줍니다 (2026-09-06).
            (폐기 2026-09-06) 여기서 닉 일치·자리표시 줄에 바로 앉히던 것 */
         if (roundLive && !seats.some((k) => k.acct === m.acct) && !ownRowOf(m.acct))
-          say((m.nick || m.acct) + "님이 들어왔어요 — 표 아래에서 받아 주세요.", 8000);
+          say((m.nick || m.acct) + "님의 참여 요청이 왔어요 — 표 아래에서 승인해 주세요.", 8000);
       }
       refreshMembers();
     },
@@ -5189,7 +5189,7 @@ export default function GoldSettlement() {
     rows2: rows.map((x, i) => {
       const s = seatsRef.current.find((k) => k.id === x.id);
       const mm = s && s.acct ? (members || []).find((q) => q.acct === s.acct) : null;
-      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, ava: mm && mm.ava ? mm.ava : undefined };
+      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0, ava: mm && mm.ava ? mm.ava : undefined };
     }),
     /* 판이 없이 모으는 중일 때만 — 뷰어·오버레이가 순위표 대신 대기실을 그립니다 (§4.3).
        판이 살아 있으면 오버레이는 그 판을 비춥니다 (§3.4) — 판 도중에 사람을 들인다고
@@ -5291,7 +5291,7 @@ export default function GoldSettlement() {
        다음 대기실에 지난 사람의 글자 이름이 서는 그림이 됐다 */
     setMembers([]);
     setLobbyOn(false);
-    putSeats((prev) => prev.filter((s0, i) => i === 0 && !!s0.acct));
+    putSeats((prev) => prev.filter((s0) => !!s0.acct && !!authRef.current && s0.acct === authRef.current.id));
     boardOnRef.current = false;
     putRelay({ ...relayRef.current, boardOn: false });
     /* 끝낸 직후의 일은 장부 읽기·우편 보내기입니다 (§3.4 여정표) — 로비 직행이 아니라
@@ -5694,7 +5694,7 @@ export default function GoldSettlement() {
     if ((you && you.st === "req") || vlobby) return leaveNow();
     setAsk({
       title: "파티에서 나갈까요?",
-      body: "벌금 기록은 남아요. 다시 들어오려면 방장이 앉혀 줘야 해요.",
+      body: "벌금 기록은 남아요. 다시 들어오려면 방장의 승인이 필요해요.",
       action: "나가기",
       tone: "danger",
       onYes: leaveNow,
@@ -5712,7 +5712,7 @@ export default function GoldSettlement() {
     if (!(meSeat && meSeat.round)) return leaveFromLobby();
     setAsk({
       title: "파티에서 나갈까요?",
-      body: "벌금 기록은 남아요. 다시 들어오려면 방장이 앉혀 줘야 해요.",
+      body: "벌금 기록은 남아요. 다시 들어오려면 방장의 승인이 필요해요.",
       action: "나가기",
       tone: "danger",
       onYes: leaveFromLobby,
@@ -6235,11 +6235,11 @@ export default function GoldSettlement() {
       /* 라벨이 동작(나가기·신청 취소)과 실시간 점까지 든다 (A1, 2026-09-16) — 쪽지는 없다 */
       return you.st === "ok"
         ? { away: true, text: who + " · 내 방송에 나가는 중", act: "나가기" }
-        : { away: true, text: who + " · 받아 주길 기다리는 중", act: "신청 취소" };
+        : { away: true, text: who + " · 승인 대기 중", act: "요청 취소" };
     }
     if (readOnly) return null;
     const waitN = (members || []).filter((m) => m.st === "req").length;
-    return { away: false, text: "내 판 · " + seats.length + "자리" + (waitN ? " · " + waitN + "명 기다림" : "") };
+    return { away: false, text: "내 판 · " + seats.length + "자리" + (waitN ? " · 승인 대기 " + waitN + "명" : "") };
   })();
   /* 입력 단위 분절 컨트롤 (§3.12.7) — 직각 2px, 선택 칸은 잉크로 채운다. 예시는 알약 없이 모노 글자 */
   const unitSeg = (solo) => (
@@ -8060,7 +8060,7 @@ export default function GoldSettlement() {
       const name = ((st ? st.name : row.name) || "").trim();
       if (acct) {
         const mem = members.find((k) => k.acct === acct);
-        const host = i === 0 || (auth && acct === auth.id);
+        const host = !!(auth && acct === auth.id);
         /* 방금 앉은 사람은 들어오는 길에 소켓이 한 번 갈리곤 합니다(로그인 뒤 다시 엶) — 그 10초는 '방금 앉았어요'가 먼저 */
         if (!host && arrived[row.id])
           return { kind: "new", host, mine: false, nick: (mem && mem.nick) || name, masked: acct.slice(0, 2) + "••••" };
@@ -8073,7 +8073,7 @@ export default function GoldSettlement() {
     const name = seatName(row, i);
     /* 내 줄은 서버가 준 you.rowId 가 먼저입니다 — 방장이 새 판을 밀기 전에도 내 자리가 '나'로 보이게 */
     const mine = !!you && you.rowId === row.id;
-    if ((r2 && r2.a) || mine) return { kind: "on", host: i === 0, mine };
+    if ((r2 && r2.a) || mine) return { kind: "on", host: !!(r2 && r2.h), mine };
     return { kind: isFillName(name) ? "empty" : "typed", host: false, mine: false };
   };
   const seatStrip = (row, i) => {
@@ -8153,7 +8153,7 @@ export default function GoldSettlement() {
   /* 기다리는 사람은 누구든 표 아래 한 곳 (2026-09-16) — 처음 오는 사람도, 나갔다 돌아오는 사람도 */
   const waitBelow = [...pending, ...waiting.map((w) => ({ ...w, waiting: true }))];
   const waitWhy = (p) =>
-    p.kicked ? "내보냈던 사람 · 들어오려 해요" : p.inv ? "초대받고 왔는데 자리가 없었어요" : p.full ? "자리가 다 찼어요" : p.waiting ? "들어왔어요" : "들어오려 해요";
+    p.kicked ? "내보낸 사람 · 참여 요청" : "참여 요청";
   /* 이/가 — 이름 끝 받침으로 (순두부가 · 감독이) */
   const ga = (w) => {
     const c = (w || "").trim().slice(-1).charCodeAt(0);
@@ -8687,7 +8687,7 @@ export default function GoldSettlement() {
                     <>
                       <h4 className="gs-invnote-h">파티원 부르기</h4>
                       <p className="gs-invnote-p">
-                        Discord에 붙일 초대 메시지를 복사해요. 지난 판 사람은 앱만 열면 자기 줄이고, 처음 오는 사람은 표 아래 대기 줄에 서요.
+                        Discord에 붙일 초대 메시지를 복사해요. 자리가 있는 사람은 앱만 열면 자기 줄이고, 처음 오는 사람은 참여 요청으로 표 아래에 떠요.
                       </p>
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-invdiscbtn" onClick={copyInvite}>
@@ -9150,7 +9150,7 @@ export default function GoldSettlement() {
                   Discord 연동을 통해 참여하기
                 </button>
                 <p className="gs-invite-note">
-                  연동하면 방장이 받아 주는 대로 앉아요. 초상화는 디스코드에서 가져오고 별명은 처음 한 번 정해요.
+                  연동하면 참여를 요청하고, 방장이 승인하면 자리가 정해져요. 초상화는 디스코드에서 가져오고 별명은 처음 한 번 정해요.
                 </p>
               </>
             )}
@@ -9364,7 +9364,7 @@ export default function GoldSettlement() {
               <div className="gs-empty">
                 <p>자리를 기다리는 중이에요</p>
                 {/* (폐기 2026-09-06) `방장이 줄을 정해 줘요.` — 방장은 줄을 고르지 않고 [받기]만 누릅니다 */}
-                <p className="gs-empty-sub">방장이 받아 주면 앉아요.</p>
+                <p className="gs-empty-sub">다시 들어오려면 방장의 승인이 필요해요.</p>
               </div>
             ) : !myRow || cols.length === 0 ? (
               <div className="gs-empty">
@@ -9541,7 +9541,7 @@ export default function GoldSettlement() {
                   ? "이 파티에 들어갈 초대가 없어요 — 방장에게 초대 링크를 받아 주세요."
                   : "이 초대는 쓸 수 없어요 — 방장에게 새 초대를 받아 주세요."}
               </p>
-              {kickedOut && !denied && <p className="gs-empty-sub">방장이 다시 받으면 들어갈 수 있어요.</p>}
+              {kickedOut && !denied && <p className="gs-empty-sub">다시 들어오려면 방장의 승인이 필요해요.</p>}
               <div className="gs-join-acts gs-blocked-acts">
                 {meCur && meCur !== liveRoom && (
                   <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => enterRoom(meCur, { push: true })}>
@@ -9810,7 +9810,11 @@ export default function GoldSettlement() {
               {!(ready || guestLobby) && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
             </span>
             {unitSeg(false)}
-            {/* (폐기 2026-09-16, G1) 표 바의 마우스 안내 "칸을 누르면 1회 쌓이고 …" — 설명은 표 바에 있을 이유가 없다. 튜토리얼 몫 */}
+            {/* 마우스 안내 — 표 바 오른쪽 끝 (2026-09-16 사용자: 없애지 말 것). 준비 상태·대기실 갈래는 §3.12 에서 없어져 이 한 줄뿐 */}
+            <p className="gs-cellnote">
+              칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
+              우클릭하면 1회 빠져요.
+            </p>
           </div>
         )}
 
@@ -10037,7 +10041,7 @@ export default function GoldSettlement() {
                       <th className="gs-stick gs-l">
                         <div className="gs-namecell">
                           {/* ≡ 손잡이 (2026-09-06 오후 사용자 요청) — 방장 줄과 파티원 화면엔 없습니다. 튜토리얼에선 설명하지 않습니다 */}
-                          {!readOnly && i > 0 && (
+                          {!readOnly && (
                             <span
                               className="gs-drag"
                               title="끌어서 줄 순서 바꾸기"
@@ -10067,7 +10071,9 @@ export default function GoldSettlement() {
                               const mem = members.find((k) => k.acct === st.acct);
                               const off = !!mem && mem.on === false;
                               /* 방장은 명단에 없어 초상화가 명단에서 안 온다 — 내 계정의 것을 쓴다 (2026-09-16 사용자 지적: 방장 줄만 실루엣이었다) */
-                              const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : i === 0 && auth ? myAva(auth) : null;
+                              /* 방장 줄 = 내 계정이 붙은 줄 (2026-09-16) — 첫 줄이라는 규칙은 없다 */
+                              const isHostRow = !!(auth && st.acct === auth.id);
+                              const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : isHostRow ? myAva(auth) : null;
                               const masked = st.acct.slice(0, 2) + "••••";
                               /* 글자(아이디)는 이름 칸을 너무 먹었습니다 — 표시는 i 하나, 내용은 호버에 (2026-09-05) */
                               /* 브라우저 title 은 늦고 못생겼습니다 — 앱의 툴팁(.gs-tip)으로 즉답 */
@@ -10077,10 +10083,10 @@ export default function GoldSettlement() {
                                       방장 줄(1번)은 표시만. (폐기) 파란 원의 i, 도구칸의 사람 버튼 */}
                                   <button
                                     type="button"
-                                    className={"gs-rowi gs-rowi-ava" + (i === 0 ? " gs-rowi-host" : "")}
-                                    aria-label={i === 0 ? "방장" : "이 줄의 사람"}
-                                    aria-haspopup={i > 0 ? "dialog" : undefined}
-                                    onClick={i > 0 && auth && relay.room ? () => setRowPerson(row.id) : undefined}
+                                    className={"gs-rowi gs-rowi-ava" + (isHostRow ? " gs-rowi-host" : "")}
+                                    aria-label={isHostRow ? "방장 (나)" : "이 줄의 사람"}
+                                    aria-haspopup={!isHostRow ? "dialog" : undefined}
+                                    onClick={!isHostRow && auth && relay.room ? () => setRowPerson(row.id) : undefined}
                                   >
                                     {/* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 초상화가 없는 자리라 글자를 넣지 않습니다.
                                         (폐기 2026-09-07) 계정 색 글자 원 — 이름 옆에 같은 글자가 한 번 더 나와 조잡했다(사용자).
@@ -10096,13 +10102,15 @@ export default function GoldSettlement() {
                                     </svg>
                                     )}
                                   </button>
+                                  {/* 방장은 금테 초상화, 나는 "나" 표 — 이름 칸이 좁아 글자는 하나만 (툴팁이 "방장 · 나") */}
+                                  {isHostRow && <span className="gs-lb-tag">나</span>}
                                   <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
                                     {/* 계정 닉만 — 줄 이름은 방장 장부의 것이라 여기 안 옵니다 (2026-09-06 사용자 지적).
                                         라벨을 달아 두 줄로 (2026-09-07 사용자 지정 문구: `원래 닉네임:` / `ID:`; (폐기) `{닉} {아이디}` 한 줄 — 무엇이 닉이고 아이디인지 안 읽혔다) */}
                                     {/* 방장 줄은 첫 줄에 `방장` (2026-09-07 사용자: 금색은 좋은데 호버하면 방장이라고 떠야 한다) */}
-                                    {i === 0 && (
+                                    {isHostRow && (
                                       <span className="gs-tipline">
-                                        <b>방장</b>
+                                        <b>방장 · 나</b>
                                       </span>
                                     )}
                                     <span className="gs-tipline">
@@ -10118,7 +10126,7 @@ export default function GoldSettlement() {
                             }
                             /* 파티원 화면의 초상화 (§3.12.3) — 방장이 판에 실어 보낸 rows2.ava 로 그린다. 계정 아이디는 여전히 안 온다 */
                             const r2v = rows2v.find((k) => k.rowId === row.id);
-                            const host = i === 0 && !!(r2v && r2v.a);
+                            const host = !!(r2v && r2v.h);
                             const mine = !!you && you.rowId === row.id;
                             const ava = r2v && r2v.ava && (r2v.ava.id || r2v.ava.p) ? r2v.ava : null;
                             if (!host && !mine && !ava) return null;
@@ -10485,7 +10493,7 @@ export default function GoldSettlement() {
           <div className="gs-waitrows">
             {/* 대기 줄 (§3.12.4) — 기다리는 사람은 여기 한 곳에만 선다. [받기]는 첫 빈 줄, 없으면 이번 판 안 온 사람의 줄 */}
             <div className="gs-waithead">
-              <span>기다리는 사람 {waitBelow.length}</span>
+              <span>승인 대기 {waitBelow.length}</span>
               {waitBelow.length > 1 && (
                 <button
                   className="gs-btn gs-btn-sm"
@@ -10493,7 +10501,7 @@ export default function GoldSettlement() {
                     for (const p of waitBelow) await waitTake(p);
                   }}
                 >
-                  모두 받기
+                  모두 승인
                 </button>
               )}
             </div>
@@ -10522,10 +10530,10 @@ export default function GoldSettlement() {
                           if (tutorialRef.current) tutHit("pick"); // 튜토리얼 4장
                         }}
                       >
-                        자리 정하기
+                        자리 지정
                       </button>
                       <button className="gs-btn gs-btn-sm" disabled={!tgt} onClick={() => waitTake(p)}>
-                        받기
+                        승인
                       </button>
                     </span>
                   </div>
@@ -11053,7 +11061,7 @@ export default function GoldSettlement() {
                         setSeatMove({ acct: st.acct, nick });
                       }}
                     >
-                      다른 줄로 옮기기…
+                      자리 이동…
                     </button>
                     <button
                       className="gs-seatopt gs-seatopt-danger"
@@ -11061,7 +11069,7 @@ export default function GoldSettlement() {
                         close();
                         setAsk({
                           title: nick + "님을 내보낼까요?",
-                          body: "줄과 벌금은 그대로 남고, 다시 초대하면 돌아와요.",
+                          body: "줄과 벌금은 그대로 남아요. 다시 들어오려면 방장의 승인이 필요해요.",
                           action: "내보내기",
                           tone: "danger",
                           onYes: () => kickMember(st.acct),
@@ -11093,9 +11101,9 @@ export default function GoldSettlement() {
           return (
             <InfoModal title={label + " 줄"} onClose={close}>
               <div className="gs-key">
-                <p className="gs-ppl-who">이 줄에 앉힐 사람을 골라요 — 옮겨 오는 사람의 자수 자격이 이 줄로 따라와요.</p>
+                <p className="gs-ppl-who">이 줄에 배정할 사람을 골라요 — 자수 자격도 이 줄로 옮겨요.</p>
                 {cands.length === 0 ? (
-                  <p className="gs-lb-note">아직 앉힐 사람이 없어요 — 초대 링크로 부르면 여기 떠요.</p>
+                  <p className="gs-lb-note">배정할 사람이 없어요 — 초대 링크로 부르면 여기 떠요.</p>
                 ) : (
                   <div className="gs-seatlist">
                     {cands.map((m) => (
@@ -11125,7 +11133,7 @@ export default function GoldSettlement() {
       {resumePick && !readOnly && (
         <InfoModal title="지난 판 이어서" onClose={() => setResumePick(false)}>
           <div className="gs-key">
-            <p className="gs-ppl-who">[시작]을 누르면 고른 판의 줄·숫자·기록이 그대로 열려요. 앉은 사람은 자기 줄로 돌아가요.</p>
+            <p className="gs-ppl-who">[시작]을 누르면 고른 판의 줄·숫자·기록이 그대로 열려요. 파티원은 자기 줄로 돌아가요.</p>
             <div className="gs-seatlist">
               {gensList()
                 .filter((g) => g.gen && (!g.host || g.host === g.me))
@@ -11157,7 +11165,7 @@ export default function GoldSettlement() {
           const p = waitPick;
           const nick = p.nick || p.acct;
           const close = () => setWaitPick(null);
-          const opts = seats.map((s0, i) => ({ s: s0, i })).filter(({ s: s0, i }) => i > 0 && !s0.acct);
+          const opts = seats.map((s0, i) => ({ s: s0, i })).filter(({ s: s0 }) => !s0.acct);
           const fineOf = (s0) => {
             const r = rows.find((x) => x.id === s0.id);
             return r ? liveTotal(r) : 0;
@@ -11167,9 +11175,9 @@ export default function GoldSettlement() {
             waitPlace(p, id);
           };
           return (
-            <InfoModal title={nick + " 자리 정하기"} onClose={close}>
+            <InfoModal title={nick + " 자리 지정"} onClose={close}>
               <div className="gs-key">
-                <p className="gs-ppl-who">어느 줄에 앉힐까요? 퇴장한 사람 줄에 앉히면 남은 벌금도 그 사람 것이 돼요.</p>
+                <p className="gs-ppl-who">어느 줄에 배정할까요? 이름이 있는 줄에 배정하면 남은 벌금도 그 사람 것이 돼요.</p>
                 <div className="gs-seatlist gs-waitpick">
                   {opts.map(({ s: s0, i }) => {
                     const g = fineOf(s0);
@@ -11184,8 +11192,8 @@ export default function GoldSettlement() {
                             close();
                             setAsk({
                               title: label + "의 벌금 " + man(g) + "이 남아 있어요",
-                              body: nick + "님이 이 줄에 앉으면 그 벌금도 " + nick + "님 것이 돼요.",
-                              action: "이 줄에 앉히기",
+                              body: nick + "님을 이 줄에 배정하면 그 벌금도 " + nick + "님 것이 돼요.",
+                              action: "이 줄에 배정",
                               onYes: () => waitPlace(p, s0.id),
                             });
                             return;
@@ -13466,7 +13474,7 @@ function ReqRow({ req, ghost, onDeny, onApprove }) {
           className={"gs-btn gs-btn-sm" + (ghost ? " gs-btn-ghost" : "")}
           onClick={onApprove}
         >
-          {req.kicked ? "받기" : "자리 만들어 앉히기"}
+          승인
         </button>
       </span>
     </div>
@@ -13478,12 +13486,12 @@ function ReqRow({ req, ghost, onDeny, onApprove }) {
 function SeatPick({ title, nick, seats, onPick, onClose }) {
   const free = seats
     .map((s, i) => ({ s, i }))
-    .filter(({ s, i }) => i > 0 && !s.acct);
+    .filter(({ s }) => !s.acct);
   return (
     <InfoModal title={title} onClose={onClose}>
       <div className="gs-key">
         <p>
-          <b>{nick}</b> 님을 어느 자리에 앉힐까요? 자리를 옮기면 자수 자격도 따라가요.
+          <b>{nick}</b> 님을 어느 자리로 옮길까요? 자수 자격도 함께 옮겨요.
         </p>
         <div className="gs-seatlist">
           {free.map(({ s, i }) => (
