@@ -43,6 +43,8 @@ const ACCT_SCAN_MS = 7 * 86400 * 1000;
 const MAX_STATE_BYTES = 128 * 1024;
 /* 계정부에 오는 본문은 전부 작습니다 — 외형(4KB)이 제일 큽니다 */
 const MAX_AUTH_BYTES = 32 * 1024;
+/* 올린 초상화 (§3.12.3, 2026-09-16) — 128px JPEG 데이터 URL. 계정부 본문 상한과 별도로 이 길이만 받는다 */
+const MAX_PIC_BYTES = 64 * 1024;
 const LOOK_MAX_BYTES = 4 * 1024;
 const CONFESS_PER_MIN = 20;
 /* 자수 되돌리기 창 (§3.6, 2026-09-05) — 내가 방금 올린 것만 30초 안에 −1 로 되돌립니다.
@@ -153,6 +155,7 @@ export default {
        지목 초대도 계정부에 삽니다 — 함께한 사람이 계정에 붙어 있어서요 (§3.3) */
     if (
       p.startsWith("/api/auth/") ||
+      p.startsWith("/api/pic/") ||
       p === "/api/invite" ||
       new RegExp(`^/api/o/${TOK20}/resolve$`).test(p) ||
       /^\/api\/j\/[A-Z0-9]{8}\/resolve$/i.test(p)
@@ -267,7 +270,7 @@ export class Accounts {
     let b = {};
     if (req.method === "POST") {
       const raw = await req.text();
-      if (raw.length > MAX_AUTH_BYTES) return json({ error: "too big" }, 413);
+      if (raw.length > (p === "/api/auth/avatar" ? MAX_PIC_BYTES + 256 : MAX_AUTH_BYTES)) return json({ error: "too big" }, 413);
       if (raw) {
         try {
           b = JSON.parse(raw);
@@ -548,7 +551,7 @@ export class Accounts {
       if (!u) return json({ error: "not found" }, 404);
       const token = rid(32);
       await S.put("s:" + token, { id: u.id, exp: now + SESSION_MS });
-      return json({ id: u.id, nick: u.nick, token, obsToken: u.obsToken, dc: u.dc || null, nickSet: !!u.nickSet, cur: u.cur || null });
+      return json({ id: u.id, nick: u.nick, token, obsToken: u.obsToken, dc: u.dc || null, nickSet: !!u.nickSet, pic: u.pic || null, cur: u.cur || null });
     }
 
     if (p === "/api/auth/me" && req.method === "GET") {
@@ -565,6 +568,7 @@ export class Accounts {
         anon: !!u.anon,
         dc: u.dc || null,
         nickSet: !!u.nickSet,
+        pic: u.pic || null,
       };
       if (u.look) out.look = u.look;
       /* 함께한 사람과 대기 중인 지목 초대를 같이 싣습니다 (§4 라운드 B).
@@ -629,6 +633,52 @@ export class Accounts {
     }
 
     // 닉을 바꾸면 지금 있는 방의 서기가 줄 이름을 따라 바꿔 줍니다
+    /* 올린 초상화 (§3.12.3, 2026-09-16 사용자: 프로필 수동 설정 + 디스코드 프사 복원) — data URL 하나를 받아 pic:{id} 에 두고
+       u.pic 에 판본(시각)을 적는다. 비우면 디스코드 초상화로 돌아간다. 앉아 있는 방·접속 방·내 방에 알려 명단의 ava 를 갱신한다 */
+    if (p === "/api/auth/avatar" && req.method === "POST") {
+      const u = await this.session(req, now);
+      if (!u) return json({ error: "unauthorized" }, 401);
+      if (b.clear) {
+        await S.delete("pic:" + u.id);
+        u.pic = null;
+      } else {
+        const m = new RegExp("^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$").exec(String(b.data || ""));
+        if (!m || m[2].length > MAX_PIC_BYTES) return json({ error: "bad image" }, 400);
+        await S.put("pic:" + u.id, { ct: m[1], b64: m[2] });
+        u.pic = now;
+      }
+      await S.put("u:" + u.id, u);
+      const ava = this.avaOf(u);
+      const rooms = new Set();
+      for (const k of ["rm:a:" + u.id, "p:" + u.id]) {
+        const v = await S.get(k);
+        const r = v && typeof v === "object" ? v.room : v;
+        if (typeof r === "string" && r) rooms.add(r);
+      }
+      if (u.cur) rooms.add(u.cur);
+      if (u.room) rooms.add(u.room);
+      for (const r of rooms) {
+        try {
+          await this.env.ROOM.get(this.env.ROOM.idFromName(r)).fetch("https://do/ava-changed", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ acct: u.id, ava }),
+          });
+        } catch (e) {}
+      }
+      return json({ ok: true, pic: u.pic || null, ava });
+    }
+    /* 공개 초상화 읽기 — <img> 가 부른다. 판본은 주소의 ?v= 라 오래 캐시해도 된다 */
+    if (p.startsWith("/api/pic/") && req.method === "GET") {
+      const id = p.slice("/api/pic/".length);
+      const pic = /^[A-Za-z0-9_-]{1,40}$/.test(id) ? await S.get("pic:" + id) : null;
+      if (!pic) return new Response(null, { status: 404, headers: CORS });
+      const bin = Uint8Array.from(atob(pic.b64), (c) => c.charCodeAt(0));
+      return new Response(bin, {
+        status: 200,
+        headers: { ...CORS, "content-type": pic.ct, "cache-control": "public, max-age=31536000, immutable" },
+      });
+    }
     if (p === "/api/auth/nick" && req.method === "POST") {
       const u = await this.session(req, now);
       if (!u) return json({ error: "unauthorized" }, 401);
@@ -850,6 +900,11 @@ export class Accounts {
 
   /* 그 방에서 내가 어떤 상태인지 한 줄 — 방이 없어졌거나 못 닿으면 조용히 null 입니다 */
   /* 이 계정의 방송 주소가 비추는 방 — 접속 방, 없으면 내 방 (§3.12.6) */
+  /* 초상화 묶음 (§3.12.3) — 디스코드(id·해시)와 올린 사진(판본 p, 계정 u). 앱의 DcAva 가 이 모양을 그린다 */
+  avaOf(u) {
+    const dc = u.dc || {};
+    return { id: dc.id || null, a: dc.avatar || null, p: u.pic || null, u: u.pic ? u.id : undefined };
+  }
   async roomOf(u) {
     const pr = await this.ctx.storage.get("p:" + u.id);
     return (pr && pr.room) || u.room || null;
@@ -1315,6 +1370,19 @@ export class Room {
     }
 
     // 닉 변경 통지 (Accounts DO → 방)
+    /* 초상화가 바뀌었다 (Accounts /api/auth/avatar → 방) — 명단의 ava 를 갈고 방장 앱에 알린다 */
+    if (path === "/ava-changed") {
+      /* 본문 파싱 블록보다 앞이라 직접 읽는다 (nick-changed 와 같음) */
+      const { acct, ava } = await req.json().catch(() => ({}));
+      if (typeof acct !== "string" || !acct || !ava || typeof ava !== "object") return json({ error: "bad json" }, 400);
+      const m = await S.get("m:" + acct);
+      if (m) {
+        m.ava = { id: ava.id || null, a: ava.a || null, p: ava.p || null, u: ava.u };
+        await S.put("m:" + acct, m);
+      }
+      this.toScribe({ kind: "ava", acct, ava });
+      return json({ ok: true });
+    }
     if (path === "/nick-changed") {
       const { acct, nick } = await req.json().catch(() => ({}));
       if (typeof acct !== "string" || typeof nick !== "string") return json({ error: "bad json" }, 400);
@@ -1636,7 +1704,8 @@ export class Room {
       const kicked = !!(await S.get("x:" + me.id));
       const m = { nick: me.nick, rowId: null, st: "req", t: now };
       if (kicked) m.kicked = 1;
-      if (b.ava && typeof b.ava === "object") m.ava = { id: String(b.ava.id || ""), a: b.ava.a ? String(b.ava.a) : null };
+      if (b.ava && typeof b.ava === "object")
+        m.ava = { id: b.ava.id ? String(b.ava.id) : null, a: b.ava.a ? String(b.ava.a) : null, p: b.ava.p ? Number(b.ava.p) || null : null, u: b.ava.u ? String(b.ava.u) : undefined };
       await S.put("m:" + me.id, m);
       this.toScribe({ kind: "join", acct: me.id, nick: me.nick, st: "req", seat: null, link: 1, kicked: kicked ? 1 : 0, full: 0, ava: m.ava || null });
       return json({ ok: true, st: "req", you: youOf(m), full: false, kicked });
