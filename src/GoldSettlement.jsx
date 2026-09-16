@@ -4138,7 +4138,7 @@ export default function GoldSettlement() {
     if (boardOn)
       return setAsk({
         title: "내 판을 해산하고 초대받은 파티로 갈까요?",
-        body: "시작 전 판이 없어져요. 자리와 이름이 지워지고 항목과 단가만 남아요.",
+        body: "시작 전 판이 없어져요. 자리와 이름을 지우고 항목과 단가만 남겨요.",
         action: "해산하고 가기",
         tone: "danger",
         onYes: () => {
@@ -4187,7 +4187,7 @@ export default function GoldSettlement() {
     if (!others && !always) return disband();
     setAsk({
       title: others ? "파티를 해산할까요?" : "판을 해산할까요?",
-      body: others ? "앉아 있는 파티원이 나가요." : "시작 전 판이 없어져요. 자리와 이름이 지워지고 항목과 단가만 남아요.",
+      body: others ? "앉아 있는 파티원이 나가요." : "시작 전 판이 없어져요. 자리와 이름을 지우고 항목과 단가만 남겨요.",
       action: "해산",
       tone: "danger",
       onYes: disband,
@@ -7155,7 +7155,7 @@ export default function GoldSettlement() {
     if (readOnly) {
       /* 시작 전의 판 — 파티원의 칸도 잠겨 있습니다 (§5.3) */
       if (guestLobby) {
-        say("방장이 시작하면 세어져요.");
+        say("방장이 시작하면 셀 수 있어요.");
         return;
       }
       /* 파티원은 자기 줄의 보통 항목만 — 서버로 보내고, 반영은 방장 푸시로만 옵니다 */
@@ -7755,7 +7755,7 @@ export default function GoldSettlement() {
   const askDropGen = (g) =>
     setAsk({
       title: "이 기록을 지울까요?",
-      body: (g.title || g.name) + " — 이 브라우저에서 지워져요. 되돌릴 수 없어요.",
+      body: (g.title || g.name) + " — 이 브라우저에서 지워요. 되돌릴 수 없어요.",
       action: "지우기",
       tone: "danger",
       onYes: () => {
@@ -8084,15 +8084,15 @@ export default function GoldSettlement() {
       body:
         `${row.name || "이름 없는 인원"} — ` +
         (simple
-          ? "적어둔 금액과 메모장의 해당 줄이 함께 지워져요."
-          : "횟수와 기타 벌금이 함께 지워져요."),
+          ? "적어둔 금액과 메모장의 해당 줄도 함께 지워요."
+          : "횟수와 기타 벌금도 함께 지워요."),
       tone: "danger",
       onYes: () => delRow(row.id),
     });
   const askDelCol = (col) =>
     setAsk({
       title: "이 항목을 삭제할까요?",
-      body: `${col.name || "이름 없는 항목"} 열과 모든 인원의 해당 횟수가 함께 지워져요.`,
+      body: `${col.name || "이름 없는 항목"} 열과 모든 인원의 해당 횟수를 함께 지워요.`,
       tone: "danger",
       onYes: () => delCol(col.id),
     });
@@ -9240,7 +9240,7 @@ export default function GoldSettlement() {
                   Discord 연동을 통해 참여하기
                 </button>
                 <p className="gs-invite-note">
-                  연동하면 참여를 요청하고, 방장이 승인하면 자리가 정해져요. 초상화는 디스코드에서 가져오고 별명은 처음 한 번 정해요.
+                  연동하면 참여를 요청해요. 방장이 승인하면 표의 한 줄을 배정받아요. 초상화는 디스코드에서 가져오고, 별명은 처음 한 번만 정하면 돼요.
                 </p>
               </>
             )}
@@ -10925,7 +10925,7 @@ export default function GoldSettlement() {
             )}
             <div className="gs-empty">
               <p>정산할 사람이 없어요.</p>
-              <p className="gs-empty-sub">벌금표에 금액을 입력하면 장부가 여기에 만들어져요.</p>
+              <p className="gs-empty-sub">벌금표에 금액을 입력하면 여기서 장부를 볼 수 있어요.</p>
             </div>
           </div>
         </section>
@@ -10977,7 +10977,7 @@ export default function GoldSettlement() {
         {!r || r.transfers.length === 0 ? (
           <div className="gs-empty">
             <p>보낼 우편이 없어요.</p>
-            <p className="gs-empty-sub">벌금표를 채우면 송금 조합이 여기에 만들어져요.</p>
+            <p className="gs-empty-sub">벌금표를 채우면 여기서 송금 조합을 볼 수 있어요.</p>
           </div>
         ) : (
           <>
@@ -11057,7 +11057,7 @@ export default function GoldSettlement() {
                 <span className="gs-intro-desc">
                   이미 메모장에 적고 계셨다면 그대로 붙여넣기만 하면 돼요. 기록은 하던 대로
                   하고 정산만 여기서 하는 방식이에요. 새로 적을 때도 이름과 금액만 한 줄씩
-                  치면 표가 만들어져요.
+                  치면 표로 정리해요.
                 </span>
               </button>
               <button className="gs-intro-card" onClick={() => pickIntro("items")}>
@@ -11088,8 +11088,8 @@ export default function GoldSettlement() {
               </button>
             </div>
             <p className="gs-intro-foot">
-              정산 장부와 보낼 우편은 벌금표를 따라 저절로 채워져요. 모드를 바꿔도 적어둔
-              내용은 그대로 넘어가요.
+              벌금표만 채우면 정산 장부와 보낼 우편은 따로 손대지 않아도 돼요. 모드를 바꿔도
+              적어둔 내용을 그대로 이어서 볼 수 있어요.
             </p>
           </div>
         </div>
@@ -13117,7 +13117,7 @@ function SpinLookPicker({ value, theme, onPick, onTheme }) {
       <div className={"gs-slook-themes" + (wheelOn ? "" : " off")}>
         {[
           ["satin", "새틴 · 금박", "면마다 고유색 — 색으로 면을 구분해요"],
-          ["vegas", "카지노", "빨강·검정이 번갈아 칠해져요 — 색이 같은 면이 생겨요"],
+          ["vegas", "카지노", "빨강·검정을 번갈아 칠해요 — 색이 같은 면이 생겨요"],
         ].map(([v, label, hint]) => (
           <button
             key={v}
@@ -14675,7 +14675,7 @@ function GainGuide({ onClose }) {
             <li className="yes">
               누가 방장이든, <b>내가 들어간 파티</b>가 내 주소에 떠요
             </li>
-            <li className="yes">파티에서 빠지면 내 화면은 저절로 비워져요</li>
+            <li className="yes">파티에서 빠지면 내 화면을 저절로 비워요</li>
           </ul>
         </div>
       </div>
