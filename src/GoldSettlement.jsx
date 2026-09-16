@@ -9808,7 +9808,7 @@ export default function GoldSettlement() {
                   </span>
                 </span>
               )}
-              {!(ready || guestLobby) && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
+              {/* (폐기 2026-09-16) [채팅 공유용 복사] — 오버레이가 대중화돼 거의 안 쓴다(사용자). 메모장 머리의 것도 함께 */}
               {/* 조작은 전부 왼쪽 한 줄 — 동사 둘, 세로선, 입력 단위. 높이 34px 로 맞춘다 (2026-09-16).
                   (폐기) 입력 단위를 오른쪽에 따로·안내 위에 쌓기 — 세 덩이가 제각각 떠 있었다(사용자) */}
               <span className="gs-tablebar-sep" aria-hidden="true" />
@@ -9830,7 +9830,6 @@ export default function GoldSettlement() {
               <div className="gs-memo-head">
                 <span className="gs-memo-left">
                   <span className="gs-caplab">메모장</span>
-                  <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />
                 </span>
                 <span className="gs-fontctl" role="group" aria-label="메모장 글자 크기">
                   <button
@@ -12700,7 +12699,7 @@ function RouletteCfg({ col, unitLabel, theme, onW, onPass, onPassSelf, onToggleF
   );
 }
 
-/* 채팅 공유용 복사 — 모드에 따라 툴바에도, 메모장 머리에도 올라갑니다 */
+/* (폐기 2026-09-16) 채팅 공유용 복사 — 표 바와 메모장 머리에서 뺐다. chatLine·copyChat 도 이제 안 쓴다 */
 function ChatCopyBtn({ line, flash, onCopy }) {
   return (
     <span className="gs-tip">
