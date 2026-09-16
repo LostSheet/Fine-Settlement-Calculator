@@ -8817,7 +8817,7 @@ export default function GoldSettlement() {
                     <>
                       <h4 className="gs-invnote-h">파티원 부르기</h4>
                       <p className="gs-invnote-p">
-                        Discord에 붙일 초대 메시지를 복사해요. 자리가 있는 사람은 앱만 열면 자기 줄이고, 처음 오는 사람은 참여 요청으로 표 아래에 떠요.
+                        Discord에 붙여넣을 초대 메시지를 복사해요. 자리가 있던 사람은 앱을 열면 바로 자기 줄에서 자수할 수 있고, 처음 오는 사람은 표 아래에서 승인하면 돼요.
                       </p>
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-invdiscbtn" onClick={copyInvite}>
@@ -15263,7 +15263,7 @@ const HOST_STEPS = [
   { ch: 1, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 10만이면 10. 적고 [다음]. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음" }, // 사용자 지정 문구 (2026-09-06 낮; (폐기) `지우는 건 항목 이름 옆 ×.`)
   { ch: 1, sel: ".gs-readytools .gs-seg", text: "인원은 여기서 정해요. 늦게 오는 사람은 나중에 줄을 늘려도 돼요.", action: "다음 장", lock: true, enter: "colfix" },
   /* 3장 */
-  { ch: 2, sel: ".gs-invdiscbtn", text: "디코 메시지를 복사해서 붙이면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" }, // (폐기 2026-09-08) 표적 .gs-invlinkbtn·`초대 링크를 복사해서…` — 창구를 디코 메시지 하나로 좁히며 [링크 복사]가 닫혔다
+  { ch: 2, sel: ".gs-invdiscbtn", text: "디코 메시지를 복사해서 붙여넣으면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link" }, // (폐기 2026-09-08) 표적 .gs-invlinkbtn·`초대 링크를 복사해서…` — 창구를 디코 메시지 하나로 좁히며 [링크 복사]가 닫혔다
   { ch: 2, sel: ".gs-recruit", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto", after: "다음" }, // 둘이 앉으면 [다음] — (폐기 2026-09-06 낮) 5.4초 뒤 자동
   { ch: 2, sel: ".gs-glow", text: "두 명 왔어요. 한 명은… 안 들어오네요. 그냥 시작해 보죠.", wait: "start" },
   /* 4장 파티원 화면 — 이 걸음에 들어서면 부모가 파티원 예시 앱을 위에 얹습니다. 돌아오면(party-demo-resume) 실리안의 잡힘 1이 올라오고 다음 걸음 */
@@ -15292,7 +15292,7 @@ const HOST_STEPS = [
   { ch: 5, sel: ".gs-grid", text: "한 판 돌았다고 칠게요… 넷이 더 들어와 여덟이 됐어요.", lock: true, wait: "auto", after: "다음", enter: "seed" },
   /* 정산 내역이 어두운 막에 가리면 안 됩니다 — 이 장은 막 없이 (2026-09-06 사용자) */
   { ch: 5, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료와 나누는 방식도 여기서 정해요.", wait: "tab:ledger", clear: true },
-  { ch: 5, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. 디코에 붙일 글도 여기서 복사해요.", wait: "tab:mail", clear: true },
+  { ch: 5, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. 디코에 붙여넣을 글도 여기서 복사해요.", wait: "tab:mail", clear: true },
   { ch: 5, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
   { ch: 5, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true, clear: true },
   /* 6장 — 발급까지 */
