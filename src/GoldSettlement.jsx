@@ -3903,7 +3903,8 @@ export default function GoldSettlement() {
       const me = prev[i];
       /* (모험가N) 자리표시는 방장이 지은 이름이 아니다 — named 가 서 있어도 별명이 이긴다 (2026-09-16 버그: 내 줄이 (모험가1)로 남았다) */
       const fill = !(me.name || "").trim() || isFillName(me.name);
-      const name = me.named && !fill ? me.name : auth.nick || me.name;
+      /* 연동 전(게스트)에는 별명을 채우지 않는다 (B1′) — 게스트 별명은 화면 어디에도 안 나온다 */
+      const name = me.named && !fill ? me.name : auth.dc ? auth.nick || me.name : me.name;
       if (name === me.name) return;
       /* 판은 늘 살아 있으니(§3.12.2) 줄을 옮기지 않고 이름만 맞춘다 — 표와 자리의 id 가 어긋나지 않게 */
       if (name !== me.name) {
@@ -3917,14 +3918,14 @@ export default function GoldSettlement() {
     const h = prev.find((s) => !s.acct);
     if (h) {
       const fill = !(h.name || "").trim() || isFillName(h.name);
-      const name = fill ? auth.nick || h.name : h.name;
+      const name = fill && auth.dc ? auth.nick || h.name : h.name;
       putSeats(prev.map((s) => (s.id === h.id ? { ...s, acct: auth.id, mem: auth.id, named: !fill, nick: auth.nick || "", name } : s)));
-      if (fill) setRows((rs) => rs.map((x) => (x.id === h.id ? { ...x, name: auth.nick || x.name } : x)));
+      if (fill && auth.dc) setRows((rs) => rs.map((x) => (x.id === h.id ? { ...x, name: auth.nick || x.name } : x)));
       return;
     }
     const seat = {
       id: "r" + seq.current++,
-      name: auth.nick || "",
+      name: auth.dc ? auth.nick || "" : "",
       acct: auth.id,
       mem: auth.id,
       named: false,
@@ -4273,22 +4274,18 @@ export default function GoldSettlement() {
         boardOnRef.current = true;
         putRelay({ ...relayRef.current, boardOn: true });
       };
-      /* 이 기기에 아직 아무것도 없으면 묻지 않습니다 — 고를 것이 하나뿐입니다.
-         판을 연 적이 없고(로비), 기록도 숫자도 이름도 안 들어간 판이 '손 안 댄 판'입니다.
-         처음 켠 기기에서 로그인하는 길이 그 자리입니다 */
+      /* 복원 기준 (D1′, 2026-09-16 확정): 게스트(연동 전)는 이 브라우저가 진본 — 서버 판을 되살리지 않는다(서버 사본은 방송을 그리는 거울).
+         연동 계정은 서버가 진본 — 조용히 편다. 이 기기에만 있는 변경이 서버보다 새로우면(마지막 기록 시각) 이 기기 것을 두고
+         다음 저장이 서버를 덮는다. 밀려난 판은 판 기록에 남는다. (폐기) "서버에 저장된 판이 있어요" 확인창 */
+      if (!a.dc) return;
       const blank =
         !log.length &&
         rows.every((x) => noFine(x) && (!(x.name || "").trim() || isFillName(x.name)));
       if (!roundLive && (blank || isPristine(rows))) return seat();
-      setAsk({
-        title: "서버에 저장된 판이 있어요",
-        body: "이 기기의 판을 두고 그걸 열까요? 지금 화면의 판은 판 기록에 남아요.",
-        action: "서버 판 열기",
-        onYes: () => {
-          closeRound();
-          seat();
-        },
-      });
+      const lastOf = (lg) => (lg || []).reduce((m, e) => Math.max(m, e && e.t ? e.t : 0), 0);
+      if (lastOf(log) > lastOf(led.log)) return;
+      closeRound();
+      seat();
     } catch (e) {
       /* 서버가 없거나 판이 없으면 조용히 지나갑니다 */
     }
@@ -5384,6 +5381,25 @@ export default function GoldSettlement() {
   };
   /* 끄기 확인창은 폐지했습니다 (§5.7) — 파티원도 자수도 안 건드리니 물어볼 것이
      없습니다. 되돌리는 것도 같은 스위치를 다시 누르는 것뿐입니다 */
+  /* 주소 폐기 (B1′, 2026-09-16) — 게스트의 "나가기". 옛 주소를 죽이고(새로 발급과 같은 길) 이 브라우저의 계정을 지운다 → 발급 전으로 */
+  const discardAddr = async () => {
+    const a = authRef.current;
+    if (!a) return;
+    try {
+      await authApi.obsReissue(a.token);
+    } catch (e) {}
+    setObsOpen(false);
+    await doLogout(true);
+    say("주소를 폐기했어요. 벌금판은 그대로예요.");
+  };
+  const askDiscardAddr = () =>
+    setAsk({
+      title: "주소를 폐기할까요?",
+      body: "OBS 소스가 비고, 이 브라우저는 발급 전으로 돌아가요. 벌금판은 그대로 남아요.",
+      action: "폐기",
+      tone: "danger",
+      onYes: discardAddr,
+    });
   const askObsReissue = () =>
     setAsk({
       /* "언제 쓰는 문인지"도 여기서 말합니다 — 창의 설명 줄을 걷고 링크만 남겨서
@@ -8908,6 +8924,20 @@ export default function GoldSettlement() {
                 )}
               </span>
             )}
+            {/* 연동 전엔 문 하나 (B1′, 2026-09-16) — 계정이 없든 주소만 받았든 같은 모습. 실루엣이 얼굴 자리를 비워 둔다 */}
+            {(!auth || !auth.dc) && !inviteGate && !readOnly && (
+              <button className="gs-btn gs-btn-ghost gs-dcdoor" onClick={() => startDiscord()}>
+                <span className="gs-dcdoor-ava" aria-hidden="true">
+                  <svg viewBox="0 0 20 20" width="13" height="13">
+                    <g fill="currentColor">
+                      <circle cx="10" cy="6.4" r="3.4" />
+                      <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+                    </g>
+                  </svg>
+                </span>
+                Discord 연동
+              </button>
+            )}
             {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
             <span className="gs-viewseg">
               <span className="gs-tip">
@@ -8972,19 +9002,7 @@ export default function GoldSettlement() {
 
       {/* ── 내가 앉아 있는 방의 판이 다시 열렸어요 — 자기 앱에 돌아와 있는 사람에게
              화면을 잡아채지 않고 문 하나만 놓습니다 (§3.4·§8) ── */}
-      {!viewer && backCard && !showLobby && (
-        <div className="gs-guestbar">
-          <div className="gs-slip gs-slip-green" role="status">
-            <span className="gs-slip-msg">판이 시작됐어요.</span>
-            <button
-              className="gs-btn gs-btn-sm gs-slip-act"
-              onClick={() => enterRoom(backCard.room, { push: true })}
-            >
-              들어가기
-            </button>
-          </div>
-        </div>
-      )}
+      {/* (폐기 2026-09-16, C2) "판이 시작됐어요 [들어가기]" — 자리가 있으면 앱은 그 판을 연다(§3.12.5). 내 판은 잠깐 보는 것 */}
       {/* ── 파티원 배너 — 화면 맨 위. 상태(초대·대기·판)에 따라 말이 바뀝니다.
              끝난 판·판 기록에서는 탭 위의 신분증 띠가 이 자리를 대신합니다 ── */}
       {readOnly && !genView && !ended && !blockedCard && !inviteGate && <div className="gs-guestbar">
@@ -9047,21 +9065,7 @@ export default function GoldSettlement() {
       )}
       {/* (폐기 2026-09-06) 얼림 띠 `잠깐 멈췄어요 — 방장이 이어가면 다시 움직여요.` — 중단이라는 상태가 모델에 없다
           (자동 중단은 2026-09-05 폐기, 손 중단은 그 전에 폐기) */}
-      {/* 다시 시작됐다는 카드 — 화면을 잡아채지 않고 [들어가기]를 기다립니다 */}
-      {readOnly && !genView && startCard && !paused && (
-        <div className="gs-slip gs-slip-green" role="status">
-          <span className="gs-slip-msg">판이 시작됐어요.</span>
-          <button
-            className="gs-btn gs-btn-sm gs-slip-act"
-            onClick={() => {
-              setStartCard(null);
-              setTab("confess");
-            }}
-          >
-            들어가기
-          </button>
-        </div>
-      )}
+      {/* (폐기 2026-09-16, C2) 파티원 화면의 "판이 시작됐어요" 카드 — 판에 시작이라는 순간이 없다 */}
       {/* 자수가 막혔을 때의 한 줄 — 서버가 거절한 이유를 그 자리에서 알려 줍니다 */}
       {readOnly && confessErr && (
         <div className="gs-slip" role="status">
@@ -10041,6 +10045,10 @@ export default function GoldSettlement() {
                 const ex = extrasOf(row);
                 const exSum = extraSum(row);
                 const open = openRow === row.id;
+                /* 나 (A′) — 방장 화면은 연동한 내 계정의 줄, 파티원 화면은 you.rowId. 게스트는 없음 */
+                const meRow = readOnly
+                  ? !!(you && you.rowId === row.id)
+                  : !!(auth && auth.dc && (seats.find((k) => k.id === row.id) || {}).acct === auth.id);
                 return (
                   <Fragment key={row.id}>
                     <tr
@@ -10075,6 +10083,7 @@ export default function GoldSettlement() {
                               ≡
                             </span>
                           )}
+                          {readOnly && <span className="gs-drag gs-drag-none" aria-hidden="true" />}
                           {/* 이름만 남깁니다 — 손잡이(기록·삭제)는 표 오른쪽 끝
                               도구 열로 나갔습니다. 이름이 옆 칸(횟수)에 바로 붙습니다. */}
                           {/* 비워 두면 어디서든 이 이름으로 불립니다 — 칸에도 같은 글자를 */}
@@ -10084,82 +10093,93 @@ export default function GoldSettlement() {
                               방장에겐 가린 아이디(앞 두 글자 + 점 넷, 호버에 닉·아이디), 끊긴 사람은 흐려집니다.
                               파티원 화면엔 아이디가 안 오므로(§4.3) 방장·나 표시만 */}
                           {(() => {
+                            /* 왼쪽 고정 열 (A′, 2026-09-16 확정): 초상화 24 · 왕관 18. 줄마다 늘 두 칸이라 이름이 한 세로선에 선다.
+                               방장은 왕관, 나는 이름의 형광(gs-name-me). 연동 전(게스트)에는 둘 다 없다 — 실루엣만 */
+                            const CROWN = (
+                              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                                <path d="M3 15h14l1-8-4 3-4-5-4 5-4-3z" fill="currentColor" />
+                              </svg>
+                            );
                             if (!readOnly) {
                               const st = seats.find((k) => k.id === row.id);
-                              /* 진행 중에 나간 사람의 줄 — 벌금이 붙은 장부 줄이라 남지만, 사람은 없습니다 (§3.4) */
-                              /* (폐기 2026-09-16) 퇴장 표 — 나간 사람의 줄은 보통 줄이다. 누가 앉았었는지는 who 로 조용히 기억한다 */
-                              if (!st || !st.acct) return null;
-                              const mem = members.find((k) => k.acct === st.acct);
+                              const acct = st && st.acct;
+                              const mem = acct ? members.find((k) => k.acct === acct) : null;
                               const off = !!mem && mem.on === false;
-                              /* 방장은 명단에 없어 초상화가 명단에서 안 온다 — 내 계정의 것을 쓴다 (2026-09-16 사용자 지적: 방장 줄만 실루엣이었다) */
-                              /* 방장 줄 = 내 계정이 붙은 줄 (2026-09-16) — 첫 줄이라는 규칙은 없다 */
-                              const isHostRow = !!(auth && st.acct === auth.id);
-                              const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : isHostRow ? myAva(auth) : null;
-                              const masked = st.acct.slice(0, 2) + "••••";
-                              /* 글자(아이디)는 이름 칸을 너무 먹었습니다 — 표시는 i 하나, 내용은 호버에 (2026-09-05) */
-                              /* 브라우저 title 은 늦고 못생겼습니다 — 앱의 툴팁(.gs-tip)으로 즉답 */
+                              const isHostRow = !!(acct && auth && acct === auth.id);
+                              const linked = !!(auth && auth.dc);
+                              const mine = isHostRow ? myAva(auth) : null;
+                              const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : mine && (mine.id || mine.p) ? mine : null;
+                              const masked = acct ? acct.slice(0, 2) + "••••" : "";
                               return (
                                 <span className={"gs-tip gs-rowmeta" + (off ? " gs-rowmeta-off" : "")}>
-                                  {/* 사람 아이콘 (2026-09-06 사용자 지정) — 이 줄의 사람. 누르면 시트(다른 줄로 옮기기 · 파티에서 내보내기).
-                                      방장 줄(1번)은 표시만. (폐기) 파란 원의 i, 도구칸의 사람 버튼 */}
-                                  <button
-                                    type="button"
-                                    className={"gs-rowi gs-rowi-ava" + (isHostRow ? " gs-rowi-host" : "")}
-                                    aria-label={isHostRow ? "방장 (나)" : "이 줄의 사람"}
-                                    aria-haspopup={!isHostRow ? "dialog" : undefined}
-                                    onClick={!isHostRow && auth && relay.room ? () => setRowPerson(row.id) : undefined}
-                                  >
-                                    {/* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 초상화가 없는 자리라 글자를 넣지 않습니다.
-                                        (폐기 2026-09-07) 계정 색 글자 원 — 이름 옆에 같은 글자가 한 번 더 나와 조잡했다(사용자).
-                                        (폐기 2026-09-06) 선으로 그린 사람 아이콘 — 속이 비어 작을 때 안 읽혔다 */}
-                                    {pic ? (
-                                      <DcAva dc={pic} size={24} className="gs-ava-sm" />
-                                    ) : (
-                                    <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
-                                      <g fill="currentColor">
-                                        <circle cx="10" cy="6.4" r="3.4" />
-                                        <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
-                                      </g>
-                                    </svg>
-                                    )}
-                                  </button>
-                                  {/* 방장은 금테 초상화, 나는 "나" 표 — 이름 칸이 좁아 글자는 하나만 (툴팁이 "방장 · 나") */}
-                                  {isHostRow && <span className="gs-lb-tag">나</span>}
-                                  <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
-                                    {/* 계정 닉만 — 줄 이름은 방장 장부의 것이라 여기 안 옵니다 (2026-09-06 사용자 지적).
-                                        라벨을 달아 두 줄로 (2026-09-07 사용자 지정 문구: `원래 닉네임:` / `ID:`; (폐기) `{닉} {아이디}` 한 줄 — 무엇이 닉이고 아이디인지 안 읽혔다) */}
-                                    {/* 방장 줄은 첫 줄에 `방장` (2026-09-07 사용자: 금색은 좋은데 호버하면 방장이라고 떠야 한다) */}
-                                    {isHostRow && (
+                                  {acct ? (
+                                    <button
+                                      type="button"
+                                      className={"gs-rowi gs-rowi-ava" + (isHostRow ? " gs-rowi-host" : "")}
+                                      aria-label={isHostRow ? "방장 (나)" : "이 줄의 사람"}
+                                      aria-haspopup={!isHostRow ? "dialog" : undefined}
+                                      onClick={!isHostRow && auth && relay.room ? () => setRowPerson(row.id) : undefined}
+                                    >
+                                      {pic ? (
+                                        <DcAva dc={pic} size={24} className="gs-ava-sm" />
+                                      ) : (
+                                        <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+                                          <g fill="currentColor">
+                                            <circle cx="10" cy="6.4" r="3.4" />
+                                            <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+                                          </g>
+                                        </svg>
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <span className="gs-rowi-none" aria-hidden="true" />
+                                  )}
+                                  {isHostRow && linked ? (
+                                    <span className="gs-crown" aria-label="방장">
+                                      {CROWN}
+                                    </span>
+                                  ) : (
+                                    <span className="gs-crown gs-crown-none" aria-hidden="true" />
+                                  )}
+                                  {acct && (
+                                    <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
+                                      {isHostRow && (
+                                        <span className="gs-tipline">
+                                          <b>방장 · 나</b>
+                                        </span>
+                                      )}
                                       <span className="gs-tipline">
-                                        <b>방장 · 나</b>
+                                        <i>원래 닉네임:</i> <b>{(mem && mem.nick) || st.nick || (auth && acct === auth.id ? auth.nick : "") || ""}</b>
                                       </span>
-                                    )}
-                                    <span className="gs-tipline">
-                                      <i>원래 닉네임:</i> <b>{(mem && mem.nick) || st.nick || (auth && st.acct === auth.id ? auth.nick : "") || ""}</b>
+                                      <span className="gs-tipline">
+                                        <i>ID:</i> {masked}
+                                      </span>
+                                      {off && <span className="gs-tipline">연결 끊김</span>}
                                     </span>
-                                    <span className="gs-tipline">
-                                      <i>ID:</i> {masked}
-                                    </span>
-                                    {off && <span className="gs-tipline">연결 끊김</span>}
-                                  </span>
+                                  )}
                                 </span>
                               );
                             }
-                            /* 파티원 화면의 초상화 (§3.12.3) — 방장이 판에 실어 보낸 rows2.ava 로 그린다. 계정 아이디는 여전히 안 온다 */
+                            /* 파티원 화면 — 방장이 판에 실어 보낸 rows2 의 초상화(ava)와 방장 표시(h). 계정 아이디는 안 온다 */
                             const r2v = rows2v.find((k) => k.rowId === row.id);
                             const host = !!(r2v && r2v.h);
-                            const mine = !!you && you.rowId === row.id;
                             const ava = r2v && r2v.ava && (r2v.ava.id || r2v.ava.p) ? r2v.ava : null;
-                            if (!host && !mine && !ava) return null;
                             return (
                               <span className="gs-rowmeta">
-                                {ava && (
+                                {ava ? (
                                   <span className="gs-rowi gs-rowi-ava gs-rowi-ro" aria-hidden="true">
                                     <DcAva dc={avaDc(ava)} size={24} className="gs-ava-sm" />
                                   </span>
+                                ) : (
+                                  <span className="gs-rowi-none" aria-hidden="true" />
                                 )}
-                                {host && <span className="gs-lb-tag">방장</span>}
-                                {mine && <span className="gs-lb-tag">나</span>}
+                                {host ? (
+                                  <span className="gs-crown" aria-label="방장">
+                                    {CROWN}
+                                  </span>
+                                ) : (
+                                  <span className="gs-crown gs-crown-none" aria-hidden="true" />
+                                )}
                               </span>
                             );
                           })()}
@@ -10177,7 +10197,7 @@ export default function GoldSettlement() {
                             </button>
                           ) : (
                           <input
-                            className={"gs-in gs-in-name" + (dupName(row.id, row.name) ? " gs-dup" : "")}
+                            className={"gs-in gs-in-name" + (dupName(row.id, row.name) ? " gs-dup" : "") + (meRow ? " gs-name-me" : "")}
                             size={Math.max(3, [...String((ready ? (seats.find((k) => k.id === row.id) || {}).name || "" : row.name) || ANON(i))].length + 1)}
                             /* 준비 상태에서는 자리의 이름이 원본입니다 (§3.1) — 빈 자리는 빈 칸으로
                                보여 자리표시가 뜨고, 고치면 자리에 적힙니다. 줄은 자리를 따라옵니다 */
@@ -11360,6 +11380,7 @@ export default function GoldSettlement() {
           onOvItem={toggleOvItem}
           onOvKey={toggleOvCol}
           onAskReissue={askObsReissue}
+          onDiscard={askDiscardAddr}
           castState={dotState}
           inviteRow={null /* (2026-09-06) 초대 코드는 헤더 팝오버에 — 공유 창은 OBS 것만 */}
           onClose={() => {
@@ -13914,7 +13935,7 @@ function GenList({ gens, onOpen, onDrop }) {
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
    guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh, guest, onAskReissue, castState, onNick, onLogout, onUpgrade, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey, onClose, inviteRow }) {
+function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh, guest, onAskReissue, onDiscard, castState, onNick, onLogout, onUpgrade, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey, onClose, inviteRow }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -14019,96 +14040,17 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
                 받으면 안 되나?"로 읽힙니다 (2026-09-05). 어디서 받으라는 안내로 뒤집고,
                 가입하면 해당 없다는 것까지 답니다 */}
             <p className="gs-obs-warn2">
-              주소는 <b>벌금판을 쓸 브라우저에서</b> 받으세요 — 게스트 주소는 받은
-              브라우저에 묶여 있어요. 송출컴에는 주소만 복사해 넣으면 되고, 계정을
-              만들면 어느 컴퓨터에서든 같은 주소를 써요.
+              주소는 <b>벌금판을 쓸 브라우저에서</b> 받으세요 — 연동 전 주소는 받은
+              브라우저에 묶여 있어요. 송출컴에는 주소만 복사해 넣으면 되고, Discord를
+              연동하면 어느 컴퓨터에서든 같은 주소를 써요.
             </p>
           </>
         ) : (
           <>
             {/* 계정 줄은 제목 바로 아래입니다 (2026-09-05 확정) — 맨 아래에 두면 아무도
                 못 봅니다. 닉이 곧 벌금판의 내 이름이라 "내가 누구로 있는지"가 먼저입니다 */}
-            {/* 연동한 계정의 초상화·별명·로그아웃은 오른쪽 위 계정 쪽지로 옮겼다 (2026-09-16 사용자). 여기엔 연동 전 계정 줄만 */}
-            {!auth.dc && (
-            <>
-            <div className="gs-acct-row">
-              <b className="gs-acct-nick2">{auth.nick}</b>
-              {auth.anon ? (
-                <span className="gs-acct-badge">로그인 없이</span>
-              ) : auth.dc ? (
-                <span className="gs-acct-badge">Discord 연동</span>
-              ) : (
-                /* 아이디도 방송에 새면 좋을 게 없습니다 — 주소처럼 가려 둡니다 */
-                <span className="gs-acct-idm">{auth.id.slice(0, 2) + "••••"}</span>
-              )}
-              {nickOpen ? (
-                <span className="gs-acct-nick">
-                  <input
-                    className="gs-in gs-in-nick"
-                    value={nickDraft}
-                    placeholder="2~3글자"
-                    autoFocus
-                    onChange={(e) => setNickDraft(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && saveNick()}
-                    aria-label="닉네임 바꾸기"
-                  />
-                  <button
-                    className="gs-btn gs-btn-sm gs-btn-ghost"
-                    onClick={() => {
-                      setNickOpen(false);
-                      setNickErr("");
-                    }}
-                  >
-                    취소
-                  </button>
-                  <button
-                    className="gs-btn gs-btn-sm"
-                    onClick={saveNick}
-                    disabled={nickBusy || !nickDraft.trim()}
-                  >
-                    {nickBusy ? "바꾸는 중…" : "바꾸기"}
-                  </button>
-                </span>
-              ) : (
-                <span className="gs-acct-acts">
-                  <button
-                    className="gs-btn gs-btn-sm gs-btn-ghost"
-                    onClick={() => {
-                      setNickDraft(auth.nick || "");
-                      setNickErr("");
-                      setNickOpen(true);
-                    }}
-                  >
-                    닉 바꾸기
-                  </button>
-                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onLogout}>
-                    로그아웃
-                  </button>
-                </span>
-              )}
-            </div>
-            {nickOpen && (
-              <p className="gs-acct-note">닉네임은 벌금판에 올라가는 이름이에요.</p>
-            )}
-            {nickErr && <p className="gs-acct-err">{nickErr}</p>}
-            </>
-            )}
+            {/* (폐기 2026-09-16, B1′) OBS 창의 계정 줄 — 연동 전엔 오른쪽 위 문, 연동 뒤엔 계정 쪽지. 이 창엔 계정이 없다 */}
             {/* 익명 계정은 아이디·비밀번호가 없어서 이 브라우저에서만 쓸 수 있습니다 (§3-11) */}
-            {auth.anon && (
-              <div className="gs-obs-line gs-acct-upline">
-                <span className="gs-obs-linetxt">
-                  {/* 2026-09-08 사용자 지정 문구. 로비 줄과 같은 이야기를, 아이디를 만들지 정하는
-                      자리라 잃는 것까지 적습니다.
-                      (폐기) `가입 없이 쓰는 중이에요 — 아이디를 정하면 다른 컴퓨터에서도 같은 주소를 쓸 수 있어요.` */}
-                  {/* §3.12.1 — 가입은 디스코드 연동뿐. 잃는 것과 얻는 것을 한 줄에 */}
-                  이 주소는 이 브라우저에만 남아요. 브라우저 데이터를 지우면 사라져요. Discord를 연동하면 다른 PC에서도 같은
-                  주소를 쓰고, 초대와 자수도 돼요.
-                </span>
-                <button className="gs-btn gs-btn-sm gs-dcbtn" onClick={onUpgrade}>
-                  Discord 연동
-                </button>
-              </div>
-            )}
 
             {/* 방금 받은 사람에게는 주소를 보여 주는 것으로 부족합니다 — 다음 걸음을
                 시켜야 합니다 (§3.11). 이 한 장은 발급 직후 한 번만 뜨고, 다음부터는
@@ -14249,12 +14191,28 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
                   {CAST_WHY[castState]}
                 </p>
               )}
+              {/* 주소의 수명 한 문장 (B1′) — 글자 링크가 연동으로 간다 */}
+              {auth.anon && (
+                <p className="gs-obs-life">
+                  이 주소는 이 브라우저에만 남아요. 다른 PC에서도 쓰려면{" "}
+                  <button className="gs-swaplink" onClick={onUpgrade}>
+                    Discord 연동
+                  </button>
+                  .
+                </p>
+              )}
               {/* 가장 안 눌러야 할 문이라 카드 발치의 조용한 링크입니다 — 언제 쓰는지는
                   누르면 뜨는 확인 창이 말합니다 (§9-4) */}
               <p className="gs-obs-cardfoot">
                 <button className="gs-auth-linkb" onClick={onAskReissue}>
                   주소 새로 발급
                 </button>
+                {/* 주소 폐기 (B1′) — 게스트의 "나가기". 로그아웃이라는 말은 없다 */}
+                {auth.anon && onDiscard && (
+                  <button className="gs-auth-linkb gs-obs-discard" onClick={onDiscard}>
+                    주소 폐기
+                  </button>
+                )}
               </p>
             </div>
 
@@ -16316,7 +16274,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   padding-right:6px !important; color:var(--gold); white-space:nowrap}
 
 /* 이름 칸은 이름만 — 손잡이는 오른쪽 끝 도구 열에 삽니다 */
-.gs-namecell{display:flex; align-items:center; gap:4px; justify-content:flex-end;
+/* 이름 칸 격자 (A′, 2026-09-16) — 손잡이 16 · [초상화 24 + 왕관 18] · 이름(오른쪽 끝). 줄마다 같은 칸이라 이름이 한 세로선에 선다 */
+.gs-namecell{display:grid; grid-template-columns:16px 48px 1fr; align-items:center; column-gap:6px;
   min-width:calc(var(--namech, 6) * 1.02 * 15px)} /* 열 폭은 셀이 — 입력칸은 글자만큼만 (2026-09-07) */
 .gs-grid-count .gs-namecell{min-width:calc(var(--namech, 6) * 1.02 * 25px)}
 .gs-grid-narrow .gs-namecell{min-width:calc(var(--namech, 6) * 1.02 * 27px)}
@@ -16341,6 +16300,15 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   background:rgba(var(--ink-rgb),.05); display:inline-grid; place-items:center; cursor:pointer; line-height:0;
   transition:color .15s, border-color .15s}
 .gs-rowi:not([aria-haspopup]){cursor:default}
+.gs-namecell .gs-drag{justify-self:center; margin:0}
+.gs-drag-none{width:16px; display:inline-block}
+.gs-namecell .gs-in-name{justify-self:end; text-align:right}
+.gs-rowmeta{display:inline-flex; align-items:center; gap:6px; width:48px; flex:none}
+.gs-rowi-none{width:24px; height:24px; display:inline-block; flex:none}
+.gs-crown{width:18px; height:18px; color:var(--gold); display:inline-flex; align-items:center; justify-content:center; flex:none}
+.gs-crown-none{visibility:hidden}
+/* 나 — 이름 글자 밑 절반의 금색 형광 */
+.gs-in-name.gs-name-me{background:linear-gradient(transparent 58%, rgba(var(--gold-rgb),.38) 58%, rgba(var(--gold-rgb),.38) 92%, transparent 92%)}
 /* 파티원 화면의 초상화 자리 — 단추가 아니라 span 이라 같은 상자 규칙을 직접 준다 */
 .gs-rowi-ro{display:inline-flex; align-items:center; justify-content:center; cursor:default}
 /* 초상화 크기 (2026-09-16 사용자: 글자 높이만큼) — 줄·대기 줄 24, 자수 카드 28, 계정 칩 24 */
@@ -18409,6 +18377,12 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-acct-err{margin:8px 0 0; font-size:11.5px; color:var(--red); line-height:1.6}
 /* 아이디 정하기 줄 — 문장 왼쪽, 문 오른쪽 (재발급 줄과 같은 문법) */
 .gs-acct-upline{margin-top:10px}
+.gs-obs-life{margin:10px 0 0; font-size:12.5px; color:var(--ink-2)}
+.gs-obs-life .gs-swaplink{font-size:12.5px}
+.gs-obs-discard{margin-left:14px}
+/* 연동 전의 문 (B1′) — 유령 단추 + 실루엣 얼굴 자리 */
+.gs-dcdoor{display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px 0 5px}
+.gs-dcdoor-ava{width:22px; height:22px; border-radius:25%; background:rgba(var(--ink-rgb),.08); color:var(--ink-2); border:1px solid rgba(var(--ink-rgb),.3); display:inline-flex; align-items:center; justify-content:center; flex:none}
 
 /* 공유 설정 창의 계정 줄·명단 */
 .gs-obs-acct{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
