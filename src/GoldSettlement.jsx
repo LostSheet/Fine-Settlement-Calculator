@@ -5427,7 +5427,7 @@ export default function GoldSettlement() {
       /* "언제 쓰는 문인지"도 여기서 말합니다 — 창의 설명 줄을 걷고 링크만 남겨서
          (2026-09-05), 설명은 누른 사람에게 그 자리에서 합니다 */
       title: "내 방송용 주소를 새로 발급할까요?",
-      body: "주소가 새어 나갔을 때 써요. 지금 주소는 바로 못 쓰게 되고, OBS 소스의 주소를 새것으로 바꿔야 해요.",
+      body: "주소가 새어 나갔을 때 새로 발급하세요. 발급하면 지금 주소는 바로 끊기니, OBS 소스의 주소를 새것으로 바꿔야 해요.",
       action: "새로 발급",
       /* 옛 주소는 그 자리에서 죽고 되돌릴 길이 없습니다 (§9-4) */
       tone: "danger",
@@ -7106,13 +7106,14 @@ export default function GoldSettlement() {
     const gold = Math.round(sp.priceG * sp.res.count);
     if (row.id === sp.rowId) {
       setAsk({
-        title: "본인에게 붙일까요?",
+        title: "본인 벌금으로 할까요?",
         body:
           "양도하지 않고 " +
           (sp.who || "돌린 사람") +
-          " 본인에게 " +
+          " 본인 벌금에 " +
           man(gold) +
-          "이 붙어요. 양도권을 쓰지 않는 셈이에요.",
+          josa(man(gold), "을", "를") +
+          " 더해요. 양도권을 쓰지 않는 셈이에요.",
         action: "본인에게",
         onYes: () => {
           applySpin(sp, row.id);
@@ -8803,14 +8804,14 @@ export default function GoldSettlement() {
                     <>
                       <h4 className="gs-invnote-h">초대하려면 Discord 연동이 필요해요</h4>
                       <p className="gs-invnote-p">
-                        초대 링크, 파티원의 자수와 방송은 디스코드 계정에 붙어요. 혼자 세고 방송에 띄우는 건 지금처럼 로그인 없이 할 수 있어요.
+                        파티원도 Discord 계정으로 참여하고 자수해요. 혼자 벌금을 세고 방송에 띄우는 건 지금처럼 로그인 없이 할 수 있어요.
                       </p>
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
                           Discord 연동
                         </button>
                       </div>
-                      <div className="gs-invnote-foot">지금 표와 방송 주소는 그대로 따라가요</div>
+                      <div className="gs-invnote-foot">연동해도 지금 표와 방송 주소를 그대로 유지할 수 있어요</div>
                     </>
                   ) : (
                     <>
@@ -12420,7 +12421,7 @@ function SpinPanel({ spin, onStop, onSkip, onPickSelf }) {
         {free ? (
           <span className="gs-spin-skip">저절로 멈추지 않아요 — 눌러야 멈춰요</span>
         ) : picking ? (
-          <span className="gs-spin-skip">줄을 누르면 그 사람에게 붙어요</span>
+          <span className="gs-spin-skip">줄을 누르면 그 사람 벌금에 더해요</span>
         ) : (
           <button type="button" className="gs-spin-skipbtn" onClick={onSkip}>
             {done ? "닫기" : "건너뛰기"}
@@ -12758,7 +12759,7 @@ function RouletteCfg({ col, unitLabel, theme, onW, onPass, onPassSelf, onToggleF
   return (
     <InfoModal title={(col.name || "룰렛") + " 설정"} onClose={onClose} wide>
       <p className="gs-rc-note">
-        1회 단가는 <b>{man(priceG)}</b>이에요. 나온 숫자만큼 곱해서 벌금이 붙어요.
+        1회 단가는 <b>{man(priceG)}</b>이에요. 나온 숫자를 곱한 금액이 벌금이에요.
         비율은 룰렛에서 차지하는 칸 수예요 — 합이 얼마든 상관없어요.
       </p>
       <h5 className="gs-rc-sec">양도권</h5>
@@ -12779,7 +12780,7 @@ function RouletteCfg({ col, unitLabel, theme, onW, onPass, onPassSelf, onToggleF
         ))}
         <em className="gs-rc-hint">
           {!keys.includes(PASS)
-            ? "면과 비율에서 양도권을 켜면 쓸 수 있어요"
+            ? "면과 비율에서 양도권을 켜면 고를 수 있어요"
             : passMode(col) === "random"
             ? "사람 원판을 한 번 더 돌려 정해요"
             : "서기가 넘길 사람의 줄을 눌러요"}
@@ -12842,8 +12843,8 @@ function RouletteCfg({ col, unitLabel, theme, onW, onPass, onPassSelf, onToggleF
           <p className="gs-rc-pvnote">비율을 고치거나 순서를 끌면 여기서 바로 확인할 수 있어요.</p>
           {theme === "vegas" && (
             <p className="gs-rc-vegas">
-              카지노 테마를 쓰는 중이에요 — 빨강·검정이 번갈아 칠해져서{" "}
-              <b>색이 같은 면이 생겨요</b>. 면 구분은 글자로 해요.
+              카지노 테마예요 — 빨강·검정을 번갈아 칠해서{" "}
+              <b>색이 같은 면이 생겨요</b>. 면은 글자로 구분하세요.
             </p>
           )}
         </div>
@@ -13482,7 +13483,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
                   </g>
                 </svg>
                 <b>계정 만들기</b>
-                <em>어느 컴퓨터에서든 로그인해 같은 주소와 파티를 그대로 써요.</em>
+                <em>어느 컴퓨터에서든 로그인하면 같은 주소와 파티를 불러올 수 있어요.</em>
               </button>
             </div>
             {/* 둘의 차이는 여기서도 (2026-09-06 오후 사용자 확정) */}
@@ -13534,7 +13535,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
                이 안내가 아니었습니다 */
             (ctx && ctx.why) || (
               <>
-                계정은 <b>파티</b>와 <b>내 방송용 주소</b>에 써요.
+                계정이 있으면 <b>파티</b>를 열고 <b>내 방송용 주소</b>를 받을 수 있어요.
                 <br />
                 벌금을 세고 정산하는 데는 계정이 필요 없어요.
               </>
@@ -13689,7 +13690,7 @@ function UpgradeModal({ nick: nick0, onRun, onDone, onClose }) {
             {/* (폐기 2026-09-05) `파티원을 모으려면 아이디와 비밀번호를 정해야 해요…` — 게스트도
                 파티를 열게 되면서 거짓이 됐다. 문구는 §8 초안 */}
             <p className="gs-auth-why">
-              아이디를 정하면 다른 컴퓨터에서도 로그인해 같은 주소와 파티를 그대로 써요. 지금
+              아이디를 정하면 다른 컴퓨터에서도 로그인해 같은 주소와 파티를 불러올 수 있어요. 지금
               주소는 바뀌지 않아요.
             </p>
             <label className="gs-field">
@@ -14274,9 +14275,9 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
                 받으면 안 되나?"로 읽힙니다 (2026-09-05). 어디서 받으라는 안내로 뒤집고,
                 가입하면 해당 없다는 것까지 답니다 */}
             <p className="gs-obs-warn2">
-              주소는 <b>벌금판을 쓸 브라우저에서</b> 받으세요 — 연동 전 주소는 받은
-              브라우저에 묶여 있어요. 송출컴에는 주소만 복사해 넣으면 되고, Discord를
-              연동하면 어느 컴퓨터에서든 같은 주소를 써요.
+              주소는 <b>벌금판을 쓸 브라우저에서</b> 받으세요. 로그인 없이 받은 주소는 그
+              브라우저에서만 유지할 수 있어요. 송출컴에는 주소만 복사해 넣으면 되고, Discord를
+              연동하면 어느 컴퓨터에서든 같은 주소를 불러올 수 있어요.
             </p>
           </>
         ) : (
@@ -14753,7 +14754,7 @@ function AcctGuide({ onClose }) {
             <span className="gs-gain-src">내 주소</span>
           </div>
           <ul className="gs-gain-list">
-            <li className="yes">어느 컴퓨터·브라우저에서든 같은 주소를 써요</li>
+            <li className="yes">어느 컴퓨터·브라우저에서든 같은 주소를 불러올 수 있어요</li>
             <li className="yes">파티를 열어 파티원을 모아요</li>
             <li className="yes">
               게스트였다가 만들어도 <b>주소·파티가 그대로</b>예요
