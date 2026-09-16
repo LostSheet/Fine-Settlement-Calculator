@@ -1551,7 +1551,7 @@ function loadSaved() {
           : null,
       memoFreeze:
         s.memoFreeze && Array.isArray(s.memoFreeze.people) ? s.memoFreeze : null,
-      theme: s.theme === "light" || s.theme === "dark" ? s.theme : "system",
+      theme: s.theme === "light" || s.theme === "dark" ? s.theme : null,
       /* 판이 살아 있는지 (§3.1). 이 값이 적혀 있지 않은 저장본은 개편 전의 것이라
          진행 중인 판으로 승격합니다 — 세던 판이 로비로 강등되는 일은 없어야 합니다 */
       roundLive: s.roundLive !== false,
@@ -1942,7 +1942,7 @@ export default function GoldSettlement() {
         seq: 1000,
         view: "tabs",
         tab: "sheet",
-        theme: (loadSaved() || {}).theme || "system",
+        theme: (loadSaved() || {}).theme || null,
         firstVisit: false,
         /* 뷰어에게는 로비도 자리도 없습니다 — 남의 판을 비추는 화면입니다 */
         roundLive: true,
@@ -2040,7 +2040,7 @@ export default function GoldSettlement() {
       view: stored ? stored.view : "tabs",
       tab: stored ? stored.tab : "sheet",
       // 화면 밝기 취향은 표와 무관하니 공유 링크로 들어와도 이 브라우저 것을 씁니다
-      theme: stored ? stored.theme : DEMO ? (loadSaved() || {}).theme || "system" : "system",
+      theme: stored ? stored.theme : DEMO ? (loadSaved() || {}).theme || null : null,
       /* 저장된 장부도 공유 링크도 없으면 첫 방문입니다. 주소의 #m= 은 보지 않습니다 —
          앱이 제 주소에 그걸 적기 때문에, 조건에 넣으면 두 번째 방문처럼 보입니다.
          관문은 묻기만 하므로 해시를 달고 온 사람에게 떠도 아무것도 안 망가집니다.
@@ -2311,21 +2311,26 @@ export default function GoldSettlement() {
   const [intro, setIntro] = useState(null);
   /* 카운터 → 메모장으로 갈 때 동결해 두는 구성. 돌아올 때 이름으로 대조해 복원합니다. */
   const [memoFreeze, setMemoFreeze] = useState(boot.current.memoFreeze || null);
-  /* 화면 밝기 — 기본은 시스템 설정을 따르고, 원하면 낮/밤으로 고정합니다.
+  /* 화면 밝기 (2026-09-16 사용자: '시스템' 상태 없음) — 저장된 값이 없으면 진입하는 순간의 시스템 값으로 굳히고,
+     그 뒤로는 밝게 ↔ 어둡게 토글뿐입니다. 시스템이 나중에 바뀌어도 따라가지 않습니다.
      긴 방송에서 눈이 덜 아프게 밤 팔레트는 순검정 대신 어두운 갈색입니다. */
-  const [theme, setTheme] = useState(boot.current.theme || "system");
-  const [sysDark, setSysDark] = useState(
-    () => typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches
-  );
+  const [theme, setTheme] = useState(() => {
+    let t = boot.current.theme;
+    try {
+      /* 밝기만 따로도 적어 둔다 — 뷰어처럼 장부를 저장하지 않는 화면에서도 고른 값이 남게 */
+      const k = localStorage.getItem("goldSettlement.theme");
+      if (k === "light" || k === "dark") t = k;
+    } catch {}
+    if (t === "light" || t === "dark") return t;
+    const sysDark = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    return sysDark ? "dark" : "light";
+  });
+  const dark = theme === "dark";
   useEffect(() => {
-    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (!mq) return;
-    const on = (e) => setSysDark(e.matches);
-    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
-    return () =>
-      mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on);
-  }, []);
-  const dark = theme === "dark" || (theme === "system" && sysDark);
+    try {
+      localStorage.setItem("goldSettlement.theme", theme);
+    } catch {}
+  }, [theme]);
   // 가이드로 연 선택 화면은 Esc 로 닫습니다 (첫 방문 관문은 못 닫습니다)
   useEffect(() => {
     if (intro !== "guide") return;
@@ -7344,6 +7349,41 @@ export default function GoldSettlement() {
       { id: s.id, name: FILL_NAME(k), counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] },
     ]);
   };
+  /* 인원 4·8·16 (2026-09-16 사용자: 로스트아크 파티는 그 셋으로 고정 — 카드를 하나씩 더하는 대신 크기를 고른다).
+     늘릴 땐 빈 자리 줄을 붙이고, 줄일 땐 뒤에서부터 빈 줄(사람·이름·숫자·기타 없음)만 걷는다 */
+  const setPartySize = (n) => {
+    if (readOnly) return;
+    if (n > rows.length) {
+      const taken = new Set(rows.map((x) => x.name));
+      const adds = [];
+      let k = rows.length + 1;
+      for (let i = rows.length; i < n; i++) {
+        while (taken.has(FILL_NAME(k))) k++;
+        adds.push({ id: "r" + seq.current++, name: FILL_NAME(k) });
+        taken.add(FILL_NAME(k));
+      }
+      putSeats((prev) => [...prev, ...adds.map((a) => ({ id: a.id, name: "", acct: null, mem: null, named: false }))]);
+      setRows((prev) => [
+        ...prev,
+        ...adds.map((a) => ({ id: a.id, name: a.name, counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] })),
+      ]);
+      return;
+    }
+    const keep = rows.slice();
+    while (keep.length > n) {
+      const last = keep[keep.length - 1];
+      const st = seats.find((k) => k.id === last.id);
+      const blank =
+        !(st && st.acct) && (!(last.name || "").trim() || isFillName(last.name)) && noFine(last) && !extrasOf(last).length;
+      if (!blank) break;
+      keep.pop();
+    }
+    if (keep.length === rows.length) return say("사람이나 기록이 있는 줄은 못 지워요. 빈 줄만 지워요.");
+    const ids = new Set(keep.map((x) => x.id));
+    setRows(keep);
+    putSeats((prev) => prev.filter((x) => ids.has(x.id)));
+    setOpenRow((o) => (o && !ids.has(o) ? null : o));
+  };
   const delRow = (id) => {
     if (readOnly) return;
     const who = rows.find((x) => x.id === id);
@@ -8932,9 +8972,8 @@ export default function GoldSettlement() {
                       별명 바꾸기
                     </button>
                     <div className="gs-acctmenu-sep" aria-hidden="true" />
-                    <div className="gs-acctmenu-cap">초상화</div>
                     <button
-                      className="gs-acctmenu-item gs-acctmenu-sub"
+                      className="gs-acctmenu-item"
                       role="menuitem"
                       disabled={picBusy}
                       onClick={() => picPick.current && picPick.current.click()}
@@ -8942,11 +8981,11 @@ export default function GoldSettlement() {
                       {picBusy ? "올리는 중…" : "사진 올리기"}
                     </button>
                     {auth.pic ? (
-                      <button className="gs-acctmenu-item gs-acctmenu-sub" role="menuitem" disabled={picBusy} onClick={() => savePic(null)}>
+                      <button className="gs-acctmenu-item" role="menuitem" disabled={picBusy} onClick={() => savePic(null)}>
                         디스코드 초상화로 되돌리기
                       </button>
                     ) : (
-                      <button className="gs-acctmenu-item gs-acctmenu-sub" role="menuitem" onClick={() => startDiscord()}>
+                      <button className="gs-acctmenu-item" role="menuitem" onClick={() => startDiscord()}>
                         디스코드 초상화 다시 가져오기
                       </button>
                     )}
@@ -8990,17 +9029,12 @@ export default function GoldSettlement() {
                 Discord 연동
               </button>
             )}
-            {/* 화면 밝기 — 시스템 → 밝게 → 어둡게 순으로 돕니다 */}
+            {/* 화면 밝기 — 밝게 ↔ 어둡게 (시스템 상태 없음, 2026-09-16) */}
             <span className="gs-viewseg">
               <span className="gs-tip">
                 <button
-                  className={theme === "system" ? "" : "on"}
-                  onClick={() =>
-                    setTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")
-                  }
-                  aria-label={`화면 밝기: ${
-                    theme === "system" ? "시스템 설정" : theme === "light" ? "밝게" : "어둡게"
-                  }`}
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  aria-label={`화면 밝기: ${theme === "dark" ? "어둡게" : "밝게"}`}
                 >
                   {theme === "light" ? (
                     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
@@ -9009,7 +9043,7 @@ export default function GoldSettlement() {
                         <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" />
                       </g>
                     </svg>
-                  ) : theme === "dark" ? (
+                  ) : (
                     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
                       <path
                         d="M13 10.3A5.6 5.6 0 0 1 5.7 3a5.8 5.8 0 1 0 7.3 7.3z"
@@ -9019,30 +9053,10 @@ export default function GoldSettlement() {
                         strokeLinejoin="round"
                       />
                     </svg>
-                  ) : (
-                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                      <circle
-                        cx="8"
-                        cy="8"
-                        r="6"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                      />
-                      <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
-                    </svg>
                   )}
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  <b>
-                    {theme === "system"
-                      ? "시스템 설정을 따라요"
-                      : theme === "light"
-                      ? "밝게 고정"
-                      : "어둡게 고정"}
-                    </b>{" "}
-                  — 눌러서 {theme === "system" ? "밝게" : theme === "light" ? "어둡게" : "시스템"}
-                  로 바꿔요.
+                  <b>{theme === "dark" ? "어둡게" : "밝게"}</b> — 눌러서 {theme === "dark" ? "밝게" : "어둡게"}로 바꿔요.
                 </span>
               </span>
             </span>
@@ -9954,6 +9968,64 @@ export default function GoldSettlement() {
         )}
         {cardsMode && !readOnly ? (
           /* 카드 모드 (K1) — 초상화(카드 폭) · 이름 + 합계 · 항목 단추(표의 칸과 같은 물건) · 기타. 넓게 보기에서는 초상화가 정사각·열이 늘어난다 */
+          <>
+          {/* 카드 도구 줄 (2026-09-16 사용자) — 표 머리가 없는 모드라 항목은 여기서 관리. 인원은 로스트아크 파티 크기(4·8·16)로 고른다 */}
+          <div className="gs-cardtools">
+            <div className="gs-cardtools-items">
+              <span className="gs-caplab">항목</span>
+              {activeCols.map((c) => (
+                <span key={c.id} className="gs-citem">
+                  <input
+                    className="gs-in gs-in-col gs-citem-name"
+                    value={c.name || ""}
+                    placeholder="항목"
+                    onChange={(e) => patchCol(c.id, "name", e.target.value)}
+                    aria-label="항목 이름"
+                  />
+                  {isRoulette(c) ? (
+                    <button className="gs-citem-price" onClick={() => setRouletteCfg(c.id)} title="룰렛 비율 고치기">
+                      ◎ {liveFaces(c).length}면 · ×{man(Math.round(goldOf(c.price)))}
+                    </button>
+                  ) : rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
+                    /* 센 기록이 있으면 창에서 (표 머리와 같은 규칙) */
+                    <button className="gs-citem-price" onClick={() => setPriceAsk(c.id)} aria-label="1회당 단가 고치기">
+                      {formatNumInput(String(+(goldOf(c.price) / (goldOf(unit) || 1)).toFixed(4)))}
+                      <span className="gs-price-suffix">{(UNITS.find((u) => u.v === unit) || {}).label || "G"}</span>
+                    </button>
+                  ) : (
+                    <PriceFree
+                      gold={goldOf(c.price)}
+                      per={goldOf(unit) || 1}
+                      suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
+                      onChange={(g) => patchCol(c.id, "price", commafy(g))}
+                    />
+                  )}
+                  <button className="gs-x gs-citem-x" onClick={() => askDelCol(c)} aria-label="항목 지우기">
+                    ×
+                  </button>
+                </span>
+              ))}
+              <button
+                className="gs-addcol gs-citem-add"
+                onClick={() => {
+                  courseHit("addcol:open");
+                  setAddColOpen(true);
+                }}
+              >
+                + 항목
+              </button>
+            </div>
+            <div className="gs-cardtools-size">
+              <span className="gs-caplab">인원</span>
+              <div className="gs-seg" role="group" aria-label="인원">
+                {[4, 8, 16].map((n) => (
+                  <button key={n} className={rows.length === n ? "on" : ""} onClick={() => setPartySize(n)}>
+                    {n}인
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
           <div className={"gs-cards" + (wide ? " gs-cards-wide" : "")}>
             {rows.map((row, i) => {
               const st = seats.find((k) => k.id === row.id);
@@ -10013,19 +10085,21 @@ export default function GoldSettlement() {
                           aria-label={`${nm}의 ${c.name || "항목"} 1회 추가 (우클릭: 1회 빼기)`}
                         >
                           <span className="gs-cardp-hitname">
-                            {(c.name || "").trim() || "항목"}
-                            {isRoulette(c) ? "" : " · " + man(Math.round(goldOf(c.price)))}
+                            <span className="gs-cardp-hitlab">{(c.name || "").trim() || "항목"}</span>
+                            {!isRoulette(c) && <em className="gs-cardp-hitprice">{man(Math.round(goldOf(c.price)))}</em>}
                           </span>
-                          {n > 0 ? (
-                            <span className="gs-hit-num" key={n}>
-                              {commafy(n)}
-                              <em>회</em>
-                            </span>
-                          ) : (
-                            <span className="gs-hit-ghost" aria-hidden="true">
-                              {isRoulette(c) ? "◎" : "＋"}
-                            </span>
-                          )}
+                          <span className="gs-cardp-hitval">
+                            {n > 0 ? (
+                              <span className="gs-hit-num" key={n}>
+                                {commafy(n)}
+                                <em>회</em>
+                              </span>
+                            ) : (
+                              <span className="gs-hit-ghost" aria-hidden="true">
+                                {isRoulette(c) ? "◎" : "＋"}
+                              </span>
+                            )}
+                          </span>
                         </button>
                       );
                     })}
@@ -10050,10 +10124,8 @@ export default function GoldSettlement() {
                 </div>
               );
             })}
-            <button className="gs-cardp gs-cardp-add" onClick={addRow}>
-              + 인원 추가
-            </button>
           </div>
+          </>
         ) : (
         <div className="gs-scroll">
           <table
@@ -16472,7 +16544,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-crown{width:18px; height:18px; color:var(--gold); display:inline-flex; align-items:center; justify-content:center; flex:none}
 .gs-crown-none{visibility:hidden}
 /* 나 — 이름 글자 밑 절반의 금색 형광 */
-.gs-name-me{background:linear-gradient(transparent 58%, rgba(var(--gold-rgb),.38) 58%, rgba(var(--gold-rgb),.38) 92%, transparent 92%)}
+.gs-name-me{background:none; text-decoration:underline; text-decoration-color:rgba(var(--gold-rgb),.42); text-decoration-thickness:.4em; text-underline-offset:-.28em; text-decoration-skip-ink:none}
 /* 파티원 화면의 초상화 자리 — 단추가 아니라 span 이라 같은 상자 규칙을 직접 준다 */
 .gs-rowi-ro{display:inline-flex; align-items:center; justify-content:center; cursor:default}
 /* 초상화 크기 (2026-09-16 사용자: 글자 높이만큼) — 줄·대기 줄 24, 자수 카드 28, 계정 칩 24 */
@@ -17058,10 +17130,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-acctmenu-item:disabled{opacity:.5; cursor:default}
 .gs-acctmenu-mute{color:var(--ink-2)}
 .gs-acctmenu-sep{height:1px; background:rgba(var(--ink-rgb),.14); margin:4px 0}
-/* 계층 — 머리(누구) › 별명(계정의 것) › 초상화 묶음(작은 머리글 + 들여쓴 항목) › 로그아웃(흐리게, 작게) */
-.gs-acctmenu-cap{padding:6px 12px 2px; font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; color:var(--ink-2)}
-.gs-acctmenu-sub{padding-left:22px; font-size:12.5px}
-.gs-acctmenu-mute{font-size:12px; padding-top:7px; padding-bottom:7px}
+/* (폐기 2026-09-16) 머리글·들여쓰기 계층 — 표준 메뉴는 같은 크기의 항목과 구분선뿐 */
 .gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px}
 /* 남의 판 — 라벨과 시스템 줄 밑선만 파란색. 줄 전체를 칠하지 않는다 */
 .gs-sysbar-away{border-bottom:2px solid var(--blue)}
@@ -18241,8 +18310,19 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-cards-wide{grid-template-columns:repeat(auto-fill, minmax(260px, 1fr))} /* 1180 → 4열, 1600 → 5열 */
 .gs-cardp{background:var(--paper-2); border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; display:flex; flex-direction:column; overflow:hidden; min-width:0}
 .gs-cardp-empty{border-style:dashed; opacity:.7}
-.gs-cardp-add{align-items:center; justify-content:center; border-style:dashed; font:inherit; font-size:13px; color:var(--ink-2); cursor:pointer; min-height:120px; background:transparent}
-.gs-cardp-add:hover{color:var(--ink); border-color:rgba(var(--ink-rgb),.6)}
+/* 카드 도구 줄 — 항목(이름 · 단가 · ×) + [+ 항목] 왼쪽, 인원 4·8·16 오른쪽 */
+.gs-cardtools{display:flex; align-items:center; justify-content:space-between; gap:12px 24px; flex-wrap:wrap; margin:0 0 12px; padding:8px 10px; border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px; background:var(--paper-2)}
+.gs-cardtools-items{display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0}
+.gs-cardtools-size{display:flex; align-items:center; gap:8px; flex:none}
+.gs-citem{display:inline-flex; align-items:center; gap:2px; height:32px; box-sizing:border-box; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; background:var(--paper); padding:0 2px 0 6px}
+.gs-citem .gs-citem-name{width:5em; font-size:13px; padding:2px 4px}
+.gs-citem-price{font:inherit; font-family:var(--mono); font-size:12.5px; color:var(--gold); background:transparent; border:0; cursor:pointer; padding:0 6px; white-space:nowrap; height:100%}
+.gs-citem-price:hover{text-decoration:underline}
+.gs-citem-price .gs-price-suffix{margin-left:3px}
+.gs-citem .gs-pricewrap{display:inline-flex; align-items:center; padding:0 2px}
+.gs-citem-x{height:100%; padding:0 6px}
+.gs-citem-add{height:32px; box-sizing:border-box; padding:0 10px}
+.gs-cardtools .gs-seg button{padding:0 12px; height:30px}
 .gs-cardp-pic{position:relative; aspect-ratio:1/1; /* 정사각 — 4:3 은 초상화가 잘렸다(사용자) */ background:rgba(var(--ink-rgb),.06); display:flex; align-items:center; justify-content:center;
   color:rgba(var(--ink-rgb),.35); font-family:'Gowun Batang',serif; font-size:40px; border-bottom:1px solid rgba(var(--ink-rgb),.25); overflow:hidden}
 .gs-cards-wide .gs-cardp-pic{aspect-ratio:1/1}
@@ -18257,8 +18337,14 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-cardp-sum em{font-style:normal; font-size:11px; color:var(--ink-2); margin-left:2px}
 .gs-cardp-items{display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px 12px 6px}
 .gs-cardp-items.three{grid-template-columns:1fr 1fr 1fr}
-.gs-cardp-hit{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:54px; padding:6px 4px; width:100%; min-width:0}
-.gs-cardp-hitname{font-size:11.5px; color:var(--ink-2); letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
+.gs-cardp-hit{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; height:64px; min-height:0; padding:6px; width:100%; min-width:0; box-sizing:border-box}
+.gs-cardp-hitname{display:flex; align-items:baseline; justify-content:center; gap:6px; max-width:100%; min-width:0; font-size:13px; color:var(--ink); letter-spacing:.01em}
+.gs-cardp-hitlab{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+.gs-cardp-hitprice{font-style:normal; font-family:var(--mono); font-size:13px; color:var(--gold); white-space:nowrap; flex:none}
+.gs-cardp-hitval{height:24px; display:inline-flex; align-items:center; justify-content:center; line-height:1}
+.gs-cardp-hit .gs-hit-num{font-size:20px; min-width:0}
+.gs-cardp-hit .gs-hit-num em{font-size:11px; margin-left:3px}
+.gs-cardp-hit .gs-hit-ghost{font-size:20px}
 .gs-cardp-etc{margin:2px 12px 10px; font:inherit; font-size:11.5px; color:var(--ink-2); background:transparent; border:1px dashed rgba(var(--ink-rgb),.28); border-radius:2px; padding:5px 8px; text-align:left; cursor:pointer}
 .gs-cardp-etc:hover{color:var(--ink); border-color:rgba(var(--ink-rgb),.5)}
 .gs-cardp-disc{padding:0 12px 10px}
