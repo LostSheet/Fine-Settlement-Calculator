@@ -8978,9 +8978,6 @@ export default function GoldSettlement() {
                     : "내 판을 두고 옮겨요. 옮기면 내 방송에 이 판이 나가고, 내 판의 파티원 자수는 돌아올 때까지 멈춰요. 내 판은 그대로 남아요."}
                 </p>
                 <div className="gs-invite-acts">
-                  <button className="gs-btn gs-btn-ghost" onClick={leaveToLobby}>
-                    취소
-                  </button>
                   <button
                     className="gs-btn gs-lifebtn gs-lbstart gs-invite-go"
                     onClick={() => {
@@ -8989,6 +8986,9 @@ export default function GoldSettlement() {
                     }}
                   >
                     옮기기
+                  </button>
+                  <button className="gs-btn gs-btn-ghost" onClick={leaveToLobby}>
+                    취소
                   </button>
                 </div>
               </>
@@ -9404,9 +9404,6 @@ export default function GoldSettlement() {
               </p>
               {kickedOut && !denied && <p className="gs-empty-sub">방장이 다시 받으면 들어갈 수 있어요.</p>}
               <div className="gs-join-acts gs-blocked-acts">
-                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={goLobby}>
-                  내 판으로
-                </button>
                 {meCur && meCur !== liveRoom && (
                   <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => enterRoom(meCur, { push: true })}>
                     내 파티로 돌아가기
@@ -9427,6 +9424,9 @@ export default function GoldSettlement() {
                     다시 들어가기
                   </button>
                 )}
+                <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={goLobby}>
+                  내 판으로
+                </button>
               </div>
             </div>
           </div>
@@ -11180,14 +11180,14 @@ export default function GoldSettlement() {
                 aria-label="별명"
               />
               <div className="gs-dialog-btns">
+                <button className="gs-btn gs-lbstart" type="submit">
+                  저장
+                </button>
                 {auth && auth.nickSet && (
                   <button type="button" className="gs-btn gs-btn-ghost" onClick={() => setNickAsk(false)}>
                     취소
                   </button>
                 )}
-                <button className="gs-btn gs-lbstart" type="submit">
-                  저장
-                </button>
               </div>
             </form>
           </div>
@@ -12821,7 +12821,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
             </div>
           ))
         )}
-        <div className="gs-obs-acts" style={{ marginTop: 12 }}>
+        <div className="gs-obs-acts gs-acts-end" style={{ marginTop: 12 }}>
           <button className="gs-btn gs-btn-sm" onClick={onClose}>
             닫기
           </button>
@@ -13454,11 +13454,11 @@ function InviteCard({ inv, onAccept, onDeny }) {
         <span className="gs-join-id">({inv.from.slice(0, 2) + "••••"})</span>님이 파티에 초대했어요
       </span>
       <div className="gs-join-acts">
-        <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => onDeny(inv)}>
-          거절
-        </button>
         <button className="gs-btn gs-btn-sm" onClick={() => onAccept(inv)}>
           수락하고 들어가기
+        </button>
+        <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={() => onDeny(inv)}>
+          거절
         </button>
       </div>
     </div>
@@ -14506,11 +14506,11 @@ function ReasonAdd({ who, draft, unitLabel, onClose, onAdd }) {
           />
         </div>
         <div className="gs-dialog-btns">
-          <button className="gs-btn gs-btn-ghost" onClick={onClose}>
-            취소
-          </button>
           <button className="gs-btn" onClick={submit}>
             등록
+          </button>
+          <button className="gs-btn gs-btn-ghost" onClick={onClose}>
+            취소
           </button>
         </div>
       </div>
@@ -15441,10 +15441,6 @@ function Confirm({ ask, onCancel, onDone }) {
         <h3>{ask.title}</h3>
         {ask.body && <p>{ask.body}</p>}
         <div className="gs-dialog-btns">
-          {/* 취소는 맨 왼쪽 — 주 동작이 오른쪽 끝에 앉습니다 (§9-3) */}
-          <button className="gs-btn gs-btn-ghost" onClick={onCancel}>
-            취소
-          </button>
           {/* 선택지가 둘인 경우(단가 변경) — 되돌리기 어려운 쪽을 유령 버튼으로 둡니다 */}
           {ask.alt && (
             <button
@@ -15469,6 +15465,10 @@ function Confirm({ ask, onCancel, onDone }) {
             }}
           >
             {ask.action || "삭제"}
+          </button>
+          {/* 단추 순서 규칙 (§9-3, 2026-09-16 개정): 오른쪽 아래, 주 동작이 먼저·취소가 마지막 — Windows 순서. 앱 전체가 이 한 규칙 */}
+          <button className="gs-btn gs-btn-ghost" onClick={onCancel}>
+            취소
           </button>
         </div>
       </div>
@@ -16804,7 +16804,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   box-shadow:0 8px 22px rgba(var(--shadow-rgb),.22)}
 .gs-invnote-h{margin:0 0 4px; font-family:'Gowun Batang',serif; font-size:15px; font-weight:700; color:var(--ink)}
 .gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-.gs-invnote-acts{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+.gs-invnote-acts{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px}
 .gs-invnote-foot{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3);
   font-family:var(--mono); font-size:11px; color:var(--ink-2); letter-spacing:.02em}
 /* 디스코드 단추 — 상표색 하나만 쓴다 */
@@ -16828,7 +16828,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-waitline .gs-ava{margin-right:2px}
 .gs-waitto{font-size:11.5px; color:var(--ink-2); margin-left:auto; margin-right:6px}
 .gs-waitto-none{color:var(--red)}
-.gs-invite-acts{display:flex; justify-content:center; gap:8px; margin-top:14px}
+/* 단추 줄 규칙 (§9-3, 2026-09-16 개정) — 창·카드의 단추는 오른쪽 아래, 주 동작이 먼저·취소가 마지막(Windows 순서). 가운데 정렬·양끝 정렬 없음 */
+.gs-invite-acts{display:flex; justify-content:flex-end; gap:8px; margin-top:14px}
 /* 별명 창 — 입력칸과 [저장]이 한 줄 (2026-09-16 사용자 지적: 자리표시가 잘리고 단추가 딴 줄이었다) */
 .gs-nickform{display:flex; flex-direction:row; align-items:center; gap:10px; margin-top:14px}
 .gs-nickform .gs-in-nick{flex:1 1 auto; width:auto; min-width:0; height:38px; padding:0 12px; font-size:17px; text-align:left; letter-spacing:.06em}
@@ -18119,7 +18120,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-lh-loginnote{margin-top:14px}
 .gs-lbhero-ph b{color:var(--ink-2); font-weight:400}
 .gs-invmodal-live{margin:0 0 2px}
-.gs-blocked-acts{justify-content:center; margin-top:12px}
+.gs-blocked-acts{justify-content:flex-end; margin-top:12px}
 .gs-recruit-code{margin-top:4px}
 .gs-recruit .gs-lbsec:last-child{margin-bottom:0}
 .gs-recruit .gs-lbinv{justify-content:flex-start; flex-wrap:nowrap}
