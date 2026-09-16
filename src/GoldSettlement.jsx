@@ -8803,7 +8803,7 @@ export default function GoldSettlement() {
                     <>
                       <h4 className="gs-invnote-h">초대하려면 Discord 연동이 필요해요</h4>
                       <p className="gs-invnote-p">
-                        초대 링크, 파티원의 자수와 방송은 디스코드 계정에 붙어요. 혼자 세고 방송에 띄우는 건 지금처럼 로그인 없이 돼요.
+                        초대 링크, 파티원의 자수와 방송은 디스코드 계정에 붙어요. 혼자 세고 방송에 띄우는 건 지금처럼 로그인 없이 할 수 있어요.
                       </p>
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
@@ -9370,7 +9370,7 @@ export default function GoldSettlement() {
                         },
                       ]
                     : []),
-                  { k: "sheet", label: "벌금표", tip: "벌금을 입력하는 화면이에요. 정산 장부와 보낼 우편은 이 표를 기준으로 계산돼요." },
+                  { k: "sheet", label: "벌금표", tip: "벌금을 입력하는 화면이에요. 정산 장부와 보낼 우편은 이 표를 기준으로 계산해요." },
                   { k: "ledger", label: "정산 장부", tip: "각자 낸 벌금과 받을 몫, 실제 송금 금액을 보여줘요." },
                   { k: "mail", label: "보낼 우편", tip: "누가 누구에게 얼마를 보낼지, 우편 수수료까지 계산해요." },
                 ].map((t) => (
@@ -9446,7 +9446,7 @@ export default function GoldSettlement() {
             </p>
             {/* 둘째 줄은 첫 줄이 못 하는 말만 (2026-09-06 사용자: 우클릭이 두 번 나와 겹친다) — 30초는 서버의 되돌리기 창(§3.6)과 같은 숫자.
                 (폐기 2026-09-06 당일, 사용자 지정 원문) `여기서 누르면 방장의 벌금판에 반영돼요. 30초 이내에 우클릭하면 취소할 수 있어요.` */}
-            <p className="gs-conf-note">누른 건 방장 벌금판에 바로 올라가요. 되돌리기는 30초 안에만 돼요.</p>
+            <p className="gs-conf-note">누른 건 방장 벌금판에 바로 올라가요. 30초 안에만 되돌릴 수 있어요.</p>
             {showPick ? (
               seatClaimBlock()
             ) : needPick || (!!you && you.st === "ok" && !you.rowId && !myRow && roundLive) ? (
@@ -9688,7 +9688,7 @@ export default function GoldSettlement() {
         <div className="gs-cardhead">
           <div className="gs-headleft">
             <h2 className="gs-h2">벌금표</h2>
-            {simple && <span className="gs-headnote">메모장이 오른쪽 표에 연동돼요</span>}
+            {simple && <span className="gs-headnote">메모장에 적은 내용이 오른쪽 표에 바로 들어가요</span>}
             {/* 파티원도 봅니다 (2026-09-06) — 기록은 이미 판과 함께 넘어오고, 단가 변경(`단가 3만 → 5만`)도 한 줄로 남아 있어
                 단가 × 횟수와 금액이 다를 때 왜 그런지 여기서 읽힙니다. 취소는 방장만 */}
             {!simple && (
@@ -9707,7 +9707,7 @@ export default function GoldSettlement() {
                   {log.length > 0 && <em>{log.length}</em>}
                 </button>
                 <span className="gs-tip-body" role="tooltip">
-                  모든 입력과 수정이 <b>시각과 함께</b> 기록돼요. 어느 줄이든 취소할 수 있어요.
+                  모든 입력과 수정을 <b>시각과 함께</b> 기록해요. 어느 줄이든 취소할 수 있어요.
                 </span>
               </span>
             )}
@@ -9784,7 +9784,7 @@ export default function GoldSettlement() {
                 <span className="gs-tip-body gs-tip-r gs-tip-modes" role="tooltip">
                   <span className="gs-tip-sec">
                     <b>메모장 모드</b>
-                    이름과 금액을 한 줄씩 입력하면 자동으로 표로 정리돼요. 쓰던 메모를
+                    이름과 금액을 한 줄씩 입력하면 표로 정리해요. 쓰던 메모를
                     그대로 붙여넣어도 돼요.
                   </span>
                   <span className="gs-tip-sec">
@@ -12839,7 +12839,7 @@ function RouletteCfg({ col, unitLabel, theme, onW, onPass, onPassSelf, onToggleF
         <div className="gs-rc-left">
           {/* 실물과 같은 규칙으로 그린 미리보기 — 비율·순서·테마가 그대로 반영됩니다 */}
           <WheelPreview faces={keys} weights={w} theme={theme} />
-          <p className="gs-rc-pvnote">비율을 고치거나 순서를 끌면 여기에 바로 반영돼요.</p>
+          <p className="gs-rc-pvnote">비율을 고치거나 순서를 끌면 여기서 바로 확인할 수 있어요.</p>
           {theme === "vegas" && (
             <p className="gs-rc-vegas">
               카지노 테마를 쓰는 중이에요 — 빨강·검정이 번갈아 칠해져서{" "}
@@ -13310,7 +13310,7 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
             방장 설정이 얼려 실려서 파티원 화면과 방송이 다 같은 것을 봅니다. 그래서 여기서
             고른 값은 내가 방장인 판에서만 나갑니다. 나머지 외형은 계정마다 제각각입니다.
             문구 초안 */}
-        <p className="gs-unitnote gs-obs-note">룰렛은 방장 것을 따라가요 — 내가 방장일 때만 적용돼요.</p>
+        <p className="gs-unitnote gs-obs-note">룰렛은 방장 것을 따라가요 — 이 설정은 내가 방장인 판에서만 방송에 나와요.</p>
         {/* 감속 (2026-09-05) — 끝에서 꼬리를 길게 끌어 긴장을 늘립니다. 다음 판부터 적용.
             자리는 룰렛 외형 머리 바로 아래 (2026-09-06 사용자 지적 — 원판 고르기 밑에 붙어 있으면 딴 설정처럼 보였다).
             (폐기 2026-09-06) `느긋하게는 끝에서 오래 미적여요.` — 사용자: 워딩이 별로 */}
@@ -13592,7 +13592,7 @@ function AuthModal({ tab, ctx, onDone, onClose }) {
               onKeyDown={(e) => e.key === "Enter" && submit()}
               aria-label="닉네임"
             />
-            <p className="gs-auth-nickhint">2~3글자 · 이 브라우저에 저장돼요</p>
+            <p className="gs-auth-nickhint">2~3글자 · 이 브라우저에만 저장해요</p>
           </>
         )}
         {mode === "register" && (
@@ -14037,7 +14037,7 @@ function LobbyHome({
               <button className="gs-btn gs-lifebtn gs-lbstart gs-lh-getaddr" onClick={onLogin}>
                 로그인하여 방송용 주소 받기
               </button>
-              <p className="gs-lh-note gs-lh-loginnote">파티원을 부르거나 방송에 띄우려면 계정이 필요해요 — 게스트로도 돼요. 벌금만 셀 거면 필요 없어요.</p>
+              <p className="gs-lh-note gs-lh-loginnote">파티원을 부르거나 방송에 띄우려면 계정이 필요해요 — 게스트로도 받을 수 있어요. 벌금만 셀 거면 필요 없어요.</p>
             </>
           )}
         </div>
@@ -14596,7 +14596,7 @@ function GainGuide({ onClose }) {
           <h4>
             주소 하나 나눠쓰기 <span className="gs-gain-tag">기존 방식</span>
           </h4>
-          <p className="gs-gain-sub">방장 주소를 전원이 같이 넣어요 — 지금도 돼요</p>
+          <p className="gs-gain-sub">방장 주소를 전원이 같이 넣어요 — 지금도 이렇게 할 수 있어요</p>
           <div className="gs-gain-scene" aria-hidden="true">
             <svg viewBox="0 0 240 118">
               <Bx x={80} y={8} w={80} h={24} t="테스1 주소" src />
@@ -14709,8 +14709,8 @@ function GainGuide({ onClose }) {
         </div>
       </div>
       <p className="gs-gain-foot">
-        파티원이 할 일은 초대 링크를 누르는 것뿐이에요. OBS를 안 써도 벌금은 세어지고
-        자수도 돼요.
+        파티원이 할 일은 초대 링크를 누르는 것뿐이에요. OBS를 안 써도 벌금은 방장이 세고,
+        자수도 할 수 있어요.
       </p>
 
     </InfoModal>
@@ -14723,7 +14723,7 @@ function AcctGuide({ onClose }) {
   return (
     <InfoModal title="Discord를 연동하면 뭐가 달라져요?" onClose={onClose} wide>
       <p className="gs-gain-lead">
-        연동 전이든 뒤든 <b>내 방송용 주소</b>는 하나예요. 벌금 세기와 정산은 같고, 초대·자수·초상화는 연동 뒤에 돼요.
+        연동 전이든 뒤든 <b>내 방송용 주소</b>는 하나예요. 벌금 세기와 정산은 같고, 초대·자수·초상화 설정은 연동한 뒤에 할 수 있어요.
         {/* (폐기 2026-09-06 오후) 뒷문장 `다른 건 어디서 이어 쓸 수 있느냐예요.` — 사용자: 빼자 */}
       </p>
       <div className="gs-gain-cols">
@@ -14736,8 +14736,8 @@ function AcctGuide({ onClose }) {
             <span className="gs-gain-src">내 주소</span>
           </div>
           <ul className="gs-gain-list">
-            <li className="yes">내 방송용 주소·자수·참여, 다 돼요</li>
-            <li className="no">이 브라우저에서만 로그인돼요 — 지우면 계정을 잃어요</li>
+            <li className="yes">내 방송용 주소를 받고, 자수·참여도 할 수 있어요</li>
+            <li className="no">이 브라우저에서만 로그인할 수 있어요 — 지우면 계정을 잃어요</li>
             <li className="no">파티를 열어 파티원을 모을 수는 없어요</li>
           </ul>
         </div>
@@ -15296,7 +15296,7 @@ const HOST_STEPS = [
   { ch: 5, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true, clear: true },
   /* 6장 — 발급까지 */
   { ch: 6, sel: ".gs-obsbtn", text: "방송에 띄우려면 여기예요.", wait: "obs" },
-  { ch: 6, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
+  { ch: 6, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 로그인 없이도 받을 수 있어요.", wait: "obsgot", top: true },
   { ch: 6, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. 파티가 바뀌어도 그대로. [복사]로 가져가요.", action: "다음", lock: true, top: true },
   { ch: 6, sel: ".gs-modal .gs-obs-lineact", text: "브라우저 소스로 넣는 법은 여기. 한 번만 넣으면 돼요.", action: "다음 장", lock: true, top: true, exit: "closeObs" },
   /* 7장 — 예시 안에서 진짜 끝내기 흐름 */
@@ -15343,7 +15343,7 @@ const MEMBER_STEPS = [
   },
   { ch: 7, sel: ".gs-tab-sheet", text: "방장 표는 여기서 봐요. 정산 장부와 보낼 우편도 같이 보여요.", action: "다음", lock: true },
   { ch: 7, sel: ".gs-obsbtn", text: "내 방송에도 이 판을 띄울 수 있어요. 여기서요.", wait: "obs" },
-  { ch: 7, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
+  { ch: 7, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 로그인 없이도 받을 수 있어요.", wait: "obsgot", top: true },
   { ch: 7, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. OBS 브라우저 소스에 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "알겠어요", lock: true, top: true, exit: "closeObs" },
 ];
 /* 방장 튜토리얼 4장(파티원 화면) — 실리안이 링크를 눌렀을 때의 초대장부터, 자수와 정정까지만 (2026-09-06 낮 사용자: "초대의 룩 → 자수, 정정" 이 정도만).
@@ -15414,7 +15414,7 @@ const SOLO_STEPS = [
   { ch: 3, sel: ".gs-tab-mail", text: "게임 우편으로 보낼 내용이에요. 파티원에게 넘길 건 이거예요.", wait: "tab:mail", clear: true },
   { ch: 3, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
   { ch: 4, sel: ".gs-obsbtn", text: "방송에도 띄울 수 있어요. 여기예요.", wait: "obs" },
-  { ch: 4, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 게스트도 돼요.", wait: "obsgot", top: true },
+  { ch: 4, sel: ".gs-modal .gs-authgo", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 로그인 없이도 받을 수 있어요.", wait: "obsgot", top: true },
   { ch: 4, sel: ".gs-modal .gs-obs-addrbox", text: "이 주소는 OBS 브라우저 소스에 넣는 것이지, 파티원에게 주는 게 아니에요. 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "다 봤어요", top: true },
 ];
 const TOUR_FLOW = DEMO_SOLO ? SOLO_STEPS : DEMO_CH4 ? MEMBER_INHOST : DEMO_MEMBER ? MEMBER_STEPS : HOST_STEPS;
