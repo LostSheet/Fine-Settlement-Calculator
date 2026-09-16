@@ -3800,7 +3800,8 @@ export default function GoldSettlement() {
     if (readOnly || (e.pointerType === "mouse" && e.button !== 0)) return;
     const els = dragRows();
     const from = els.findIndex((el) => el.dataset.row === id);
-    if (from < 1) return;
+    /* 방장 줄도 끈다 (2026-09-16 사용자: 방장 최상단 폐지) — (폐기) from < 1 이면 거절 */
+    if (from < 0) return;
     e.preventDefault();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -3822,11 +3823,11 @@ export default function GoldSettlement() {
     const dy = e.clientY - d.y0;
     d.els[d.from].style.transform = "translateY(" + dy + "px)";
     const center = d.mid[d.from] + dy;
-    /* 잡은 줄의 가운데보다 위에 있는 다른 줄 수 + 1(방장 줄) = 놓일 자리 */
-    let to = 1;
-    for (let i = 1; i < d.els.length; i++) if (i !== d.from && d.mid[i] < center) to++;
+    /* 잡은 줄의 가운데보다 위에 있는 다른 줄 수 = 놓일 자리. 첫 줄도 자리다 (2026-09-16) */
+    let to = 0;
+    for (let i = 0; i < d.els.length; i++) if (i !== d.from && d.mid[i] < center) to++;
     d.to = to;
-    for (let i = 1; i < d.els.length; i++) {
+    for (let i = 0; i < d.els.length; i++) {
       if (i === d.from) continue;
       const shift = d.from < i && i <= to ? -d.h : to <= i && i < d.from ? d.h : 0;
       d.els[i].style.transform = shift ? "translateY(" + shift + "px)" : "";
@@ -9809,12 +9810,15 @@ export default function GoldSettlement() {
               )}
               {!(ready || guestLobby) && <ChatCopyBtn line={chatLine} flash={flash} onCopy={copyChat} />}
             </span>
-            {unitSeg(false)}
-            {/* 마우스 안내 — 표 바 오른쪽 끝 (2026-09-16 사용자: 없애지 말 것). 준비 상태·대기실 갈래는 §3.12 에서 없어져 이 한 줄뿐 */}
-            <p className="gs-cellnote">
-              칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-              우클릭하면 1회 빠져요.
-            </p>
+            {/* 오른쪽 묶음 (2026-09-16) — 위에 입력 단위, 그 밑에 마우스 안내. 둘 다 오른쪽 끝에 맞춘다.
+                (폐기) 세 덩이를 양끝 정렬로 한 줄에 — 입력 단위가 가운데에 떠 있었다(사용자) */}
+            <span className="gs-tablebar-r">
+              {unitSeg(false)}
+              <p className="gs-cellnote">
+                칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
+                우클릭하면 1회 빠져요.
+              </p>
+            </span>
           </div>
         )}
 
@@ -16995,7 +16999,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-modebar .gs-seg button{display:inline-flex; align-items:center; gap:6px}
 .gs-modebar .gs-seg svg{opacity:.85; flex:none}
 /* 표 윗줄 — 왼쪽 조작법, 오른쪽 채팅 복사 */
-.gs-tablebar{display:flex; align-items:flex-end; justify-content:space-between; gap:12px;
+.gs-tablebar{display:flex; align-items:center; justify-content:space-between; gap:12px;
   margin-bottom:16px}
 .gs-tablebar .gs-cellnote{margin:0 0 8px}
 /* 창 머리 — 제목은 왼쪽, X는 항상 오른쪽 위. 본문만 스크롤됩니다 */
@@ -18033,6 +18037,9 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-seatclaimcard .gs-seatclaim-lead{margin-top:0}
 /* 판 중 도구줄 — 채팅 복사와 초대 링크가 왼쪽에 나란히 */
 .gs-tablebar-l{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+/* 표 바 오른쪽 묶음 — 입력 단위 위, 마우스 안내 아래, 오른쪽 끝 정렬 (2026-09-16) */
+.gs-tablebar-r{display:flex; flex-direction:column; align-items:flex-end; gap:5px; margin-left:auto}
+.gs-tablebar-r .gs-cellnote{margin:0}
 .gs-invbtn-n{margin-left:6px; font-family:var(--mono); font-size:11.5px; color:var(--gold); font-weight:400}
 .gs-invmodal .gs-lbsec{margin-top:12px}
 .gs-easebar{margin-top:12px}
