@@ -9065,17 +9065,10 @@ export default function GoldSettlement() {
                 )}
               </span>
             )}
-            {/* 연동 전엔 문 하나 (B1′, 2026-09-16) — 계정이 없든 주소만 받았든 같은 모습. 실루엣이 얼굴 자리를 비워 둔다 */}
+            {/* 연동 전엔 문 하나 (B1′, 2026-09-16) — 계정이 없든 주소만 받았든 같은 모습.
+                (2026-09-17 사용자) 다른 Discord 단추와 같은 상표색 + 마크. (폐기) 실루엣 얼굴 자리가 붙은 유령 단추 */}
             {(!auth || !auth.dc) && !inviteGate && !readOnly && (
-              <button className="gs-btn gs-btn-ghost gs-dcdoor" onClick={() => startDiscord()}>
-                <span className="gs-dcdoor-ava" aria-hidden="true">
-                  <svg viewBox="0 0 20 20" width="13" height="13">
-                    <g fill="currentColor">
-                      <circle cx="10" cy="6.4" r="3.4" />
-                      <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
-                    </g>
-                  </svg>
-                </span>
+              <button className="gs-btn gs-dcbtn gs-dcdoor" onClick={() => startDiscord()}>
                 Discord 연동
               </button>
             )}
@@ -18872,8 +18865,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-obs-life .gs-swaplink{font-size:12.5px}
 .gs-obs-discard{margin-left:14px}
 /* 연동 전의 문 (B1′) — 유령 단추 + 실루엣 얼굴 자리 */
-.gs-dcdoor{display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px 0 5px}
-.gs-dcdoor-ava{width:22px; height:22px; border-radius:25%; background:rgba(var(--ink-rgb),.08); color:var(--ink-2); border:1px solid rgba(var(--ink-rgb),.3); display:inline-flex; align-items:center; justify-content:center; flex:none}
+.gs-dcdoor{height:32px; padding:0 12px 0 10px; font-size:12.5px; font-weight:600}
 
 /* 공유 설정 창의 계정 줄·명단 */
 .gs-obs-acct{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
