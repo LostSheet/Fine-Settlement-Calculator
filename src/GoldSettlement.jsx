@@ -3566,11 +3566,8 @@ export default function GoldSettlement() {
     };
     img.src = url;
   };
-  const [nickAsk, setNickAsk] = useState(false);
-  const [nickDraft, setNickDraft] = useState("");
-  useEffect(() => {
-    if (auth && auth.dc && !auth.nickSet && !DEMO) setNickAsk(true);
-  }, [auth && auth.id, auth && auth.nickSet]);
+  /* (폐기 2026-09-17) 별명 창 — 연동 뒤 처음 한 번 2~3글자 별명을 정하던 것. 별명은 Discord 표시 이름이고(서버가 로그인 때 맞춘다),
+     표의 이름은 늘 방장이 적는다(사용자) */
   const [meReady, setMeReady] = useState(false);
   useEffect(() => {
     if (!auth) setMeReady(true);
@@ -3923,40 +3920,30 @@ export default function GoldSettlement() {
     const prev = seatsRef.current;
     const i = prev.findIndex((s) => s.acct === auth.id);
     if (i >= 0) {
-      /* 방장이 손으로 고쳐 둔 이름은 닉을 따라가지 않습니다 (§3.2) */
-      const me = prev[i];
-      /* (모험가N) 자리표시는 방장이 지은 이름이 아니다 — named 가 서 있어도 별명이 이긴다 (2026-09-16 버그: 내 줄이 (모험가1)로 남았다) */
-      const fill = !(me.name || "").trim() || isFillName(me.name);
-      /* 연동 전(게스트)에는 별명을 채우지 않는다 (B1′) — 게스트 별명은 화면 어디에도 안 나온다 */
-      const name = me.named && !fill ? me.name : auth.dc ? auth.nick || me.name : me.name;
-      if (name === me.name) return;
-      /* 판은 늘 살아 있으니(§3.12.2) 줄을 옮기지 않고 이름만 맞춘다 — 표와 자리의 id 가 어긋나지 않게 */
-      if (name !== me.name) {
-        putSeats(prev.map((s, k) => (k === i ? { ...s, name, named: !fill && s.named } : s)));
-        if (!me.named || fill) setRows((rs) => rs.map((x) => (x.id === me.id ? { ...x, name } : x)));
-      }
+      /* 이미 내 줄이 있다 — 이름은 건드리지 않는다. 표의 이름은 늘 방장이 적는다 (2026-09-17 확정).
+         (폐기) 자리표시·손 안 댄 줄이면 별명으로 채우던 것 */
       return;
     }
     /* 방장 줄은 첫 줄이 아니라 "내 계정이 붙은 줄"이다 (2026-09-16 사용자: 방장 최상단 폐지). 아직 없으면 계정 없는 첫 줄을 잡고,
-       그것도 없으면 맨 아래에 한 줄 더한다. 방장이 적어 둔 이름은 남기고, 자리표시면 별명으로 바꾼다 */
+       그것도 없으면 맨 아래에 한 줄 더한다. 이름은 그대로 둔다 (2026-09-17: 별명으로 채우지 않는다) */
     const h = prev.find((s) => !s.acct);
     if (h) {
-      const fill = !(h.name || "").trim() || isFillName(h.name);
-      const name = fill && auth.dc ? auth.nick || h.name : h.name;
-      putSeats(prev.map((s) => (s.id === h.id ? { ...s, acct: auth.id, mem: auth.id, named: !fill, nick: auth.nick || "", name } : s)));
-      if (fill && auth.dc) setRows((rs) => rs.map((x) => (x.id === h.id ? { ...x, name: auth.nick || x.name } : x)));
+      putSeats(prev.map((s) => (s.id === h.id ? { ...s, acct: auth.id, mem: auth.id, nick: auth.nick || "" } : s)));
       return;
     }
     const seat = {
       id: "r" + seq.current++,
-      name: auth.dc ? auth.nick || "" : "",
+      name: "",
       acct: auth.id,
       mem: auth.id,
       named: false,
       nick: auth.nick || "",
     };
+    const taken = new Set(rows.map((x) => x.name));
+    let k = rows.length + 1;
+    while (taken.has(FILL_NAME(k))) k++;
     putSeats([...prev, seat]);
-    setRows((rs) => [...rs, { id: seat.id, name: seat.name, counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] }]);
+    setRows((rs) => [...rs, { id: seat.id, name: FILL_NAME(k), counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] }]);
   }, [auth && auth.id, auth && auth.nick, readOnly, roundLive, seats.length]);
   /* 명단은 인원 수만큼의 칸입니다 (§3.1) — 빈 칸은 (모험가N) 자리표시로 서서
      "여기가 자동으로 차는구나"를 보여 줍니다. 모자라면 빈 칸을 채워 넣고, 남으면
@@ -4519,8 +4506,8 @@ export default function GoldSettlement() {
           return roundLive
             ? { ...s, acct: null, mem: null, left: true, who: s.acct }
             : { ...s, acct: null, mem: null, name: "", named: false, left: false };
-        /* 이름이 비어 있던 자리에 사람이 붙으면 닉으로 채웁니다 */
-        return { ...s, acct, mem: acct, left: false, nick: (m && m.nick) || s.nick || "", name: (s.name || "").trim() ? s.name : (m && m.nick) || s.name };
+        /* 사람이 붙어도 이름은 그대로 (2026-09-17: 표의 이름은 늘 방장이 적는다) */
+        return { ...s, acct, mem: acct, left: false, nick: (m && m.nick) || s.nick || "" };
       });
       return hit ? next : prev;
     });
@@ -4536,9 +4523,8 @@ export default function GoldSettlement() {
     list.map((s) =>
       s.id === keepId || (s.acct !== acct && s.mem !== acct)
         ? s
-        : /* 닉이 채운 이름은 같이 비웁니다 (2026-09-05) — 안 그러면 옮긴 뒤 같은 사람 줄이 둘로 보입니다.
-             방장이 지은 이름(named)은 남기고, 진행 중엔 줄→자리 동기화가 장부 줄의 이름을 되살립니다 */
-          { ...s, acct: null, mem: null, name: s.named && !isFillName(s.name) ? s.name : "" }
+        : /* 사람만 떼고 이름은 남긴다 (2026-09-17: 이름은 방장이 적은 것 — 닉으로 채우지 않으니 비울 것도 없다) */
+          { ...s, acct: null, mem: null }
     );
   /* 붙는 순간에 바로 앉힙니다 (§3.2, 2026-09-05 표준화 — 다음 빈 슬롯에 즉시 앉는 로비 문법):
      ① 닉과 똑같은 이름이 적힌 빈 자리가 하나면 거기 ② 아니면 첫 빈 칸(자리표시 칸) ③ 빈 칸이 없으면 null —
@@ -4594,13 +4580,12 @@ export default function GoldSettlement() {
     let id = seatId;
     let next = seats;
     if (fresh) {
-      const s = { id: "r" + seq.current++, name: nick || "", acct, mem: acct, named: false, nick: nick || "" };
+      const s = { id: "r" + seq.current++, name: "", acct, mem: acct, named: false, nick: nick || "" };
       id = s.id;
       /* 사람 하나는 자리 하나입니다 — 앉아 있던 자리는 미연결로 돌아가고 기억도 놓습니다 */
       next = [...forgetElsewhere(seats, acct, id), s];
     } else {
-      /* (모험가N) 자리표시는 방장이 지은 이름이 아닙니다 — 사람이 앉으면 닉이 이깁니다.
-         줄→자리 동기화가 자리표시 줄에 named 를 세워 둘 수 있어 이름으로 다시 봅니다 */
+      /* 사람이 앉아도 줄 이름은 그대로 (2026-09-17: 표의 이름은 늘 방장이 적는다) */
       next = forgetElsewhere(seats, acct, id).map((s) =>
         s.id === id
           ? {
@@ -4609,7 +4594,6 @@ export default function GoldSettlement() {
               mem: acct,
               left: false,
               nick: nick || s.nick || "",
-              name: s.named && !isFillName(s.name) ? s.name : nick || s.name,
             }
           : s
       );
@@ -4658,15 +4642,12 @@ export default function GoldSettlement() {
     /* 판이 살아 있으면 그 자리의 줄도 지금 만듭니다 — 판 도중 [+ 인원 추가]와 같은 일입니다.
        판이 없으면(로비) 줄은 [시작]할 때 자리에서 한꺼번에 생깁니다 */
     if (roundLive) {
-      const nRows = rows.some((x) => x.id === id)
-        ? rows.map((x) => {
-            if (x.id !== id) return x;
-            const s2 = next.find((s) => s.id === id);
-            /* (모험가N) 줄을 이어받으면 그 줄이 그 사람의 이름을 얻습니다 (§3.2) */
-            return !s2.named || isFillName(x.name) ? { ...x, name: nick || x.name } : x;
-          })
-        : [...rows, { id, name: nick || "", counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] }];
-      setRows(nRows);
+      if (!rows.some((x) => x.id === id)) {
+        const taken = new Set(rows.map((x) => x.name));
+        let k = rows.length + 1;
+        while (taken.has(FILL_NAME(k))) k++;
+        setRows([...rows, { id, name: FILL_NAME(k), counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] }]);
+      }
     }
     if (opts && opts.silent) return id;
     return id;
@@ -4834,14 +4815,10 @@ export default function GoldSettlement() {
       seatMember(acct, nick, rowId, { local: true });
       sayJoin(nick || acct, rowId);
     },
-    /* 닉 변경 — 표시 이름은 방장 장부의 것입니다 (§3.2). 방장이 손대지 않은 자리만
-       따라 바뀌고, 방장이 고쳐 둔 이름은 안 건드립니다 */
+    /* 닉(= Discord 표시 이름) 변경 — 명단의 이름만 바꾼다. 표의 줄 이름은 방장이 적은 것이라 안 건드린다 (2026-09-17) */
     nick: (acct, nick) => {
       setMembers((prev) => prev.map((m) => (m.acct === acct ? { ...m, nick } : m)));
-      const hit = seats.find((s) => s.acct === acct);
-      if (!hit || hit.named) return;
-      putSeats((prev) => prev.map((s) => (s.id === hit.id ? { ...s, name: nick } : s)));
-      setRows((prev) => prev.map((x) => (x.id === hit.id ? { ...x, name: nick } : x)));
+      putSeats((prev) => prev.map((s) => (s.acct === acct ? { ...s, nick } : s)));
     },
     join: (m) => {
       if (!m || !m.acct) return refreshMembers();
@@ -8932,17 +8909,6 @@ export default function GoldSettlement() {
                     <button
                       className="gs-acctmenu-item"
                       role="menuitem"
-                      onClick={() => {
-                        setAcctOpen(false);
-                        setNickAsk(true);
-                      }}
-                    >
-                      별명 바꾸기
-                    </button>
-                    <div className="gs-acctmenu-sep" aria-hidden="true" />
-                    <button
-                      className="gs-acctmenu-item"
-                      role="menuitem"
                       disabled={picBusy}
                       onClick={() => picPick.current && picPick.current.click()}
                     >
@@ -9207,7 +9173,7 @@ export default function GoldSettlement() {
                   Discord 연동을 통해 참여하기
                 </button>
                 <p className="gs-invite-note">
-                  연동하면 참여를 요청해요. 방장이 승인하면 표의 한 줄을 배정받아요. 초상화는 디스코드에서 가져오고, 별명은 처음 한 번만 정하면 돼요.
+                  연동하면 참여를 요청해요. 방장이 승인하면 표의 한 줄을 배정받아요.
                 </p>
               </>
             )}
@@ -10323,7 +10289,9 @@ export default function GoldSettlement() {
                               const linked = !!(auth && auth.dc);
                               const mine = isHostRow ? myAva(auth) : null;
                               const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : mine && (mine.id || mine.p) ? mine : null;
-                              const masked = acct ? acct.slice(0, 2) + "••••" : "";
+                              /* ID = Discord 사용자명 앞 두 글자 (2026-09-17). (폐기) 앱 계정 아이디 앞 두 글자 — 게스트 시절 아이디가 보였다(사용자).
+                                 파티원 것은 서버가 가려서 주고(dcu), 내 것은 이 브라우저가 가린다 */
+                              const masked = (mem && mem.dcu) || (isHostRow && auth && auth.dc && auth.dc.user ? Array.from(auth.dc.user).slice(0, 2).join("") + "••••" : "");
                               return (
                                 <span className={"gs-tip gs-rowmeta" + (off ? " gs-rowmeta-off" : "")}>
                                   {acct ? (
@@ -10359,9 +10327,11 @@ export default function GoldSettlement() {
                                       <span className="gs-tipline">
                                         <i>원래 닉네임:</i> <b>{(mem && mem.nick) || st.nick || (auth && acct === auth.id ? auth.nick : "") || ""}</b>
                                       </span>
-                                      <span className="gs-tipline">
-                                        <i>ID:</i> {masked}
-                                      </span>
+                                      {masked && (
+                                        <span className="gs-tipline">
+                                          <i>ID:</i> {masked}
+                                        </span>
+                                      )}
                                       {off && <span className="gs-tipline">연결 끊김</span>}
                                     </span>
                                   )}
@@ -11501,48 +11471,6 @@ export default function GoldSettlement() {
                 취소
               </button>
             </div>
-          </div>
-        </div>
-      )}
-      {nickAsk && (
-        <div className="gs-modal">
-          <div className="gs-dialog" role="dialog" aria-modal="true" aria-label="별명">
-            <h3>표에 오를 별명을 정해요</h3>
-            <p>2~3글자예요. 디스코드 이름은 길어서 표에 못 올라가요. 처음 한 번만 정하면 되고, 나중에 오른쪽 위 내 이름을 눌러 바꿀 수 있어요.</p>
-            <form
-              className="gs-nickform"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const nm = nickDraft.trim();
-                if (!/^[가-힣a-zA-Z0-9]{2,3}$/.test(nm)) return say("별명은 2~3글자로 정해요.");
-                changeNick(nm)
-                  .then(() => {
-                    putAuth({ ...authRef.current, nick: nm, nickSet: true });
-                    setNickAsk(false);
-                  })
-                  .catch((e2) => say((e2 && e2.message) || "별명을 바꾸지 못했어요."));
-              }}
-            >
-              <input
-                className="gs-in gs-in-nick"
-                value={nickDraft}
-                onChange={(e) => setNickDraft(e.target.value)}
-                maxLength={3}
-                autoFocus
-                placeholder="별명 2~3글자"
-                aria-label="별명"
-              />
-              <div className="gs-dialog-btns">
-                <button className="gs-btn gs-lbstart" type="submit">
-                  저장
-                </button>
-                {auth && auth.nickSet && (
-                  <button type="button" className="gs-btn gs-btn-ghost" onClick={() => setNickAsk(false)}>
-                    취소
-                  </button>
-                )}
-              </div>
-            </form>
           </div>
         </div>
       )}
