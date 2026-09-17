@@ -8863,8 +8863,11 @@ export default function GoldSettlement() {
                   {!auth || !auth.dc ? (
                     <>
                       <h4 className="gs-invnote-h">초대하려면 Discord 연동이 필요해요</h4>
+                      {/* 문장마다 줄을 바꾼다 (2026-09-17 사용자: 개행에 너무 박하다) */}
                       <p className="gs-invnote-p">
-                        파티원도 Discord 계정으로 참여하고 자수해요. 혼자 벌금을 세고 방송에 띄우는 건 지금처럼 로그인 없이 할 수 있어요.
+                        파티원도 Discord 계정으로 참여하고 자수해요.
+                        <br />
+                        혼자 벌금을 세고 방송에 띄우는 건 지금처럼 로그인 없이 할 수 있어요.
                       </p>
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
@@ -8876,15 +8879,24 @@ export default function GoldSettlement() {
                   ) : (
                     <>
                       <h4 className="gs-invnote-h">파티원 부르기</h4>
+                      {/* (고침 2026-09-17) "처음 오는 사람은 표 아래에서 승인" — 표 아래 승인 줄이 없어지고 자리 배치 창으로 옮겼다 */}
                       <p className="gs-invnote-p">
-                        Discord에 붙여넣을 초대 메시지를 복사해요. 자리가 있던 사람은 앱을 열면 바로 자기 줄에서 자수할 수 있고, 처음 오는 사람은 표 아래에서 승인하면 돼요.
+                        Discord에 붙여넣을 초대 메시지를 복사해요.
+                        <br />
+                        자리가 있던 사람은 앱을 열면 바로 자기 줄에서 자수할 수 있어요.
+                        <br />
+                        처음 오는 사람은 [자리 배치]에서 줄을 배정하면 돼요.
                       </p>
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-invdiscbtn" onClick={copyInvite}>
                           {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
                         </button>
                       </div>
-                      <div className="gs-invnote-foot">링크는 늘 같아요 · 채널에 핀 해 두면 다음 판도 그걸 눌러요</div>
+                      <div className="gs-invnote-foot">
+                        링크는 늘 같아요.
+                        <br />
+                        채널에 핀 해 두면 다음 판도 그걸 눌러요.
+                      </div>
                     </>
                   )}
                 </div>
@@ -11318,6 +11330,10 @@ export default function GoldSettlement() {
           hostAcct={auth ? auth.id : null}
           hostBadge={!!(auth && auth.dc)}
           tray={[...new Set(waitBelow.map((p) => p.acct))]}
+          linked={!!(auth && auth.dc)}
+          copied={flash === "inv"}
+          onDiscord={() => startDiscord()}
+          onCopyInvite={copyInvite}
           onSave={applyPlacement}
           onCancel={() => setSeatOpen(false)}
         />
@@ -13604,7 +13620,7 @@ function PlacerAva({ p, size, house }) {
     </span>
   );
 }
-function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, onSave, onCancel }) {
+function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, linked, copied, onDiscord, onCopyInvite, onSave, onCancel }) {
   const [D, setD] = useState(() => ({
     rows: rows.map((r) => ({ id: r.id, name: r.name || "", oname: r.name || "", acct: r.acct || null, oacct: r.acct || null })),
     tray: tray.slice(),
@@ -13615,6 +13631,9 @@ function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, onSave, onCancel 
   const [ghost, setGhost] = useState(null); // {x, y, kind, acct, rowId}
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  /* [Discord 연동]은 이 창을 떠난다 — 바꾼 배치가 있으면 저장할지 먼저 묻는다 */
+  const [dcAsk, setDcAsk] = useState(false);
+  const firstOrder = useRef(rows.map((r) => r.id).join("|"));
   const DRef = useRef(D);
   DRef.current = D;
   const pickedRef = useRef(picked);
@@ -13803,6 +13822,15 @@ function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, onSave, onCancel 
     const r = await onSave(DRef.current);
     setBusy(false);
     if (typeof r === "string" && r) setErr(r);
+    return !(typeof r === "string" && r);
+  };
+  const dirty = () => {
+    const d = DRef.current;
+    return d.rejected.length > 0 || d.rows.map((r) => r.id).join("|") !== firstOrder.current || d.rows.some((r) => r.isNew || r.acct !== r.oacct || r.name !== r.oname);
+  };
+  const goDiscord = () => {
+    if (dirty()) return setDcAsk(true);
+    onDiscord();
   };
   const changed = (r) => r.isNew || r.acct !== r.oacct || r.name !== r.oname;
   const empties = D.rows.filter((r) => !r.acct).length;
@@ -13931,7 +13959,32 @@ function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, onSave, onCancel 
               {D.tray.length ? (
                 D.tray.map((a) => <Fragment key={a}>{person(a, "list")}</Fragment>)
               ) : (
-                <p className="gs-sp-listempty">배정할 사람이 없어요. 줄의 사람을 여기로 끌면 뺄 수 있어요.</p>
+                /* 비었을 때 — 초대로 이끈다 (2026-09-17 확정). 연동 전 [Discord 연동], 연동 뒤 [디코 메시지 복사]. 본문은 두 상태가 같다(사용자 원문).
+                   다 배정해서 비었으면 머리만 "배정할 사람이 없어요". 뺄 수 있다는 한 줄은 선 아래에 남긴다(09-16 사용자 걱정) */
+                <div className="gs-sp-inv">
+                  <p className="gs-sp-inv-h">
+                    {!linked
+                      ? "파티원을 초대하려면 Discord 연동이 필요해요"
+                      : D.rows.some((r) => r.acct && !isHost(r.acct))
+                      ? "배정할 사람이 없어요"
+                      : "아직 들어온 사람이 없어요"}
+                  </p>
+                  {/* 문장 하나 = 한 덩이 — 줄바꿈(br)으로 나누면 줄 길이 고르기(balance)가 문장마다 안 먹었다 */}
+                  <p className="gs-sp-inv-b">
+                    <span>연동하면 초대 링크로 들어온 사람이 여기에 모여요.</span>
+                    <span>초대 받은 사람은 자기 줄을 직접 눌러 자수할 수 있어요.</span>
+                  </p>
+                  {!linked ? (
+                    <button type="button" className="gs-btn gs-dcbtn gs-sp-inv-btn" onClick={goDiscord}>
+                      Discord 연동
+                    </button>
+                  ) : (
+                    <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-sp-inv-btn" onClick={onCopyInvite}>
+                      {copied ? "복사했어요" : "디코 메시지 복사"}
+                    </button>
+                  )}
+                  <p className="gs-sp-inv-foot">줄의 사람을 여기로 끌면 뺄 수 있어요.</p>
+                </div>
               )}
             </div>
           </div>
@@ -13941,14 +13994,42 @@ function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, onSave, onCancel 
             {err}
           </p>
         )}
-        <div className="gs-dialog-btns">
-          <button type="button" className="gs-btn gs-lbstart" disabled={busy} onClick={save}>
-            저장
-          </button>
-          <button type="button" className="gs-btn gs-btn-ghost" disabled={busy} onClick={onCancel}>
-            취소
-          </button>
-        </div>
+        {dcAsk && (
+          <div className="gs-sp-ask" role="alertdialog" aria-label="저장하고 연동">
+            <p className="gs-sp-ask-h">배치를 저장하고 연동할까요?</p>
+            <p className="gs-sp-ask-b">
+              Discord 연동은 이 창을 떠나요.
+              <br />
+              저장하지 않으면 바꾼 배치가 사라져요.
+            </p>
+            <div className="gs-dialog-btns">
+              <button
+                type="button"
+                className="gs-btn gs-lbstart"
+                disabled={busy}
+                onClick={async () => {
+                  if (await save()) onDiscord();
+                  else setDcAsk(false);
+                }}
+              >
+                저장하고 연동
+              </button>
+              <button type="button" className="gs-btn gs-btn-ghost" disabled={busy} onClick={() => setDcAsk(false)}>
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+        {!dcAsk && (
+          <div className="gs-dialog-btns">
+            <button type="button" className="gs-btn gs-lbstart" disabled={busy} onClick={save}>
+              저장
+            </button>
+            <button type="button" className="gs-btn gs-btn-ghost" disabled={busy} onClick={onCancel}>
+              취소
+            </button>
+          </div>
+        )}
       </div>
       {ghost && (
         <div className="gs-sp-ghost" style={{ left: ghost.x + 12, top: ghost.y + 10 }} aria-hidden="true">
@@ -17334,8 +17415,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-invnote-h{margin:0 0 4px; font-family:'Gowun Batang',serif; font-size:15px; font-weight:700; color:var(--ink)}
 .gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
 .gs-invnote-acts{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px}
+/* 발치 글꼴 (고침 2026-09-17) — 영문 고정폭(Cutive Mono)에 한글이 섞여 글자 사이가 벌어져 보였다 */
 .gs-invnote-foot{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3);
-  font-family:var(--mono); font-size:11px; color:var(--ink-2); letter-spacing:.02em}
+  font-size:11.5px; line-height:1.7; color:var(--ink-2)}
 /* 디스코드 단추 — 상표색 하나만 쓴다 */
 .gs-dcbtn{background:#5865f2 !important; color:#fff !important; border-color:#5865f2 !important}
 /* 디스코드 마크 (2026-09-16 사용자) — 상표 마크를 글자색으로 칠한다. (폐기) 흰 네모 자리표시 */
@@ -19071,11 +19153,13 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-sp-dialog{max-width:800px; padding:18px 20px 16px; overflow:visible; max-height:none}
 .gs-sp-modal{place-items:start center; overflow-y:auto; padding-top:6vh}
 .gs-sp-cols{display:grid; grid-template-columns:minmax(0,1.55fr) minmax(0,1fr); gap:18px; margin-top:14px}
-.gs-sp-colhead{display:flex; align-items:center; gap:8px; height:32px; border-bottom:1.5px solid var(--ink)}
+/* 머리 줄 30px, 글자·단추를 선 쪽에 붙인다 — [전부 배정]이 34px 라 머리(32px)를 넘쳐 테두리가 선에 닿았다 (2026-09-17) */
+.gs-sp-colhead{display:flex; align-items:flex-end; gap:8px; height:30px; padding-bottom:5px; box-sizing:border-box; border-bottom:1.5px solid var(--ink)}
 .gs-sp-colhead .gs-caplab b{color:var(--gold); font-weight:600; margin-left:4px}
-.gs-sp-colhead .gs-btn{margin-left:auto}
+.gs-sp-colhead .gs-btn{margin-left:auto; height:22px; padding:0 8px; font-size:11.5px; display:inline-flex; align-items:center; margin-bottom:-1px}
 .gs-sp-rows{display:flex; flex-direction:column; max-height:min(460px, 56vh); overflow-y:auto}
-.gs-sp-row{display:grid; grid-template-columns:16px minmax(0,1fr) 210px; align-items:center; gap:8px; min-height:52px; padding:4px 2px 4px 0;
+/* 줄 왼쪽 10px — 바뀐 줄의 금색 선과 ≡ 손잡이가 겹치지 않게 (2026-09-17) */
+.gs-sp-row{display:grid; grid-template-columns:16px minmax(0,1fr) 210px; align-items:center; gap:8px; min-height:52px; padding:4px 2px 4px 10px;
   border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
 .gs-sp-row .gs-drag{justify-self:center}
 .gs-sp-name{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px; color:var(--ink); text-align:right; width:100%; min-width:0; padding:8px 4px; cursor:text}
@@ -19114,6 +19198,17 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-sp-rej{border:0; background:transparent; color:var(--ink-2); font-size:15px; line-height:1; width:22px; height:22px; cursor:pointer; border-radius:2px; padding:0; flex:none}
 .gs-sp-rej:hover{color:var(--red); background:rgba(var(--ink-rgb),.08)}
 .gs-sp-err{color:var(--red) !important; margin-top:12px !important}
+/* 좁은 열이라 한 문장이 꼬리 한 마디만 남기고 넘어갔다("자수할 / 수 있어요") — 줄 길이를 고르게 */
+.gs-sp-inv{padding:14px 4px 0}
+.gs .gs-sp-inv-h,.gs .gs-sp-inv-b > span{display:block; text-wrap:balance; word-break:keep-all} /* .gs p 의 pretty 보다 세게 */
+.gs-sp-inv-h{margin:0 !important; font-family:'Gowun Batang',serif; font-weight:700; font-size:14.5px !important; color:var(--ink) !important; line-height:1.5 !important}
+.gs-sp-inv-b{margin:6px 0 0 !important; font-size:12.5px !important; color:var(--ink-body) !important; line-height:1.7 !important}
+.gs-sp-inv-btn{margin-top:12px}
+.gs-sp-inv-foot{margin:18px 0 0 !important; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.26); font-size:12px !important; color:var(--ink-2) !important}
+.gs-sp-ask{margin-top:14px; padding:12px 14px; border:1px solid rgba(var(--gold-rgb),.6); border-radius:2px; background:rgba(var(--gold-rgb),.08)}
+.gs-sp-ask-h{margin:0 !important; font-weight:600; font-size:13px !important; color:var(--ink) !important}
+.gs-sp-ask-b{margin:4px 0 0 !important; font-size:12.5px !important; line-height:1.7 !important}
+.gs-sp-ask .gs-dialog-btns{margin-top:10px}
 .gs-sp-ghost{position:fixed; z-index:100; pointer-events:none; display:flex; align-items:center; gap:7px; padding:4px 10px 4px 4px; background:var(--paper);
   border:1px solid var(--gold); border-radius:2px; box-shadow:0 8px 20px rgba(var(--shadow-rgb),.45); font-family:'Gowun Batang',serif; font-weight:700; font-size:14px; color:var(--ink)}
 .gs-sp-ghost > span:only-child{padding-left:6px}
