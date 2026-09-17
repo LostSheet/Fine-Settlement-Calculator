@@ -2657,6 +2657,19 @@ export default function GoldSettlement() {
   const [itemsOpen, setItemsOpen] = useState(false);
   /* 자리 배치 창 (2026-09-17 확정) — 표 바 [자리 배치 N] 으로 연다 */
   const [seatOpen, setSeatOpen] = useState(false);
+  /* 파티원 보기 (2026-09-17 확정) — 방장 화면을 그대로 쓴다. 메모장은 없고 카드가 기본, 카운터를 고를 수 있다. 이 브라우저에 적는다 */
+  const [memberView, setMemberView] = useState(() => {
+    try {
+      return localStorage.getItem("goldSettlement.memberView") === "items" ? "items" : "cards";
+    } catch (e) {
+      return "cards";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("goldSettlement.memberView", memberView);
+    } catch (e) {}
+  }, [memberView]);
   useEffect(() => {
     if (!wide) return;
     const h = (e) => {
@@ -4456,7 +4469,9 @@ export default function GoldSettlement() {
       rows2: nRows.map((x, i) => {
         const s = (list || []).find((k) => k.id === x.id);
         const mm = s && s.acct ? (members || []).find((q) => q.acct === s.acct) : null;
-      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0, ava: mm && mm.ava ? mm.ava : undefined };
+      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0,
+        /* 방장 줄의 초상화도 싣는다 (2026-09-17: 파티원 화면이 방장 화면을 그대로 쓴다) */
+        ava: mm && mm.ava ? mm.ava : s && s.acct && authRef.current && s.acct === authRef.current.id ? myAvaWire(authRef.current) : undefined };
       }),
       look: lookOut(),
       t: Date.now(),
@@ -4914,7 +4929,12 @@ export default function GoldSettlement() {
           return;
         }
         if (!m || !m.kind) return;
-        if (m.kind === "members" && !tutorialRef.current) setMembers(Array.isArray(m.list) ? m.list : []);
+        if (m.kind === "members" && !tutorialRef.current) {
+          /* 소켓이 준 명단도 서버 원본이다 — 읽음으로 친다 (고침 2026-09-17: 소켓 명단이 HTTP 보다 먼저 오면 읽음 표시가 안 서고,
+             뒤이어 온 같은 명단은 memberSig 가 같아 자리 맞추기가 다시 안 돌았다 — 방장이 앱을 연 뒤 배정된 파티원이 표에 안 붙었다) */
+          membersLoaded.current = true;
+          setMembers(Array.isArray(m.list) ? m.list : []);
+        }
         else if (m.kind === "join") scribeRef.current.join(m.member || m);
         else if (m.kind === "left") scribeRef.current.refresh();
         /* 파티원 소켓이 붙거나 끊겼습니다 — 표의 아이디 표시가 흐려지고 돌아옵니다 (§5.6) */
@@ -5193,7 +5213,9 @@ export default function GoldSettlement() {
     rows2: rows.map((x, i) => {
       const s = seatsRef.current.find((k) => k.id === x.id);
       const mm = s && s.acct ? (members || []).find((q) => q.acct === s.acct) : null;
-      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0, ava: mm && mm.ava ? mm.ava : undefined };
+      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0,
+        /* 방장 줄의 초상화도 싣는다 (2026-09-17: 파티원 화면이 방장 화면을 그대로 쓴다) */
+        ava: mm && mm.ava ? mm.ava : s && s.acct && authRef.current && s.acct === authRef.current.id ? myAvaWire(authRef.current) : undefined };
     }),
     /* 판이 없이 모으는 중일 때만 — 뷰어·오버레이가 순위표 대신 대기실을 그립니다 (§4.3).
        판이 살아 있으면 오버레이는 그 판을 비춥니다 (§3.4) — 판 도중에 사람을 들인다고
@@ -6038,6 +6060,8 @@ export default function GoldSettlement() {
   }, [confessTab]);
   /* 자수할 줄이 실제로 있을 때만 나머지 칸을 물러나게 합니다 */
   const confessMode = confessTab && !!you.rowId;
+  /* 파티원 카드 보기 — 방장의 카드 모드와 같은 카드. 내 카드만 눌리고 남의 카드는 흐리다 */
+  const memberCards = confessTab && memberView === "cards";
   const [showObs, setShowObs] = useState(false); // 내 방송용 주소 — 기본 가림
   /* 내 줄의 보통 항목 칸만 누를 수 있습니다 — 룰렛·기타·합계는 읽기 전용입니다 */
   const canConfess = (row, col) =>
@@ -6057,7 +6081,7 @@ export default function GoldSettlement() {
   /* ---------- 자수 탭 ----------
      파티원에게만 있는 탭이고, 그 사람의 기본 화면입니다. 자격이 사라지면(내보내짐·대기실로
      되돌아감) 그릴 것이 없으니 벌금표로 돌려놓습니다 — 빈 화면이 남지 않게 여기서 셉니다. */
-  const tabNow = tab === "confess" && !confessTab ? (ended ? "ledger" : "sheet") : tab;
+  const tabNow = tab === "confess" ? (ended ? "ledger" : "sheet") : tab;
   const showConfess = tabNow === "confess";
   const showSheet = !tabbed || tabNow === "sheet";
   const showLedger = !tabbed || tabNow === "ledger";
@@ -6065,8 +6089,8 @@ export default function GoldSettlement() {
   /* 출발하면 자수 화면부터 — 파티원이 처음 볼 것은 자기 칸입니다 */
   const wasPlaying = useRef(false);
   useEffect(() => {
-    if (confessTab && !wasPlaying.current) setTab("confess");
-    if (!confessTab && wasPlaying.current && tab === "confess") setTab("sheet");
+    /* 앉으면 벌금표부터 — 파티원이 처음 볼 것은 자기 칸이다 (2026-09-17: 자수 탭 폐기) */
+    if (confessTab && !wasPlaying.current) setTab("sheet");
     wasPlaying.current = confessTab;
   }, [confessTab]);
   /* 판이 끝나면 정산 장부부터 — 끝난 뒤에 볼 것은 자기가 얼마 보내는지입니다 */
@@ -6080,7 +6104,7 @@ export default function GoldSettlement() {
   /* 남은 초 — 글자로 보여야 "왜 화면이 바뀌었지"가 안 됩니다 (2026-09-05). 조작마다 30으로 돌아갑니다 */
   const [backIn, setBackIn] = useState(null);
   useEffect(() => {
-    if (!confessTab || tab === "confess") {
+    if (!confessTab || tab === "sheet" || tab === "confess") {
       setBackIn(null);
       return;
     }
@@ -6090,7 +6114,7 @@ export default function GoldSettlement() {
       clearTimeout(id);
       due = Date.now() + IDLE_BACK_MS;
       setBackIn(Math.ceil(IDLE_BACK_MS / 1000));
-      id = setTimeout(() => setTab("confess"), IDLE_BACK_MS);
+      id = setTimeout(() => setTab("sheet"), IDLE_BACK_MS);
     };
     const tick = setInterval(() => setBackIn(Math.max(0, Math.ceil((due - Date.now()) / 1000))), 500);
     const kinds = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"];
@@ -9386,16 +9410,7 @@ export default function GoldSettlement() {
             {tabbed && !ready && !guestLobby && (
               <nav className="gs-tabs" aria-label="화면 선택">
                 {[
-                  /* 자수는 파티원의 기본 화면이라 맨 왼쪽입니다 — 다른 탭은 읽으러 가는 곳입니다 */
-                  ...(confessTab
-                    ? [
-                        {
-                          k: "confess",
-                          label: "자수",
-                          tip: "내 벌금을 직접 세는 화면이에요. 카드를 누르면 1회 쌓이고, 우클릭하면 1회 빠져요.",
-                        },
-                      ]
-                    : []),
+                  /* (폐기 2026-09-17) 파티원의 [자수] 탭 — 파티원도 벌금표에서 내 줄을 눌러 센다(방장 화면을 그대로) */
                   { k: "sheet", label: "벌금표", tip: "벌금을 입력하는 화면이에요. 정산 장부와 보낼 우편은 이 표를 기준으로 계산해요." },
                   { k: "ledger", label: "정산 장부", tip: "각자 낸 벌금과 받을 몫, 실제 송금 금액을 보여줘요." },
                   { k: "mail", label: "보낼 우편", tip: "누가 누구에게 얼마를 보낼지, 우편 수수료까지 계산해요." },
@@ -9439,146 +9454,7 @@ export default function GoldSettlement() {
       {/* ── 자수 — 파티원의 기본 화면. 항목마다 큰 카드 하나이고,
              누르면 +1회 · 우클릭하면 −1회입니다. 서버가 방장 앱에 넘겨 장부에 적히고,
              그 결과가 푸시로 돌아와야 숫자가 바뀝니다(낙관 갱신 없음) ── */}
-      {showConfess && confessTab && !blockedCard && (
-        <section className="gs-mail gs-confsec">
-          <div className="gs-cardhead">
-            <div className="gs-headleft">
-              <h2 className="gs-h2">자수</h2>
-            </div>
-          </div>
-          <div className="gs-card gs-confbox">
-            {/* (폐기 2026-09-06) 얼림 띠 — 중단이라는 상태가 모델에 없다. 방장 부재는 앞 절만 (2026-09-06) */}
-            {!scribeOn && (
-              <div className="gs-slip" role="status">
-                <span className="gs-slip-msg">
-                  <b>방장이 자리를 비웠어요.</b>
-                </span>
-              </div>
-            )}
-            <div className="gs-conf-who">
-              {auth && (auth.dc || auth.pic) ? <DcAva dc={myAva(auth)} size={28} /> : null}
-              <b>{myRow ? seatName(myRow, rows.indexOf(myRow)) : you.nick || "나"}</b>
-              <span className="gs-conf-tag">나</span>
-              <span className="gs-conf-sum">
-                내 벌금 <b>{man(myGold)}</b>
-              </span>
-            </div>
-            {/* 자수 안내는 벌금표와 같은 문장·같은 마우스 아이콘 (2026-09-06 사용자 지적).
-                (폐기 2026-09-06) `내 줄만 누를 수 있어요 — 칸 클릭 +1회 · 우클릭 −1회. 나머지는 읽기 전용이에요.` */}
-            <p className="gs-cellnote gs-conf-howto">
-              {/* 둘째 줄의 '되돌리기'와 같은 말 (2026-09-06 사용자). (폐기 당일) `우클릭하면 1회 빠져요.` — 벌금표 쪽 문장은 그대로 */}
-              칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-              우클릭하면 되돌려요.
-            </p>
-            {/* 둘째 줄은 첫 줄이 못 하는 말만 (2026-09-06 사용자: 우클릭이 두 번 나와 겹친다) — 30초는 서버의 되돌리기 창(§3.6)과 같은 숫자.
-                (폐기 2026-09-06 당일, 사용자 지정 원문) `여기서 누르면 방장의 벌금판에 반영돼요. 30초 이내에 우클릭하면 취소할 수 있어요.` */}
-            <p className="gs-conf-note">누른 건 방장 벌금판에 바로 올라가요. 30초 안에만 되돌릴 수 있어요.</p>
-            {showPick ? (
-              seatClaimBlock()
-            ) : needPick || (!!you && you.st === "ok" && !you.rowId && !myRow && roundLive) ? (
-              <div className="gs-empty">
-                <p>자리를 기다리는 중이에요</p>
-                {/* (폐기 2026-09-06) `방장이 줄을 정해 줘요.` — 방장은 줄을 고르지 않고 [받기]만 누릅니다 */}
-                <p className="gs-empty-sub">다시 들어오려면 방장의 승인이 필요해요.</p>
-              </div>
-            ) : !myRow || cols.length === 0 ? (
-              <div className="gs-empty">
-                <p>아직 내 줄이 없어요.</p>
-                <p className="gs-empty-sub">방장이 줄을 만들면 여기에 항목이 나와요.</p>
-              </div>
-            ) : (
-              <div className="gs-confgrid">
-                {cols.map((c) => {
-                  const roul = isRoulette(c);
-                  const lock = roul || !scribeOn || !!paused;
-                  const n = num(myRow.counts[c.id]);
-                  const nm = (c.name || "").trim() || "항목";
-                  const priceG = Math.round(goldOf(c.price));
-                  /* 칸에 굳힌 금액(sums) — 단가를 '이제부터만' 바꾼 뒤에도 방장 표와 같은 숫자입니다.
-                     (버그 기록 2026-09-06) 횟수 × 지금 단가로 계산해 3만×3 + 5만×2 = 19만이 25만으로 보였다 */
-                  const gold = cellGold(myRow, c.id, priceG);
-                  /* 되돌릴 수 있는 30초 — 남은 시간은 칸 아래 눈금의 길이가 말합니다 (초 숫자를 안 씁니다) */
-                  const left = roul ? 0 : cfLeft(c.id);
-                  const cf = cfRef.current[c.id];
-                  const undoN = left > 0 && cf ? cf.n : 0;
-                  return (
-                    /* 열 하나 = 벌금표의 머리(항목명·단가) + 그 아래 칸. 칸 사이 틈이 없어서
-                       머리줄(1.5px)이 열들을 가로질러 한 줄로 이어집니다 — 방장 표의 thead 와 같은 모양 */
-                    <div
-                      key={c.id}
-                      className={"gs-cf gs-confcard-" + c.id + (undoN > 0 ? " gs-cf-livecol" : "")}
-                    >
-                      <div className="gs-cf-head">
-                        <div className="gs-cf-name">{roul ? "◎ " + nm : nm}</div>
-                        <div className="gs-cf-price">
-                          <span>{roul ? "나온 숫자 ×" : "1회"}</span>
-                          <u>{man(priceG)}</u>
-                          <span>G</span>
-                        </div>
-                      </div>
-                      <div className="gs-cf-body">
-                        <button
-                          className={
-                            "gs-cf-cell" +
-                            (n > 0 ? " gs-cf-on" : "") +
-                            (undoN > 0 ? " gs-cf-live" : "") +
-                            (lock ? " gs-cf-off" : "")
-                          }
-                          disabled={lock}
-                          onClick={() => !lock && sendConfess(myRow.id, c.id, 1)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            /* 0회에서 더 뺄 것은 없습니다 — 서버까지 갔다가 버려지는 요청입니다 */
-                            if (!lock && n > 0) sendConfess(myRow.id, c.id, -1);
-                          }}
-                          aria-label={nm + " 1회 추가 (우클릭: 1회 빼기)"}
-                        >
-                          {/* 숫자가 주인공 — 아직 안 센 칸은 방장 표처럼 옅은 ＋ 하나입니다.
-                              key={n} 은 숫자가 바뀔 때마다 톡 튀게 합니다(방장 표의 .gs-hit-num 과 같은 규칙) */}
-                          {roul ? (
-                            <span className="gs-cf-lock">룰렛은 방장이 돌려요</span>
-                          ) : n > 0 ? (
-                            <span className="gs-cf-num" key={n}>
-                              {commafy(n)}
-                              <em>회</em>
-                            </span>
-                          ) : (
-                            <span className="gs-cf-ghost" aria-hidden="true">
-                              ＋
-                            </span>
-                          )}
-                          <span className={"gs-cf-amt" + (gold > 0 ? "" : " zero")}>{man(gold)}</span>
-                          {undoN > 0 && (
-                            <i
-                              className="gs-cf-tick"
-                              style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }}
-                              aria-hidden="true"
-                            />
-                          )}
-                          {/* 장부에 적힌 순간의 번쩍임 — 새로 붙었다 사라지므로 애니메이션이 매번 다시 돕니다 */}
-                          {cfFlash && cfFlash.id === c.id && (
-                            <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />
-                          )}
-                        </button>
-                      </div>
-                      {/* 발치 한 줄 — 자리를 늘 비워 두어 떴다 사라져도 화면이 안 밀립니다 (2026-09-09 사용자 지적).
-                          (폐기 2026-09-09) 되돌리기 칩(알약) — 버튼처럼 생겼는데 눌리면 +1 이었고, 뜰 때마다 카드가 67px 길어졌습니다.
-                          문구 초안 */}
-                      <div className="gs-cf-foot">
-                        {undoN > 0 ? (
-                          <span role="status">
-                            방금 <b>+{undoN}</b> · 되돌릴 수 있어요
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
+      {/* (폐기 2026-09-17) 파티원 [자수] 탭 화면 — 벌금표의 내 줄이 그 일을 한다 */}
 
       {/* ── 모집 카드 — 준비 상태의 표 위 (§3.1, 2026-09-05). 옛 로비의 모으기 열이 가로로
              누운 것입니다: 초대 링크 · 함께한 사람(지목 초대) · 신청. [시작]하면 사라지고
@@ -9796,6 +9672,42 @@ export default function GoldSettlement() {
                 {/* (폐기 2026-09-06) 자리 요약 `앉음 n · 직접 적음 n · 빈 자리 n` — 띠와 카드 머리가 이미 말한다 */}
               </div>
             )}
+            {/* 파티원 모드 (2026-09-17 확정) — 방장과 같은 자리·같은 모양. 메모장은 비활성, 카드가 기본, 카운터 선택 */}
+            {confessTab && (
+              <div className="gs-modebar">
+                <span className="gs-caplab">모드</span>
+                <div className="gs-seg" role="group" aria-label="모드">
+                  <button disabled title="메모장은 방장만 써요">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <path d="M3 4.2h7M3 8h7M3 11.8h4.5" />
+                      </g>
+                    </svg>
+                    메모장
+                  </button>
+                  <button className={!memberCards ? "on" : ""} onClick={() => setMemberView("items")}>
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="1.6" />
+                        <path d="M8 5.2v5.6M5.2 8h5.6" />
+                      </g>
+                    </svg>
+                    카운터
+                  </button>
+                  <button className={memberCards ? "on" : ""} onClick={() => setMemberView("cards")}>
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <rect x="2.2" y="2.2" width="4.8" height="4.8" rx="1" />
+                        <rect x="9" y="2.2" width="4.8" height="4.8" rx="1" />
+                        <rect x="2.2" y="9" width="4.8" height="4.8" rx="1" />
+                        <rect x="9" y="9" width="4.8" height="4.8" rx="1" />
+                      </g>
+                    </svg>
+                    카드
+                  </button>
+                </div>
+              </div>
+            )}
             {/* 모드는 벌금을 '어떻게 적는지'라서 벌금표에 삽니다 */}
             {!readOnly && (
             <div className="gs-modebar">
@@ -9843,18 +9755,21 @@ export default function GoldSettlement() {
         {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다.
             방장이 메모장으로 바꾸면 자수 탭이 없어지므로(보통 항목이 없습니다) 뒷말도 같이
             내려놓고, 읽기 전용 표시만 남깁니다 (§3.4) */}
-        {guestPlaying && (
+        {/* 파티원 (2026-09-17) — 누를 수 없을 때만 한 줄: 메모장 판(항목 없음) · 방장 부재 · 줄 배정 전 */}
+        {guestPlaying && (!confessTab || !scribeOn || !you.rowId) && (
           <div className="gs-slip gs-slip-back" role="status">
-            {confessTab && <i className="gs-ring" aria-hidden="true" />}
             <span className="gs-slip-msg">
-              {confessTab ? (
+              {!confessTab ? (
                 <>
-                  <b>읽기 전용</b>이에요 — 내 벌금은 <b>자수</b> 탭에서 세요. <b>{backIn == null ? 30 : backIn}초</b> 뒤
-                  자수 화면으로 돌아가요 — 누르면 다시 30초.
+                  <b>읽기 전용</b>이에요
+                </>
+              ) : !you.rowId ? (
+                <>
+                  <b>자리를 기다리는 중이에요.</b> 방장이 줄을 배정하면 내 칸을 누를 수 있어요.
                 </>
               ) : (
                 <>
-                  <b>읽기 전용</b>이에요
+                  <b>방장이 자리를 비웠어요.</b> 돌아오면 다시 누를 수 있어요.
                 </>
               )}
             </span>
@@ -9973,15 +9888,23 @@ export default function GoldSettlement() {
               )}
               {/* 조작은 전부 왼쪽 한 줄 — 동사 둘, 세로선, 입력 단위. 높이 34px 로 맞춘다 (2026-09-16).
                   (폐기) 입력 단위를 오른쪽에 따로·안내 위에 쌓기 — 세 덩이가 제각각 떠 있었다(사용자) */}
-              <span className="gs-tablebar-sep" aria-hidden="true" />
-              {unitSeg(false)}
+              {!readOnly && <span className="gs-tablebar-sep" aria-hidden="true" />}
+              {!readOnly && unitSeg(false)}
             </span>
             {/* 오른쪽 끝 — 안내 한 줄 + [넓게] (W). 같은 줄, 같은 세로 가운데 */}
             <span className="gs-tablebar-end">
-              <p className="gs-cellnote">
-                칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-                우클릭하면 1회 빠져요.
-              </p>
+              {readOnly ? (
+                /* 파티원 — 누른 건 방장 벌금판에 올라가고, 서버가 30초 안의 되돌리기만 받는다 (§3.6) */
+                <p className="gs-cellnote">
+                  내 칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" /> 우클릭하면 되돌려요. 되돌리기는 30초 안에만
+                  할 수 있어요.
+                </p>
+              ) : (
+                <p className="gs-cellnote">
+                  칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
+                  우클릭하면 1회 빠져요.
+                </p>
+              )}
               {!readOnly && !wide && (
                 <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(true)} title="벌금판을 창 전체로">
                   ⤢ 넓게
@@ -10041,7 +9964,7 @@ export default function GoldSettlement() {
             }}
           />
         )}
-        {cardsMode && !readOnly ? (
+        {(cardsMode && !readOnly) || memberCards ? (
           /* 카드 모드 (K1) — 초상화(카드 폭) · 이름 + 합계 · 항목 단추(표의 칸과 같은 물건) · 기타. 넓게 보기에서는 초상화가 정사각·열이 늘어난다 */
           <>
           {/* 항목 칩 (2026-09-17) — 표 바 [항목 관리]를 펼쳤을 때만. (폐기 2026-09-17) 인원 4·8·16 세그 — "4·8·16 인 게임에서 + 칸이 맞는지 더 나은 방법을 찾자"를
@@ -10101,14 +10024,32 @@ export default function GoldSettlement() {
               const isHostRow = !!(acct && auth && acct === auth.id);
               const linked = !!(auth && auth.dc);
               const mine = isHostRow ? myAva(auth) : null;
-              const pic = mem && mem.ava && (mem.ava.id || mem.ava.p) ? avaDc(mem.ava) : mine && (mine.id || mine.p) ? mine : null;
+              /* 파티원 화면 — 방장이 판에 실어 보낸 rows2 의 초상화(ava)·방장 표시(h). 내 카드만 눌리고 남의 카드는 흐리다 (2026-09-17) */
+              const r2v = readOnly ? rows2v.find((k) => k.rowId === row.id) : null;
+              const pic = readOnly
+                ? r2v && r2v.ava && (r2v.ava.id || r2v.ava.p)
+                  ? avaDc(r2v.ava)
+                  : null
+                : mem && mem.ava && (mem.ava.id || mem.ava.p)
+                ? avaDc(mem.ava)
+                : mine && (mine.id || mine.p)
+                ? mine
+                : null;
+              const house = readOnly ? !!(r2v && r2v.h) : isHostRow && linked;
+              const taken = readOnly ? !!(r2v && (r2v.a || r2v.h)) : !!acct;
+              const myCard = readOnly && !!you && you.rowId === row.id;
+              const far = readOnly && confessMode && !myCard;
               const nm = seatName(row, i);
               const ph = !(row.name || "").trim() || isFillName(row.name);
               const ex = extrasOf(row);
               const exSum = extraSum(row);
-              const open = openRow === row.id;
+              const open = !readOnly && openRow === row.id;
               return (
-                <div key={row.id} className={"gs-cardp" + (ph && !acct ? " gs-cardp-empty" : "")} data-row={row.id}>
+                <div
+                  key={row.id}
+                  className={"gs-cardp" + (ph && !taken ? " gs-cardp-empty" : "") + (myCard ? " gs-cardp-mine" : "") + (far ? " gs-cardp-far" : "")}
+                  data-row={row.id}
+                >
                   <div className="gs-cardp-pic">
                     {/* 초상화가 없으면 누구든 실루엣 (2026-09-16 사용자) — 글자 초상화는 안 쓴다 */}
                     {pic ? (
@@ -10121,7 +10062,7 @@ export default function GoldSettlement() {
                         </g>
                       </svg>
                     )}
-                    {isHostRow && linked && (
+                    {house && (
                       <i className="gs-house gs-cardp-house" aria-label="방장">
                         <svg viewBox="0 0 20 20" aria-hidden="true">
                           <path d="M2.6 9.8 10 3.2l7.4 6.6V17.4h-5v-4.8H7.6v4.8h-5z" fill="currentColor" />
@@ -10132,7 +10073,7 @@ export default function GoldSettlement() {
                   </div>
                   <div className="gs-cardp-head">
                     <b className={"gs-cardp-name" + (ph ? " ph" : "")}>{nm}</b>
-                    {isHostRow && linked && <span className="gs-metag">나</span>}
+                    {!readOnly && isHostRow && linked && <span className="gs-metag">나</span>}
                     <span className="gs-cardp-sum">
                       {man(Math.max(0, itemGold(row)))}
                       <em>G</em>
@@ -10141,10 +10082,17 @@ export default function GoldSettlement() {
                   <div className={"gs-cardp-items" + (activeCols.length >= 3 ? " three" : "")}>
                     {activeCols.map((c) => {
                       const n = num(row.counts[c.id] ?? "");
+                      const can = readOnly && canConfess(row, c);
+                      const left = can ? cfLeft(c.id) : 0;
                       return (
                         <button
                           key={c.id}
-                          className={"gs-hit gs-cardp-hit" + (n > 0 ? " gs-hit-on" : "")}
+                          className={
+                            "gs-hit gs-cardp-hit" +
+                            (n > 0 ? " gs-hit-on" : "") +
+                            (can ? " gs-hit-mine" : "") +
+                            (readOnly && confessMode && !can ? " gs-hit-far" : "")
+                          }
                           onClick={() => pressCell(row, c, 1)}
                           onContextMenu={(e) => {
                             e.preventDefault();
@@ -10168,13 +10116,21 @@ export default function GoldSettlement() {
                               </span>
                             )}
                           </span>
+                          {/* 파티원 — 되돌릴 수 있는 30초는 칸 아래 눈금 길이로, 장부에 적힌 순간은 번쩍임으로 (옛 자수 탭과 같은 표시) */}
+                          {left > 0 && <i className="gs-cf-tick" style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }} aria-hidden="true" />}
+                          {myCard && cfFlash && cfFlash.id === c.id && <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />}
                         </button>
                       );
                     })}
                   </div>
-                  <button className="gs-cardp-etc" onClick={() => setOpenRow(open ? null : row.id)} aria-expanded={open}>
-                    기타 {ex.length ? man(exSum) + " · " + ex.length + "건" : "금액 직접"}
-                  </button>
+                  {readOnly ? (
+                    /* 기타는 방장이 적는다 — 파티원 카드엔 금액만 */
+                    <div className="gs-cardp-etc gs-cardp-etc-ro">기타 {ex.length ? man(exSum) + " · " + ex.length + "건" : "없음"}</div>
+                  ) : (
+                    <button className="gs-cardp-etc" onClick={() => setOpenRow(open ? null : row.id)} aria-expanded={open}>
+                      기타 {ex.length ? man(exSum) + " · " + ex.length + "건" : "금액 직접"}
+                    </button>
+                  )}
                   {open && (
                     <div className="gs-cardp-disc">
                       <Discretion
@@ -10363,6 +10319,8 @@ export default function GoldSettlement() {
                         (cross && cross.r === row.id ? " gs-litrow" : "") +
                         /* 파티원 화면에서 내 줄 — 이름부터 금색이라 어디를 눌러야 하는지 바로 보입니다 */
                         (you && you.rowId === row.id && readOnly ? " gs-myrow" : "") +
+                        /* 파티원 화면의 남의 줄 — 조작할 수 없고 어둡게 (2026-09-17 확정) */
+                        (readOnly && confessMode && you.rowId !== row.id ? " gs-row-far" : "") +
                         /* 방금 앉은 줄 — 3초 금색 (§3.1, 2026-09-05) */
                         (arrived[row.id] ? " gs-row-arrive" : "")
                       }
@@ -10615,6 +10573,12 @@ export default function GoldSettlement() {
                                     <span className="gs-hit-ghost" aria-hidden="true">
                                       {isRoulette(c) ? "◎" : "＋"}
                                     </span>
+                                  )}
+                                  {readOnly && canConfess(row, c) && cfLeft(c.id) > 0 && (
+                                    <i className="gs-cf-tick" style={{ width: (cfLeft(c.id) / CONFESS_UNDO_MS) * 100 + "%" }} aria-hidden="true" />
+                                  )}
+                                  {readOnly && you && you.rowId === row.id && cfFlash && cfFlash.id === c.id && (
+                                    <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />
                                   )}
                                 </button>
                               </div>
@@ -10873,7 +10837,7 @@ export default function GoldSettlement() {
             <div className="gs-slip gs-slip-back" role="status">
               <i className="gs-ring" aria-hidden="true" />
               <span className="gs-slip-msg">
-                <b>{backIn == null ? 30 : backIn}초</b> 뒤 <b>자수</b> 화면으로 돌아가요 — 누르면 다시 30초.
+                <b>{backIn == null ? 30 : backIn}초</b> 뒤 <b>벌금표</b>로 돌아가요 — 누르면 다시 30초.
               </span>
             </div>
           )}
@@ -10933,7 +10897,7 @@ export default function GoldSettlement() {
               <div className="gs-slip gs-slip-back" role="status">
                 <i className="gs-ring" aria-hidden="true" />
                 <span className="gs-slip-msg">
-                  <b>{backIn == null ? 30 : backIn}초</b> 뒤 <b>자수</b> 화면으로 돌아가요 — 누르면 다시 30초.
+                  <b>{backIn == null ? 30 : backIn}초</b> 뒤 <b>벌금표</b>로 돌아가요 — 누르면 다시 30초.
                 </span>
               </div>
             )}
@@ -10983,7 +10947,7 @@ export default function GoldSettlement() {
           <div className="gs-slip gs-slip-back" role="status">
             <i className="gs-ring" aria-hidden="true" />
             <span className="gs-slip-msg">
-              <b>{backIn == null ? 30 : backIn}초</b> 뒤 <b>자수</b> 화면으로 돌아가요 — 누르면 다시 30초.
+              <b>{backIn == null ? 30 : backIn}초</b> 뒤 <b>벌금표</b>로 돌아가요 — 누르면 다시 30초.
             </span>
           </div>
         )}
@@ -19094,6 +19058,15 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 }
 .gs-conftip{border-color:rgba(var(--gold-rgb),.7)}
 @media (prefers-reduced-motion:reduce){ .gs-hit-conf{animation:none} }
+/* ── 파티원 화면 (2026-09-17) — 방장 화면 그대로, 남의 줄·카드는 흐리게 ── */
+.gs-row-far > th .gs-namecell,.gs-row-far > td.gs-sumcell{opacity:.5}
+.gs-cardp-far{opacity:.5}
+.gs-cardp-far .gs-hit{cursor:default}
+.gs-cardp-mine{border-color:rgba(var(--gold-rgb),.7)}
+.gs-cardp-mine .gs-cardp-name{color:var(--gold)}
+.gs-cardp-etc-ro{cursor:default}
+.gs-cardp-etc-ro:hover{color:inherit; border-color:inherit}
+.gs-hit .gs-cf-tick{border-radius:0 0 0 3px}
 /* ── 자리 배치 (2026-09-17) ── */
 .gs-seatbtn b{font-weight:600; margin-left:6px; font-family:var(--mono); color:var(--ink-2)}
 .gs-seatbtn-has{border-color:rgba(var(--gold-rgb),.75) !important; color:var(--gold) !important}
