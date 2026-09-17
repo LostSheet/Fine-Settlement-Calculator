@@ -94,6 +94,8 @@ const appOrigin = (req) => {
 
 const RE_ID = /^[a-z0-9]{4,20}$/;
 const RE_NICK = /^[가-힣a-zA-Z0-9]{2,3}$/;
+/* Discord 사용자명은 앞 두 글자만 (2026-09-17). 전문은 계정부 밖으로 안 나간다 */
+const maskUser = (u) => (u && u.dc && u.dc.user ? Array.from(u.dc.user).slice(0, 2).join("") + "••••" : "");
 const RE_PW = /^[0-9a-f]{64}$/; // 클라이언트가 PBKDF2 로 미리 접은 32바이트
 const DEMO_ROOM = "CAFE22"; // 페이지가 스스로 굴리는 예시 방 — 진짜 방에 내주지 않습니다
 
@@ -128,11 +130,13 @@ const toRoom = async (env, roomId, path, req, me) => {
   const h = new Headers(req.headers);
   h.delete("x-acct");
   h.delete("x-nick");
+  h.delete("x-dcu");
   h.delete("upgrade");
   h.delete("connection");
   if (me) {
     h.set("x-acct", me.id);
     h.set("x-nick", encodeURIComponent(me.nick || ""));
+    h.set("x-dcu", encodeURIComponent(me.dcu || ""));
   }
   h.set("x-room", roomId);
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : await req.text();
@@ -203,7 +207,7 @@ export default {
       else if (kind === "live" && q.get("o")) {
         const r = await call(accountsDO(env), "/obs-verify", { token: q.get("o") });
         // 토큰이 가리키는 방과 지금 방이 같을 때만 — 남의 방은 못 비춥니다
-        if (r.ok && r.data && r.data.roomId === roomId) me = { id: r.data.id, nick: r.data.nick };
+        if (r.ok && r.data && r.data.roomId === roomId) me = { id: r.data.id, nick: r.data.nick, dcu: r.data.dcu || "" };
       }
       const iu = new URL("https://do/" + kind);
       if (q.get("j")) iu.searchParams.set("j", q.get("j"));
@@ -212,6 +216,7 @@ export default {
       if (me) {
         iu.searchParams.set("acct", me.id);
         iu.searchParams.set("nick", me.nick || "");
+        iu.searchParams.set("dcu", me.dcu || "");
       }
       return roomDO(env, roomId).fetch(new Request(iu.toString(), req));
     }
@@ -468,6 +473,7 @@ export class Accounts {
 <input type="hidden" name="state" value="${state}">
 <p><label>디스코드 아이디(숫자) <input name="fid" value="100000000000000001" style="width:100%"></label></p>
 <p><label>표시 이름 <input name="fname" value="테스터" style="width:100%"></label></p>
+<p><label>사용자명 <input name="fuser" value="tester" style="width:100%"></label></p>
 <p><label>아바타 해시 <input name="fava" value="a1b2c3" style="width:100%"></label></p>
 <button name="code" value="fake" type="submit" style="font-size:16px;padding:8px 16px">승인</button>
 </form></body>`;
@@ -486,6 +492,7 @@ export class Accounts {
         du = {
           id: String(url.searchParams.get("fid") || "").replace(/\D/g, "") || "1",
           global_name: url.searchParams.get("fname") || "테스터",
+          username: url.searchParams.get("fuser") || "tester",
           avatar: url.searchParams.get("fava") || null,
         };
       } else {
@@ -511,7 +518,10 @@ export class Accounts {
         if (!du || !du.id) return back("dcerr=me");
       }
       const did = String(du.id);
-      const dc = { id: did, avatar: du.avatar || null, name: String(du.global_name || du.username || "") };
+      /* user = Discord 사용자명(고유 핸들). 방 쪽으로는 앞 두 글자만 나간다 (2026-09-17 사용자: 방송 캡처에 전문이 찍히지 않게) */
+      const dc = { id: did, avatar: du.avatar || null, name: String(du.global_name || du.username || "").slice(0, 32), user: String(du.username || "").slice(0, 32) };
+      /* 별명 = Discord 표시 이름 (2026-09-17 확정: 앱에서 별명을 정하는 기능을 없앴다). 로그인할 때마다 따라간다 */
+      const dcNick = dc.name || dc.user || "";
       let id = await S.get("d:" + did);
       let u = id ? await S.get("u:" + id) : null;
       if (u) {
@@ -519,22 +529,28 @@ export class Accounts {
         if (ds.link && ds.link !== u.id) await this.mergeInto(ds.link, u, req, now);
         u.dc = dc;
         u.seen = now;
+        const was = u.nick;
+        if (dcNick) u.nick = dcNick;
         await S.put("u:" + u.id, u);
+        if (u.nick !== was) await this.nickToRooms(u);
       } else if (ds.link && (u = await S.get("u:" + ds.link))) {
         /* 이 브라우저의 계정이 디스코드 계정이 된다 — 표·방송 주소 그대로 (upgrade 문법) */
         u.dc = dc;
         u.seen = now;
         delete u.anon;
+        const was = u.nick;
+        if (dcNick) u.nick = dcNick;
         await S.put("u:" + u.id, u);
         await S.put("d:" + did, u.id);
+        if (u.nick !== was) await this.nickToRooms(u);
       } else {
-        /* 새 계정 — 별명은 연동 뒤 처음 한 번 직접 정한다 (§3.12.1) */
+        /* 새 계정 — 별명은 Discord 표시 이름 (2026-09-17). (폐기) 연동 뒤 처음 한 번 직접 정하던 별명 */
         id = await this.freeId();
         if (!id) return back("dcerr=alloc");
         const pw = hex(crypto.getRandomValues(new Uint8Array(32)));
         const salt = crypto.getRandomValues(new Uint8Array(16));
         const obsToken = await this.freeToken();
-        u = { id, nick: ANON_NICK, salt: hex(salt), ph: await derive(salt, pw), created: now, seen: now, obsToken, cur: null, room: null, dc };
+        u = { id, nick: dcNick || ANON_NICK, nickSet: true, salt: hex(salt), ph: await derive(salt, pw), created: now, seen: now, obsToken, cur: null, room: null, dc };
         await S.put({ ["u:" + id]: u, ["t:" + obsToken]: id, ["d:" + did]: id });
         await this.arm();
       }
@@ -680,6 +696,7 @@ export class Accounts {
       });
     }
     if (p === "/api/auth/nick" && req.method === "POST") {
+      /* (폐기 2026-09-17) 앱의 별명 창이 없어졌다 — 옛 앱을 위해 길만 남긴다. 연동한 계정은 Discord 표시 이름이 이긴다 */
       const u = await this.session(req, now);
       if (!u) return json({ error: "unauthorized" }, 401);
       const nick = String(b.nick || "").trim();
@@ -773,7 +790,7 @@ export class Accounts {
       // 쓸 때마다 연장하되, 하루쯤 지났을 때만 씁니다
       if (s.exp - now < SESSION_MS - 86400 * 1000)
         await S.put("s:" + b.token, { id: s.id, exp: now + SESSION_MS });
-      return json({ id: u.id, nick: u.nick });
+      return json({ id: u.id, nick: u.nick, dcu: maskUser(u) });
     }
 
     /* 함께한 사람이 생기는 순간 — 방이 알려 줍니다 (수락·지목 초대 수락 둘 다).
@@ -1020,6 +1037,22 @@ export class Accounts {
     return g.n <= REG_PER_WINDOW;
   }
 
+  /* 별명이 바뀌었다 — 내 방(방장 이름)과 들어가 있는 방(명단의 한 줄)에 알린다 */
+  async nickToRooms(u) {
+    const rooms = [...new Set([u.room, u.cur].filter(Boolean))];
+    for (const r of rooms) {
+      try {
+        await this.env.ROOM.get(this.env.ROOM.idFromName(r)).fetch("https://do/nick-changed", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ acct: u.id, nick: u.nick }),
+        });
+      } catch (e) {
+        /* 방이 없어졌어도 로그인은 성공입니다 */
+      }
+    }
+  }
+
   // Bearer 하나로 세션을 풀고 활동 시각을 밀어 둡니다
   async session(req, now) {
     const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i);
@@ -1122,12 +1155,13 @@ export class Room {
     const id = req.headers.get("x-acct");
     if (!id) return null;
     const h = req.headers.get("x-nick");
-    return { id, nick: h ? decodeURIComponent(h) : "" };
+    const u = req.headers.get("x-dcu");
+    return { id, nick: h ? decodeURIComponent(h) : "", dcu: u ? decodeURIComponent(u) : "" };
   }
   whoQuery(url) {
     const id = url.searchParams.get("acct");
     if (!id) return null;
-    return { id, nick: url.searchParams.get("nick") || "" };
+    return { id, nick: url.searchParams.get("nick") || "", dcu: url.searchParams.get("dcu") || "" };
   }
 
   send(ws, msg) {
@@ -1250,6 +1284,13 @@ export class Room {
     return !!inv && !!inv.armed && (inv.exp || 0) > now;
   }
 
+  /* 되돌리기 기억 cf:{acct}:{col} 은 줄이 아니라 사람·항목 단위라, 줄이 바뀐 뒤 되돌리면 새 줄에서 1회가 빠졌다 */
+  async clearUndo(acct) {
+    const S = this.ctx.storage;
+    const keys = [...(await S.list({ prefix: "cf:" + acct + ":" })).keys()];
+    if (keys.length) await S.delete(keys);
+  }
+
   async members() {
     const out = [];
     for (const [k, v] of await this.ctx.storage.list({ prefix: "m:" }))
@@ -1270,6 +1311,8 @@ export class Room {
         /* 이번 판에 앱을 연 적이 있는지는 seen 과 round.at 을 견줘 앱이 압니다 (§3.12.3). 화면에는 안 그립니다 */
         seen: v.seen || 0,
         ava: v.ava || null,
+        /* Discord 사용자명 앞 두 글자 + •••• (2026-09-17) — 자리 배치 창에서 같은 이름을 가리는 데만 */
+        dcu: v.dcu || "",
       });
     return out;
   }
@@ -1611,6 +1654,7 @@ export class Room {
             if (other === acct || !v || v.rowId !== b.rowId) continue;
             const nv = { ...v, rowId: null };
             await S.put(k, nv);
+            await this.clearUndo(other);
             this.toAcct(other, { kind: "you", you: youOf(nv) });
           }
         }
@@ -1621,7 +1665,10 @@ export class Room {
         delete m.kicked;
         delete m.full;
         await S.delete("x:" + acct);
-        if (typeof b.rowId === "string" && b.rowId) m.rowId = b.rowId;
+        if (typeof b.rowId === "string" && b.rowId && m.rowId !== b.rowId) {
+          if (m.rowId) await this.clearUndo(acct);
+          m.rowId = b.rowId;
+        }
         await S.put("m:" + acct, m);
         /* st:"ok" 가 되는 순간이 파티 하나 규칙이 걸리는 자리입니다 (§3.3) */
         await this.claimSeat(acct, req);
@@ -1632,11 +1679,24 @@ export class Room {
         this.toAcct(acct, { kind: "you", you: youOf(m) });
         return json({ ok: true, member: { acct, ...youOf(m) } });
       }
+      /* 줄에서 빼기 (2026-09-17 자리 배치 창) — 명단엔 남고 자리만 비운다. 창의 오른쪽 목록으로 돌아간 사람 */
+      if (b.action === "unseat") {
+        if (m.st !== "ok") return json({ error: "not seated" }, 409);
+        if (m.rowId) {
+          m.rowId = null;
+          m.t = now;
+          await S.put("m:" + acct, m);
+          await this.clearUndo(acct);
+        }
+        this.toAcct(acct, { kind: "you", you: youOf(m) });
+        return json({ ok: true, member: { acct, ...youOf(m) } });
+      }
       if (b.action === "remove") {
         /* 내보낸 사람은 같은 링크로 와도 즉시 착석이 아니라 방장 승인입니다 (§3.3, 2026-09-05 표준화).
            표시는 승인 때 지워집니다 — 실수로 내보낸 경우의 복구 길이 그것입니다 */
         await S.put("x:" + acct, { t: now });
         await S.delete("m:" + acct);
+        await this.clearUndo(acct);
         await this.releaseSeat(acct, req);
         // 마지막 파티원이 빠지면 혼자 판입니다 — 자동 중단 알람을 걷습니다
         await this.arm();
@@ -1671,6 +1731,7 @@ export class Room {
       const taken = (await this.members()).some((x) => x.st === "ok" && x.rowId === rowId);
       if (taken) return json({ error: "taken" }, 409);
       const from = m.rowId || null;
+      if (from && from !== rowId) await this.clearUndo(me.id);
       m.rowId = rowId;
       m.t = now;
       await S.put("m:" + me.id, m);
@@ -1692,8 +1753,9 @@ export class Room {
       if (owner === me.id) return json({ ok: true, st: "ok", you: null });
       const cur = await S.get("m:" + me.id);
       if (cur) {
-        if (cur.nick !== me.nick) {
+        if (cur.nick !== me.nick || (me.dcu && cur.dcu !== me.dcu)) {
           cur.nick = me.nick;
+          if (me.dcu) cur.dcu = me.dcu;
           await S.put("m:" + me.id, cur);
         }
         return json({ ok: true, st: cur.st, you: youOf(cur), already: true });
@@ -1702,7 +1764,7 @@ export class Room {
          내보냈던 사람도 같은 줄에 kicked 표시로 섭니다. 판이 있는지는 묻지 않습니다 — owner 가 있으면 열린 방입니다.
          (폐기 2026-09-15) 지목 초대(inv)·함께한 사람 노크(mate-of)·10분 코드·대기실 정원 */
       const kicked = !!(await S.get("x:" + me.id));
-      const m = { nick: me.nick, rowId: null, st: "req", t: now };
+      const m = { nick: me.nick, dcu: me.dcu || "", rowId: null, st: "req", t: now };
       if (kicked) m.kicked = 1;
       if (b.ava && typeof b.ava === "object")
         m.ava = { id: b.ava.id ? String(b.ava.id) : null, a: b.ava.a ? String(b.ava.a) : null, p: b.ava.p ? Number(b.ava.p) || null : null, u: b.ava.u ? String(b.ava.u) : undefined };
@@ -1717,6 +1779,7 @@ export class Room {
       if (!me) return json({ error: "unauthorized" }, 401);
       if (await S.get("m:" + me.id)) {
         await S.delete("m:" + me.id);
+        await this.clearUndo(me.id);
         await this.releaseSeat(me.id, req);
         await this.arm();
         this.toScribe({ kind: "left", acct: me.id });
@@ -1874,6 +1937,7 @@ export class Room {
         if (m.rowId === v) continue;
         m.rowId = v;
         await S.put("m:" + acct, m);
+        await this.clearUndo(acct);
         moved.push([acct, m]);
       }
     }
