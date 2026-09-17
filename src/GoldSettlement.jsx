@@ -10219,24 +10219,25 @@ export default function GoldSettlement() {
                       )}
                     </div>
                     <div className="gs-colh-price">
+                      {/* 룰렛 (2026-09-17 확정) — 보통 칸의 "1회 [1] 만G" 자리에 "룰렛 × [1] 만G". [룰렛]을 누르면 설정창(면 수·비율·양도권), 단가는 보통 칸과 같은 규칙.
+                          (폐기) "◎ 룰렛 · 8면 · 나온 숫자 × 1만 ⚙" 한 덩이 — 폭을 너무 차지했고, ◎ 만으로는 룰렛으로 안 읽혔다(사용자) */}
                       {isRoulette(c) ? (
-                        <button
-                          className="gs-rcbtn"
-                          onClick={() => !readOnly && setRouletteCfg(c.id)}
-                          title="룰렛 항목 — 눌러서 비율을 고쳐요"
-                        >
-                          ◎ 룰렛 · {liveFaces(c).length}면 · 나온 숫자 ×{" "}
-                          {man(Math.round(goldOf(c.price)))} <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M19.5 12c0-.34-.02-.67-.07-1l2.04-1.58a.5.5 0 0 0 .12-.65l-1.93-3.34a.5.5 0 0 0-.61-.22l-2.4.97c-.52-.4-1.09-.73-1.7-.98l-.37-2.56A.5.5 0 0 0 14.09 2h-3.86a.5.5 0 0 0-.5.43l-.36 2.57c-.62.25-1.19.58-1.71.98l-2.4-.97a.5.5 0 0 0-.6.22L2.72 8.57a.5.5 0 0 0 .12.65l2.04 1.58a7.9 7.9 0 0 0 0 2.02l-2.04 1.58a.5.5 0 0 0-.12.65l1.93 3.34c.12.22.38.31.6.22l2.4-.97c.53.4 1.1.73 1.72.98l.36 2.57a.5.5 0 0 0 .5.43h3.86a.5.5 0 0 0 .5-.43l.36-2.57c.62-.25 1.19-.58 1.71-.98l2.4.97c.23.09.49 0 .61-.22l1.93-3.34a.5.5 0 0 0-.12-.65L19.43 13c.05-.33.07-.66.07-1Zm-7.5 3.4a3.4 3.4 0 1 1 0-6.8 3.4 3.4 0 0 1 0 6.8Z"/></svg>
-                        </button>
-                      ) : (<>
-                      <span>1회</span>
+                        <>
+                          <button className="gs-rcbtn" onClick={() => !readOnly && setRouletteCfg(c.id)} title="룰렛 설정 — 면 수·비율·양도권">
+                            룰렛
+                          </button>
+                          <span aria-hidden="true">×</span>
+                        </>
+                      ) : (
+                        <span>1회</span>
+                      )}
                       {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
                         /* 센 기록이 있으면 창에서 — 지난 횟수를 어찌할지 골라야 해서 */
                         <span className="gs-pricewrap">
                           <button
                             className="gs-in gs-in-price gs-pricebtn"
                             onClick={() => !readOnly && setPriceAsk(c.id)}
-                            aria-label="1회당 단가 고치기"
+                            aria-label={isRoulette(c) ? "룰렛 단가 고치기" : "1회당 단가 고치기"}
                           >
                             {formatNumInput(String(+(goldOf(c.price) / (goldOf(unit) || 1)).toFixed(4)))}
                           </button>
@@ -10253,7 +10254,6 @@ export default function GoldSettlement() {
                           onChange={(g) => patchCol(c.id, "price", commafy(g))}
                         />
                       )}
-                      </>)}
                     </div>
                   </th>
                 ))}
@@ -15206,6 +15206,8 @@ function PriceModal({ col, rows, per, unitLabel, onApply, onClose }) {
   const changed = draft.trim() !== "" && newG !== oldG;
   const retroG = n * newG;
   const item = col.name || "항목";
+  /* 룰렛 (2026-09-17) — 나온 숫자 × 단가가 돌릴 때 굳으니(sums) 지난 것을 다시 계산하는 길은 없다. 이제부터만 */
+  const roul = isRoulette(col);
   return (
     <div
       className="gs-modal"
@@ -15217,9 +15219,16 @@ function PriceModal({ col, rows, per, unitLabel, onApply, onClose }) {
         className="gs-dialog gs-dialog-wide"
         role="dialog"
         aria-modal="true"
-        aria-label={`${item} 1회 단가`}
+        aria-label={roul ? `${item} 단가` : `${item} 1회 단가`}
       >
-        <h3>{`'${item}' 1회 단가`}</h3>
+        <h3>{roul ? `'${item}' 단가` : `'${item}' 1회 단가`}</h3>
+        {roul && (
+          <p>
+            나온 숫자 × 이 금액이 벌금이에요.
+            <br />
+            이미 돌린 것은 그대로예요.
+          </p>
+        )}
         <div className="gs-pm-row">
           <span className="gs-pm-now">지금 {man(oldG)}</span>
           <span className="gs-pm-arrow" aria-hidden="true">→</span>
@@ -15234,11 +15243,12 @@ function PriceModal({ col, rows, per, unitLabel, onApply, onClose }) {
             onKeyDown={(e) => {
               if (e.key === "Enter" && changed) onApply(col, newG, false);
             }}
-            aria-label={`1회당 단가 (${unitLabel})`}
+            aria-label={roul ? `룰렛 단가 (${unitLabel})` : `1회당 단가 (${unitLabel})`}
           />
           <em className="gs-pm-unit">{unitLabel}</em>
         </div>
         <div className="gs-dialog-btns gs-pm-btns">
+          {!roul && (
           <button
             className="gs-btn gs-btn-ghost"
             disabled={!changed}
@@ -15249,10 +15259,11 @@ function PriceModal({ col, rows, per, unitLabel, onApply, onClose }) {
               {changed && retroG !== curG ? `${man(curG)} → ${man(retroG)}` : ""}
             </em>
           </button>
+          )}
           {/* Enter 가 누르는 버튼이라 그렇게 적어 둡니다 — 습관적으로 친 Enter 가
               무엇을 했는지 모르는 채로 지나가지 않게 */}
           <button className="gs-btn" disabled={!changed} onClick={() => onApply(col, newG, false)}>
-            이제부터 세는 것만 {man(changed ? newG : oldG)}으로
+            {roul ? "이제부터 돌리는 것만" : "이제부터 세는 것만"} {man(changed ? newG : oldG)}으로
             <em className="gs-pm-key">Enter</em>
           </button>
           <button className="gs-btn gs-btn-ghost" onClick={onClose}>
@@ -17530,12 +17541,14 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* (폐기 2026-09-16) .gs-tablebar .gs-cellnote{margin:0 0 8px} — 위 정리 규칙으로 */
 /* 창 머리 — 제목은 왼쪽, X는 항상 오른쪽 위. 본문만 스크롤됩니다 */
 /* 창 머리 한 벌 — 오버레이 공유 설정 창과 같은 얼굴입니다 (2026-09-05) */
-.gs-dialog-head{display:flex; align-items:center; gap:14px; flex:none;
+/* (2026-09-17 사용자) OBS 공유 설정 창과 같은 규칙 — 창 전체가 스크롤되고 머리(제목·×)는 위에 붙어 따라온다.
+   (폐기) 머리 고정 + 본문만 스크롤 — 스크롤바가 창 끝에서 17px 안쪽에 서고 내용이 머리 선 14px 아래서 잘려, OBS 창과 달랐다 */
+.gs-dialog-head{display:flex; align-items:center; gap:14px; flex:none; position:sticky; top:-20px; z-index:6;
   margin:-20px -20px 14px; padding:18px 20px 12px; background:var(--paper);
   border-bottom:1px solid rgba(var(--ink-rgb),.12)}
 .gs-dialog-head h3{margin:0}
 .gs-dialog-x{margin-left:auto; font-size:22px; width:30px; height:30px; flex:none}
-.gs-dialog-body{overflow-y:auto; min-height:0; margin:0 -4px; padding:0 4px}
+.gs-dialog-body{flex:none}
 /* 질문형 사용법 — 표제(질문)를 줄로 띄워 훑기 쉽게 */
 .gs-help-qa li{margin-bottom:13px}
 .gs-help-qa b{display:block; margin-bottom:3px}
