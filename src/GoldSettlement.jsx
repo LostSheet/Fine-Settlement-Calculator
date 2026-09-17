@@ -2653,6 +2653,8 @@ export default function GoldSettlement() {
   /* 계정 쪽지 (H1, 2026-09-16) — 초상화+별명을 누르면. 초상화의 출처와 별명 바꾸기, 올리기·되돌리기·다시 가져오기 */
   /* 넓게 보기 (W, 2026-09-16) — 벌금판이 창 전체를 쓴다. 전체 화면(F11)이 아니라 창 안. Esc 나 [원래대로]로 돌아온다 */
   const [wide, setWide] = useState(false);
+  /* 카드 모드 [항목 관리] (2026-09-17 사용자 확정) — 표 바의 단추로 펼치고 접는다. 접혀 있으면 자리를 차지하지 않는다 */
+  const [itemsOpen, setItemsOpen] = useState(false);
   useEffect(() => {
     if (!wide) return;
     const h = (e) => {
@@ -7350,41 +7352,6 @@ export default function GoldSettlement() {
       { id: s.id, name: FILL_NAME(k), counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] },
     ]);
   };
-  /* 인원 4·8·16 (2026-09-16 사용자: 로스트아크 파티는 그 셋으로 고정 — 카드를 하나씩 더하는 대신 크기를 고른다).
-     늘릴 땐 빈 자리 줄을 붙이고, 줄일 땐 뒤에서부터 빈 줄(사람·이름·숫자·기타 없음)만 걷는다 */
-  const setPartySize = (n) => {
-    if (readOnly) return;
-    if (n > rows.length) {
-      const taken = new Set(rows.map((x) => x.name));
-      const adds = [];
-      let k = rows.length + 1;
-      for (let i = rows.length; i < n; i++) {
-        while (taken.has(FILL_NAME(k))) k++;
-        adds.push({ id: "r" + seq.current++, name: FILL_NAME(k) });
-        taken.add(FILL_NAME(k));
-      }
-      putSeats((prev) => [...prev, ...adds.map((a) => ({ id: a.id, name: "", acct: null, mem: null, named: false }))]);
-      setRows((prev) => [
-        ...prev,
-        ...adds.map((a) => ({ id: a.id, name: a.name, counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] })),
-      ]);
-      return;
-    }
-    const keep = rows.slice();
-    while (keep.length > n) {
-      const last = keep[keep.length - 1];
-      const st = seats.find((k) => k.id === last.id);
-      const blank =
-        !(st && st.acct) && (!(last.name || "").trim() || isFillName(last.name)) && noFine(last) && !extrasOf(last).length;
-      if (!blank) break;
-      keep.pop();
-    }
-    if (keep.length === rows.length) return say("사람이나 기록이 있는 줄은 못 지워요. 빈 줄만 지워요.");
-    const ids = new Set(keep.map((x) => x.id));
-    setRows(keep);
-    putSeats((prev) => prev.filter((x) => ids.has(x.id)));
-    setOpenRow((o) => (o && !ids.has(o) ? null : o));
-  };
   const delRow = (id) => {
     if (readOnly) return;
     const who = rows.find((x) => x.id === id);
@@ -9897,6 +9864,21 @@ export default function GoldSettlement() {
                 </span>
               )}
               {/* (폐기 2026-09-16) [채팅 공유용 복사] — 오버레이가 대중화돼 거의 안 쓴다(사용자). 메모장 머리의 것도 함께 */}
+              {/* [항목 관리] — 카드 모드에만. 카운터 모드는 표 머리에서 항목을 고친다. 펼치면 표 바 바로 아래에 항목 칩 (2026-09-17 확정;
+                  (폐기) 표 바 아래 한 줄 상자에 요약 — 이름·단가가 카드 단추에 이미 있어 같은 내용을 한 줄 더 썼다 */}
+              {cardsMode && !readOnly && (
+                <button
+                  type="button"
+                  className="gs-btn gs-btn-sm gs-btn-ghost gs-itemsbtn"
+                  aria-expanded={itemsOpen}
+                  onClick={() => setItemsOpen((o) => !o)}
+                >
+                  항목 관리
+                  <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                    <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
               {/* 조작은 전부 왼쪽 한 줄 — 동사 둘, 세로선, 입력 단위. 높이 34px 로 맞춘다 (2026-09-16).
                   (폐기) 입력 단위를 오른쪽에 따로·안내 위에 쌓기 — 세 덩이가 제각각 떠 있었다(사용자) */}
               <span className="gs-tablebar-sep" aria-hidden="true" />
@@ -9970,10 +9952,11 @@ export default function GoldSettlement() {
         {cardsMode && !readOnly ? (
           /* 카드 모드 (K1) — 초상화(카드 폭) · 이름 + 합계 · 항목 단추(표의 칸과 같은 물건) · 기타. 넓게 보기에서는 초상화가 정사각·열이 늘어난다 */
           <>
-          {/* 카드 도구 줄 (2026-09-16 사용자) — 표 머리가 없는 모드라 항목은 여기서 관리. 인원은 로스트아크 파티 크기(4·8·16)로 고른다 */}
+          {/* 항목 칩 (2026-09-17) — 표 바 [항목 관리]를 펼쳤을 때만. (폐기 2026-09-17) 인원 4·8·16 세그 — "4·8·16 인 게임에서 + 칸이 맞는지 더 나은 방법을 찾자"를
+              단추 지시로 잘못 읽은 것(사용자). 줄 추가는 자리 배치 창으로 */}
+          {itemsOpen && (
           <div className="gs-cardtools">
             <div className="gs-cardtools-items">
-              <span className="gs-caplab">항목</span>
               {activeCols.map((c) => (
                 <span key={c.id} className="gs-citem">
                   <input
@@ -10016,17 +9999,8 @@ export default function GoldSettlement() {
                 + 항목
               </button>
             </div>
-            <div className="gs-cardtools-size">
-              <span className="gs-caplab">인원</span>
-              <div className="gs-seg" role="group" aria-label="인원">
-                {[4, 8, 16].map((n) => (
-                  <button key={n} className={rows.length === n ? "on" : ""} onClick={() => setPartySize(n)}>
-                    {n}인
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
+          )}
           <div className={"gs-cards" + (wide ? " gs-cards-wide" : "")}>
             {rows.map((row, i) => {
               const st = seats.find((k) => k.id === row.id);
@@ -18311,10 +18285,13 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-cards-wide{grid-template-columns:repeat(auto-fill, minmax(260px, 1fr))} /* 1180 → 4열, 1600 → 5열 */
 .gs-cardp{background:var(--paper-2); border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; display:flex; flex-direction:column; overflow:hidden; min-width:0}
 .gs-cardp-empty{border-style:dashed; opacity:.7}
-/* 카드 도구 줄 — 항목(이름 · 단가 · ×) + [+ 항목] 왼쪽, 인원 4·8·16 오른쪽 */
-.gs-cardtools{display:flex; align-items:center; justify-content:space-between; gap:12px 24px; flex-wrap:wrap; margin:0 0 12px; padding:8px 10px; border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px; background:var(--paper-2)}
+/* 카드 모드 항목 칩 — 표 바 [항목 관리]를 펼치면 바로 아래 (2026-09-17). 이름 · 단가 · × 그리고 [+ 항목] */
+.gs-cardtools{margin:-4px 0 14px; padding:10px; border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px; background:var(--paper-2)}
 .gs-cardtools-items{display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0}
-.gs-cardtools-size{display:flex; align-items:center; gap:8px; flex:none}
+.gs-itemsbtn{gap:6px; white-space:nowrap}
+.gs-itemsbtn svg{color:var(--ink-2); transition:transform .15s; flex:none}
+.gs-itemsbtn[aria-expanded="true"]{background:rgba(var(--ink-rgb),.1)}
+.gs-itemsbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
 .gs-citem{display:inline-flex; align-items:center; gap:2px; height:32px; box-sizing:border-box; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; background:var(--paper); padding:0 2px 0 6px}
 .gs-citem .gs-citem-name{width:5em; font-size:13px; padding:2px 4px}
 .gs-citem-price{font:inherit; font-family:var(--mono); font-size:12.5px; color:var(--gold); background:transparent; border:0; cursor:pointer; padding:0 6px; white-space:nowrap; height:100%}
@@ -18323,7 +18300,6 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-citem .gs-pricewrap{display:inline-flex; align-items:center; padding:0 2px}
 .gs-citem-x{height:100%; padding:0 6px}
 .gs-citem-add{height:32px; box-sizing:border-box; padding:0 10px}
-.gs-cardtools .gs-seg button{padding:0 12px; height:30px}
 .gs-cardp-pic{position:relative; aspect-ratio:1/1; /* 정사각 — 4:3 은 초상화가 잘렸다(사용자) */ background:rgba(var(--ink-rgb),.06); display:flex; align-items:center; justify-content:center;
   color:rgba(var(--ink-rgb),.35); font-family:'Gowun Batang',serif; font-size:40px; border-bottom:1px solid rgba(var(--ink-rgb),.25); overflow:hidden}
 .gs-cards-wide .gs-cardp-pic{aspect-ratio:1/1}
