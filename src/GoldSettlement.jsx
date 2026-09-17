@@ -10067,18 +10067,14 @@ export default function GoldSettlement() {
                         </g>
                       </svg>
                     )}
-                    {house && (
-                      <i className="gs-house gs-cardp-house" aria-label="방장">
-                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M2.6 9.8 10 3.2l7.4 6.6V17.4h-5v-4.8H7.6v4.8h-5z" fill="currentColor" />
-                        </svg>
-                      </i>
-                    )}
                     <span className="gs-cardp-rank" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
                   </div>
                   <div className="gs-cardp-head">
                     <b className={"gs-cardp-name" + (ph ? " ph" : "")}>{nm}</b>
-                    {!readOnly && isHostRow && linked && <span className="gs-metag">나</span>}
+                    {/* 방장 · 나 (2026-09-17 확정, Zoom 의 "(Host, me)" 식) — 방장 화면은 한 상자, 파티원 화면은 방장 줄 [방장]·내 줄 [나]. (폐기) 초상화 모서리 집 — 방장으로 안 읽혔다(사용자) */}
+                    {!readOnly && isHostRow && linked && <span className="gs-metag gs-metag-host">방장 · 나</span>}
+                    {readOnly && house && <span className="gs-metag gs-metag-host">방장</span>}
+                    {readOnly && myCard && <span className="gs-metag">나</span>}
                     <span className="gs-cardp-sum">
                       {man(Math.max(0, itemGold(row)))}
                       <em>G</em>
@@ -10169,7 +10165,12 @@ export default function GoldSettlement() {
               ),
               /* 이름 열의 고정 칸 — 손잡이 16 · 초상화 34 · 사이 둘, 그리고 [나] 상자가 서는 표면 그 폭까지 (2026-09-17).
                  안 더하면 이름이 칸 안에서 잘린다(이름 칸이 초상화 열을 넘지 않게 막은 뒤) */
-              "--namex": (!readOnly && auth && auth.dc && seats.some((k) => k.acct === auth.id) ? 96 : 62) + "px",
+              "--namex":
+                (!readOnly && auth && auth.dc && seats.some((k) => k.acct === auth.id)
+                  ? 134 /* [방장 · 나] */
+                  : readOnly && (rows2v.some((k) => k.h) || !!(you && you.rowId))
+                  ? 100 /* [방장] 또는 [나] */
+                  : 62) + "px",
             }}
             onMouseOver={hoverCell}
             onMouseLeave={() => setCross(null)}
@@ -10360,15 +10361,9 @@ export default function GoldSettlement() {
                               방장에겐 가린 아이디(앞 두 글자 + 점 넷, 호버에 닉·아이디), 끊긴 사람은 흐려집니다.
                               파티원 화면엔 아이디가 안 오므로(§4.3) 방장·나 표시만 */}
                           {(() => {
-                            /* 왼쪽 고정 열 (2026-09-17 확정): 초상화 32 한 칸. 방장은 초상화 오른쪽 위 모서리의 집, 나는 이름 옆 테두리 상자 [나].
-                               연동 전(게스트)에는 둘 다 없다 — 실루엣만. (폐기) 초상화 24 · 왕관 18 두 칸 — 왕관이 벌금 1등처럼 보였다(사용자) */
-                            const HOUSE = (
-                              <i className="gs-house" aria-label="방장">
-                                <svg viewBox="0 0 20 20" aria-hidden="true">
-                                  <path d="M2.6 9.8 10 3.2l7.4 6.6V17.4h-5v-4.8H7.6v4.8h-5z" fill="currentColor" />
-                                </svg>
-                              </i>
-                            );
+                            /* 왼쪽 고정 열 (2026-09-17 확정): 초상화 32 한 칸. 방장·나 표시는 이름 옆 글자 상자(아래 gs-metag).
+                               연동 전(게스트)에는 없다 — 실루엣만. (폐기) 초상화 24 · 왕관 18 두 칸 — 왕관이 벌금 1등처럼 보였다(사용자).
+                               (폐기, 같은 날) 초상화 모서리 집 배지 — 방장으로 안 읽혔다(사용자) */
                             if (!readOnly) {
                               const st = seats.find((k) => k.id === row.id);
                               const acct = st && st.acct;
@@ -10403,7 +10398,6 @@ export default function GoldSettlement() {
                                   ) : (
                                     <span className="gs-rowi-none" aria-hidden="true" />
                                   )}
-                                  {isHostRow && linked && HOUSE}
                                   {acct && (
                                     <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
                                       {isHostRow && (
@@ -10438,7 +10432,6 @@ export default function GoldSettlement() {
                                 ) : (
                                   <span className="gs-rowi-none" aria-hidden="true" />
                                 )}
-                                {host && HOUSE}
                               </span>
                             );
                           })()}
@@ -10493,9 +10486,11 @@ export default function GoldSettlement() {
                             aria-label="이름"
                           />
                           )}
-                          {/* 나 (2026-09-17 확정) — 방장 화면의 내 줄만. 이름 옆 테두리 상자. 줄 바탕은 호버와 겹쳐 안 칠한다(사용자).
-                              (폐기) 이름 글자의 금색 밑줄 — 알아보기 어려웠다 */}
-                          {meRow && !readOnly && <span className="gs-metag">나</span>}
+                          {/* 방장 · 나 (2026-09-17 확정) — 참가자 목록의 표준(Zoom "(Host, me)")대로 글자 상자. 방장 화면은 내 줄에 [방장 · 나] 한 상자,
+                              파티원 화면은 방장 줄 [방장]·내 줄 [나]. 줄 바탕은 호버와 겹쳐 안 칠한다(사용자). (폐기) 이름 글자의 금색 밑줄, 초상화 모서리 집 */}
+                          {meRow && !readOnly && <span className="gs-metag gs-metag-host">방장 · 나</span>}
+                          {readOnly && !!(rows2v.find((k) => k.rowId === row.id) || {}).h && <span className="gs-metag gs-metag-host">방장</span>}
+                          {readOnly && !!you && you.rowId === row.id && <span className="gs-metag">나</span>}
                           </span>
                         </div>
                       </th>
@@ -11328,7 +11323,6 @@ export default function GoldSettlement() {
           rows={rows.map((x) => ({ id: x.id, name: x.name || "", acct: (seats.find((k) => k.id === x.id) || {}).acct || null }))}
           people={placerPeople()}
           hostAcct={auth ? auth.id : null}
-          hostBadge={!!(auth && auth.dc)}
           tray={[...new Set(waitBelow.map((p) => p.acct))]}
           linked={!!(auth && auth.dc)}
           copied={flash === "inv"}
@@ -13597,13 +13591,6 @@ function ReqRow({ req, ghost, onDeny, onApprove }) {
    창 밖을 눌러도 안 닫힌다 — 이 창에만 적용(사용자). 벌금은 안 보인다(배치에 집중). 방장은 자기 줄에 고정.
    줄 이름도 여기서 고친다 — Discord 정보(초상화·이름·아이디)는 못 고친다. 줄 추가도 이 창에서.
    (폐기) 표 아래 승인 대기 줄 · [승인] · [자리 지정] 시트 · 줄의 사람 시트 — 누를 곳이 흩어져 있었다 */
-const PLACER_HOUSE = (
-  <i className="gs-house" aria-label="방장">
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M2.6 9.8 10 3.2l7.4 6.6V17.4h-5v-4.8H7.6v4.8h-5z" fill="currentColor" />
-    </svg>
-  </i>
-);
 const PLACER_SIL = (
   <svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true">
     <g fill="currentColor">
@@ -13612,15 +13599,14 @@ const PLACER_SIL = (
     </g>
   </svg>
 );
-function PlacerAva({ p, size, house }) {
+function PlacerAva({ p, size }) {
   return (
     <span className="gs-sp-ava" style={{ width: size, height: size }}>
       {p && p.ava ? <DcAva dc={p.ava} size={size} /> : <span className="gs-sp-noava">{PLACER_SIL}</span>}
-      {house && PLACER_HOUSE}
     </span>
   );
 }
-function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, linked, copied, onDiscord, onCopyInvite, onSave, onCancel }) {
+function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, onCopyInvite, onSave, onCancel }) {
   const [D, setD] = useState(() => ({
     rows: rows.map((r) => ({ id: r.id, name: r.name || "", oname: r.name || "", acct: r.acct || null, oacct: r.acct || null })),
     tray: tray.slice(),
@@ -13842,9 +13828,12 @@ function SeatPlacer({ rows, people, hostAcct, hostBadge, tray, linked, copied, o
         className={"gs-sp-person" + (host ? " gs-sp-locked" : "") + (picked && picked.acct === acct ? " gs-sp-on" : "")}
         onPointerDown={(e) => downPerson(e, acct, from, rowId)}
       >
-        <PlacerAva p={p} size={32} house={host && hostBadge} />
+        <PlacerAva p={p} size={32} />
         <span className="gs-sp-txt">
-          <b>{p.nick || "이름 없음"}</b>
+          <b>
+            {p.nick || "이름 없음"}
+            {host && <span className="gs-metag gs-metag-host">방장 · 나</span>}
+          </b>
           {p.dcu && <em>{p.dcu}</em>}
         </span>
         {from === "list" && !host && (
@@ -16814,18 +16803,16 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowmeta > *{flex:none}
 .gs-rowmeta .gs-rowi{width:32px; min-width:32px; height:32px}
 .gs-rowi-none{width:32px; height:32px; display:inline-block; flex:none}
-/* 방장 집 (2026-09-17) — 초상화 오른쪽 위 모서리. 초상화 버튼은 overflow:hidden 이라 형제로 띄운다 */
-.gs-house{position:absolute; top:-5px; right:-3px; width:15px; height:15px; border-radius:4px; background:var(--gold); color:var(--paper);
-  display:grid; place-items:center; box-shadow:0 0 0 2px var(--paper); font-style:normal; pointer-events:none}
-.gs-house svg{width:10px; height:10px; display:block}
-.gs-cardp-house{top:8px; right:8px; width:28px; height:28px; border-radius:6px; box-shadow:0 0 0 2px rgba(var(--shadow-rgb),.25)}
-.gs-cardp-house svg{width:18px; height:18px}
-/* 이름 + [나] — 이름 열 오른쪽 끝에 붙는다. 긴 이름은 칸 안에서 줄고 초상화 열을 넘지 않는다 */
+/* (폐기 2026-09-17) 초상화 모서리 집 배지(.gs-house) — 방장으로 안 읽혔다(사용자). 글자 상자로 */
+/* 이름 + [방장 · 나]/[방장]/[나] — 이름 열 오른쪽 끝에 붙는다. 긴 이름은 칸 안에서 줄고 초상화 열을 넘지 않는다 */
 .gs-namewrap{justify-self:end; display:inline-flex; align-items:center; min-width:0; max-width:100%}
 .gs-namewrap .gs-in-name{max-width:100%}
 .gs-metag{display:inline-block; flex:none; margin-left:6px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:500; font-size:11px;
   line-height:1; letter-spacing:0; padding:3px 5px; border:1px solid rgba(var(--ink-rgb),.45); border-radius:3px; color:var(--ink-2); white-space:nowrap}
 .gs-cardp-head .gs-metag{align-self:center; margin-left:-2px}
+/* 방장 상자는 금색 — [나]는 잉크. 표에 붙는 표시가 상자 하나의 규칙으로 정리된다 (2026-09-17) */
+.gs-metag-host{color:var(--gold); border-color:rgba(var(--gold-rgb),.7)}
+.gs-sp-txt b .gs-metag{vertical-align:2px}
 /* 나 — 이름 글자 밑 절반의 금색 형광 */
 /* 파티원 화면의 초상화 자리 — 단추가 아니라 span 이라 같은 상자 규칙을 직접 준다 */
 .gs-rowi-ro{display:inline-flex; align-items:center; justify-content:center; cursor:default}
@@ -19204,7 +19191,6 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-sp-ava{position:relative; display:inline-block; flex:none}
 .gs-sp-ava .gs-ava{width:100%; height:100%; border:0; border-radius:25%; display:block}
 .gs-sp-noava{display:grid; place-items:center; width:100%; height:100%; border-radius:25%; background:rgba(var(--ink-rgb),.08); color:var(--ink-2)}
-.gs-sp-ava .gs-house{box-shadow:0 0 0 2px var(--paper-2)}
 .gs-sp-txt{display:flex; flex-direction:column; min-width:0; flex:1; line-height:1.25}
 .gs-sp-txt b{font-family:'Gowun Batang',serif; font-weight:700; font-size:14px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .gs-sp-txt em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2)}
