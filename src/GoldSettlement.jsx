@@ -2657,6 +2657,19 @@ export default function GoldSettlement() {
   const [itemsOpen, setItemsOpen] = useState(false);
   /* 자리 배치 창 (2026-09-17 확정) — 표 바 [자리 배치 N] 으로 연다 */
   const [seatOpen, setSeatOpen] = useState(false);
+  /* 카드 모드 [기타] 팝오버 (2026-09-17 레이드 창) — 열린 줄 id, 목록 보기 여부. 단추 아래에 떠서 카드를 안 민다. 바깥을 누르면 닫힌다 */
+  const [etcRow, setEtcRow] = useState(null);
+  const [etcList, setEtcList] = useState(false);
+  useEffect(() => {
+    if (etcRow == null) return;
+    const h = (e) => {
+      if (e.target.closest && e.target.closest(".gs-rd-etcwrap, .gs-modal")) return;
+      setEtcRow(null);
+      setEtcList(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [etcRow]);
   /* 파티원 보기 (2026-09-17 확정) — 방장 화면을 그대로 쓴다. 메모장은 없고 카드가 기본, 카운터를 고를 수 있다. 이 브라우저에 적는다 */
   const [memberView, setMemberView] = useState(() => {
     try {
@@ -8291,8 +8304,10 @@ export default function GoldSettlement() {
       if (!x) return { id: r.id, name: r.name, counts: simple ? { [SIMPLE_ID]: "" } : {}, extras: [] };
       return x.name === r.name ? x : { ...x, name: r.name };
     });
+    /* 창에서 지운 줄은 돌아오지 않는다 — 나머지(창에 없던 줄)는 뒤에 원래 순서대로 */
+    const gone = new Set(d.deleted || []);
     rows.forEach((x) => {
-      if (!draft.some((r) => r.id === x.id)) nextRows.push(x);
+      if (!draft.some((r) => r.id === x.id) && !gone.has(x.id)) nextRows.push(x);
     });
     const people = placerPeople();
     const nextSeats = nextRows.map((x) => {
@@ -8337,6 +8352,8 @@ export default function GoldSettlement() {
       );
     }
     setSeatOpen(false);
+    setEtcRow(null);
+    setOpenRow((o) => (o && gone.has(o) ? null : o));
     if (auth && relay.room && !tutorialRef.current) {
       try {
         for (const a of rejected) await roomApi.member(auth.token, relay.room, a, "remove");
@@ -10021,135 +10038,235 @@ export default function GoldSettlement() {
             </div>
           </div>
           )}
-          <div className={"gs-cards" + (wide ? " gs-cards-wide" : "")}>
-            {rows.map((row, i) => {
-              const st = seats.find((k) => k.id === row.id);
-              const acct = st && st.acct;
-              const mem = acct ? members.find((m) => m.acct === acct) : null;
-              const isHostRow = !!(acct && auth && acct === auth.id);
-              const linked = !!(auth && auth.dc);
-              const mine = isHostRow ? myAva(auth) : null;
-              /* 파티원 화면 — 방장이 판에 실어 보낸 rows2 의 초상화(ava)·방장 표시(h). 내 카드만 눌리고 남의 카드는 흐리다 (2026-09-17) */
-              const r2v = readOnly ? rows2v.find((k) => k.rowId === row.id) : null;
-              const pic = readOnly
-                ? r2v && r2v.ava && (r2v.ava.id || r2v.ava.p)
-                  ? avaDc(r2v.ava)
-                  : null
-                : mem && mem.ava && (mem.ava.id || mem.ava.p)
-                ? avaDc(mem.ava)
-                : mine && (mine.id || mine.p)
-                ? mine
-                : null;
-              const house = readOnly ? !!(r2v && r2v.h) : isHostRow && linked;
-              const taken = readOnly ? !!(r2v && (r2v.a || r2v.h)) : !!acct;
-              const myCard = readOnly && !!you && you.rowId === row.id;
-              const far = readOnly && confessMode && !myCard;
-              const nm = seatName(row, i);
-              const ph = !(row.name || "").trim() || isFillName(row.name);
-              const ex = extrasOf(row);
-              const exSum = extraSum(row);
-              const open = !readOnly && openRow === row.id;
-              return (
-                <div
-                  key={row.id}
-                  className={"gs-cardp" + (ph && !taken ? " gs-cardp-empty" : "") + (myCard ? " gs-cardp-mine" : "") + (far ? " gs-cardp-far" : "")}
-                  data-row={row.id}
-                >
-                  <div className="gs-cardp-pic">
-                    {/* 초상화가 없으면 누구든 실루엣 (2026-09-16 사용자) — 글자 초상화는 안 쓴다 */}
-                    {pic ? (
-                      <DcAva dc={pic} size={128} />
-                    ) : (
-                      <svg viewBox="0 0 20 20" aria-hidden="true">
-                        <g fill="currentColor">
-                          <circle cx="10" cy="6.4" r="3.4" />
-                          <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
-                        </g>
-                      </svg>
-                    )}
-                    <span className="gs-cardp-rank" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
-                  </div>
-                  <div className="gs-cardp-head">
-                    <b className={"gs-cardp-name" + (ph ? " ph" : "")}>{nm}</b>
-                    {/* 방장 · 나 (2026-09-17 확정, Zoom 의 "(Host, me)" 식) — 방장 화면은 한 상자, 파티원 화면은 방장 줄 [방장]·내 줄 [나]. (폐기) 초상화 모서리 집 — 방장으로 안 읽혔다(사용자) */}
-                    {!readOnly && isHostRow && linked && <span className="gs-metag gs-metag-host">방장 · 나</span>}
-                    {readOnly && house && <span className="gs-metag gs-metag-host">방장</span>}
-                    {readOnly && myCard && <span className="gs-metag">나</span>}
-                    <span className="gs-cardp-sum">
-                      {man(Math.max(0, itemGold(row)))}
-                      <em>G</em>
-                    </span>
-                  </div>
-                  <div className={"gs-cardp-items" + (activeCols.length >= 3 ? " three" : "")}>
-                    {activeCols.map((c) => {
-                      const n = num(row.counts[c.id] ?? "");
-                      const can = readOnly && canConfess(row, c);
-                      const left = can ? cfLeft(c.id) : 0;
-                      return (
-                        <button
-                          key={c.id}
-                          className={
-                            "gs-hit gs-cardp-hit" +
-                            (n > 0 ? " gs-hit-on" : "") +
-                            (can ? " gs-hit-mine" : "") +
-                            (readOnly && confessMode && !can ? " gs-hit-far" : "")
-                          }
-                          onClick={() => pressCell(row, c, 1)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            pressCell(row, c, -1);
-                          }}
-                          aria-label={`${nm}의 ${c.name || "항목"} 1회 추가 (우클릭: 1회 빼기)`}
-                        >
-                          <span className="gs-cardp-hitname">
-                            <span className="gs-cardp-hitlab">{(c.name || "").trim() || "항목"}</span>
-                            {!isRoulette(c) && <em className="gs-cardp-hitprice">{man(Math.round(goldOf(c.price)))}</em>}
-                          </span>
-                          <span className="gs-cardp-hitval">
-                            {n > 0 ? (
-                              <span className="gs-hit-num" key={n}>
-                                {commafy(n)}
-                                <em>회</em>
-                              </span>
+          {/* 레이드 창 (2026-09-17 확정) — 가로 카드 한 줄: 왼쪽 초상화, 오른쪽 위 이름·합계, 아래 항목 단추·[기타]. 4명씩 세로 한 열, 두 열 나란히
+              (로스트아크 레이드 창의 파티 1·2). 인원이 4의 배수가 아니면 남는 칸은 점선 빈 자리(누르면 자리 배치 창). [넓게] 16명은 4열, 단추 2×2.
+              (폐기) 세로 카드 4열 — 참고 앱 뼈대(위 정사각 초상화·01 번호·직접 입력 줄)를 따라 만들어 더 나빴다(사용자): 8명이 한 화면에 안 들어가고,
+              단추는 점선에 흐린 ＋라 누르는 곳으로 안 보였고, 기타를 펼치면 카드가 밀렸고, 이름·합계를 못 고쳤다 */}
+          {(() => {
+            const total = rows.length;
+            const slots = Math.max(4, Math.ceil(total / 4) * 4);
+            const cols = Math.min(wide ? 4 : 2, slots / 4);
+            const SIL = (
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <g fill="currentColor">
+                  <circle cx="10" cy="6.4" r="3.4" />
+                  <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+                </g>
+              </svg>
+            );
+            return (
+              <div
+                className={"gs-rdgrid" + (cols === 1 ? " gs-rdgrid-one" : "") + (cols === 4 ? " gs-rdgrid-four" : "") + (wide ? " gs-rdgrid-wide" : "")}
+                style={{ "--cols": cols, "--rows": slots / cols }}
+              >
+                {rows.map((row, i) => {
+                  const st = seats.find((k) => k.id === row.id);
+                  const acct = st && st.acct;
+                  const mem = acct ? members.find((m) => m.acct === acct) : null;
+                  const isHostRow = !!(acct && auth && acct === auth.id);
+                  const linked = !!(auth && auth.dc);
+                  const mine = isHostRow ? myAva(auth) : null;
+                  /* 파티원 화면 — 방장이 판에 실어 보낸 rows2 의 초상화(ava)·방장 표시(h). 내 카드만 눌리고 남의 카드는 흐리다 */
+                  const r2v = readOnly ? rows2v.find((k) => k.rowId === row.id) : null;
+                  const pic = readOnly
+                    ? r2v && r2v.ava && (r2v.ava.id || r2v.ava.p)
+                      ? avaDc(r2v.ava)
+                      : null
+                    : mem && mem.ava && (mem.ava.id || mem.ava.p)
+                    ? avaDc(mem.ava)
+                    : mine && (mine.id || mine.p)
+                    ? mine
+                    : null;
+                  const house = readOnly ? !!(r2v && r2v.h) : isHostRow && linked;
+                  const myCard = readOnly && !!you && you.rowId === row.id;
+                  const far = readOnly && confessMode && !myCard;
+                  const nm = seatName(row, i);
+                  const ph = !(row.name || "").trim() || isFillName(row.name);
+                  const ex = extrasOf(row);
+                  const exSum = extraSum(row);
+                  const etcOpen = !readOnly && etcRow === row.id;
+                  return (
+                    <div key={row.id} className={"gs-rd" + (myCard ? " gs-rd-mine" : "") + (far ? " gs-rd-far" : "")} data-row={row.id}>
+                      {/* 초상화가 없으면 누구든 실루엣 (2026-09-16 사용자) */}
+                      <div className={"gs-rd-pic" + (pic ? "" : " gs-rd-nopic")}>{pic ? <DcAva dc={pic} size={wide ? 96 : 76} /> : SIL}</div>
+                      <div className="gs-rd-body">
+                        <div className="gs-rd-head">
+                          {readOnly ? (
+                            <b className={"gs-rd-name" + (ph ? " ph" : "")}>{nm}</b>
+                          ) : (
+                            /* 이름은 카드에서 바로 — 카운터 표의 이름 칸과 같은 규칙(겹치면 되돌림) */
+                            <input
+                              className={"gs-in gs-rd-name" + (dupName(row.id, row.name) ? " gs-dup" : "")}
+                              value={row.name}
+                              placeholder={ANON(i)}
+                              size={Math.max(3, [...String(row.name || ANON(i))].length + 1)}
+                              onChange={(e) => patchRow(row.id, "name", e.target.value)}
+                              onFocus={(e) => (e.currentTarget.dataset.was = row.name || "")}
+                              onBlur={(e) => {
+                                if (!dupName(row.id, row.name)) return;
+                                const back = e.currentTarget.dataset.was || "";
+                                patchRow(row.id, "name", back);
+                                say("'" + (row.name || "").trim() + "'은 이미 있어요. 다른 이름으로 적어 주세요.");
+                              }}
+                              aria-invalid={dupName(row.id, row.name) || undefined}
+                              aria-label="이름"
+                            />
+                          )}
+                          {/* 방장 · 나 (2026-09-17 확정) — 방장 화면은 한 상자, 파티원 화면은 방장 줄 [방장]·내 줄 [나] */}
+                          {!readOnly && isHostRow && linked && <span className="gs-metag gs-metag-host">방장 · 나</span>}
+                          {readOnly && house && <span className="gs-metag gs-metag-host">방장</span>}
+                          {readOnly && myCard && <span className="gs-metag">나</span>}
+                          {/* 합계는 카드에서 바로 — 카운터 표의 합계 수정과 같은 것(차액은 기타 '합계 수정') */}
+                          <span className="gs-rd-sum">
+                            {readOnly ? (
+                              <>
+                                {man(Math.max(0, itemGold(row)))}
+                                <em>G</em>
+                              </>
                             ) : (
-                              <span className="gs-hit-ghost" aria-hidden="true">
-                                {isRoulette(c) ? "◎" : "＋"}
-                              </span>
+                              <TotalEdit
+                                display={Math.max(0, itemGold(row))}
+                                base={itemGold(row)}
+                                per={goldOf(unit) || 1}
+                                suffix={unitLabel}
+                                onCommit={(g) => editTotal(row, g)}
+                              />
                             )}
                           </span>
-                          {/* 파티원 — 되돌릴 수 있는 30초는 칸 아래 눈금 길이로, 장부에 적힌 순간은 번쩍임으로 (옛 자수 탭과 같은 표시) */}
-                          {left > 0 && <i className="gs-cf-tick" style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }} aria-hidden="true" />}
-                          {myCard && cfFlash && cfFlash.id === c.id && <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {readOnly ? (
-                    /* 기타는 방장이 적는다 — 파티원 카드엔 금액만 */
-                    <div className="gs-cardp-etc gs-cardp-etc-ro">기타 {ex.length ? man(exSum) + " · " + ex.length + "건" : "없음"}</div>
-                  ) : (
-                    <button className="gs-cardp-etc" onClick={() => setOpenRow(open ? null : row.id)} aria-expanded={open}>
-                      기타 {ex.length ? man(exSum) + " · " + ex.length + "건" : "금액 직접"}
-                    </button>
-                  )}
-                  {open && (
-                    <div className="gs-cardp-disc">
-                      <Discretion
-                        who={nm}
-                        extras={ex}
-                        onAdd={(amount, reason) => addExtra(row.id, amount, reason)}
-                        onPatch={(exId, key, v) => patchExtra(row.id, exId, key, v)}
-                        onFix={(exId) => clampExtra(row.id, exId)}
-                        onGrab={(exId) => grabExtra(row.id, exId)}
-                        onRemove={(x) => askDelExtra(row, x)}
-                        onClose={() => setOpenRow(null)}
-                      />
+                        </div>
+                        <div className="gs-rd-items">
+                          {activeCols.map((c) => {
+                            const cn = num(row.counts[c.id] ?? "");
+                            const can = readOnly && canConfess(row, c);
+                            const left = can ? cfLeft(c.id) : 0;
+                            return (
+                              <button
+                                key={c.id}
+                                className={
+                                  "gs-hit gs-rd-hit" +
+                                  (cn > 0 ? " gs-hit-on" : "") +
+                                  (can ? " gs-hit-mine" : "") +
+                                  (readOnly && confessMode && !can ? " gs-hit-far" : "")
+                                }
+                                onClick={() => pressCell(row, c, 1)}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  pressCell(row, c, -1);
+                                }}
+                                aria-label={`${nm}의 ${c.name || "항목"} 1회 추가 (우클릭: 1회 빼기)`}
+                              >
+                                <span className="gs-rd-lab">
+                                  <span className="gs-rd-labname">{(c.name || "").trim() || "항목"}</span>
+                                  <em className="gs-rd-labprice">{(isRoulette(c) ? "×" : "") + man(Math.round(goldOf(c.price)))}</em>
+                                </span>
+                                <span className="gs-rd-n">
+                                  {cn > 0 ? (
+                                    <span className="gs-hit-num" key={cn}>
+                                      {commafy(cn)}
+                                      <em>회</em>
+                                    </span>
+                                  ) : (
+                                    <span className="gs-hit-ghost" aria-hidden="true">
+                                      {isRoulette(c) ? "◎" : "＋"}
+                                    </span>
+                                  )}
+                                </span>
+                                {/* 파티원 — 되돌릴 수 있는 30초는 칸 아래 눈금 길이로, 장부에 적힌 순간은 번쩍임으로 */}
+                                {left > 0 && <i className="gs-cf-tick" style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }} aria-hidden="true" />}
+                                {myCard && cfFlash && cfFlash.id === c.id && <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />}
+                              </button>
+                            );
+                          })}
+                          <span className="gs-rd-etcwrap">
+                            {readOnly ? (
+                              /* 기타는 방장이 적는다 — 파티원 카드엔 금액만 */
+                              <span className="gs-rd-etc gs-rd-etc-ro">기타{ex.length > 0 && <b>{man(exSum)}</b>}</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className={"gs-rd-etc" + (ex.length ? " on" : "") + (etcOpen ? " open" : "")}
+                                aria-expanded={etcOpen}
+                                onClick={(e) => {
+                                  /* 단추의 포커스를 놓아야 팝오버 입력칸이 커서를 받는다 (QuickExtra 는 다른 곳에 커서가 있으면 안 뺏는다) */
+                                  e.currentTarget.blur();
+                                  setEtcList(false);
+                                  setEtcRow(etcOpen ? null : row.id);
+                                }}
+                              >
+                                기타{ex.length > 0 && <b>{man(exSum)}</b>}
+                              </button>
+                            )}
+                            {etcOpen && (
+                              /* 카운터 표의 기타 칸과 같은 물건(QuickExtra) — 목록은 같은 팝오버 안에서 펼친다 */
+                              <div className={"gs-rd-pop" + (etcList ? " gs-rd-pop-list" : "")}>
+                                {etcList ? (
+                                  <Discretion
+                                    who={nm}
+                                    extras={ex}
+                                    onAdd={(amount, reason) => addExtra(row.id, amount, reason)}
+                                    onPatch={(exId, key, v) => patchExtra(row.id, exId, key, v)}
+                                    onFix={(exId) => clampExtra(row.id, exId)}
+                                    onGrab={(exId) => grabExtra(row.id, exId)}
+                                    onRemove={(x) => askDelExtra(row, x)}
+                                    onClose={() => {
+                                      setEtcRow(null);
+                                      setEtcList(false);
+                                    }}
+                                  />
+                                ) : (
+                                  <QuickExtra
+                                    unitLabel={unitLabel}
+                                    value={discDraft[row.id] || ""}
+                                    onChange={(v) => setDiscDraft((d) => ({ ...d, [row.id]: v }))}
+                                    summary={ex.length ? `${man(exSum)} · ${ex.length}건` : ""}
+                                    onAdd={(v) => {
+                                      addExtra(row.id, commafy(Math.round(v * per)), "");
+                                      setDiscDraft((d) => ({ ...d, [row.id]: "" }));
+                                    }}
+                                    onReason={(v) => {
+                                      setDiscAsk({ rowId: row.id, name: nm, draft: v });
+                                      setEtcRow(null);
+                                    }}
+                                    onList={ex.length ? () => setEtcList(true) : null}
+                                    onClose={() => setEtcRow(null)}
+                                  />
+                                )}
+                              </div>
+                            )}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+                {/* 빈 자리 — 다음 사람이 어디에 서는지. 방장이 누르면 자리 배치 창(줄 추가는 거기서) */}
+                {Array.from({ length: slots - total }, (_, k) => (
+                  <div
+                    key={"empty:" + k}
+                    className={"gs-rd gs-rd-empty" + (readOnly ? " gs-rd-far" : "")}
+                    role={readOnly ? undefined : "button"}
+                    tabIndex={readOnly ? undefined : 0}
+                    onClick={readOnly ? undefined : () => setSeatOpen(true)}
+                    onKeyDown={
+                      readOnly
+                        ? undefined
+                        : (e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            setSeatOpen(true);
+                          }
+                    }
+                  >
+                    <div className="gs-rd-pic gs-rd-nopic">{SIL}</div>
+                    <div className="gs-rd-body">
+                      <span className="gs-rd-emptytxt">빈 자리</span>
+                      {!readOnly && <span className="gs-rd-emptysub">[자리 배치]에서 줄을 추가해요</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           </>
         ) : (
         <div className="gs-scroll">
@@ -11320,7 +11437,7 @@ export default function GoldSettlement() {
       {/* 자리 배치 창 (2026-09-17 확정). (폐기) 표 아래 사람의 [자리 정하기] 시트 */}
       {seatOpen && !readOnly && (
         <SeatPlacer
-          rows={rows.map((x) => ({ id: x.id, name: x.name || "", acct: (seats.find((k) => k.id === x.id) || {}).acct || null }))}
+          rows={rows.map((x) => ({ id: x.id, name: x.name || "", acct: (seats.find((k) => k.id === x.id) || {}).acct || null, fine: !noFine(x) }))}
           people={placerPeople()}
           hostAcct={auth ? auth.id : null}
           tray={[...new Set(waitBelow.map((p) => p.acct))]}
@@ -13608,9 +13725,10 @@ function PlacerAva({ p, size }) {
 }
 function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, onCopyInvite, onSave, onCancel }) {
   const [D, setD] = useState(() => ({
-    rows: rows.map((r) => ({ id: r.id, name: r.name || "", oname: r.name || "", acct: r.acct || null, oacct: r.acct || null })),
+    rows: rows.map((r) => ({ id: r.id, name: r.name || "", oname: r.name || "", acct: r.acct || null, oacct: r.acct || null, fine: !!r.fine })),
     tray: tray.slice(),
     rejected: [],
+    deleted: [],
   }));
   const [picked, setPicked] = useState(null); // {acct, from:"row"|"list", rowId}
   const [over, setOver] = useState(null); // {kind:"row"|"list"|"order", id, pos}
@@ -13695,6 +13813,15 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
       const b = rowsBox.current;
       if (b) b.scrollTop = b.scrollHeight;
     });
+  };
+  /* 줄 지우기 (2026-09-17 카드 모드 확정과 함께) — 사람도 벌금도 없는 줄만. 저장해야 지워진다 */
+  const delRow = (id) => {
+    setD((d0) => {
+      const r = findRow(d0, id);
+      if (!r || r.acct || r.fine) return d0;
+      return { ...d0, rows: d0.rows.filter((x) => x.id !== id), deleted: r.isNew ? d0.deleted : [...d0.deleted, id] };
+    });
+    setOver(null);
   };
   /* [전부 배정] — 들어온 순서대로 위에서부터 빈 줄 */
   const assignAll = () => {
@@ -13812,7 +13939,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
   };
   const dirty = () => {
     const d = DRef.current;
-    return d.rejected.length > 0 || d.rows.map((r) => r.id).join("|") !== firstOrder.current || d.rows.some((r) => r.isNew || r.acct !== r.oacct || r.name !== r.oname);
+    return d.rejected.length > 0 || d.deleted.length > 0 || d.rows.map((r) => r.id).join("|") !== firstOrder.current || d.rows.some((r) => r.isNew || r.acct !== r.oacct || r.name !== r.oname);
   };
   const goDiscord = () => {
     if (dirty()) return setDcAsk(true);
@@ -13885,7 +14012,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                   }
                   onClick={(e) => {
                     const cur = pickedRef.current;
-                    if (!cur || e.target.closest(".gs-sp-person, .gs-drag")) return;
+                    if (!cur || e.target.closest(".gs-sp-person, .gs-drag, .gs-sp-del")) return;
                     place(cur, r.id);
                   }}
                 >
@@ -13916,6 +14043,13 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                     }}
                   />
                   <span className="gs-sp-slot">{r.acct ? person(r.acct, "row", r.id) : <span className="gs-sp-empty">비어 있음</span>}</span>
+                  {!r.acct && !r.fine ? (
+                    <button type="button" className="gs-x gs-sp-del" onClick={() => delRow(r.id)} title="줄 지우기" aria-label={(r.name || FILL_NAME(i + 1)) + " 줄 지우기"}>
+                      ×
+                    </button>
+                  ) : (
+                    <span className="gs-sp-del" aria-hidden="true" />
+                  )}
                 </div>
               ))}
             </div>
@@ -16809,7 +16943,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-namewrap .gs-in-name{max-width:100%}
 .gs-metag{display:inline-block; flex:none; margin-left:6px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:500; font-size:11px;
   line-height:1; letter-spacing:0; padding:3px 5px; border:1px solid rgba(var(--ink-rgb),.45); border-radius:3px; color:var(--ink-2); white-space:nowrap}
-.gs-cardp-head .gs-metag{align-self:center; margin-left:-2px}
+.gs-rd-head .gs-metag{margin-left:-2px}
 /* 방장 상자는 금색 — [나]는 잉크. 표에 붙는 표시가 상자 하나의 규칙으로 정리된다 (2026-09-17) */
 .gs-metag-host{color:var(--gold); border-color:rgba(var(--gold-rgb),.7)}
 .gs-sp-txt b .gs-metag{vertical-align:2px}
@@ -18577,11 +18711,67 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-widebar{display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid rgba(var(--ink-rgb),.2); margin-bottom:14px; flex:none}
 .gs-widebar-h{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; margin:0; color:var(--ink)}
 .gs-widebar-r{margin-left:auto; display:flex; align-items:center; gap:10px}
-/* 카드 모드 (K1) */
-.gs-cards{display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px}
-.gs-cards-wide{grid-template-columns:repeat(auto-fill, minmax(260px, 1fr))} /* 1180 → 4열, 1600 → 5열 */
-.gs-cardp{background:var(--paper-2); border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; display:flex; flex-direction:column; overflow:hidden; min-width:0}
-.gs-cardp-empty{border-style:dashed; opacity:.7}
+/* ── 카드 모드 — 레이드 창 (2026-09-17 확정) ──
+   4명씩 세로 한 열(grid-auto-flow:column), 두 열. [넓게]는 최대 4열. 1080 폭에서 8명 465px, 단추 118×44.
+   (폐기) 세로 카드 4열(.gs-cardp) — 참고 앱 뼈대, 8명이 한 화면에 안 들어갔다 */
+.gs-rdgrid{display:grid; grid-template-columns:repeat(var(--cols,2), minmax(0,1fr)); grid-template-rows:repeat(var(--rows,4), auto); grid-auto-flow:column; gap:10px 18px; justify-content:center}
+.gs-rdgrid-one{grid-template-columns:minmax(0,540px)}
+.gs-rd{display:grid; grid-template-columns:76px minmax(0,1fr); gap:0 14px; align-items:center; padding:10px 14px 10px 10px; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; background:var(--paper-2); min-width:0}
+.gs-rdgrid-wide .gs-rd{grid-template-columns:96px minmax(0,1fr)}
+.gs-rd-mine{border-color:var(--gold); box-shadow:inset 0 0 0 1px rgba(var(--gold-rgb),.5)}
+.gs-rd-far{opacity:.5}
+.gs-rd-far .gs-hit{cursor:default}
+.gs-rd-pic{width:76px; height:76px; border-radius:25%; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.35); display:flex; align-items:center; justify-content:center; flex:none}
+.gs-rdgrid-wide .gs-rd-pic{width:96px; height:96px}
+.gs-rd-pic .gs-ava{width:100%; height:100%; border:0; border-radius:0; display:block; object-fit:cover}
+.gs-rd-nopic svg{width:46%; height:46%}
+.gs-rd-body{display:flex; flex-direction:column; gap:9px; min-width:0}
+.gs-rd-head{display:flex; align-items:center; gap:8px; min-width:0}
+.gs-in.gs-rd-name{font-family:'Gowun Batang',serif; font-weight:700; font-size:18px; color:var(--ink); padding:2px 0; width:auto; flex:0 1 auto; min-width:2em; max-width:100%; field-sizing:content}
+b.gs-rd-name{font-family:'Gowun Batang',serif; font-weight:700; font-size:18px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
+.gs-rd-mine b.gs-rd-name{color:var(--gold)}
+.gs-rd-sum{margin-left:auto; display:inline-flex; align-items:baseline; font-family:var(--mono); font-size:18px; color:var(--gold); white-space:nowrap; line-height:1}
+.gs-rd-sum em{font-style:normal; font-size:11px; color:var(--ink-2); margin-left:2px}
+.gs-rd-sum .gs-sumedit{padding:0 2px; width:auto; font-size:18px; color:var(--gold); border-bottom:1px dotted transparent; line-height:1}
+.gs-rd-sum .gs-sumedit:hover{border-bottom-color:rgba(var(--gold-rgb),.7)}
+.gs-rd-sum .gs-sumedit-in{padding:0; width:5em; min-width:5em; font-size:18px; line-height:1; border-bottom:1px solid var(--gold)}
+.gs-rd-items{display:flex; gap:6px; flex-wrap:wrap; align-items:stretch}
+/* 항목 단추 — 왼쪽 이름·단가, 오른쪽 횟수. 실선(누르는 곳으로 보이게), 누른 적 있으면 금색 */
+.gs-rd-hit{flex:1 1 84px; width:auto; min-width:0; height:44px; min-height:0; padding:0 8px; gap:6px; justify-content:space-between; text-align:left; border-style:solid; border-color:rgba(var(--ink-rgb),.4)}
+.gs-rd-hit:hover{border-color:rgba(var(--ink-rgb),.7)}
+.gs-rd-hit:active{transform:translateY(1px)}
+.gs-rd-hit.gs-hit-on{border-color:var(--gold)}
+.gs-rd-lab{display:flex; flex-direction:column; align-items:flex-start; line-height:1.15; min-width:0; font-size:12.5px; color:var(--ink)}
+.gs-rd-labname{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
+.gs-rd-labprice{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--gold); white-space:nowrap}
+.gs-rd-n{display:inline-flex; align-items:center; line-height:1; white-space:nowrap; flex:none}
+.gs-rd-hit .gs-hit-num{min-width:0; font-size:20px}
+.gs-rd-hit .gs-hit-num em{font-size:11px; margin-left:2px}
+.gs-rd-hit .gs-hit-ghost{font-size:18px}
+.gs-rd-etcwrap{position:relative; display:inline-flex; flex:none}
+.gs-rd-etc{font:inherit; font-size:12px; height:44px; padding:0 10px; cursor:pointer; border:1px dashed rgba(var(--ink-rgb),.45); border-radius:3px; background:transparent; color:var(--ink-2); display:inline-flex; align-items:center; gap:6px; white-space:nowrap}
+.gs-rd-etc:hover{color:var(--ink); border-color:rgba(var(--ink-rgb),.7)}
+.gs-rd-etc.on{border-style:solid; color:var(--ink)}
+.gs-rd-etc.open{border-color:var(--gold)}
+.gs-rd-etc b{font-family:var(--mono); font-weight:400; color:var(--gold)}
+.gs-rd-etc-ro{cursor:default}
+.gs-rd-etc-ro:hover{color:var(--ink-2); border-color:rgba(var(--ink-rgb),.45)}
+/* [기타] 팝오버 — 단추 아래에 떠서 카드를 안 민다 */
+.gs-rd-pop{position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:260px; padding:8px 10px; background:var(--paper); border:1px solid var(--gold); border-radius:2px; box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4)}
+.gs-rd-pop-list{width:360px}
+.gs-rd-pop .gs-qx{min-height:0; padding:0}
+/* 빈 자리 */
+.gs-rd-empty{border-style:dashed; background:transparent; cursor:pointer; min-height:98px}
+.gs-rd-empty:hover{border-color:rgba(var(--ink-rgb),.6)}
+.gs-rd-empty .gs-rd-body{gap:4px}
+.gs-rd-emptytxt{font-family:'Gowun Batang',serif; font-size:15px; color:rgba(var(--ink-rgb),.5)}
+.gs-rd-emptysub{font-size:12px; color:rgba(var(--ink-rgb),.45)}
+.gs-rd-empty.gs-rd-far{cursor:default}
+/* 4열(16명 넓게)에서는 카드가 좁아 단추를 2×2 로 */
+.gs-rdgrid-four .gs-rd-items{display:grid; grid-template-columns:1fr 1fr}
+.gs-rdgrid-four .gs-rd-etcwrap{display:flex}
+.gs-rdgrid-four .gs-rd-etc{flex:1; justify-content:center}
 /* 카드 모드 항목 칩 — 표 바 [항목 관리]를 펼치면 바로 아래 (2026-09-17). 이름 · 단가 · × 그리고 [+ 항목] */
 .gs-cardtools{margin:-4px 0 14px; padding:10px; border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px; background:var(--paper-2)}
 .gs-cardtools-items{display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0}
@@ -18597,30 +18787,6 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-citem .gs-pricewrap{display:inline-flex; align-items:center; padding:0 2px}
 .gs-citem-x{height:100%; padding:0 6px}
 .gs-citem-add{height:32px; box-sizing:border-box; padding:0 10px}
-.gs-cardp-pic{position:relative; aspect-ratio:1/1; /* 정사각 — 4:3 은 초상화가 잘렸다(사용자) */ background:rgba(var(--ink-rgb),.06); display:flex; align-items:center; justify-content:center;
-  color:rgba(var(--ink-rgb),.35); font-family:'Gowun Batang',serif; font-size:40px; border-bottom:1px solid rgba(var(--ink-rgb),.25); overflow:hidden}
-.gs-cards-wide .gs-cardp-pic{aspect-ratio:1/1}
-.gs-cardp-pic .gs-ava{width:100%; height:100%; border:0; border-radius:0; object-fit:cover}
-.gs-cardp-pic > svg{width:38%; height:38%}
-.gs-cardp-rank{position:absolute; right:8px; bottom:6px; font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; color:rgba(var(--ink-rgb),.55)}
-.gs-cardp-head{display:flex; align-items:baseline; gap:8px; padding:10px 12px 6px; min-width:0}
-.gs-cardp-name{font-family:'Gowun Batang',serif; font-size:19px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
-.gs-cardp-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
-.gs-cardp-sum{margin-left:auto; font-family:var(--mono); font-size:16px; color:var(--gold); white-space:nowrap}
-.gs-cardp-sum em{font-style:normal; font-size:11px; color:var(--ink-2); margin-left:2px}
-.gs-cardp-items{display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px 12px 6px}
-.gs-cardp-items.three{grid-template-columns:1fr 1fr 1fr}
-.gs-cardp-hit{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; height:64px; min-height:0; padding:6px; width:100%; min-width:0; box-sizing:border-box}
-.gs-cardp-hitname{display:flex; align-items:baseline; justify-content:center; gap:6px; max-width:100%; min-width:0; font-size:13px; color:var(--ink); letter-spacing:.01em}
-.gs-cardp-hitlab{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
-.gs-cardp-hitprice{font-style:normal; font-family:var(--mono); font-size:13px; color:var(--gold); white-space:nowrap; flex:none}
-.gs-cardp-hitval{height:24px; display:inline-flex; align-items:center; justify-content:center; line-height:1}
-.gs-cardp-hit .gs-hit-num{font-size:20px; min-width:0}
-.gs-cardp-hit .gs-hit-num em{font-size:11px; margin-left:3px}
-.gs-cardp-hit .gs-hit-ghost{font-size:20px}
-.gs-cardp-etc{margin:2px 12px 10px; font:inherit; font-size:11.5px; color:var(--ink-2); background:transparent; border:1px dashed rgba(var(--ink-rgb),.28); border-radius:2px; padding:5px 8px; text-align:left; cursor:pointer}
-.gs-cardp-etc:hover{color:var(--ink); border-color:rgba(var(--ink-rgb),.5)}
-.gs-cardp-disc{padding:0 12px 10px}
 .gs-tablebar .gs-segbox{height:34px; box-sizing:border-box}
 .gs-tablebar .gs-segbtn{height:100%; padding:0 11px; display:inline-flex; align-items:center; font-size:12.5px}
 .gs-tablebar .gs-cellnote{margin:0; white-space:nowrap}
@@ -19134,12 +19300,6 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 @media (prefers-reduced-motion:reduce){ .gs-hit-conf{animation:none} }
 /* ── 파티원 화면 (2026-09-17) — 방장 화면 그대로, 남의 줄·카드는 흐리게 ── */
 .gs-row-far > th .gs-namecell,.gs-row-far > td.gs-sumcell{opacity:.5}
-.gs-cardp-far{opacity:.5}
-.gs-cardp-far .gs-hit{cursor:default}
-.gs-cardp-mine{border-color:rgba(var(--gold-rgb),.7)}
-.gs-cardp-mine .gs-cardp-name{color:var(--gold)}
-.gs-cardp-etc-ro{cursor:default}
-.gs-cardp-etc-ro:hover{color:inherit; border-color:inherit}
 .gs-hit .gs-cf-tick{border-radius:0 0 0 3px}
 /* ── 자리 배치 (2026-09-17) ── */
 .gs-seatbtn b{font-weight:600; margin-left:6px; font-family:var(--mono); color:var(--ink-2)}
@@ -19159,9 +19319,12 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-sp-colhead .gs-btn{margin-left:auto; height:22px; padding:0 8px; font-size:11.5px; display:inline-flex; align-items:center; margin-bottom:-1px}
 .gs-sp-rows{display:flex; flex-direction:column; max-height:min(460px, 56vh); overflow-y:auto}
 /* 줄 왼쪽 10px — 바뀐 줄의 금색 선과 ≡ 손잡이가 겹치지 않게 (2026-09-17) */
-.gs-sp-row{display:grid; grid-template-columns:16px minmax(0,1fr) 210px; align-items:center; gap:8px; min-height:52px; padding:4px 2px 4px 10px;
+.gs-sp-row{display:grid; grid-template-columns:16px minmax(0,1fr) 210px 20px; align-items:center; gap:8px; min-height:52px; padding:4px 2px 4px 10px;
   border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
 .gs-sp-row .gs-drag{justify-self:center}
+/* 빈 줄 지우기 × — 사람도 벌금도 없는 줄에만 (2026-09-17) */
+.gs-sp-del{width:20px; height:22px; display:inline-grid; place-items:center; padding:0; font-size:16px; line-height:1; color:var(--ink-2); border-radius:2px}
+button.gs-sp-del:hover{color:var(--red); background:rgba(var(--ink-rgb),.08)}
 .gs-sp-name{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px; color:var(--ink); text-align:right; width:100%; min-width:0; padding:8px 4px; cursor:text}
 .gs-sp-slot{display:flex; align-items:center; height:44px; box-sizing:border-box; border:1px dashed rgba(var(--gold-rgb),.55); border-radius:2px; min-width:0}
 .gs-sp-slot:has(.gs-sp-person){border-color:transparent}
