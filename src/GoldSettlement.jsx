@@ -10023,7 +10023,7 @@ export default function GoldSettlement() {
                               onChange={(e) => patchCol(c.id, "name", e.target.value)}
                               aria-label="항목 이름"
                             />
-                            {isRoulette(c) ? <span className="gs-citem-cap" aria-hidden="true">×</span> : <span className="gs-citem-cap">1회</span>}
+                            {isRoulette(c) ? <span className="gs-citem-cap">배율:</span> : <span className="gs-citem-cap">1회</span>}
                             {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
                               /* 센 기록이 있으면 창에서 (표 머리와 같은 규칙) */
                               <span className="gs-pricewrap">
@@ -10058,7 +10058,6 @@ export default function GoldSettlement() {
                                 aria-label="룰렛 설정"
                               >
                                 {GEAR_ICON}
-                                설정
                               </button>
                             )}
                             <button
@@ -10470,7 +10469,7 @@ export default function GoldSettlement() {
                       {/* 룰렛 (2026-09-17 확정) — 보통 칸의 "1회 [1] 만G" 자리에 "룰렛 × [1] 만G". [룰렛]을 누르면 설정창(면 수·비율·양도권), 단가는 보통 칸과 같은 규칙.
                           (폐기) "◎ 룰렛 · 8면 · 나온 숫자 × 1만 ⚙" 한 덩이 — 폭을 너무 차지했고, ◎ 만으로는 룰렛으로 안 읽혔다(사용자) */}
                       {/* (고침 2026-09-18) [룰렛] 글자 상자를 눌러 설정으로 가는 건 설정인 줄 모른다(사용자) — 톱니 [설정] 단추로 */}
-                      {isRoulette(c) ? <span aria-hidden="true">×</span> : <span>1회</span>}
+                      {isRoulette(c) ? <span>배율:</span> : <span>1회</span>}
                       {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
                         /* 센 기록이 있으면 창에서 — 지난 횟수를 어찌할지 골라야 해서 */
                         <span className="gs-pricewrap">
@@ -10497,7 +10496,6 @@ export default function GoldSettlement() {
                       {isRoulette(c) && !readOnly && (
                         <button className="gs-rcbtn gs-rcgear" onClick={() => setRouletteCfg(c.id)} title="룰렛 설정 — 면 수·비율·양도권" aria-label="룰렛 설정">
                           {GEAR_ICON}
-                          설정
                         </button>
                       )}
                     </div>
@@ -18999,7 +18997,9 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-itempop .gs-citem-x{margin-left:auto}
 .gs-citem-cap{font-size:10px; color:var(--ink-2); white-space:nowrap}
 .gs-citem .gs-rcbtn{padding:1px 5px}
-.gs-rcgear{display:inline-flex; align-items:center; gap:3px; margin-left:4px}
+.gs-rcgear{display:inline-flex; align-items:center; justify-content:center; width:20px; height:18px; padding:0; margin-left:3px; box-sizing:border-box}
+.gs-rcgear svg{width:11px; height:11px}
+.gs-colh-price{height:22px}
 .gs-hit-ghost .gs-roulico{display:block; width:18px; height:18px}
 .gs-citem .gs-in-price{border-bottom:1px dotted rgba(var(--ink-rgb),.5)}
 .gs-itemsbtn{gap:6px; white-space:nowrap}
