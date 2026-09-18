@@ -10186,6 +10186,7 @@ export default function GoldSettlement() {
               </svg>
             );
             return (
+              <>
               <div
                 className={"gs-rdgrid" + (cols === 1 ? " gs-rdgrid-one" : "") + (cols === 4 ? " gs-rdgrid-four" : "") + (wide ? " gs-rdgrid-wide" : "")}
                 style={{ "--cols": cols, "--rows": slots / cols }}
@@ -10401,6 +10402,13 @@ export default function GoldSettlement() {
                   </div>
                 ))}
               </div>
+              {/* [+ 인원 추가] — 인원이 4의 배수라 점선 빈 자리가 없을 때도 줄을 더할 곳 (2026-09-18). 새 줄은 빈 자리로 서고, 초상화를 누르면 배정 */}
+              {!readOnly && (
+                <button type="button" className="gs-rd-add" onClick={addRow}>
+                  + 인원 추가
+                </button>
+              )}
+              </>
             );
           })()}
           </>
@@ -11021,8 +11029,9 @@ export default function GoldSettlement() {
               })}
               <tr className="gs-addrow">
                 <th className="gs-stick gs-l">
-                  {/* (폐기 2026-09-17) 카운터 모드의 [+ 인원 추가] — 줄 추가는 자리 배치 창. 메모장 모드엔 표 바가 없어 남긴다 */}
-                  {!readOnly && simple && (
+                  {/* [+ 인원 추가] — 세 모드 모두 표(격자) 끝에 (2026-09-18 사용자: "인원 추가 ui는 어디 갔나요"). 자리 배치 창의 [+ 줄 추가]와 같은 일.
+                      (폐기 2026-09-17, 하루 만에 되돌림) 카운터 모드에서 빼고 자리 배치 창에만 두던 것 — 줄 하나 더하려고 창을 열어야 했다 */}
+                  {!readOnly && (
                     <button className="gs-add" onClick={addRow}>
                       + 인원 추가
                     </button>
@@ -18986,6 +18995,10 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-rd-emptytxt{font-family:'Gowun Batang',serif; font-size:15px; color:rgba(var(--ink-rgb),.5)}
 .gs-rd-emptysub{font-size:12px; color:rgba(var(--ink-rgb),.45)}
 .gs-rd-empty.gs-rd-far{cursor:default}
+.gs-rd-add{display:block; width:100%; margin-top:10px; height:40px; font:inherit; font-size:12.5px; color:var(--ink-2); background:transparent;
+  border:1px dashed rgba(var(--kraftdk-rgb),.9); border-radius:2px; cursor:pointer}
+.gs-rd-add:hover{color:var(--ink); border-color:var(--ink)}
+.gs-rdgrid-one + .gs-rd-add{max-width:540px; margin-left:auto; margin-right:auto}
 /* 4열(16명 넓게)에서는 카드가 좁아 단추를 2×2 로 */
 .gs-rdgrid-four .gs-rd-items{display:grid; grid-template-columns:1fr 1fr}
 .gs-rdgrid-four .gs-rd-etcwrap{display:flex}
@@ -19536,23 +19549,23 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-rowi-empty{border:1px dashed rgba(var(--ink-rgb),.4); background:transparent; color:rgba(var(--ink-rgb),.35); cursor:pointer; padding:0}
 .gs-rowi-empty svg{width:18px; height:18px}
 .gs-rowi-empty:hover,.gs-seatpopwrap.open .gs-rowi-empty{border-color:var(--gold); color:var(--gold)}
-.gs-seatpop{position:fixed; z-index:60; width:260px; padding:10px 10px 8px; background:var(--paper); border:1px solid var(--gold); border-radius:2px;
+.gs-seatpop{position:fixed; z-index:60; width:360px; padding:12px 16px 12px; background:var(--paper); border:1px solid var(--gold); border-radius:2px;
   box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); font-size:12.5px; text-align:left; cursor:default; letter-spacing:0}
-.gs-seatpop-h{display:flex; align-items:baseline; gap:8px; padding-bottom:8px; border-bottom:1px dotted rgba(var(--ink-rgb),.3)}
+.gs-seatpop-h{display:flex; align-items:baseline; gap:8px; padding-bottom:10px; border-bottom:1px dotted rgba(var(--ink-rgb),.3)}
 .gs-seatpop-h b{font-family:'Gowun Batang',serif; font-size:14px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .gs-seatpop-h em{font-style:normal; font-size:11.5px; color:var(--ink-2); flex:none}
-.gs .gs-seatpop-t{margin:10px 0 0; font-family:'Gowun Batang',serif; font-weight:700; font-size:13.5px; color:var(--ink); line-height:1.5; text-wrap:balance; word-break:keep-all}
-.gs .gs-seatpop-b{margin:6px 0 0; font-size:12px; color:var(--ink-body); line-height:1.7}
+.gs .gs-seatpop-t{margin:14px 0 0; font-family:'Gowun Batang',serif; font-weight:700; font-size:14.5px; color:var(--ink); line-height:1.5; word-break:keep-all}
+.gs .gs-seatpop-b{margin:6px 0 0; font-size:12.5px; color:var(--ink-body); line-height:1.7}
 .gs .gs-seatpop-b > span{display:block; text-wrap:balance; word-break:keep-all}
-.gs-seatpop-btn{margin-top:10px}
-.gs-seatpop-sec{margin:10px 0 4px; font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
+.gs-seatpop-btn{margin-top:12px}
+.gs-seatpop-sec{margin:12px 0 6px; font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
 .gs-seatpop-sec b{color:var(--gold); font-weight:600; margin-left:4px}
 .gs-seatpop-p{display:flex; align-items:center; gap:8px; width:100%; height:38px; padding:0 6px; margin-top:4px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px;
   background:var(--paper-2); font:inherit; color:var(--ink); cursor:pointer; text-align:left}
 .gs-seatpop-p:hover{border-color:var(--gold); background:rgba(var(--gold-rgb),.1)}
 .gs-seatpop-p b{font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .gs-seatpop-p em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2); white-space:nowrap}
-.gs-seatpop-more{display:block; width:100%; text-align:left; margin-top:10px; padding:8px 0 0; border:0; border-top:1px dotted rgba(var(--ink-rgb),.3); background:transparent;
+.gs-seatpop-more{display:block; width:100%; text-align:left; margin-top:14px; padding:10px 0 0; border:0; border-top:1px dotted rgba(var(--ink-rgb),.3); background:transparent;
   font:inherit; font-size:12px; color:var(--gold); cursor:pointer}
 .gs-seatpop-more:hover{text-decoration:underline}
 /* ── 자리 배치 (2026-09-17) ── */
