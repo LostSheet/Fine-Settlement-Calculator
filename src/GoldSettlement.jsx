@@ -8426,6 +8426,20 @@ export default function GoldSettlement() {
     } else say(d.note || "자리 배치를 저장했어요.");
     return null;
   };
+  /* 찬 초상화 팝오버의 [자리 비우기] (2026-09-19) — 줄의 이름·숫자는 그대로, 사람만 뺀다. 자리 배치 창에서 사람을 목록으로 끌어 빼는 것과 같은 저장 길 */
+  const quickUnseat = async (rowId) => {
+    setSeatPop(null);
+    const draft = rows.map((x) => {
+      const a = (seats.find((k) => k.id === x.id) || {}).acct || null;
+      return { id: x.id, name: x.name || "", oname: x.name || "", acct: a, oacct: a, fine: !noFine(x) };
+    });
+    const row = draft.find((r) => r.id === rowId);
+    if (!row || !row.acct || (auth && row.acct === auth.id)) return;
+    const who = (members.find((m) => m.acct === row.acct) || {}).nick || row.acct;
+    row.acct = null;
+    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: who + "님의 자리를 비웠어요." });
+    if (err) say(err);
+  };
   /* 빈 초상화 팝오버에서 사람을 누르면 — 그 줄(또는 새 줄)에 바로. 자리 배치 창과 같은 저장 길(applyPlacement)을 한 줄짜리 초안으로 탄다 */
   const quickPlace = async (acct, target) => {
     setSeatPop(null);
@@ -8456,11 +8470,13 @@ export default function GoldSettlement() {
       }
     });
   };
-  const seatPopFor = (target, label) =>
+  const seatPopFor = (target, label, who) =>
     seatPop === target ? (
       <SeatPop
         anchor={seatPopAnchors.current[target]}
         label={label}
+        who={who || null}
+        onUnseat={() => quickUnseat(target)}
         linked={!!(auth && auth.dc)}
         tray={waitBelow.map((p) => ({ acct: p.acct, nick: p.nick || p.acct, ava: p.ava && (p.ava.id || p.ava.p) ? avaDc(p.ava) : null, dcu: p.dcu || "" }))}
         copied={flash === "inv"}
@@ -10269,6 +10285,27 @@ export default function GoldSettlement() {
                           </button>
                           {seatPopFor(row.id, nm + " 줄")}
                         </span>
+                      ) : !readOnly ? (
+                        /* 찬 자리도 누르는 곳 (2026-09-19, 안 3) — 누구인지, [자리 비우기] */
+                        <span className={"gs-seatpopwrap" + (seatPop === row.id ? " open" : "")} ref={(el) => (seatPopAnchors.current[row.id] = el)}>
+                          <button
+                            type="button"
+                            className={"gs-rd-pic gs-rd-picbtn" + (pic ? "" : " gs-rd-nopic")}
+                            onClick={() => setSeatPop(seatPop === row.id ? null : row.id)}
+                            aria-label={nm + " 줄의 사람"}
+                            aria-haspopup="dialog"
+                          >
+                            {pic ? <DcAva dc={pic} size={wide ? 96 : 76} /> : SIL}
+                          </button>
+                          {seatPopFor(row.id, nm + " 줄", {
+                            acct,
+                            nick: (mem && mem.nick) || (st && st.nick) || (isHostRow && auth ? auth.nick : "") || nm,
+                            ava: pic,
+                            dcu: (mem && mem.dcu) || (isHostRow && auth && auth.dc && auth.dc.user ? Array.from(auth.dc.user).slice(0, 2).join("") + "••••" : ""),
+                            host: isHostRow,
+                            off: !!mem && mem.on === false,
+                          })}
+                        </span>
                       ) : (
                         <div className={"gs-rd-pic" + (pic ? "" : " gs-rd-nopic")}>{pic ? <DcAva dc={pic} size={wide ? 96 : 76} /> : SIL}</div>
                       )}
@@ -10667,21 +10704,34 @@ export default function GoldSettlement() {
                               return (
                                 <span className={"gs-tip gs-rowmeta" + (off ? " gs-rowmeta-off" : "")}>
                                   {acct ? (
-                                    <span
-                                      className={"gs-rowi gs-rowi-ava" + (isHostRow ? " gs-rowi-host" : "")}
-                                      role="img"
-                                      aria-label={isHostRow ? "방장 (나)" : "이 줄의 사람"}
-                                    >
-                                      {pic ? (
-                                        <DcAva dc={pic} size={32} className="gs-ava-sm" />
-                                      ) : (
-                                        <svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true">
-                                          <g fill="currentColor">
-                                            <circle cx="10" cy="6.4" r="3.4" />
-                                            <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
-                                          </g>
-                                        </svg>
-                                      )}
+                                    /* 찬 줄도 누르는 곳 (2026-09-19, 안 3) — 누구인지, [자리 비우기] */
+                                    <span className={"gs-seatpopwrap" + (seatPop === row.id ? " open" : "")} ref={(el) => (seatPopAnchors.current[row.id] = el)}>
+                                      <button
+                                        type="button"
+                                        className={"gs-rowi gs-rowi-ava gs-rowi-btn" + (isHostRow ? " gs-rowi-host" : "")}
+                                        onClick={() => setSeatPop(seatPop === row.id ? null : row.id)}
+                                        aria-label={isHostRow ? "방장 (나)" : seatName(row, i) + " 줄의 사람"}
+                                        aria-haspopup="dialog"
+                                      >
+                                        {pic ? (
+                                          <DcAva dc={pic} size={32} className="gs-ava-sm" />
+                                        ) : (
+                                          <svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true">
+                                            <g fill="currentColor">
+                                              <circle cx="10" cy="6.4" r="3.4" />
+                                              <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+                                            </g>
+                                          </svg>
+                                        )}
+                                      </button>
+                                      {seatPopFor(row.id, seatName(row, i) + " 줄", {
+                                        acct,
+                                        nick: (mem && mem.nick) || st.nick || (isHostRow && auth ? auth.nick : "") || seatName(row, i),
+                                        ava: pic,
+                                        dcu: masked,
+                                        host: isHostRow,
+                                        off,
+                                      })}
                                     </span>
                                   ) : (
                                     /* 빈 줄 — 점선 실루엣, 누르면 배정 팝오버 (2026-09-18). (폐기) 빈 32px — 누를 곳이 안 보였다 */
@@ -10697,7 +10747,7 @@ export default function GoldSettlement() {
                                       {seatPopFor(row.id, seatName(row, i) + " 줄")}
                                     </span>
                                   )}
-                                  {acct && (
+                                  {acct && seatPop !== row.id && (
                                     <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
                                       {isHostRow && (
                                         <span className="gs-tipline">
@@ -13907,7 +13957,7 @@ function PlacerAva({ p, size }) {
   );
 }
 /* 빈 초상화 팝오버 (2026-09-18) — 화면에 고정 좌표로 띄운다(표는 가로 스크롤 상자 안이라 absolute 면 잘린다). 아래가 모자라면 위로 */
-function SeatPop({ anchor, label, linked, tray, copied, onPick, onDiscord, onCopyInvite, onOpenModal, onClose }) {
+function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, onDiscord, onCopyInvite, onOpenModal, onClose }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -13918,7 +13968,7 @@ function SeatPop({ anchor, label, linked, tray, copied, onPick, onDiscord, onCop
     const w = el.offsetWidth;
     const up = r.bottom + 8 + h > window.innerHeight && r.top - 8 - h > 0;
     setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), top: up ? r.top - 8 - h : r.bottom + 8 });
-  }, [anchor, tray.length, linked]);
+  }, [anchor, tray.length, linked, !!who]);
   useEffect(() => {
     const k = (e) => {
       if (e.key === "Escape") onClose();
@@ -13936,9 +13986,25 @@ function SeatPop({ anchor, label, linked, tray, copied, onPick, onDiscord, onCop
     <div ref={ref} className="gs-seatpop" role="dialog" aria-label={label} style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden", left: 0, top: 0 }}>
       <div className="gs-seatpop-h">
         <b>{label}</b>
-        <em>비어 있음</em>
+        {!who && <em>비어 있음</em>}
       </div>
-      {!linked ? (
+      {who ? (
+        /* 찬 줄 (2026-09-19, 안 3) — 빈 초상화로 넣을 수 있으면 찬 초상화로 뺄 수도 있어야 한다. 방장 자신은 못 뺀다(자리 배치 창과 같은 규칙) */
+        <>
+          <div className="gs-seatpop-who">
+            <PlacerAva p={who} size={28} />
+            <b>{who.nick}</b>
+            {who.dcu && <em>{who.dcu}</em>}
+            {who.host && <span className="gs-metag gs-metag-host">방장 · 나</span>}
+          </div>
+          {who.off && <p className="gs-seatpop-off">연결 끊김</p>}
+          {!who.host && (
+            <button type="button" className="gs-btn gs-btn-ghost gs-btn-sm gs-seatpop-btn" onClick={onUnseat}>
+              자리 비우기
+            </button>
+          )}
+        </>
+      ) : !linked ? (
         <>
           <p className="gs-seatpop-t">파티원을 초대하려면 Discord 연동이 필요해요</p>
           <p className="gs-seatpop-b">
@@ -19589,6 +19655,12 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs .gs-seatpop-b{margin:6px 0 0; font-size:12.5px; color:var(--ink-body); line-height:1.7}
 .gs .gs-seatpop-b > span{display:block; text-wrap:balance; word-break:keep-all}
 .gs-seatpop-btn{margin-top:12px}
+/* 찬 줄 (2026-09-19) */
+.gs-seatpop-who{display:flex; align-items:center; gap:8px; margin-top:12px; min-width:0}
+.gs-seatpop-who b{font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700; color:var(--ink); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.gs-seatpop-who em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2); white-space:nowrap}
+.gs .gs-seatpop-off{margin:8px 0 0; font-size:12px; color:var(--ink-2)}
+.gs-rowi-btn:hover,.gs-seatpopwrap.open .gs-rowi-btn{box-shadow:0 0 0 2px var(--gold)}
 .gs-seatpop-sec{margin:12px 0 6px; font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
 .gs-seatpop-sec b{color:var(--gold); font-weight:600; margin-left:4px}
 .gs-seatpop-p{display:flex; align-items:center; gap:8px; width:100%; height:38px; padding:0 6px; margin-top:4px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px;
