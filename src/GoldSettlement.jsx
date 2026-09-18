@@ -10174,9 +10174,9 @@ export default function GoldSettlement() {
               (폐기) 세로 카드 4열 — 참고 앱 뼈대(위 정사각 초상화·01 번호·직접 입력 줄)를 따라 만들어 더 나빴다(사용자): 8명이 한 화면에 안 들어가고,
               단추는 점선에 흐린 ＋라 누르는 곳으로 안 보였고, 기타를 펼치면 카드가 밀렸고, 이름·합계를 못 고쳤다 */}
           {(() => {
-            const total = rows.length;
-            const slots = Math.max(4, Math.ceil(total / 4) * 4);
-            const cols = Math.min(wide ? 4 : 2, slots / 4);
+            /* (고침 2026-09-18 사용자) 세로 채우기(1~4 왼쪽, 5~8 오른쪽)에서 가로 채우기(1 2 / 3 4 / …)로 — 사람을 더하면 마지막 칸 다음에 서고,
+               그 다음 칸이 [+ 인원 추가]. 4의 배수까지 빈 자리를 채우던 것도 폐기 */
+            const cols = wide ? 4 : 2;
             const SIL = (
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <g fill="currentColor">
@@ -10187,10 +10187,7 @@ export default function GoldSettlement() {
             );
             return (
               <>
-              <div
-                className={"gs-rdgrid" + (cols === 1 ? " gs-rdgrid-one" : "") + (cols === 4 ? " gs-rdgrid-four" : "") + (wide ? " gs-rdgrid-wide" : "")}
-                style={{ "--cols": cols, "--rows": slots / cols }}
-              >
+              <div className={"gs-rdgrid" + (cols === 4 ? " gs-rdgrid-four" : "") + (wide ? " gs-rdgrid-wide" : "")} style={{ "--cols": cols }}>
                 {rows.map((row, i) => {
                   const st = seats.find((k) => k.id === row.id);
                   const acct = st && st.acct;
@@ -10266,13 +10263,16 @@ export default function GoldSettlement() {
                                 <em>G</em>
                               </>
                             ) : (
-                              <TotalEdit
-                                display={Math.max(0, itemGold(row))}
-                                base={itemGold(row)}
-                                per={goldOf(unit) || 1}
-                                suffix={unitLabel}
-                                onCommit={(g) => editTotal(row, g)}
-                              />
+                              <>
+                                <TotalEdit
+                                  display={Math.max(0, itemGold(row))}
+                                  base={itemGold(row)}
+                                  per={goldOf(unit) || 1}
+                                  suffix={unitLabel}
+                                  onCommit={(g) => editTotal(row, g)}
+                                />
+                                <em>G</em>
+                              </>
                             )}
                           </span>
                         </div>
@@ -10381,33 +10381,19 @@ export default function GoldSettlement() {
                     </div>
                   );
                 })}
-                {/* 빈 자리 — 다음 사람이 어디에 서는지. 방장이 누르면 자리 배치 창(줄 추가는 거기서) */}
-                {Array.from({ length: slots - total }, (_, k) => (
-                  <div key={"empty:" + k} className={"gs-rd gs-rd-empty" + (readOnly ? " gs-rd-far" : "")}>
-                    {readOnly ? (
-                      <div className="gs-rd-pic gs-rd-nopic">{SIL}</div>
-                    ) : (
-                      /* 줄이 아직 없는 빈 자리 — 사람을 고르면 줄이 생기면서 앉는다 */
-                      <span className={"gs-seatpopwrap" + (seatPop === "new:" + k ? " open" : "")} ref={(el) => (seatPopAnchors.current["new:" + k] = el)}>
-                        <button type="button" className="gs-rd-pic gs-rd-nopic gs-rd-picbtn" onClick={() => setSeatPop(seatPop === "new:" + k ? null : "new:" + k)} aria-label="빈 자리 — 누르면 배정" aria-haspopup="dialog">
-                          {SIL}
-                        </button>
-                        {seatPopFor("new:" + k, "빈 자리")}
-                      </span>
-                    )}
-                    <div className="gs-rd-body">
-                      <span className="gs-rd-emptytxt">빈 자리</span>
-                      {!readOnly && <span className="gs-rd-emptysub">초상화를 누르면 배정해요</span>}
-                    </div>
-                  </div>
-                ))}
+                {/* [+ 인원 추가] — 마지막 카드 다음 칸 (2026-09-18 사용자: "9 +"). 누르면 빈 카드가 서고, 그 초상화를 누르면 배정.
+                    (폐기) 격자 아래 한 줄 단추 · 4의 배수까지 점선 빈 자리(각각 배정 팝오버) */}
+                {!readOnly && (
+                  <button type="button" className="gs-rd gs-rd-empty gs-rd-addslot" onClick={addRow}>
+                    <span className="gs-rd-pic gs-rd-nopic gs-rd-plus" aria-hidden="true">
+                      ＋
+                    </span>
+                    <span className="gs-rd-body">
+                      <span className="gs-rd-emptytxt">+ 인원 추가</span>
+                    </span>
+                  </button>
+                )}
               </div>
-              {/* [+ 인원 추가] — 인원이 4의 배수라 점선 빈 자리가 없을 때도 줄을 더할 곳 (2026-09-18). 새 줄은 빈 자리로 서고, 초상화를 누르면 배정 */}
-              {!readOnly && (
-                <button type="button" className="gs-rd-add" onClick={addRow}>
-                  + 인원 추가
-                </button>
-              )}
               </>
             );
           })()}
@@ -18940,10 +18926,9 @@ button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 .gs-widebar-h{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; margin:0; color:var(--ink)}
 .gs-widebar-r{margin-left:auto; display:flex; align-items:center; gap:10px}
 /* ── 카드 모드 — 레이드 창 (2026-09-17 확정) ──
-   4명씩 세로 한 열(grid-auto-flow:column), 두 열. [넓게]는 최대 4열. 1080 폭에서 8명 465px, 단추 118×44.
+   두 열, 가로로 채움(1 2 / 3 4 …, 09-18 사용자), 마지막 칸이 [+ 인원 추가]. [넓게]는 4열. 1080 폭에서 8명 465px, 단추 118×44.
    (폐기) 세로 카드 4열(.gs-cardp) — 참고 앱 뼈대, 8명이 한 화면에 안 들어갔다 */
-.gs-rdgrid{display:grid; grid-template-columns:repeat(var(--cols,2), minmax(0,1fr)); grid-template-rows:repeat(var(--rows,4), auto); grid-auto-flow:column; gap:10px 18px; justify-content:center}
-.gs-rdgrid-one{grid-template-columns:minmax(0,540px)}
+.gs-rdgrid{display:grid; grid-template-columns:repeat(var(--cols,2), minmax(0,1fr)); gap:10px 18px}
 .gs-rd{display:grid; grid-template-columns:76px minmax(0,1fr); gap:0 14px; align-items:center; padding:10px 14px 10px 10px; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; background:var(--paper-2); min-width:0}
 .gs-rdgrid-wide .gs-rd{grid-template-columns:96px minmax(0,1fr)}
 .gs-rd-mine{border-color:var(--gold); box-shadow:inset 0 0 0 1px rgba(var(--gold-rgb),.5)}
@@ -18995,10 +18980,11 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-rd-emptytxt{font-family:'Gowun Batang',serif; font-size:15px; color:rgba(var(--ink-rgb),.5)}
 .gs-rd-emptysub{font-size:12px; color:rgba(var(--ink-rgb),.45)}
 .gs-rd-empty.gs-rd-far{cursor:default}
-.gs-rd-add{display:block; width:100%; margin-top:10px; height:40px; font:inherit; font-size:12.5px; color:var(--ink-2); background:transparent;
-  border:1px dashed rgba(var(--kraftdk-rgb),.9); border-radius:2px; cursor:pointer}
-.gs-rd-add:hover{color:var(--ink); border-color:var(--ink)}
-.gs-rdgrid-one + .gs-rd-add{max-width:540px; margin-left:auto; margin-right:auto}
+/* [+ 인원 추가] 칸 — 카드와 같은 틀, 점선 */
+.gs-rd-addslot{font:inherit; color:inherit; text-align:left; cursor:pointer}
+.gs-rd-addslot:hover{border-color:var(--ink)}
+.gs-rd-addslot:hover .gs-rd-emptytxt,.gs-rd-addslot:hover .gs-rd-plus{color:var(--ink)}
+.gs-rd-plus{font-size:34px; line-height:1; color:rgba(var(--ink-rgb),.45); font-family:'IBM Plex Sans KR',system-ui,sans-serif}
 /* 4열(16명 넓게)에서는 카드가 좁아 단추를 2×2 로 */
 .gs-rdgrid-four .gs-rd-items{display:grid; grid-template-columns:1fr 1fr}
 .gs-rdgrid-four .gs-rd-etcwrap{display:flex}
