@@ -2697,6 +2697,19 @@ export default function GoldSettlement() {
   /* 자리 배치 창 (2026-09-17 확정) — 표 바 [자리 배치 N] 으로 연다 */
   const [seatOpen, setSeatOpen] = useState(false);
   /* 카드 모드 [기타] 팝오버 (2026-09-17 레이드 창) — 열린 줄 id, 목록 보기 여부. 단추 아래에 떠서 카드를 안 민다. 바깥을 누르면 닫힌다 */
+  /* 빈 초상화 팝오버 (2026-09-18 사용자) — 빈 자리를 누르면 "여기에 누구를 놓나". 연동 전엔 [Discord 연동], 연동 뒤 아무도 없으면 [디코 메시지 복사],
+     들어온 사람이 있으면 목록(누르면 그 자리에 바로). 사람이 있는 초상화는 누르는 곳이 아니다. 값: 줄 id 또는 "new:k"(줄이 아직 없는 점선 빈 자리) */
+  const [seatPop, setSeatPop] = useState(null);
+  const seatPopAnchors = useRef({});
+  useEffect(() => {
+    if (seatPop == null) return;
+    const h = (e) => {
+      if (e.target.closest && e.target.closest(".gs-seatpop, .gs-seatpopwrap, .gs-modal")) return;
+      setSeatPop(null);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [seatPop]);
   const [etcRow, setEtcRow] = useState(null);
   const [etcList, setEtcList] = useState(false);
   useEffect(() => {
@@ -8398,15 +8411,63 @@ export default function GoldSettlement() {
         for (const a of rejected) await roomApi.member(auth.token, relay.room, a, "remove");
         for (const a of unseat) await roomApi.member(auth.token, relay.room, a, "unseat");
         for (const [a, id] of approve) await roomApi.member(auth.token, relay.room, a, "approve", id);
-        say("자리 배치를 저장했어요.");
+        say(d.note || "자리 배치를 저장했어요.");
       } catch (e) {
         say((e && e.message) || "자리 배치를 서버에 저장하지 못했어요.");
       }
       if (approve.length || rejected.length) refreshMe();
       refreshMembers();
-    } else say("자리 배치를 저장했어요.");
+    } else say(d.note || "자리 배치를 저장했어요.");
     return null;
   };
+  /* 빈 초상화 팝오버에서 사람을 누르면 — 그 줄(또는 새 줄)에 바로. 자리 배치 창과 같은 저장 길(applyPlacement)을 한 줄짜리 초안으로 탄다 */
+  const quickPlace = async (acct, target) => {
+    setSeatPop(null);
+    const draft = rows.map((x) => {
+      const a = (seats.find((k) => k.id === x.id) || {}).acct || null;
+      return { id: x.id, name: x.name || "", oname: x.name || "", acct: a, oacct: a, fine: !noFine(x) };
+    });
+    let id = target;
+    if (target === "new") {
+      id = "r" + seq.current++;
+      const taken = new Set(rows.map((x) => x.name));
+      let k = rows.length + 1;
+      while (taken.has(FILL_NAME(k))) k++;
+      draft.push({ id, name: FILL_NAME(k), oname: null, acct: null, oacct: null, fine: false });
+    }
+    const row = draft.find((r) => r.id === id);
+    if (!row || row.acct) return;
+    row.acct = acct;
+    const who = (members.find((m) => m.acct === acct) || {}).nick || acct;
+    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: who + "님을 " + row.name + " 줄에 배정했어요." });
+    if (err) return say(err);
+    /* 앉힌 줄의 이름 칸에 커서 — 이름은 방장이 적는 것이라, 바로 적을 수 있게 */
+    requestAnimationFrame(() => {
+      const el = document.querySelector('.gs-rd[data-row="' + id + '"] .gs-rd-name, tr[data-row="' + id + '"] .gs-in-name');
+      if (el && el.focus) {
+        el.focus();
+        if (el.select) el.select();
+      }
+    });
+  };
+  const seatPopFor = (target, label) =>
+    seatPop === target ? (
+      <SeatPop
+        anchor={seatPopAnchors.current[target]}
+        label={label}
+        linked={!!(auth && auth.dc)}
+        tray={waitBelow.map((p) => ({ acct: p.acct, nick: p.nick || p.acct, ava: p.ava && (p.ava.id || p.ava.p) ? avaDc(p.ava) : null, dcu: p.dcu || "" }))}
+        copied={flash === "inv"}
+        onPick={(acct) => quickPlace(acct, target.startsWith("new:") ? "new" : target)}
+        onDiscord={() => startDiscord()}
+        onCopyInvite={copyInvite}
+        onOpenModal={() => {
+          setSeatPop(null);
+          setSeatOpen(true);
+        }}
+        onClose={() => setSeatPop(null)}
+      />
+    ) : null;
   /* [받기] — 신청은 승인, 진행 중에 들어온 사람은 첫 빈 줄(없으면 새 줄)에 앉힙니다. 자리를 고르는 시트는 없습니다 */
   const waitTake = (p) =>
     Promise.resolve(p.st === "req" ? approveMember(p.acct, p.nick || p.acct) : placeMember(p.acct, p.nick || p.acct)).then((id) => {
@@ -10158,7 +10219,17 @@ export default function GoldSettlement() {
                   return (
                     <div key={row.id} className={"gs-rd" + (myCard ? " gs-rd-mine" : "") + (far ? " gs-rd-far" : "")} data-row={row.id}>
                       {/* 초상화가 없으면 누구든 실루엣 (2026-09-16 사용자) */}
-                      <div className={"gs-rd-pic" + (pic ? "" : " gs-rd-nopic")}>{pic ? <DcAva dc={pic} size={wide ? 96 : 76} /> : SIL}</div>
+                      {!readOnly && !acct ? (
+                        /* 빈 자리는 누르는 곳 (2026-09-18) — 여기에 누구를 놓나 */
+                        <span className={"gs-seatpopwrap" + (seatPop === row.id ? " open" : "")} ref={(el) => (seatPopAnchors.current[row.id] = el)}>
+                          <button type="button" className="gs-rd-pic gs-rd-nopic gs-rd-picbtn" onClick={() => setSeatPop(seatPop === row.id ? null : row.id)} aria-label={nm + " 줄 — 누르면 배정"} aria-haspopup="dialog">
+                            {SIL}
+                          </button>
+                          {seatPopFor(row.id, nm + " 줄")}
+                        </span>
+                      ) : (
+                        <div className={"gs-rd-pic" + (pic ? "" : " gs-rd-nopic")}>{pic ? <DcAva dc={pic} size={wide ? 96 : 76} /> : SIL}</div>
+                      )}
                       <div className="gs-rd-body">
                         <div className="gs-rd-head">
                           {readOnly ? (
@@ -10311,26 +10382,21 @@ export default function GoldSettlement() {
                 })}
                 {/* 빈 자리 — 다음 사람이 어디에 서는지. 방장이 누르면 자리 배치 창(줄 추가는 거기서) */}
                 {Array.from({ length: slots - total }, (_, k) => (
-                  <div
-                    key={"empty:" + k}
-                    className={"gs-rd gs-rd-empty" + (readOnly ? " gs-rd-far" : "")}
-                    role={readOnly ? undefined : "button"}
-                    tabIndex={readOnly ? undefined : 0}
-                    onClick={readOnly ? undefined : () => setSeatOpen(true)}
-                    onKeyDown={
-                      readOnly
-                        ? undefined
-                        : (e) => {
-                            if (e.key !== "Enter" && e.key !== " ") return;
-                            e.preventDefault();
-                            setSeatOpen(true);
-                          }
-                    }
-                  >
-                    <div className="gs-rd-pic gs-rd-nopic">{SIL}</div>
+                  <div key={"empty:" + k} className={"gs-rd gs-rd-empty" + (readOnly ? " gs-rd-far" : "")}>
+                    {readOnly ? (
+                      <div className="gs-rd-pic gs-rd-nopic">{SIL}</div>
+                    ) : (
+                      /* 줄이 아직 없는 빈 자리 — 사람을 고르면 줄이 생기면서 앉는다 */
+                      <span className={"gs-seatpopwrap" + (seatPop === "new:" + k ? " open" : "")} ref={(el) => (seatPopAnchors.current["new:" + k] = el)}>
+                        <button type="button" className="gs-rd-pic gs-rd-nopic gs-rd-picbtn" onClick={() => setSeatPop(seatPop === "new:" + k ? null : "new:" + k)} aria-label="빈 자리 — 누르면 배정" aria-haspopup="dialog">
+                          {SIL}
+                        </button>
+                        {seatPopFor("new:" + k, "빈 자리")}
+                      </span>
+                    )}
                     <div className="gs-rd-body">
                       <span className="gs-rd-emptytxt">빈 자리</span>
-                      {!readOnly && <span className="gs-rd-emptysub">[자리 배치]에서 줄을 추가해요</span>}
+                      {!readOnly && <span className="gs-rd-emptysub">초상화를 누르면 배정해요</span>}
                     </div>
                   </div>
                 ))}
@@ -10581,7 +10647,18 @@ export default function GoldSettlement() {
                                       )}
                                     </span>
                                   ) : (
-                                    <span className="gs-rowi-none" aria-hidden="true" />
+                                    /* 빈 줄 — 점선 실루엣, 누르면 배정 팝오버 (2026-09-18). (폐기) 빈 32px — 누를 곳이 안 보였다 */
+                                    <span className={"gs-seatpopwrap" + (seatPop === row.id ? " open" : "")} ref={(el) => (seatPopAnchors.current[row.id] = el)}>
+                                      <button type="button" className="gs-rowi gs-rowi-empty" onClick={() => setSeatPop(seatPop === row.id ? null : row.id)} aria-label={seatName(row, i) + " 줄 — 누르면 배정"} aria-haspopup="dialog">
+                                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                                          <g fill="currentColor">
+                                            <circle cx="10" cy="6.4" r="3.4" />
+                                            <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+                                          </g>
+                                        </svg>
+                                      </button>
+                                      {seatPopFor(row.id, seatName(row, i) + " 줄")}
+                                    </span>
                                   )}
                                   {acct && (
                                     <span className="gs-tip-body gs-tip-l gs-rowtip" role="tooltip">
@@ -13789,6 +13866,80 @@ function PlacerAva({ p, size }) {
     <span className="gs-sp-ava" style={{ width: size, height: size }}>
       {p && p.ava ? <DcAva dc={p.ava} size={size} /> : <span className="gs-sp-noava">{PLACER_SIL}</span>}
     </span>
+  );
+}
+/* 빈 초상화 팝오버 (2026-09-18) — 화면에 고정 좌표로 띄운다(표는 가로 스크롤 상자 안이라 absolute 면 잘린다). 아래가 모자라면 위로 */
+function SeatPop({ anchor, label, linked, tray, copied, onPick, onDiscord, onCopyInvite, onOpenModal, onClose }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!anchor || !el) return;
+    const r = anchor.getBoundingClientRect();
+    const h = el.offsetHeight;
+    const w = el.offsetWidth;
+    const up = r.bottom + 8 + h > window.innerHeight && r.top - 8 - h > 0;
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), top: up ? r.top - 8 - h : r.bottom + 8 });
+  }, [anchor, tray.length, linked]);
+  useEffect(() => {
+    const k = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", k);
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("keydown", k);
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+  return (
+    <div ref={ref} className="gs-seatpop" role="dialog" aria-label={label} style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden", left: 0, top: 0 }}>
+      <div className="gs-seatpop-h">
+        <b>{label}</b>
+        <em>비어 있음</em>
+      </div>
+      {!linked ? (
+        <>
+          <p className="gs-seatpop-t">파티원을 초대하려면 Discord 연동이 필요해요</p>
+          <p className="gs-seatpop-b">
+            <span>연동하면 초대 링크로 들어온 사람이 여기에 모여요.</span>
+            <span>초대 받은 사람은 자기 줄을 직접 눌러 자수할 수 있어요.</span>
+          </p>
+          <button type="button" className="gs-btn gs-dcbtn gs-seatpop-btn" onClick={onDiscord}>
+            Discord 연동
+          </button>
+        </>
+      ) : !tray.length ? (
+        <>
+          <p className="gs-seatpop-t">아직 들어온 사람이 없어요</p>
+          <p className="gs-seatpop-b">
+            <span>연동하면 초대 링크로 들어온 사람이 여기에 모여요.</span>
+            <span>초대 받은 사람은 자기 줄을 직접 눌러 자수할 수 있어요.</span>
+          </p>
+          <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-seatpop-btn" onClick={onCopyInvite}>
+            {copied ? "복사했어요" : "디코 메시지 복사"}
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="gs-seatpop-sec">
+            들어온 사람<b>{tray.length}</b>
+          </div>
+          {tray.map((p) => (
+            <button key={p.acct} type="button" className="gs-seatpop-p" onClick={() => onPick(p.acct)}>
+              <PlacerAva p={p} size={28} />
+              <b>{p.nick}</b>
+              {p.dcu && <em>{p.dcu}</em>}
+            </button>
+          ))}
+        </>
+      )}
+      <button type="button" className="gs-seatpop-more" onClick={onOpenModal}>
+        자리 배치 창 열기…
+      </button>
+    </div>
   );
 }
 function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, onCopyInvite, onSave, onCancel }) {
@@ -19378,6 +19529,32 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* ── 파티원 화면 (2026-09-17) — 방장 화면 그대로, 남의 줄·카드는 흐리게 ── */
 .gs-row-far > th .gs-namecell,.gs-row-far > td.gs-sumcell{opacity:.5}
 .gs-hit .gs-cf-tick{border-radius:0 0 0 3px}
+/* ── 빈 초상화 팝오버 (2026-09-18) ── */
+.gs-seatpopwrap{position:relative; display:inline-flex}
+.gs-rd-picbtn{border:0; padding:0; cursor:pointer; font:inherit}
+.gs-rd-picbtn:hover,.gs-seatpopwrap.open .gs-rd-picbtn{box-shadow:0 0 0 2px var(--gold); color:var(--gold)}
+.gs-rowi-empty{border:1px dashed rgba(var(--ink-rgb),.4); background:transparent; color:rgba(var(--ink-rgb),.35); cursor:pointer; padding:0}
+.gs-rowi-empty svg{width:18px; height:18px}
+.gs-rowi-empty:hover,.gs-seatpopwrap.open .gs-rowi-empty{border-color:var(--gold); color:var(--gold)}
+.gs-seatpop{position:fixed; z-index:60; width:260px; padding:10px 10px 8px; background:var(--paper); border:1px solid var(--gold); border-radius:2px;
+  box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); font-size:12.5px; text-align:left; cursor:default; letter-spacing:0}
+.gs-seatpop-h{display:flex; align-items:baseline; gap:8px; padding-bottom:8px; border-bottom:1px dotted rgba(var(--ink-rgb),.3)}
+.gs-seatpop-h b{font-family:'Gowun Batang',serif; font-size:14px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.gs-seatpop-h em{font-style:normal; font-size:11.5px; color:var(--ink-2); flex:none}
+.gs .gs-seatpop-t{margin:10px 0 0; font-family:'Gowun Batang',serif; font-weight:700; font-size:13.5px; color:var(--ink); line-height:1.5; text-wrap:balance; word-break:keep-all}
+.gs .gs-seatpop-b{margin:6px 0 0; font-size:12px; color:var(--ink-body); line-height:1.7}
+.gs .gs-seatpop-b > span{display:block; text-wrap:balance; word-break:keep-all}
+.gs-seatpop-btn{margin-top:10px}
+.gs-seatpop-sec{margin:10px 0 4px; font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
+.gs-seatpop-sec b{color:var(--gold); font-weight:600; margin-left:4px}
+.gs-seatpop-p{display:flex; align-items:center; gap:8px; width:100%; height:38px; padding:0 6px; margin-top:4px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px;
+  background:var(--paper-2); font:inherit; color:var(--ink); cursor:pointer; text-align:left}
+.gs-seatpop-p:hover{border-color:var(--gold); background:rgba(var(--gold-rgb),.1)}
+.gs-seatpop-p b{font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.gs-seatpop-p em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2); white-space:nowrap}
+.gs-seatpop-more{display:block; width:100%; text-align:left; margin-top:10px; padding:8px 0 0; border:0; border-top:1px dotted rgba(var(--ink-rgb),.3); background:transparent;
+  font:inherit; font-size:12px; color:var(--gold); cursor:pointer}
+.gs-seatpop-more:hover{text-decoration:underline}
 /* ── 자리 배치 (2026-09-17) ── */
 .gs-seatbtn b{font-weight:600; margin-left:6px; font-family:var(--mono); color:var(--ink-2)}
 .gs-seatbtn-has{border-color:rgba(var(--gold-rgb),.75) !important; color:var(--gold) !important}
