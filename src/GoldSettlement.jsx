@@ -8409,7 +8409,21 @@ export default function GoldSettlement() {
   /* [저장] — 줄 순서·이름·새 줄·사람 배정을 한 번에. 서버에는 거절(remove) → 빼기(unseat) → 배정(approve) 순으로.
      맞바꿈은 approve 가 그 줄에 있던 사람을 먼저 자리 없는 회원으로 돌리므로 차례로 보내면 끝이 맞는다 */
   const applyPlacement = async (d) => {
-    const names = d.rows.map((r, i) => (r.name || "").trim() || FILL_NAME(i + 1));
+    /* (2026-09-19 사용자) 사람을 새로 놓은 줄에 이름이 없으면(빈 칸·자리표시) 그 사람의 Discord 닉네임을 적는다.
+       방장이 적어 둔 이름은 안 건드린다. 같은 이름이 이미 있으면 그대로 둔다 */
+    const peopleNow = placerPeople();
+    const takenNames = new Set(d.rows.map((r) => (r.name || "").trim()).filter((n) => n && !isFillName(n)));
+    const names = d.rows.map((r, i) => {
+      const nm = (r.name || "").trim();
+      if (r.acct && r.acct !== (r.oacct || null) && (!nm || isFillName(nm))) {
+        const nick = ((peopleNow[r.acct] || {}).nick || "").trim();
+        if (nick && !takenNames.has(nick)) {
+          takenNames.add(nick);
+          return nick;
+        }
+      }
+      return nm || FILL_NAME(i + 1);
+    });
     const dup = names.find((n, i) => names.indexOf(n) !== i);
     if (dup) return "'" + dup + "' 이름이 두 줄에 있어요. 한쪽을 고쳐 주세요.";
     const draft = d.rows.map((r, i) => ({ ...r, id: r.isNew ? "r" + seq.current++ : r.id, name: names[i] }));
@@ -10552,21 +10566,22 @@ export default function GoldSettlement() {
           <table
             ref={gridRef}
             className={"gs-grid" + (simple ? " gs-grid-narrow" : " gs-grid-count")}
-            /* 이름 열 폭 — 여섯 글자를 기본으로 두고, 그보다 긴 이름이 있으면 거기 맞춥니다.
-               한글은 글자 하나가 대략 1em 이라 글자 수를 그대로 폭으로 씁니다. */
+            /* 이름 열 폭 (고침 2026-09-19 사용자) — 여섯 글자 안전구역은 폐기. 열은 줄들의 글자가 필요한 만큼만 선다: 이름 칸이 제 글자만큼
+               서고(field-sizing:content — 빈 칸은 자리표시 "(모험가N)"만큼) 줄지 않으니 표가 가장 긴 줄에 맞춘다.
+               아래 --namech·--namex 는 field-sizing 을 모르는 브라우저의 대비책(글자 수 어림)에만 쓴다 */
             style={{
               "--namech": Math.max(
-                6,
+                1,
                 ...rows.map((x, k) => (x.name || ANON(k)).length)
               ),
               /* 이름 열의 고정 칸 — 손잡이 16 · 초상화 34 · 사이 둘, 그리고 [나] 상자가 서는 표면 그 폭까지 (2026-09-17).
                  안 더하면 이름이 칸 안에서 잘린다(이름 칸이 초상화 열을 넘지 않게 막은 뒤) */
               "--namex":
                 (!readOnly && auth && auth.dc && seats.some((k) => k.acct === auth.id)
-                  ? 134 /* [방장 · 나] */
+                  ? 158 /* [방장 · 나] */
                   : readOnly && (rows2v.some((k) => k.h) || !!(you && you.rowId))
-                  ? 100 /* [방장] 또는 [나] */
-                  : 62) + "px",
+                  ? 124 /* [방장] 또는 [나] */
+                  : 86) + "px" /* 손잡이 16 · 초상화 58 · 사이 둘 (초상화 56, 2026-09-19) */,
             }}
             onMouseOver={hoverCell}
             onMouseLeave={() => setCross(null)}
@@ -10782,7 +10797,7 @@ export default function GoldSettlement() {
                                         aria-haspopup="dialog"
                                       >
                                         {pic ? (
-                                          <DcAva dc={pic} size={32} className="gs-ava-sm" />
+                                          <DcAva dc={pic} size={56} className="gs-ava-sm" />
                                         ) : (
                                           <svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true">
                                             <g fill="currentColor">
@@ -10844,7 +10859,7 @@ export default function GoldSettlement() {
                               <span className="gs-rowmeta">
                                 {ava ? (
                                   <span className="gs-rowi gs-rowi-ava gs-rowi-ro" aria-hidden="true">
-                                    <DcAva dc={avaDc(ava)} size={32} className="gs-ava-sm" />
+                                    <DcAva dc={avaDc(ava)} size={56} className="gs-ava-sm" />
                                   </span>
                                 ) : (
                                   <span className="gs-rowi-none" aria-hidden="true" />
@@ -10854,6 +10869,11 @@ export default function GoldSettlement() {
                           })()}
                           {/* 시작 전 이름 칸은 글자입니다 (2026-09-06) — 사람이 앉는 자리라 손으로 적지 않습니다. 누르면 한 줄 */}
                           <span className="gs-namewrap">
+                          {/* 방장 · 나 (2026-09-17 확정) — 참가자 목록의 표준(Zoom "(Host, me)")대로 글자 상자. 방장 화면은 내 줄에 [방장 · 나] 한 상자,
+                              파티원 화면은 방장 줄 [방장]·내 줄 [나]. (고침 2026-09-19 사용자) 이름 왼쪽 — 이름이 벌금 칸 쪽 끝에 그대로 붙는다 */}
+                          {meRow && !readOnly && <span className="gs-metag gs-metag-host">방장 · 나</span>}
+                          {readOnly && !!(rows2v.find((k) => k.rowId === row.id) || {}).h && <span className="gs-metag gs-metag-host">방장</span>}
+                          {readOnly && !!you && you.rowId === row.id && <span className="gs-metag">나</span>}
                           {ready && !readOnly ? (
                             <button
                               type="button"
@@ -10903,11 +10923,6 @@ export default function GoldSettlement() {
                             aria-label="이름"
                           />
                           )}
-                          {/* 방장 · 나 (2026-09-17 확정) — 참가자 목록의 표준(Zoom "(Host, me)")대로 글자 상자. 방장 화면은 내 줄에 [방장 · 나] 한 상자,
-                              파티원 화면은 방장 줄 [방장]·내 줄 [나]. 줄 바탕은 호버와 겹쳐 안 칠한다(사용자). (폐기) 이름 글자의 금색 밑줄, 초상화 모서리 집 */}
-                          {meRow && !readOnly && <span className="gs-metag gs-metag-host">방장 · 나</span>}
-                          {readOnly && !!(rows2v.find((k) => k.rowId === row.id) || {}).h && <span className="gs-metag gs-metag-host">방장</span>}
-                          {readOnly && !!you && you.rowId === row.id && <span className="gs-metag">나</span>}
                           </span>
                         </div>
                       </th>
@@ -17262,10 +17277,15 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 
 /* 이름 칸은 이름만 — 손잡이는 오른쪽 끝 도구 열에 삽니다 */
 /* 이름 칸 격자 (A′, 2026-09-16) — 손잡이 16 · [초상화 24 + 왕관 18] · 이름(오른쪽 끝). 줄마다 같은 칸이라 이름이 한 세로선에 선다 */
-.gs-namecell{display:grid; grid-template-columns:16px 34px 1fr; align-items:center; column-gap:6px;
-  min-width:calc(var(--namech, 6) * 1.02 * 15px + var(--namex, 62px))} /* 열 폭은 셀이 — 입력칸은 글자만큼만 (2026-09-07) */
-.gs-grid-count .gs-namecell{min-width:calc(var(--namech, 6) * 1.02 * 25px + var(--namex, 62px))}
-.gs-grid-narrow .gs-namecell{min-width:calc(var(--namech, 6) * 1.02 * 27px + var(--namex, 62px))}
+.gs-grid{--rowpic:56px}
+.gs-grid-narrow{--rowpic:52px}
+.gs-namecell{display:grid; grid-template-columns:16px calc(var(--rowpic) + 2px) 1fr; align-items:center; column-gap:6px; min-width:max-content}
+/* (폐기 2026-09-19 사용자) 여섯 글자 안전구역 min-width. 열은 이름 칸의 글자 폭이 정한다. field-sizing 을 모르는 브라우저만 글자 수로 어림 */
+@supports not (field-sizing: content){
+  .gs-namecell{min-width:calc(var(--namech, 1) * 1.02 * 15px + var(--namex, 86px))}
+  .gs-grid-count .gs-namecell{min-width:calc(var(--namech, 1) * 1.02 * 25px + var(--namex, 86px))}
+  .gs-grid-narrow .gs-namecell{min-width:calc(var(--namech, 1) * 1.02 * 27px + var(--namex, 86px))}
+}
 .gs-namecell .gs-drag{margin-right:auto} /* 레버는 왼쪽 끝 그대로 (사용자: 현행 유지) */
 .gs-namecell .gs-name-ro{width:auto}
 /* ≡ 손잡이 — 옅게 있다가 호버에 진해집니다. 끌고 지나는 줄엔 놓일 쪽에 금색 선 */
@@ -17290,14 +17310,16 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-namecell .gs-drag{justify-self:center; margin:0}
 .gs-drag-none{width:16px; display:inline-block}
 .gs-namecell .gs-in-name{justify-self:end; text-align:right}
-.gs-rowmeta{display:inline-flex; align-items:center; width:34px; flex:none; position:relative}
+.gs-rowmeta{display:inline-flex; align-items:center; width:calc(var(--rowpic) + 2px); flex:none; position:relative}
 .gs-rowmeta > *{flex:none}
-.gs-rowmeta .gs-rowi{width:32px; min-width:32px; height:32px}
-.gs-rowi-none{width:32px; height:32px; display:inline-block; flex:none}
+.gs-rowmeta .gs-rowi{width:var(--rowpic); min-width:var(--rowpic); height:var(--rowpic)}
+.gs-rowmeta .gs-rowi svg{width:46%; height:46%}
+.gs-rowi-none{width:var(--rowpic); height:var(--rowpic); display:inline-block; flex:none}
 /* (폐기 2026-09-17) 초상화 모서리 집 배지(.gs-house) — 방장으로 안 읽혔다(사용자). 글자 상자로 */
 /* 이름 + [방장 · 나]/[방장]/[나] — 이름 열 오른쪽 끝에 붙는다. 긴 이름은 칸 안에서 줄고 초상화 열을 넘지 않는다 */
-.gs-namewrap{justify-self:end; display:inline-flex; align-items:center; min-width:0; max-width:100%}
-.gs-namewrap .gs-in-name{max-width:100%}
+.gs-namewrap{justify-self:end; display:inline-flex; align-items:center} /* min-width:0 을 두면 표가 이 열을 접어 이름이 초상화 위로 넘친다 */
+/* 이름 칸은 줄지 않는다 — 줄면 표가 이 열을 최소로 접어 이름이 잘린다(예전에 안전구역으로 막던 것) */
+.gs-namewrap .gs-in-name,.gs-namewrap .gs-name-ro{flex:none}
 .gs-metag{display:inline-block; flex:none; margin-left:6px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:500; font-size:11px;
   line-height:1; letter-spacing:0; padding:3px 5px; border:1px solid rgba(var(--ink-rgb),.45); border-radius:3px; color:var(--ink-2); white-space:nowrap}
 .gs-rd-head .gs-metag{margin-left:-2px}
@@ -17310,6 +17332,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rd:hover .gs-rowdel{opacity:1}
 /* 방장 상자는 금색 — [나]는 잉크. 표에 붙는 표시가 상자 하나의 규칙으로 정리된다 (2026-09-17) */
 .gs-metag-host{color:var(--gold); border-color:rgba(var(--gold-rgb),.7)}
+.gs-namewrap .gs-metag{margin-left:0; margin-right:8px} /* 표에서는 이름 왼쪽 (2026-09-19) */
 .gs-sp-txt b .gs-metag{vertical-align:2px}
 /* 나 — 이름 글자 밑 절반의 금색 형광 */
 /* 파티원 화면의 초상화 자리 — 단추가 아니라 span 이라 같은 상자 규칙을 직접 준다 */
@@ -17325,7 +17348,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowtip b{color:var(--gold)}
 .gs-rowtip .gs-tipline{display:block; line-height:1.6}
 .gs-rowtip .gs-tipline i{font-style:normal; color:var(--ink-2); margin-right:2px}
-.gs-namecell .gs-in-name{margin-left:0; min-width:0; width:auto; flex:0 1 auto; field-sizing:content}
+.gs-namecell .gs-in-name{margin-left:0; min-width:1em; width:auto; flex:none; field-sizing:content}
 /* 아바타는 닉네임 바로 왼쪽에 (2026-09-07 사용자 확정) — 레버는 왼쪽 끝 그대로, 오른쪽 묶음(아바타·이름)이 이름 열 오른쪽에 붙습니다.
    방장 아바타는 금색으로 강조. (폐기) 아바타가 레버 옆에 서고 이름만 오른쪽으로 밀리던 배치 — 방장 줄엔 레버가 없어 아바타 열이 어긋났다 */
 .gs-namecell .gs-rowmeta{margin:0} /* 옛 margin-right:auto 잔재가 아바타를 왼쪽 끝으로 밀었다 (실측 100px, 2026-09-07 밤) */
@@ -17928,9 +17951,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ava{display:inline-block; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.35); box-sizing:border-box;
   object-fit:cover; background:var(--paper-2); vertical-align:middle; flex:none}
 .gs-ava-txt{background:var(--paper-2)}
-.gs-rowi-ava .gs-ava{width:32px; height:32px; border-radius:25%}
+.gs-rowi-ava .gs-ava{width:var(--rowpic); height:var(--rowpic); border-radius:25%}
 /* 초상화가 든 자리 단추는 테두리·바탕·여백 없이 초상화 그 자체 (2026-09-16 사용자 지적: 네모 둘레에 여백이 생겼다) */
-.gs-rowi-ava:has(.gs-ava){width:32px; height:32px; border:0; background:transparent; padding:0; border-radius:25%; box-shadow:none; overflow:hidden}
+.gs-rowi-ava:has(.gs-ava){width:var(--rowpic); height:var(--rowpic); border:0; background:transparent; padding:0; border-radius:25%; box-shadow:none; overflow:hidden}
 .gs-rowi-ava:has(.gs-ava) .gs-ava{border:0}
 .gs-conf-who .gs-ava{align-self:center}
 .gs-waithead{display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--ink-2); letter-spacing:.04em}
@@ -19242,7 +19265,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
   font-family:'Gowun Batang',serif; font-weight:700; color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border:1px solid rgba(var(--ink-rgb),.2)}
 .gs-ava-host{border-color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 속을 채워 작아도 사람으로 읽힙니다. (폐기) 계정 색 글자 원 */
-.gs-rowi-ava{width:32px; height:32px; color:var(--ink-2); background:rgba(var(--ink-rgb),.05); border-color:rgba(var(--ink-rgb),.3)}
+.gs-rowi-ava{width:var(--rowpic); height:var(--rowpic); color:var(--ink-2); background:rgba(var(--ink-rgb),.05); border-color:rgba(var(--ink-rgb),.3)}
 .gs-rowmeta:hover .gs-rowi-ava,.gs-rowi-ava:focus-visible{color:var(--gold); border-color:rgba(var(--gold-rgb),.9)}
 .gs-rowi-ava.gs-rowi-host{border-color:var(--gold); color:var(--gold)}
 /* 허브 머리 — 팝오버의 나 한 줄 */
@@ -19693,7 +19716,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-rd-picbtn{border:0; padding:0; cursor:pointer; font:inherit}
 .gs-rd-picbtn:hover,.gs-seatpopwrap.open .gs-rd-picbtn{box-shadow:0 0 0 2px var(--gold); color:var(--gold)}
 .gs-rowi-empty{border:1px dashed rgba(var(--ink-rgb),.4); background:transparent; color:rgba(var(--ink-rgb),.35); cursor:pointer; padding:0}
-.gs-rowi-empty svg{width:18px; height:18px}
+.gs-rowi-empty svg{width:46%; height:46%}
 .gs-rowi-empty:hover,.gs-seatpopwrap.open .gs-rowi-empty{border-color:var(--gold); color:var(--gold)}
 .gs-seatpop{position:fixed; z-index:60; width:360px; padding:12px 16px 12px; background:var(--paper); border:1px solid var(--gold); border-radius:2px;
   box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); font-size:12.5px; text-align:left; cursor:default; letter-spacing:0}
