@@ -366,9 +366,7 @@ const CAST_WHY = {
   /* (폐기 2026-09-05) idle `이 주소에는 내가 있는 판이 그대로 떠요. 지금은 판에 있지 않아요.` — 방장이 제
      시작 전 판을 보며 읽으면 틀린 말이었다. 이 문장들은 방장만 봅니다(파티원 툴팁은 따로) — [시작]을 써도 됩니다 */
   /* 판의 상태가 없어졌다 (§3.12.2) — 판은 늘 이 주소에 나가고, 이름도 숫자도 없으면 아무것도 안 그린다 */
-  idle: "이 판이 이 주소에 나가요. 이름이나 숫자가 없으면 방송에는 아무것도 안 그려요.",
-  recruit: "이 판이 이 주소에 나가요. 이름이나 숫자가 없으면 방송에는 아무것도 안 그려요.",
-  on: "이번 판이 이 주소에 나오고 있어요. 방송에 안 보이면 OBS 쪽 소스를 확인해 주세요.",
+  /* (폐기 2026-09-19) idle·recruit "이 판이 이 주소에 나가요. …" · on "이번 판이 이 주소에 나오고 있어요. …" — '판'은 우리만 아는 말. 아래 castLine 이 대신한다 */
 };
 /* 방송 설정 창의 초록 점 줄 (2026-09-19) — '이번 판'은 우리만 아는 말이라 누구의 벌금표인지로 말한다.
    표가 비어 있을 때와 연결이 끊겼을 때는 그 순간 필요한 말만. 머리 단추의 말풍선(CAST_WHY)은 문구 전면 점검 때 같이 */
@@ -641,6 +639,18 @@ const ROUL_ICON = (
   </svg>
 );
 /* 설정 톱니 — 룰렛 설정창 여는 단추에 (2026-09-18 사용자: "룰렛" 글자 상자로는 설정인 줄 모른다) */
+/* "초대하면" 두 줄 (2026-09-18~19) — 초대 문턱이 나오는 곳 셋([초대] 창·빈 초상화 팝오버·자리 배치 창)이 같은 것을 쓴다. 곳마다 따로 적었다가 한 곳만 고치고 나머지를 놓쳤다 */
+const INVITE_GATE_H = "초대하려면 Discord 연동이 필요해요";
+const INVITE_GAIN = (
+  <>
+    <p className="gs-invnote-p">초대하면</p>
+    <ul className="gs-invnote-list">
+      <li>줄마다 파티원의 프로필 사진이 보여요.</li>
+      <li>파티원이 자기 컴퓨터에서 자수해요.</li>
+    </ul>
+  </>
+);
+const INVITE_HOW = "초대 메시지를 복사해 Discord 등에 붙여 넣어요.";
 /* [기록] — 시계 되감기. 카드 머리 줄에서 쓴다(표의 도구 열은 같은 그림을 제자리에 갖고 있다) */
 const LOG_ICON = (
   <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">
@@ -8518,16 +8528,6 @@ export default function GoldSettlement() {
       }
     });
   };
-  /* [초대] 창의 "초대하면" 두 줄 (2026-09-18~19) — 연동 전·후 창이 같은 것을 쓴다 */
-  const inviteGain = (
-    <>
-      <p className="gs-invnote-p">초대하면</p>
-      <ul className="gs-invnote-list">
-        <li>줄마다 파티원의 프로필 사진이 보여요.</li>
-        <li>파티원이 자기 컴퓨터에서 자수해요.</li>
-      </ul>
-    </>
-  );
   const seatPopFor = (target, label, who) =>
     seatPop === target ? (
       <SeatPop
@@ -9098,9 +9098,9 @@ export default function GoldSettlement() {
                 <div className="gs-invpop gs-invnote" role="dialog" aria-label="초대">
                   {!auth || !auth.dc ? (
                     <>
-                      <h4 className="gs-invnote-h">초대하려면 Discord 연동이 필요해요</h4>
+                      <h4 className="gs-invnote-h">{INVITE_GATE_H}</h4>
                       {/* (고침 2026-09-18~19) 왜 필요한지가 아니라 하면 뭐가 되는지. 초대해야만 되는 일 둘만 — 방송에 띄우는 것은 초대 없이도 방장 주소로 된다 */}
-                      {inviteGain}
+                      {INVITE_GAIN}
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
                           Discord 연동
@@ -9113,10 +9113,10 @@ export default function GoldSettlement() {
                       {/* (고침 2026-09-18) 제목 = 문 이름. (폐기) '파티원 부르기' */}
                       <h4 className="gs-invnote-h">초대</h4>
                       {/* 머리의 [Discord 연동]으로 연동한 사람은 연동 전 창을 본 적이 없다 — 좋은 점 두 줄은 이 창에도 똑같이 (2026-09-19 사용자) */}
-                      {inviteGain}
+                      {INVITE_GAIN}
                       {/* (폐기 2026-09-18) "자리가 있던 사람은 …" — 방장이 할 일이 없는 상황의 설명. "링크는 늘 같아요 / 채널에 핀 …" — 고정 링크는 논의 중 */}
                       <p className="gs-invnote-p gs-invnote-after">
-                        초대 메시지를 복사해 Discord 등에 붙여 넣어요.
+                        {INVITE_HOW}
                         <br />
                         들어온 사람은 [자리 배치]에 모이고 방장이 드래그로 배치해요.
                       </p>
@@ -11335,7 +11335,7 @@ export default function GoldSettlement() {
             <h2 className="gs-h2">보낼 우편</h2>
             {r && r.transfers.length > 0 && (
               <button className="gs-btn" onClick={openMail}>
-                디코 공유용 복사
+                Discord 공유용 복사
               </button>
             )}
           </div>
@@ -11652,7 +11652,7 @@ export default function GoldSettlement() {
       {coach && coach.kind === "obs" && (
         <CoachMark
           sel=".gs-obsbtn"
-          text="OBS 공유는 여기서 언제든 다시 열 수 있어요."
+          text="방송 설정은 여기서 언제든 다시 열 수 있어요."
           action="알겠어요"
           onNext={() => {
             coachDone("obsScribe");
@@ -14083,21 +14083,22 @@ function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, o
         </>
       ) : !linked ? (
         <>
-          <p className="gs-seatpop-t">파티원을 초대하려면 Discord 연동이 필요해요</p>
-          <p className="gs-seatpop-b">
-            <span>연동하면 초대 링크로 들어온 사람이 여기에 모여요.</span>
-            <span>초대 받은 사람은 자기 줄을 직접 눌러 자수할 수 있어요.</span>
-          </p>
+          {/* (고침 2026-09-19) [초대] 창의 연동 전 모습과 같은 말. (폐기 09-17) "연동하면 초대 링크로 들어온 사람이 여기에 모여요. / 초대 받은 사람은 …" */}
+          <p className="gs-seatpop-t">{INVITE_GATE_H}</p>
+          <div className="gs-seatpop-gain">{INVITE_GAIN}</div>
           <button type="button" className="gs-btn gs-dcbtn gs-seatpop-btn" onClick={onDiscord}>
             Discord 연동
           </button>
+          <p className="gs-seatpop-note">연동하지 않아도 벌금 기록과 방송은 지금 그대로 할 수 있어요.</p>
         </>
       ) : !tray.length ? (
         <>
+          {/* (고침 2026-09-19) 이미 연동한 사람에게 "연동하면 …"은 틀린 말 — [초대] 창의 연동 후 모습과 같은 말, 마지막 줄만 이 자리에 맞게 */}
           <p className="gs-seatpop-t">아직 들어온 사람이 없어요</p>
+          <div className="gs-seatpop-gain">{INVITE_GAIN}</div>
           <p className="gs-seatpop-b">
-            <span>연동하면 초대 링크로 들어온 사람이 여기에 모여요.</span>
-            <span>초대 받은 사람은 자기 줄을 직접 눌러 자수할 수 있어요.</span>
+            <span>{INVITE_HOW}</span>
+            <span>들어온 사람은 여기에 모이고, 누르면 이 줄에 배치해요.</span>
           </p>
           <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-seatpop-btn" onClick={onCopyInvite}>
             {copied ? "복사했어요" : "초대 메시지 복사"}
@@ -14487,20 +14488,28 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                 <div className="gs-sp-inv">
                   <p className="gs-sp-inv-h">
                     {!linked
-                      ? "파티원을 초대하려면 Discord 연동이 필요해요"
+                      ? INVITE_GATE_H
                       : D.rows.some((r) => r.acct && !isHost(r.acct))
                       ? "배정할 사람이 없어요"
                       : "아직 들어온 사람이 없어요"}
                   </p>
                   {/* 문장 하나 = 한 덩이 — 줄바꿈(br)으로 나누면 줄 길이 고르기(balance)가 문장마다 안 먹었다 */}
-                  <p className="gs-sp-inv-b">
-                    <span>연동하면 초대 링크로 들어온 사람이 여기에 모여요.</span>
-                    <span>초대 받은 사람은 자기 줄을 직접 눌러 자수할 수 있어요.</span>
-                  </p>
+                  {/* (고침 2026-09-19) [초대] 창과 같은 말. 다 배정해서 빈 것("배정할 사람이 없어요")이면 머리만.
+                      (폐기 09-17) 두 상태 공통 "연동하면 초대 링크로 … / 초대 받은 사람은 …" — 연동한 사람에게 "연동하면"은 틀린 말이었다 */}
+                  {(!linked || !D.rows.some((r) => r.acct && !isHost(r.acct))) && <div className="gs-seatpop-gain">{INVITE_GAIN}</div>}
+                  {linked && !D.rows.some((r) => r.acct && !isHost(r.acct)) && (
+                    <p className="gs-sp-inv-b">
+                      <span>{INVITE_HOW}</span>
+                      <span>들어온 사람은 여기에 모이고 방장이 드래그로 배치해요.</span>
+                    </p>
+                  )}
                   {!linked ? (
-                    <button type="button" className="gs-btn gs-dcbtn gs-sp-inv-btn" onClick={goDiscord}>
-                      Discord 연동
-                    </button>
+                    <>
+                      <button type="button" className="gs-btn gs-dcbtn gs-sp-inv-btn" onClick={goDiscord}>
+                        Discord 연동
+                      </button>
+                      <p className="gs-seatpop-note">연동하지 않아도 벌금 기록과 방송은 지금 그대로 할 수 있어요.</p>
+                    </>
                   ) : (
                     <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-sp-inv-btn" onClick={onCopyInvite}>
                       {copied ? "복사했어요" : "초대 메시지 복사"}
@@ -15084,22 +15093,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDis
             {/* 방금 받은 사람에게는 주소를 보여 주는 것으로 부족합니다 — 다음 걸음을
                 시켜야 합니다 (§3.11). 이 한 장은 발급 직후 한 번만 뜨고, 다음부터는
                 아래 평소 화면입니다 */}
-            {fresh && (
-              <div className="gs-obs-fresh">
-                <b>주소가 나왔어요.</b>
-                <p>
-                  [복사]를 눌러 OBS의 <b>브라우저 소스</b>에 붙여 넣어요.
-                </p>
-                {/* 송출 컴퓨터 함정은 연동 전에만 있다 — 연동하면 어느 컴퓨터에서 받아도 같은 주소 */}
-                {auth.anon && (
-                  <p className="gs-obs-fresh2">
-                    <b>송출 컴퓨터가 따로 있으면</b> 이 주소를 복사해 가져가요.
-                    <br />
-                    거기서 새로 받으면 다른 주소가 나와요.
-                  </p>
-                )}
-              </div>
-            )}
+            {/* (폐기 2026-09-19 사용자) 발급 직후 점선 상자 "주소가 나왔어요. …" — 붙여 넣으라는 안내는 카드 아래 "OBS 브라우저 소스에 넣어요. [넣는 방법]"이,
+                송출 컴퓨터 함정은 받기 전의 두 길("벌금을 기록하는 컴퓨터에서 눌러요")과 주소 밑 연동 줄이 맡는다. fresh 는 더 안 쓴다 */}
             {/* 내 방송용 주소 — 영구(재발급 전까지), 읽기 전용. 창의 주인공이라
                 금테 카드 하나에 담습니다 (2026-09-05 목업 확정) */}
             <div className="gs-obs-card">
@@ -19709,6 +19704,8 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs .gs-seatpop-b{margin:6px 0 0; font-size:12.5px; color:var(--ink-body); line-height:1.7}
 .gs .gs-seatpop-b > span{display:block; text-wrap:balance; word-break:keep-all}
 .gs-seatpop-btn{margin-top:12px}
+.gs-seatpop-gain{margin-top:8px}
+.gs .gs-seatpop-note{margin:10px 0 0; font-size:12px; color:var(--ink-2); line-height:1.6}
 /* 찬 줄 (2026-09-19) */
 .gs-seatpop-who{display:flex; align-items:center; gap:8px; margin-top:12px; min-width:0}
 .gs-seatpop-who b{font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700; color:var(--ink); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
