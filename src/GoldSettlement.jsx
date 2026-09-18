@@ -621,6 +621,16 @@ const ROUL_ICON = (
   </svg>
 );
 /* 설정 톱니 — 룰렛 설정창 여는 단추에 (2026-09-18 사용자: "룰렛" 글자 상자로는 설정인 줄 모른다) */
+/* [기록] — 시계 되감기. 카드 머리 줄에서 쓴다(표의 도구 열은 같은 그림을 제자리에 갖고 있다) */
+const LOG_ICON = (
+  <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6.65 3.18A5.2 5.2 0 1 1 3.5 5.6" />
+      <path d="M1.3 6.6 3.5 5.6l.2 2.4" />
+      <path d="M8 5.4v2.8l2.3 1.3" />
+    </g>
+  </svg>
+);
 const GEAR_ICON = (
   <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
     <path
@@ -10276,6 +10286,12 @@ export default function GoldSettlement() {
                   const etcOpen = !readOnly && etcRow === row.id;
                   return (
                     <div key={row.id} className={"gs-rd" + (myCard ? " gs-rd-mine" : "") + (far ? " gs-rd-far" : "")} data-row={row.id}>
+                      {/* 인원 삭제 (2026-09-18 사용자: × 는 좌측 상단에 작게) — 표의 × 와 같은 확인을 거친다. 마우스를 올리면 보인다 */}
+                      {!readOnly && (
+                        <button className="gs-x gs-rowdel gs-rd-x" onClick={() => askDelRow(row)} aria-label={`${row.name || "이 사람"} 삭제`}>
+                          ×
+                        </button>
+                      )}
                       {/* 초상화가 없으면 누구든 실루엣 (2026-09-16 사용자) */}
                       {!readOnly && !acct ? (
                         /* 빈 자리는 누르는 곳 (2026-09-18) — 여기에 누구를 놓나 */
@@ -10336,6 +10352,18 @@ export default function GoldSettlement() {
                           {!readOnly && isHostRow && linked && <span className="gs-metag gs-metag-host">방장 · 나</span>}
                           {readOnly && house && <span className="gs-metag gs-metag-host">방장</span>}
                           {readOnly && myCard && <span className="gs-metag">나</span>}
+                          {/* 기록 (2026-09-18 사용자: 이름 라벨 오른쪽에) — 표의 도구 열에 있던 것. 마우스를 올리면 보인다 */}
+                          {!readOnly && (
+                            <button
+                              className="gs-rowlog gs-rowdel gs-rd-log"
+                              onClick={() => openLog(row.id)}
+                              aria-haspopup="dialog"
+                              title="이 사람의 기록 보기"
+                              aria-label={`${row.name || "이 사람"}의 기록 보기`}
+                            >
+                              {LOG_ICON}
+                            </button>
+                          )}
                           {/* 합계는 카드에서 바로 — 카운터 표의 합계 수정과 같은 것(차액은 기타 '합계 수정') */}
                           <span className="gs-rd-sum">
                             {readOnly ? (
@@ -17267,6 +17295,13 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-metag{display:inline-block; flex:none; margin-left:6px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:500; font-size:11px;
   line-height:1; letter-spacing:0; padding:3px 5px; border:1px solid rgba(var(--ink-rgb),.45); border-radius:3px; color:var(--ink-2); white-space:nowrap}
 .gs-rd-head .gs-metag{margin-left:-2px}
+/* 카드의 × 와 [기록] (2026-09-18) — × 는 초상화의 둥근 모서리가 비는 자리에 18px, [기록]은 이름 옆 */
+.gs-rd{position:relative}
+.gs-rd-x{position:absolute; left:3px; top:3px; z-index:2; width:18px; height:18px; padding:0; border-radius:50%; font-size:14px; line-height:16px; text-align:center;
+  background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); color:var(--ink-2)}
+.gs-rd-x:hover{color:var(--red); border-color:var(--red); background:var(--paper)}
+.gs-rd-log{margin-left:-2px}
+.gs-rd:hover .gs-rowdel{opacity:1}
 /* 방장 상자는 금색 — [나]는 잉크. 표에 붙는 표시가 상자 하나의 규칙으로 정리된다 (2026-09-17) */
 .gs-metag-host{color:var(--gold); border-color:rgba(var(--gold-rgb),.7)}
 .gs-sp-txt b .gs-metag{vertical-align:2px}
