@@ -1581,6 +1581,8 @@ function loadSaved() {
       roundName: typeof s.roundName === "string" ? s.roundName : "",
       roundPaused: !!s.roundPaused,
       seats: Array.isArray(s.seats) ? s.seats.map(seatIn).filter(Boolean) : null,
+      /* 벌금표가 마지막으로 잰 무대 폭 — 다른 탭에서 새로고침해도 같은 폭으로 (2026-09-18) */
+      stage: typeof s.stage === "number" && s.stage > 1080 && s.stage < 4000 ? s.stage : null,
     };
   } catch (e) {
     return null;
@@ -2683,6 +2685,9 @@ export default function GoldSettlement() {
   /* 계정 쪽지 (H1, 2026-09-16) — 초상화+별명을 누르면. 초상화의 출처와 별명 바꾸기, 올리기·되돌리기·다시 가져오기 */
   /* 넓게 보기 (W, 2026-09-16) — 벌금판이 창 전체를 쓴다. 전체 화면(F11)이 아니라 창 안. Esc 나 [원래대로]로 돌아온다 */
   const [wide, setWide] = useState(false);
+  /* 벌금표가 마지막으로 잰 무대 폭(1080 이면 null). 정산 장부·보낼 우편 탭도 이 폭을 쓴다 — 탭을 바꿔도 너비는 벌금표를 따른다
+     (2026-09-18 사용자). 저장본에도 적어 다른 탭에서 새로고침해도 같은 폭으로 뜬다 */
+  const [stageNeed, setStageNeed] = useState(boot.current.stage || null);
   /* 카드 모드 [항목 관리] (2026-09-17 사용자 확정) — 표 바의 단추로 펼치고 접는다. 접혀 있으면 자리를 차지하지 않는다 */
   const [itemsOpen, setItemsOpen] = useState(false);
   useEffect(() => {
@@ -3441,8 +3446,9 @@ export default function GoldSettlement() {
       roundId,
       roundPaused: !!paused,
       seats,
+      stage: stageNeed,
     });
-  }, [cols, rows, feePercent, splitMode, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro, tutorial, readOnly, partyReg.active, roundLive, roundId, paused, seats, roundName]);
+  }, [cols, rows, feePercent, splitMode, mode, unit, memoFont, view, tab, log, undoSnap, memoFreeze, theme, intro, tutorial, readOnly, partyReg.active, roundLive, roundId, paused, seats, roundName, stageNeed]);
 
   /* 방장으로서 밀어 올릴 수 있는 상태인지 — 로그인 + 내 방 */
   const canPush = !readOnly && !!auth && !!relay.room && !tutorial; // 예시 파티는 밀지 않습니다 (2026-09-06)
@@ -8897,25 +8903,37 @@ export default function GoldSettlement() {
     const root = rootRef.current;
     const grid = gridRef.current;
     if (!root) return;
-    if (!grid || wide || simple) {
-      root.style.removeProperty("--stage");
+    const put = (need) => {
+      if (need) root.style.setProperty("--stage", need + "px");
+      else root.style.removeProperty("--stage");
+    };
+    /* 메모장·카드 모드·[넓게]는 무대 1080 (모드에 따라 바뀐다) */
+    if (wide || simple || cardsMode) {
+      setStageNeed(null);
+      put(null);
+      return;
+    }
+    /* 다른 탭 — 표가 없으니 잴 수 없다. 벌금표가 마지막으로 잰 폭을 그대로 */
+    if (!grid) {
+      put(stageNeed);
       return;
     }
     const apply = () => {
-      /* 표는 width:100% 라 무대를 넓히면 따라 넓어진다 — 재기 전에 무대를 1080 으로 되돌려 표의 본래 폭(넘치는 만큼)을 읽는다. 같은 프레임 안이라 깜빡임은 없다 */
+      /* 표는 width:100% 라 무대를 넓히면 따라 넓어진다(그래서 항목 이름을 줄여도 표가 안 줄어 관찰자가 안 운다 — 줄·항목이 바뀔 때마다 다시 잰다).
+         재기 전에 무대를 1080 으로 되돌려 표의 본래 폭(넘치는 만큼)을 읽는다. 같은 프레임 안이라 깜빡임은 없다 */
       root.style.setProperty("--stage", "1080px");
-      const need = Math.ceil(grid.getBoundingClientRect().width) + 38; /* 카드 안쪽 여백 18×2 + 테두리 1×2 */
-      if (need > 1080) root.style.setProperty("--stage", need + "px");
-      else root.style.removeProperty("--stage");
+      const w = Math.ceil(grid.getBoundingClientRect().width) + 38; /* 카드 안쪽 여백 18×2 + 테두리 1×2 */
+      const need = w > 1080 ? w : null;
+      put(need);
+      setStageNeed(need);
     };
     apply();
     const ro = typeof ResizeObserver === "function" ? new ResizeObserver(apply) : null;
     if (ro) ro.observe(grid);
     return () => {
       if (ro) ro.disconnect();
-      root.style.removeProperty("--stage");
     };
-  }, [simple, cardsMode, readOnly, wide, rows.length, cols.length, seats.length]);
+  }, [simple, cardsMode, readOnly, wide, rows, cols, seats, unit, tabNow]);
   useLayoutEffect(() => {
     const card = sheetBoxRef.current;
     const tbl = gridRef.current;
