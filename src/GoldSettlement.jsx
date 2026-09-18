@@ -608,6 +608,27 @@ const liveFaces = (col) => {
 const canSpin = (col) => liveFaces(col).some(isNumKey);
 const NO_NUM_MSG = "숫자 면이 전부 비율 0 이에요 — 하나는 비율을 넣어야 룰렛이 끝나요.";
 const isRoulette = (col) => !!col && col.type === "roulette";
+/* 룰렛 기호 (2026-09-18 사용자: ◎는 룰렛으로 안 읽힌다) — 여덟 칸 원판. 빈 칸의 ＋ 자리에 선다 */
+const ROUL_ICON = (
+  <svg className="gs-roulico" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+    <circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    <path
+      d="M10 10 L10 1.5 A8.5 8.5 0 0 1 16 4 Z M10 10 L18.5 10 A8.5 8.5 0 0 1 16 16 Z M10 10 L10 18.5 A8.5 8.5 0 0 1 4 16 Z M10 10 L1.5 10 A8.5 8.5 0 0 1 4 4 Z"
+      fill="currentColor"
+      opacity=".55"
+    />
+    <circle cx="10" cy="10" r="2" fill="currentColor" />
+  </svg>
+);
+/* 설정 톱니 — 룰렛 설정창 여는 단추에 (2026-09-18 사용자: "룰렛" 글자 상자로는 설정인 줄 모른다) */
+const GEAR_ICON = (
+  <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M19.5 12c0-.34-.02-.67-.07-1l2.04-1.58a.5.5 0 0 0 .12-.65l-1.93-3.34a.5.5 0 0 0-.61-.22l-2.4.97c-.52-.4-1.09-.73-1.7-.98l-.37-2.56A.5.5 0 0 0 14.09 2h-3.86a.5.5 0 0 0-.5.43l-.36 2.57c-.62.25-1.19.58-1.71.98l-2.4-.97a.5.5 0 0 0-.6.22L2.72 8.57a.5.5 0 0 0 .12.65l2.04 1.58a7.9 7.9 0 0 0 0 2.02l-2.04 1.58a.5.5 0 0 0-.12.65l1.93 3.34c.12.22.38.31.6.22l2.4-.97c.53.4 1.1.73 1.72.98l.36 2.57a.5.5 0 0 0 .5.43h3.86a.5.5 0 0 0 .5-.43l.36-2.57c.62-.25 1.19-.58 1.71-.98l2.4.97c.23.09.49 0 .61-.22l1.93-3.34a.5.5 0 0 0-.12-.65L19.43 13c.05-.33.07-.66.07-1Zm-7.5 3.4a3.4 3.4 0 1 1 0-6.8 3.4 3.4 0 0 1 0 6.8Z"
+    />
+  </svg>
+);
 
 /* 비율대로 면 하나를 고릅니다. pool 에 든 면만 후보입니다. */
 const drawFace = (weights, pool, rand) => {
@@ -2455,6 +2476,14 @@ export default function GoldSettlement() {
     setOpenRow(null);
     // 모드는 '벌금을 어떻게 적을지'라서, 바꾼 결과는 적는 화면에서 보여 줍니다
     setTab("sheet");
+    /* 카운터 ↔ 카드 (고침 2026-09-18) — 같은 자료(줄·항목·횟수·기타)라 아무것도 바꾸지 않는다.
+       (버그) 카드로 갈 때 아래 "카운터 → 메모장" 갈래로 떨어져 횟수가 메모장 꼴로 굳고, 카드가 전부 0으로 보였다(사용자: fatal).
+       카드 → 카운터도 메모장에서 오는 길(fromMemoRows)을 타서 기타가 '합계 수정'으로 바뀌었다 */
+    const counterLike = (m) => m === "items" || m === "cards";
+    if (counterLike(next) && counterLike(mode)) {
+      setMode(next);
+      return;
+    }
 
     // 손 안 댄 예시면 상대 모드 예시로 조용히 갈아끼웁니다
     if (isPristine(rows)) {
@@ -2464,7 +2493,8 @@ export default function GoldSettlement() {
       setMode(next);
       return;
     }
-    if (next === "items") {
+    if (counterLike(next)) {
+      /* 메모장 → 카운터·카드 */
       fromMemoRows();
       setMode(next);
       return;
@@ -9932,23 +9962,7 @@ export default function GoldSettlement() {
                               onChange={(e) => patchCol(c.id, "name", e.target.value)}
                               aria-label="항목 이름"
                             />
-                            {isRoulette(c) ? (
-                              <>
-                                <button
-                                  className="gs-rcbtn"
-                                  onClick={() => {
-                                    setItemsOpen(false);
-                                    setRouletteCfg(c.id);
-                                  }}
-                                  title="룰렛 설정 — 면 수·비율·양도권"
-                                >
-                                  룰렛
-                                </button>
-                                <span className="gs-citem-cap" aria-hidden="true">×</span>
-                              </>
-                            ) : (
-                              <span className="gs-citem-cap">1회</span>
-                            )}
+                            {isRoulette(c) ? <span className="gs-citem-cap" aria-hidden="true">×</span> : <span className="gs-citem-cap">1회</span>}
                             {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
                               /* 센 기록이 있으면 창에서 (표 머리와 같은 규칙) */
                               <span className="gs-pricewrap">
@@ -9971,6 +9985,20 @@ export default function GoldSettlement() {
                                 suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
                                 onChange={(g) => patchCol(c.id, "price", commafy(g))}
                               />
+                            )}
+                            {isRoulette(c) && (
+                              <button
+                                className="gs-rcbtn gs-rcgear"
+                                onClick={() => {
+                                  setItemsOpen(false);
+                                  setRouletteCfg(c.id);
+                                }}
+                                title="룰렛 설정 — 면 수·비율·양도권"
+                                aria-label="룰렛 설정"
+                              >
+                                {GEAR_ICON}
+                                설정
+                              </button>
                             )}
                             <button
                               className="gs-x gs-citem-x"
@@ -10209,7 +10237,7 @@ export default function GoldSettlement() {
                                     </span>
                                   ) : (
                                     <span className="gs-hit-ghost" aria-hidden="true">
-                                      {isRoulette(c) ? "◎" : "＋"}
+                                      {isRoulette(c) ? ROUL_ICON : "＋"}
                                     </span>
                                   )}
                                 </span>
@@ -10381,16 +10409,8 @@ export default function GoldSettlement() {
                     <div className="gs-colh-price">
                       {/* 룰렛 (2026-09-17 확정) — 보통 칸의 "1회 [1] 만G" 자리에 "룰렛 × [1] 만G". [룰렛]을 누르면 설정창(면 수·비율·양도권), 단가는 보통 칸과 같은 규칙.
                           (폐기) "◎ 룰렛 · 8면 · 나온 숫자 × 1만 ⚙" 한 덩이 — 폭을 너무 차지했고, ◎ 만으로는 룰렛으로 안 읽혔다(사용자) */}
-                      {isRoulette(c) ? (
-                        <>
-                          <button className="gs-rcbtn" onClick={() => !readOnly && setRouletteCfg(c.id)} title="룰렛 설정 — 면 수·비율·양도권">
-                            룰렛
-                          </button>
-                          <span aria-hidden="true">×</span>
-                        </>
-                      ) : (
-                        <span>1회</span>
-                      )}
+                      {/* (고침 2026-09-18) [룰렛] 글자 상자를 눌러 설정으로 가는 건 설정인 줄 모른다(사용자) — 톱니 [설정] 단추로 */}
+                      {isRoulette(c) ? <span aria-hidden="true">×</span> : <span>1회</span>}
                       {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
                         /* 센 기록이 있으면 창에서 — 지난 횟수를 어찌할지 골라야 해서 */
                         <span className="gs-pricewrap">
@@ -10413,6 +10433,12 @@ export default function GoldSettlement() {
                           suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
                           onChange={(g) => patchCol(c.id, "price", commafy(g))}
                         />
+                      )}
+                      {isRoulette(c) && !readOnly && (
+                        <button className="gs-rcbtn gs-rcgear" onClick={() => setRouletteCfg(c.id)} title="룰렛 설정 — 면 수·비율·양도권" aria-label="룰렛 설정">
+                          {GEAR_ICON}
+                          설정
+                        </button>
                       )}
                     </div>
                   </th>
@@ -10730,7 +10756,7 @@ export default function GoldSettlement() {
                                     </span>
                                   ) : (
                                     <span className="gs-hit-ghost" aria-hidden="true">
-                                      {isRoulette(c) ? "◎" : "＋"}
+                                      {isRoulette(c) ? ROUL_ICON : "＋"}
                                     </span>
                                   )}
                                   {readOnly && canConfess(row, c) && cfLeft(c.id) > 0 && (
@@ -18782,7 +18808,6 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 /* 항목 단추 — 왼쪽 이름·단가, 오른쪽 횟수. 실선(누르는 곳으로 보이게), 누른 적 있으면 금색 */
 .gs-rd-hit{flex:1 1 84px; width:auto; min-width:0; height:44px; min-height:0; padding:0 8px; gap:6px; justify-content:space-between; text-align:left; border-style:solid; border-color:rgba(var(--ink-rgb),.4)}
 .gs-rd-hit:hover{border-color:rgba(var(--ink-rgb),.7)}
-.gs-rd-hit:active{transform:translateY(1px)}
 .gs-rd-hit.gs-hit-on{border-color:var(--gold)}
 .gs-rd-lab{display:flex; flex-direction:column; align-items:flex-start; line-height:1.15; min-width:0; font-size:12.5px; color:var(--ink)}
 .gs-rd-labname{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
@@ -18824,6 +18849,8 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-itempop .gs-citem-x{margin-left:auto}
 .gs-citem-cap{font-size:10px; color:var(--ink-2); white-space:nowrap}
 .gs-citem .gs-rcbtn{padding:1px 5px}
+.gs-rcgear{display:inline-flex; align-items:center; gap:3px; margin-left:4px}
+.gs-hit-ghost .gs-roulico{display:block; width:18px; height:18px}
 .gs-citem .gs-in-price{border-bottom:1px dotted rgba(var(--ink-rgb),.5)}
 .gs-itemsbtn{gap:6px; white-space:nowrap}
 .gs-itemsbtn svg{color:var(--ink-2); transition:transform .15s; flex:none}
