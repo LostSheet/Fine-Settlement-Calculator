@@ -370,6 +370,26 @@ const CAST_WHY = {
   recruit: "이 판이 이 주소에 나가요. 이름이나 숫자가 없으면 방송에는 아무것도 안 그려요.",
   on: "이번 판이 이 주소에 나오고 있어요. 방송에 안 보이면 OBS 쪽 소스를 확인해 주세요.",
 };
+/* 방송 설정 창의 초록 점 줄 (2026-09-19) — '이번 판'은 우리만 아는 말이라 누구의 벌금표인지로 말한다.
+   표가 비어 있을 때와 연결이 끊겼을 때는 그 순간 필요한 말만. 머리 단추의 말풍선(CAST_WHY)은 문구 전면 점검 때 같이 */
+const castLine = (state, who) =>
+  state === "down" ? (
+    <>
+      서버와 연결이 끊겼어요.
+      <br />
+      방송에는 마지막 화면이 그대로 떠 있어요.
+    </>
+  ) : state === "blank" ? (
+    <>표에 이름이나 숫자가 없으면 방송에는 아무것도 안 나와요.</>
+  ) : state === "none" ? (
+    <>{CAST_WHY.none}</>
+  ) : (
+    <>
+      {who} 벌금표가 이 주소에 나오고 있어요.
+      <br />
+      방송에 안 보이면 OBS의 소스를 확인해주세요.
+    </>
+  );
 const FILL_NAME = (k) => "(모험가" + k + ")";
 /* 예전 이름들도 자리표시로 알아봐야 합니다 — 저장된 표를 열었을 때 그대로 남으면
    지우지도 못하고 진짜 이름처럼 굴러다닙니다. */
@@ -2630,7 +2650,17 @@ export default function GoldSettlement() {
 
   /* ================= OBS 중계 ================= */
   const [relay, setRelay] = useState(loadRelay);
-  const [obsOpen, setObsOpen] = useState(false);
+  const [obsOpen, setObsOpen] = useState(() => {
+    /* [Discord 연동하고 발급]으로 나갔다 돌아온 부트 (2026-09-19) — 하던 일을 잇는다 */
+    try {
+      if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("gs-obs-after-dc") === "1" && !readDc() && !readDcErr()) {
+        sessionStorage.removeItem("gs-obs-after-dc");
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  });
+  const obsAfterDc = useRef(obsOpen);
 
   /* ---- 파티: 파티 하나 = 장부 하나 = 공유 주소 하나 ---- */
   const [partyReg, setPartyReg] = useState(
@@ -3680,7 +3710,13 @@ export default function GoldSettlement() {
      문자열이 아니라 방송에 뜨는 판입니다.
      계정을 만드는 일 자체는 게스트 문(AuthModal)이 합니다 (§3.11) — 예전에는 여기서
      조용히 만들어서 닉을 못 받았고, 그래서 모두가 `방장`이라는 이름으로 앉았습니다. */
-  const [obsFresh, setObsFresh] = useState(false);
+  const [obsFresh, setObsFresh] = useState(() => !!obsAfterDc.current);
+  /* 연동하고 돌아온 부트 — 방까지 열어야 주소가 비출 표가 있다(openMyRoom 이 "주소가 나왔어요"도 켠다) */
+  useEffect(() => {
+    if (!obsAfterDc.current) return;
+    obsAfterDc.current = false;
+    if (authRef.current && authRef.current.dc) openMyRoom();
+  }, []);
   const openMyRoom = async (done) => {
     const a = authRef.current;
     if (!a) return;
@@ -6359,6 +6395,8 @@ export default function GoldSettlement() {
       ? "on"
       : "idle"
     : castState;
+  /* 방송에 아무것도 안 그리는 표인가 — liveSnapshot 과 같은 판정(이름도 숫자도 없음). 초록 점 줄이 이때만 다른 말을 한다 (2026-09-19) */
+  const boardBlank = !rows.some((x, i) => !isFillName(seatName(x, i)) || boardGold(x) > 0 || (x.extras || []).length);
   const roomCount = rows.length; // 인원 수는 판의 줄 수로 셉니다
   /* 계정 붙은 자리가 있어야 파티입니다 (§5.6) — 혼자 판에 '파티'라는 말을 쓰지 않습니다 */
   const hostParty = seats.some((s) => s.acct);
@@ -8480,6 +8518,16 @@ export default function GoldSettlement() {
       }
     });
   };
+  /* [초대] 창의 "초대하면" 두 줄 (2026-09-18~19) — 연동 전·후 창이 같은 것을 쓴다 */
+  const inviteGain = (
+    <>
+      <p className="gs-invnote-p">초대하면</p>
+      <ul className="gs-invnote-list">
+        <li>줄마다 파티원의 프로필 사진이 보여요.</li>
+        <li>파티원이 자기 컴퓨터에서 자수해요.</li>
+      </ul>
+    </>
+  );
   const seatPopFor = (target, label, who) =>
     seatPop === target ? (
       <SeatPop
@@ -8898,7 +8946,7 @@ export default function GoldSettlement() {
                     .catch(() => {});
               }}
             >
-              {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
+              {flash === "inv" ? "복사했어요" : "초대 메시지 복사"}
             </button>
             {JOIN_BY_CODE && (
             <button
@@ -9051,39 +9099,31 @@ export default function GoldSettlement() {
                   {!auth || !auth.dc ? (
                     <>
                       <h4 className="gs-invnote-h">초대하려면 Discord 연동이 필요해요</h4>
-                      {/* 문장마다 줄을 바꾼다 (2026-09-17 사용자: 개행에 너무 박하다) */}
-                      <p className="gs-invnote-p">
-                        파티원도 Discord 계정으로 참여하고 자수해요.
-                        <br />
-                        혼자 벌금을 세고 방송에 띄우는 건 지금처럼 로그인 없이 할 수 있어요.
-                      </p>
+                      {/* (고침 2026-09-18~19) 왜 필요한지가 아니라 하면 뭐가 되는지. 초대해야만 되는 일 둘만 — 방송에 띄우는 것은 초대 없이도 방장 주소로 된다 */}
+                      {inviteGain}
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
                           Discord 연동
                         </button>
                       </div>
-                      <div className="gs-invnote-foot">연동해도 지금 표와 방송 주소를 그대로 유지할 수 있어요</div>
+                      <div className="gs-invnote-foot">연동하지 않아도 벌금 기록과 방송은 지금 그대로 할 수 있어요.</div>
                     </>
                   ) : (
                     <>
-                      <h4 className="gs-invnote-h">파티원 부르기</h4>
-                      {/* (고침 2026-09-17) "처음 오는 사람은 표 아래에서 승인" — 표 아래 승인 줄이 없어지고 자리 배치 창으로 옮겼다 */}
-                      <p className="gs-invnote-p">
-                        Discord에 붙여넣을 초대 메시지를 복사해요.
+                      {/* (고침 2026-09-18) 제목 = 문 이름. (폐기) '파티원 부르기' */}
+                      <h4 className="gs-invnote-h">초대</h4>
+                      {/* 머리의 [Discord 연동]으로 연동한 사람은 연동 전 창을 본 적이 없다 — 좋은 점 두 줄은 이 창에도 똑같이 (2026-09-19 사용자) */}
+                      {inviteGain}
+                      {/* (폐기 2026-09-18) "자리가 있던 사람은 …" — 방장이 할 일이 없는 상황의 설명. "링크는 늘 같아요 / 채널에 핀 …" — 고정 링크는 논의 중 */}
+                      <p className="gs-invnote-p gs-invnote-after">
+                        초대 메시지를 복사해 Discord 등에 붙여 넣어요.
                         <br />
-                        자리가 있던 사람은 앱을 열면 바로 자기 줄에서 자수할 수 있어요.
-                        <br />
-                        처음 오는 사람은 [자리 배치]에서 줄을 배정하면 돼요.
+                        들어온 사람은 [자리 배치]에 모이고 방장이 드래그로 배치해요.
                       </p>
                       <div className="gs-invnote-acts">
                         <button className="gs-btn gs-invdiscbtn" onClick={copyInvite}>
-                          {flash === "inv" ? "복사했어요" : "디코 메시지 복사"}
+                          {flash === "inv" ? "복사했어요" : "초대 메시지 복사"}
                         </button>
-                      </div>
-                      <div className="gs-invnote-foot">
-                        링크는 늘 같아요.
-                        <br />
-                        채널에 핀 해 두면 다음 판도 그걸 눌러요.
                       </div>
                     </>
                   )}
@@ -9114,7 +9154,7 @@ export default function GoldSettlement() {
                       <path d="M5.6 14h4.8M8 11.2V14" />
                     </g>
                   </svg>
-                  OBS 공유 설정
+                  방송 설정
                   <em className={"gs-castdot gs-castdot-" + dotState} aria-hidden="true" />
                 </button>
                 <span className="gs-tip-body gs-tip-r" role="tooltip">
@@ -9125,7 +9165,7 @@ export default function GoldSettlement() {
                     </>
                   ) : (
                     <>
-                      {CAST_WHY[castState]}
+                      {castLine(boardBlank && castState !== "down" && castState !== "none" ? "blank" : castState, "내")}
                       <br />
                       눌러서 주소와 오버레이 외형을 챙겨요.
                     </>
@@ -9161,7 +9201,7 @@ export default function GoldSettlement() {
                 <div className="gs-invpop gs-helppop" role="dialog" aria-label="튜토리얼">
                   <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
                   {TUTORIALS_OFF && (
-                    <p className="gs-guide-foot">튜토리얼은 새 화면에 맞춰 다시 만드는 중이에요. 초대는 시스템 줄의 [초대], 방송 주소는 [OBS 공유 설정]에 있어요.</p>
+                    <p className="gs-guide-foot">튜토리얼은 새 화면에 맞춰 다시 만드는 중이에요. 초대는 시스템 줄의 [초대], 방송 주소는 [방송 설정]에 있어요.</p>
                   )}
                   {/* 행 = 이름 + 칩(추천·봤어요) + 역할 한 줄 + 서브, 오른쪽에 [보기]/[다시 보기] (2026-09-06 낮 사용자: 시인성·역할 설명).
                       역할 문구 — 파티원은 사용자 지정, 방장은 초안. (폐기, 같은 날) 한 줄에 이름·서브·버튼 안 `추천` */}
@@ -9194,7 +9234,7 @@ export default function GoldSettlement() {
                         </button>
                       </div>
                     ))}
-                  <p className="gs-guide-foot">OBS에 넣는 방법과 방송 주소 안내는 [OBS 공유 설정] 창에 있어요.</p>
+                  <p className="gs-guide-foot">OBS에 넣는 방법과 방송 주소 안내는 [방송 설정] 창에 있어요.</p>
                 </div>
               )}
             </span>
@@ -11781,6 +11821,16 @@ export default function GoldSettlement() {
           }}
           onIssue={issueAnon}
           onDiscord={() => startDiscord()}
+          /* [Discord 연동하고 발급] (2026-09-19) — 연동하고 돌아오면 이 창을 다시 열고 "주소가 나왔어요"까지 이어 준다 */
+          onDiscordIssue={() => {
+            try {
+              sessionStorage.setItem("gs-obs-after-dc", "1");
+            } catch (e) {}
+            startDiscord();
+          }}
+          /* 초록 점 줄의 주어 — 내 판이면 "내", 남의 파티에 있으면 그 방장 */
+          castWho={shareGuest ? (ownerNick ? ownerNick + " 님의" : "방장의") : "내"}
+          castState={boardBlank && dotState !== "down" && dotState !== "none" ? "blank" : dotState}
           fresh={obsFresh}
           guest={shareGuest}
           ovCols={simple ? [] : activeCols}
@@ -11793,7 +11843,6 @@ export default function GoldSettlement() {
           onOvKey={toggleOvCol}
           onAskReissue={askObsReissue}
           onDiscard={askDiscardAddr}
-          castState={dotState}
           inviteRow={null /* (2026-09-06) 초대 코드는 헤더 팝오버에 — 공유 창은 OBS 것만 */}
           onClose={() => {
             setObsOpen(false);
@@ -14051,7 +14100,7 @@ function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, o
             <span>초대 받은 사람은 자기 줄을 직접 눌러 자수할 수 있어요.</span>
           </p>
           <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-seatpop-btn" onClick={onCopyInvite}>
-            {copied ? "복사했어요" : "디코 메시지 복사"}
+            {copied ? "복사했어요" : "초대 메시지 복사"}
           </button>
         </>
       ) : (
@@ -14454,7 +14503,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                     </button>
                   ) : (
                     <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-sp-inv-btn" onClick={onCopyInvite}>
-                      {copied ? "복사했어요" : "디코 메시지 복사"}
+                      {copied ? "복사했어요" : "초대 메시지 복사"}
                     </button>
                   )}
                   <p className="gs-sp-inv-foot">줄의 사람을 여기로 끌면 뺄 수 있어요.</p>
@@ -14905,7 +14954,7 @@ function GenList({ gens, onOpen, onDrop }) {
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
    guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh, guest, onAskReissue, onDiscard, castState, onNick, onLogout, onUpgrade, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey, onClose, inviteRow }) {
+function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDiscordIssue, castWho, fresh, guest, onAskReissue, onDiscard, castState, onNick, onLogout, onUpgrade, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey, onClose, inviteRow }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -14966,9 +15015,10 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
   /* (폐기 2026-09-06 당일) previewSrc — 창 안 iframe 미리보기 주소. 미리보기 자체를 뺐습니다 */
   return (
     <div className="gs-modal" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="gs-dialog gs-dialog-wide" role="dialog" aria-modal="true" aria-label="OBS 공유 설정">
+      <div className="gs-dialog gs-dialog-wide" role="dialog" aria-modal="true" aria-label="방송 설정">
         <div className="gs-obs-head">
-          <h3>OBS 공유 설정</h3>
+          {/* (고침 2026-09-18) 'OBS 공유 설정' → '방송 설정' — 공유는 방장 주소 하나를 다 같이 넣던 옛 방식의 말. 지금은 사람마다 자기 주소 */}
+          <h3>방송 설정</h3>
           <div className="gs-obs-headr">
             {/* 송출 토글은 폐지했습니다 (§5.7) — OBS 에는 이미 소스를 껐다 켜는 눈알이
                 있고 씬까지 나눠 쓰는데, 앱에 같은 스위치를 하나 더 두면 판이 안 뜰 때
@@ -14990,30 +15040,39 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
           <>
             <div className="gs-obs-card">
               <h4 className="gs-key-h">내 방송용 주소</h4>
-              {/* 게스트 문으로 보냅니다 (§3.11) — 닉 한 줄을 받아야 벌금판에 오르는
-                  이름이 생깁니다. 예전에는 조용히 만들어서 모두가 `방장`이 됐습니다 */}
-              {/* 로그인 없이 [발급] (§3.12.1) — 계정도 이름도 묻지 않습니다 */}
-              <button className="gs-btn gs-authgo" onClick={() => (onIssue ? onIssue() : onOpenAuth("register", true))}>
-                발급
-              </button>
+              <p className="gs-obs-say">OBS 브라우저 소스에 넣는 주소예요.</p>
+              {/* 받는 길 둘을 나란히 (2026-09-19 확정, 목업 3번 '다') — 길마다 밑에 그 길의 결과. 송출 컴퓨터 함정을 글이 아니라 구조로 푼다.
+                  (폐기) [발급] 하나 + "브라우저 데이터를 지우면 …" + 네 문장 경고 문단 */}
+              <div className="gs-obs-two">
+                <div>
+                  {/* 로그인 없이 [발급] (§3.12.1) — 계정도 이름도 묻지 않습니다 */}
+                  <button className="gs-btn gs-authgo" onClick={() => (onIssue ? onIssue() : onOpenAuth("register", true))}>
+                    발급
+                  </button>
+                  <p className="gs-obs-makenote">
+                    연동 없이 받아요.
+                    <br />
+                    벌금을 기록하는 컴퓨터에서 눌러요.
+                  </p>
+                </div>
+                <div>
+                  <button className="gs-btn gs-authgo gs-dcbtn" onClick={() => (onDiscordIssue ? onDiscordIssue() : onOpenAuth("login", true))}>
+                    Discord 연동하고 발급
+                  </button>
+                  <p className="gs-obs-makenote">
+                    어느 컴퓨터에서 받아도 같은 주소예요.
+                    <br />
+                    브라우저 데이터를 지워도 주소가 남아요.
+                  </p>
+                </div>
+              </div>
               {/* (폐기 2026-09-05) "이 브라우저에 저장돼요." — 발급 문이 랜딩(가입 포함)으로
                   가게 되어 게스트 전용 안내는 오안내가 됐습니다. 브라우저 저장 이야기는
                   랜딩의 게스트 카드가 합니다 */}
-              <p className="gs-obs-makenote">
-                브라우저 데이터를 지우면 주소가 사라져요. 지키려면{" "}
-                <button className="gs-auth-linkb" onClick={() => (onDiscord ? onDiscord() : onOpenAuth("login", true))}>
-                  Discord 연동
-                </button>
-              </p>
             </div>
             {/* 두 컴퓨터 함정 (§3.11) — 금지("또 받지 마세요")로 말하면 "주소를 두 개
                 받으면 안 되나?"로 읽힙니다 (2026-09-05). 어디서 받으라는 안내로 뒤집고,
                 가입하면 해당 없다는 것까지 답니다 */}
-            <p className="gs-obs-warn2">
-              주소는 <b>벌금판을 쓸 브라우저에서</b> 받으세요. 로그인 없이 받은 주소는 그
-              브라우저에서만 유지할 수 있어요. 송출컴에는 주소만 복사해 넣으면 되고, Discord를
-              연동하면 어느 컴퓨터에서든 같은 주소를 불러올 수 있어요.
-            </p>
           </>
         ) : (
           <>
@@ -15029,13 +15088,16 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
               <div className="gs-obs-fresh">
                 <b>주소가 나왔어요.</b>
                 <p>
-                  이 주소를 복사해서 방송 프로그램(OBS·프리즘 등)의 <b>브라우저 소스</b>에
-                  붙여넣으면 벌금판이 방송에 떠요.
+                  [복사]를 눌러 OBS의 <b>브라우저 소스</b>에 붙여 넣어요.
                 </p>
-                <p className="gs-obs-fresh2">
-                  <b>송출컴이 따로 있나요?</b> 여기서 복사해서 옮기세요 — 거기서 새로 받으면
-                  다른 주소가 나와요.
-                </p>
+                {/* 송출 컴퓨터 함정은 연동 전에만 있다 — 연동하면 어느 컴퓨터에서 받아도 같은 주소 */}
+                {auth.anon && (
+                  <p className="gs-obs-fresh2">
+                    <b>송출 컴퓨터가 따로 있으면</b> 이 주소를 복사해 가져가요.
+                    <br />
+                    거기서 새로 받으면 다른 주소가 나와요.
+                  </p>
+                )}
               </div>
             )}
             {/* 내 방송용 주소 — 영구(재발급 전까지), 읽기 전용. 창의 주인공이라
@@ -15155,20 +15217,20 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
               )}
               {/* 이 주소에 지금 뭐가 나가는지 — 라벨 없이 문장으로 (§5.7·§8).
                   파티원 것은 아닙니다: 파티원 화면은 방장이 민 판을 비추기만 합니다 */}
-              {!guest && castState && (
+              {/* (고침 2026-09-19) '이번 판' → 누구의 벌금표인지. 파티원에게도 보인다 — 남의 파티에 있으면 그 방장의 벌금표가 내 주소에 나간다 */}
+              {castState && (
                 <p className="gs-cast-line">
                   <em className={"gs-castdot gs-castdot-" + castState} aria-hidden="true" />
-                  {CAST_WHY[castState]}
+                  {castLine(castState, castWho)}
                 </p>
               )}
               {/* 주소의 수명 한 문장 (B1′) — 글자 링크가 연동으로 간다 */}
               {auth.anon && (
-                <p className="gs-obs-life">
-                  이 주소는 이 브라우저에만 남아요. 다른 PC에서도 쓰려면{" "}
-                  <button className="gs-swaplink" onClick={onUpgrade}>
+                <p className="gs-obs-dcline">
+                  <span>Discord를 연동하면 어느 컴퓨터에서든 이 주소를 그대로 써요.</span>
+                  <button className="gs-btn gs-btn-sm gs-dcbtn" onClick={onUpgrade}>
                     Discord 연동
                   </button>
-                  .
                 </p>
               )}
               {/* 가장 안 눌러야 할 문이라 카드 발치의 조용한 링크입니다 — 언제 쓰는지는
@@ -15191,13 +15253,10 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
               <div className="gs-obs-card gs-obs-invcard">{inviteRow()}</div>
             )}
             <div className="gs-obs-line">
-              <span className="gs-obs-linetxt">
-                OBS·XSplit·프리즘 등 어떤 방송 프로그램이든, 브라우저 소스에 이 주소를
-                넣으면 돼요.
-              </span>
+              <span className="gs-obs-linetxt">OBS 브라우저 소스에 넣어요.</span>
               {/* 도움말은 링크 무게로 — 버튼으로 세우면 조작(복사·카드)과 같은 소리를 냅니다 */}
               <button className="gs-auth-linkb gs-obs-lineact" onClick={() => setShowGuide(true)}>
-                OBS에 넣는 방법
+                넣는 방법
               </button>
             </div>
 
@@ -15207,11 +15266,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, fresh
         {/* 구 방식(방장 주소 하나를 파티원 OBS에 다 넣기) 방장에게 — 로그인·주소 유무와 상관없이 늘 (2026-09-06 오후 사용자 확정:
             두 창 모두 OBS 공유 설정 안에서, 자리는 달리). 문구 초안 */}
         <div className="gs-obs-line gs-obs-waysline">
-          <span className="gs-obs-linetxt">
-            파티원도 각자 자기 주소를 받아 넣어요. 방장 주소 하나를 다 같이 넣던 방식과 뭐가 다른지는 여기에.
-          </span>
           <button className="gs-auth-linkb gs-obs-lineact" onClick={() => setShowGain(true)}>
-            방송 주소, 한 번만 넣으면 돼요
+            방장 주소를 같이 써도 되나요?
           </button>
         </div>
 
@@ -15312,27 +15368,23 @@ function GainGuide({ onClose }) {
     <path d={"M" + (x - 4) + " " + (y - 4) + " l8 8 M" + (x + 4) + " " + (y - 4) + " l-8 8"} strokeWidth="1.6" strokeLinecap="round" fill="none" style={{ stroke: "var(--red)" }} />
   );
   return (
-    <InfoModal title="방송 주소, 한 번만 넣으면 돼요" onClose={onClose} wide>
+    <InfoModal title="방장 주소를 같이 써도 되나요?" onClose={onClose} wide>
       {/* 축이 바뀌었습니다 (2026-09-05) — 게스트도 자기 계정·자기 주소를 받으니
           "가입 없이 = 주소 하나 나눠쓰기" 비교는 없는 방식을 설명하는 글이었습니다.
           이제 말할 것은 둘: ① 1인 1주소 모델이 뭐가 좋은가 ② 아이디는 뭘 더 주는가 */}
+      {/* (고침 2026-09-18~19) 제목 = 이 창이 필요한 사람의 질문. 머리말은 그 답. (폐기) "방송 주소, 한 번만 넣으면 돼요" + 세 문장 한 문단 */}
       <p className="gs-gain-lead">
-        [발급]을 누르면 <b>내 방송용 주소</b>가 나와요 — 주소는{" "}
-        <b>사람마다 하나씩</b>이에요. 내 주소에는 내가 있는 판이 떠서, OBS에{" "}
-        <b>한 번만</b> 넣으면 파티가 바뀌어도 그대로예요. 벌금을 세고 정산하는 데는
-        계정이 필요 없어요.
+        네. 방장 주소를 넣으면 방장의 벌금표가 나와요.
+        <br />
+        다만 각자 자기 주소를 넣는 쪽이 손이 덜 가요.
       </p>
 
       {/* 이 창의 본업 — 쓰는 방식 두 가지의 비교입니다 (2026-09-05 축 교정).
           예전엔 "가입 없이 vs 계정"이었는데, 주소 발급 = 로그인이 되면서 가입 여부는
           축이 아니게 됐습니다. 나눠쓰기는 지금도 되는 방식이라 지우지 않습니다 */}
-      <h4 className="gs-gain-h">쓰는 방식은 두 가지예요</h4>
       <div className="gs-gain-cols">
         <div className="gs-gain-col">
-          <h4>
-            주소 하나 나눠쓰기 <span className="gs-gain-tag">기존 방식</span>
-          </h4>
-          <p className="gs-gain-sub">방장 주소를 전원이 같이 넣어요 — 지금도 이렇게 할 수 있어요</p>
+          <h4>방장 주소를 같이 쓸 때</h4>
           <div className="gs-gain-scene" aria-hidden="true">
             <svg viewBox="0 0 240 118">
               <Bx x={80} y={8} w={80} h={24} t="테스1 주소" src />
@@ -15344,7 +15396,7 @@ function GainGuide({ onClose }) {
               <Bx x={168} y={78} w={64} h={24} t="테스3 OBS" />
             </svg>
             <p className="gs-gain-scenecap">
-              방장 주소 하나를 <b>모두의 OBS</b>에
+              방장 주소 하나를 모두의 OBS에 넣어요.
             </p>
           </div>
           <div className="gs-gain-scene" aria-hidden="true">
@@ -15365,24 +15417,17 @@ function GainGuide({ onClose }) {
               <Bx x={168} y={78} w={64} h={24} t="테스3 OBS" />
             </svg>
             <p className="gs-gain-scenecap">
-              방장이 바뀌면 <b>전원이 주소를 갈아요</b>
+              방장이 바뀌면 모두 주소를 다시 넣어요.
             </p>
           </div>
           <ul className="gs-gain-list">
-            <li className="yes">
-              링크를 받은 사람은 <b>누구나</b> 자기 방송에 띄울 수 있어요
-            </li>
-            <li className="no">
-              방장이 바뀔 때마다 <b>전원이</b> OBS 소스의 주소를 갈아야 해요
-            </li>
-            <li className="no">
-              그 주소엔 그 방장의 판만 떠요 — 내가 딴 파티에 가도 안 따라와요
-            </li>
+            <li className="yes">주소를 받은 사람은 누구나 자기 방송에 띄워요.</li>
+            <li className="no">방장이 바뀔 때마다 모두 OBS의 주소를 다시 넣어요.</li>
+            <li className="no">내가 다른 파티로 가도 그 주소에는 그 방장의 벌금표만 나와요.</li>
           </ul>
         </div>
         <div className="gs-gain-col">
-          <h4>사람마다 자기 주소</h4>
-          <p className="gs-gain-sub">각자 자기 주소를 한 번씩 넣어요</p>
+          <h4>각자 자기 주소를 쓸 때</h4>
           <div className="gs-gain-scene" aria-hidden="true">
             <svg viewBox="0 0 240 118">
               <rect x="8" y="6" width="224" height="22" rx="3" strokeDasharray="3 3" style={{ fill: "rgba(var(--ink-rgb),.05)", stroke: "rgba(var(--ink-rgb),.25)" }} />
@@ -15400,54 +15445,20 @@ function GainGuide({ onClose }) {
               <Bx x={168} y={88} w={64} h={22} t="테스3 OBS" />
             </svg>
             <p className="gs-gain-scenecap">
-              파티가 바뀌어도 <b>선은 그대로</b> — 내 주소에 내가 있는 판이 떠요
+              파티가 바뀌어도 주소는 그대로예요.
             </p>
           </div>
           <ul className="gs-gain-list">
-            <li className="yes">
-              OBS에 <b>한 번만</b> 넣으면 돼요 — 주소가 안 바뀌어요
-            </li>
-            <li className="yes">
-              누가 방장이든, <b>내가 들어간 파티</b>가 내 주소에 떠요
-            </li>
-            <li className="yes">파티에서 빠지면 내 화면을 저절로 비워요</li>
+            {/* (2026-09-19 사용자) "한 번만 하는 일~" 절을 없애는 대신 이쪽 설명을 늘린다 — 내 주소에 무엇이 나오는지·왜 한 번만 넣는지·나오면 어떻게 되는지·어디서 받는지 */}
+            <li className="yes">내 주소에는 내가 들어가 있는 파티의 벌금표가 나와요.</li>
+            <li className="yes">누가 방장이든, 파티를 옮기든 주소는 그대로예요. OBS에 한 번만 넣어요.</li>
+            <li className="yes">파티에서 나오면 내 방송 화면은 저절로 비어요.</li>
+            <li className="yes">주소는 [방송 설정]에서 각자 [발급]으로 받아요.</li>
           </ul>
         </div>
       </div>
 
-      <h4 className="gs-gain-h">한 번만 하는 일과, 팟마다 하는 일</h4>
-      <div className="gs-gain-cols">
-        <div className="gs-gain-col">
-          <span className="gs-gain-tag">처음 한 번</span>
-          <p className="gs-gain-sub">내 주소를 OBS에 넣기</p>
-          <div className="gs-gain-art" aria-hidden="true">
-            <span className="gs-gain-src">내 방송용 주소</span>
-            <span className="gs-gain-arrow">→</span>
-            <span className="gs-gain-src">OBS 브라우저 소스</span>
-          </div>
-          <p className="gs-gain-note">
-            넣고 나면 다시 안 건드려요. 방송을 안 하면 이 단계는 건너뛰어도 돼요.
-          </p>
-        </div>
-        <div className="gs-gain-col">
-          <span className="gs-gain-tag">팟마다</span>
-          <p className="gs-gain-sub">초대 링크 누르고 참여 요청</p>
-          <div className="gs-gain-art" aria-hidden="true">
-            <span className="gs-gain-src">초대 링크</span>
-            <span className="gs-gain-arrow">→</span>
-            <span className="gs-gain-src">승인</span>
-            <span className="gs-gain-arrow">→</span>
-            <span className="gs-gain-src">아까 그 주소에 이번 파티가 뜸</span>
-          </div>
-          <p className="gs-gain-note">
-            주소를 다시 넣을 필요가 없어요. 들어간 파티가 그 주소에 저절로 나타나요.
-          </p>
-        </div>
-      </div>
-      <p className="gs-gain-foot">
-        파티원이 할 일은 초대 링크를 누르는 것뿐이에요. OBS를 안 써도 벌금은 방장이 세고,
-        자수도 할 수 있어요.
-      </p>
+      {/* (폐기 2026-09-19) "한 번만 하는 일과, 팟마다 하는 일" 절 · 발치 문단 — 없어진 흐름(참여 요청 → 승인)이 적혀 있었고, 할 말은 위 "각자 자기 주소를 쓸 때" 네 줄로 옮겼다 */}
 
     </InfoModal>
   );
@@ -19483,6 +19494,14 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* 아이디 정하기 줄 — 문장 왼쪽, 문 오른쪽 (재발급 줄과 같은 문법) */
 .gs-acct-upline{margin-top:10px}
 .gs-obs-life{margin:10px 0 0; font-size:12.5px; color:var(--ink-2)}
+/* 2026-09-19 — [초대] 창의 글머리 두 줄, 방송 설정의 한 줄 안내·연동 줄·받는 길 둘 */
+.gs-invnote-list{margin:2px 0 0; padding:0 0 0 16px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-invnote-after{margin-top:10px}
+.gs-obs-say{margin:10px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-obs-dcline{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:10px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-obs-dcline span{flex:1 1 220px; min-width:0}
+.gs-obs-two{display:grid; grid-template-columns:1fr 1fr; gap:0 12px; align-items:start}
+.gs-obs-two .gs-authgo{margin-top:12px}
 .gs-obs-life .gs-swaplink{font-size:12.5px}
 .gs-obs-discard{margin-left:14px}
 /* 연동 전의 문 (B1′) — 유령 단추 + 실루엣 얼굴 자리 */
