@@ -2655,6 +2655,15 @@ export default function GoldSettlement() {
   const [wide, setWide] = useState(false);
   /* 카드 모드 [항목 관리] (2026-09-17 사용자 확정) — 표 바의 단추로 펼치고 접는다. 접혀 있으면 자리를 차지하지 않는다 */
   const [itemsOpen, setItemsOpen] = useState(false);
+  useEffect(() => {
+    if (!itemsOpen) return;
+    const h = (e) => {
+      if (e.target.closest && e.target.closest(".gs-itemswrap, .gs-modal")) return;
+      setItemsOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [itemsOpen]);
   /* 자리 배치 창 (2026-09-17 확정) — 표 바 [자리 배치 N] 으로 연다 */
   const [seatOpen, setSeatOpen] = useState(false);
   /* 카드 모드 [기타] 팝오버 (2026-09-17 레이드 창) — 열린 줄 id, 목록 보기 여부. 단추 아래에 떠서 카드를 안 민다. 바깥을 누르면 닫힌다 */
@@ -9893,20 +9902,102 @@ export default function GoldSettlement() {
                   ))}
                 </button>
               )}
-              {/* [항목 관리] — 카드 모드에만. 카운터 모드는 표 머리에서 항목을 고친다. 펼치면 표 바 바로 아래에 항목 칩 (2026-09-17 확정;
-                  (폐기) 표 바 아래 한 줄 상자에 요약 — 이름·단가가 카드 단추에 이미 있어 같은 내용을 한 줄 더 썼다 */}
+              {/* [항목 관리] — 카드 모드에만. 카운터 모드는 표 머리에서 항목을 고친다. 단추 아래에 떠 있는 칸 (2026-09-18 확정 A) — 카드가 안 밀리고,
+                  바깥을 누르면 닫힌다. 칩은 표 머리와 같은 규칙: 이름 · "1회 [1] 만G" / "[룰렛] × [1] 만G" · ×, [+ 항목]. 창(단가·룰렛 설정·항목 추가)이 뜨면 이 칸은 닫힌다.
+                  (폐기 2026-09-18) 표 바 아래 펼침 — 펼치면 카드가 64px 내려갔다(기타를 안 밀리게 한 것과 규칙이 달랐다).
+                  (폐기 2026-09-17) 표 바 아래 한 줄 상자에 요약 — 이름·단가가 카드 단추에 이미 있어 같은 내용을 한 줄 더 썼다 */}
               {cardsMode && !readOnly && (
-                <button
-                  type="button"
-                  className="gs-btn gs-btn-sm gs-btn-ghost gs-itemsbtn"
-                  aria-expanded={itemsOpen}
-                  onClick={() => setItemsOpen((o) => !o)}
-                >
-                  항목 관리
-                  <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-                    <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
+                <span className="gs-itemswrap">
+                  <button
+                    type="button"
+                    className="gs-btn gs-btn-sm gs-btn-ghost gs-itemsbtn"
+                    aria-expanded={itemsOpen}
+                    onClick={() => setItemsOpen((o) => !o)}
+                  >
+                    항목 관리
+                    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                      <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  {itemsOpen && (
+                    <div className="gs-itempop" role="dialog" aria-label="항목 관리">
+                      <div className="gs-itempop-h">항목</div>
+                      <div className="gs-itempop-list">
+                        {activeCols.map((c) => (
+                          <span key={c.id} className="gs-citem">
+                            <input
+                              className="gs-in gs-in-col gs-citem-name"
+                              value={c.name || ""}
+                              placeholder="항목"
+                              onChange={(e) => patchCol(c.id, "name", e.target.value)}
+                              aria-label="항목 이름"
+                            />
+                            {isRoulette(c) ? (
+                              <>
+                                <button
+                                  className="gs-rcbtn"
+                                  onClick={() => {
+                                    setItemsOpen(false);
+                                    setRouletteCfg(c.id);
+                                  }}
+                                  title="룰렛 설정 — 면 수·비율·양도권"
+                                >
+                                  룰렛
+                                </button>
+                                <span className="gs-citem-cap" aria-hidden="true">×</span>
+                              </>
+                            ) : (
+                              <span className="gs-citem-cap">1회</span>
+                            )}
+                            {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
+                              /* 센 기록이 있으면 창에서 (표 머리와 같은 규칙) */
+                              <span className="gs-pricewrap">
+                                <button
+                                  className="gs-in gs-in-price gs-pricebtn"
+                                  onClick={() => {
+                                    setItemsOpen(false);
+                                    setPriceAsk(c.id);
+                                  }}
+                                  aria-label={isRoulette(c) ? "룰렛 단가 고치기" : "1회당 단가 고치기"}
+                                >
+                                  {formatNumInput(String(+(goldOf(c.price) / (goldOf(unit) || 1)).toFixed(4)))}
+                                </button>
+                                <span className="gs-price-suffix">{(UNITS.find((u) => u.v === unit) || {}).label || "G"}</span>
+                              </span>
+                            ) : (
+                              <PriceFree
+                                gold={goldOf(c.price)}
+                                per={goldOf(unit) || 1}
+                                suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
+                                onChange={(g) => patchCol(c.id, "price", commafy(g))}
+                              />
+                            )}
+                            <button
+                              className="gs-x gs-citem-x"
+                              onClick={() => {
+                                setItemsOpen(false);
+                                askDelCol(c);
+                              }}
+                              aria-label="항목 지우기"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        <button
+                          className="gs-addcol gs-citem-add"
+                          onClick={() => {
+                            setItemsOpen(false);
+                            courseHit("addcol:open");
+                            setAddColOpen(true);
+                          }}
+                        >
+                          + 항목
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </span>
               )}
               {/* 조작은 전부 왼쪽 한 줄 — 동사 둘, 세로선, 입력 단위. 높이 34px 로 맞춘다 (2026-09-16).
                   (폐기) 입력 단위를 오른쪽에 따로·안내 위에 쌓기 — 세 덩이가 제각각 떠 있었다(사용자) */}
@@ -9989,55 +10080,6 @@ export default function GoldSettlement() {
         {(cardsMode && !readOnly) || memberCards ? (
           /* 카드 모드 (K1) — 초상화(카드 폭) · 이름 + 합계 · 항목 단추(표의 칸과 같은 물건) · 기타. 넓게 보기에서는 초상화가 정사각·열이 늘어난다 */
           <>
-          {/* 항목 칩 (2026-09-17) — 표 바 [항목 관리]를 펼쳤을 때만. (폐기 2026-09-17) 인원 4·8·16 세그 — "4·8·16 인 게임에서 + 칸이 맞는지 더 나은 방법을 찾자"를
-              단추 지시로 잘못 읽은 것(사용자). 줄 추가는 자리 배치 창으로 */}
-          {itemsOpen && (
-          <div className="gs-cardtools">
-            <div className="gs-cardtools-items">
-              {activeCols.map((c) => (
-                <span key={c.id} className="gs-citem">
-                  <input
-                    className="gs-in gs-in-col gs-citem-name"
-                    value={c.name || ""}
-                    placeholder="항목"
-                    onChange={(e) => patchCol(c.id, "name", e.target.value)}
-                    aria-label="항목 이름"
-                  />
-                  {isRoulette(c) ? (
-                    <button className="gs-citem-price" onClick={() => setRouletteCfg(c.id)} title="룰렛 비율 고치기">
-                      ◎ {liveFaces(c).length}면 · ×{man(Math.round(goldOf(c.price)))}
-                    </button>
-                  ) : rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
-                    /* 센 기록이 있으면 창에서 (표 머리와 같은 규칙) */
-                    <button className="gs-citem-price" onClick={() => setPriceAsk(c.id)} aria-label="1회당 단가 고치기">
-                      {formatNumInput(String(+(goldOf(c.price) / (goldOf(unit) || 1)).toFixed(4)))}
-                      <span className="gs-price-suffix">{(UNITS.find((u) => u.v === unit) || {}).label || "G"}</span>
-                    </button>
-                  ) : (
-                    <PriceFree
-                      gold={goldOf(c.price)}
-                      per={goldOf(unit) || 1}
-                      suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
-                      onChange={(g) => patchCol(c.id, "price", commafy(g))}
-                    />
-                  )}
-                  <button className="gs-x gs-citem-x" onClick={() => askDelCol(c)} aria-label="항목 지우기">
-                    ×
-                  </button>
-                </span>
-              ))}
-              <button
-                className="gs-addcol gs-citem-add"
-                onClick={() => {
-                  courseHit("addcol:open");
-                  setAddColOpen(true);
-                }}
-              >
-                + 항목
-              </button>
-            </div>
-          </div>
-          )}
           {/* 레이드 창 (2026-09-17 확정) — 가로 카드 한 줄: 왼쪽 초상화, 오른쪽 위 이름·합계, 아래 항목 단추·[기타]. 4명씩 세로 한 열, 두 열 나란히
               (로스트아크 레이드 창의 파티 1·2). 인원이 4의 배수가 아니면 남는 칸은 점선 빈 자리(누르면 자리 배치 창). [넓게] 16명은 4열, 단추 2×2.
               (폐기) 세로 카드 4열 — 참고 앱 뼈대(위 정사각 초상화·01 번호·직접 입력 줄)를 따라 만들어 더 나빴다(사용자): 8명이 한 화면에 안 들어가고,
@@ -18773,8 +18815,16 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-rdgrid-four .gs-rd-etcwrap{display:flex}
 .gs-rdgrid-four .gs-rd-etc{flex:1; justify-content:center}
 /* 카드 모드 항목 칩 — 표 바 [항목 관리]를 펼치면 바로 아래 (2026-09-17). 이름 · 단가 · × 그리고 [+ 항목] */
-.gs-cardtools{margin:-4px 0 14px; padding:10px; border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px; background:var(--paper-2)}
-.gs-cardtools-items{display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0}
+/* [항목 관리] 칸 — 단추 아래에 뜬다 (2026-09-18 확정 A). 칩은 세로로 하나씩. (폐기) .gs-cardtools 표 바 아래 펼침 */
+.gs-itemswrap{position:relative; display:inline-flex}
+.gs-itempop{position:absolute; left:0; top:calc(100% + 6px); z-index:20; min-width:300px; padding:10px 12px 12px; background:var(--paper); border:1px solid var(--gold); border-radius:2px; box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); white-space:nowrap}
+.gs-itempop-h{font-size:10.5px; letter-spacing:.12em; color:var(--ink-2); margin-bottom:8px}
+.gs-itempop-list{display:flex; flex-direction:column; gap:6px; align-items:flex-start}
+.gs-itempop .gs-citem{width:100%; gap:4px; padding-right:4px}
+.gs-itempop .gs-citem-x{margin-left:auto}
+.gs-citem-cap{font-size:10px; color:var(--ink-2); white-space:nowrap}
+.gs-citem .gs-rcbtn{padding:1px 5px}
+.gs-citem .gs-in-price{border-bottom:1px dotted rgba(var(--ink-rgb),.5)}
 .gs-itemsbtn{gap:6px; white-space:nowrap}
 .gs-itemsbtn svg{color:var(--ink-2); transition:transform .15s; flex:none}
 .gs-itemsbtn[aria-expanded="true"]{background:rgba(var(--ink-rgb),.1)}
