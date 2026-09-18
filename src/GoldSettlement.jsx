@@ -8889,6 +8889,33 @@ export default function GoldSettlement() {
      그래서 표를 잠깐 auto 로 두고 잰 폭을 카드의 min-width 로 줍니다. 열이 줄면 min-width 를 걷고 다시 잽니다 */
   const sheetBoxRef = useRef(null);
   const gridRef = useRef(null);
+  const rootRef = useRef(null);
+  /* 무대 폭 = 표 폭 (2026-09-18 사용자: 아래 카드가 늘어나면 위 탭도 같이 늘어나야). 표가 1080 을 넘으면 --stage 를 표 폭에 맞춰
+     마스트·탭·카드가 같이 넓어지고, 페이지가 가로로 넘친다(09-06 규칙: 표 안 스크롤 대신 창 가로 스크롤).
+     (버그) 표만 넓어져 머리 밑 선과 도구 열 세로선이 카드 테두리를 뚫고 나갔다 */
+  useEffect(() => {
+    const root = rootRef.current;
+    const grid = gridRef.current;
+    if (!root) return;
+    if (!grid || wide || simple) {
+      root.style.removeProperty("--stage");
+      return;
+    }
+    const apply = () => {
+      /* 표는 width:100% 라 무대를 넓히면 따라 넓어진다 — 재기 전에 무대를 1080 으로 되돌려 표의 본래 폭(넘치는 만큼)을 읽는다. 같은 프레임 안이라 깜빡임은 없다 */
+      root.style.setProperty("--stage", "1080px");
+      const need = Math.ceil(grid.getBoundingClientRect().width) + 38; /* 카드 안쪽 여백 18×2 + 테두리 1×2 */
+      if (need > 1080) root.style.setProperty("--stage", need + "px");
+      else root.style.removeProperty("--stage");
+    };
+    apply();
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(apply) : null;
+    if (ro) ro.observe(grid);
+    return () => {
+      if (ro) ro.disconnect();
+      root.style.removeProperty("--stage");
+    };
+  }, [simple, cardsMode, readOnly, wide, rows.length, cols.length, seats.length]);
   useLayoutEffect(() => {
     const card = sheetBoxRef.current;
     const tbl = gridRef.current;
@@ -8902,7 +8929,7 @@ export default function GoldSettlement() {
     if (need > room + 1) card.style.minWidth = need + (card.offsetWidth - room) + "px";
   }, [cols, simple, readOnly, tab, view, unit]);
   return (
-    <div className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
+    <div ref={rootRef} className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
       {DEMO &&
         (() => {
           /* 진행 표시 (2026-09-06 사용자 확정) — 장 점을 선으로 잇고 지금 장은 크게, 옆에 `3장 파티원 모으기 · 2/4`.
