@@ -651,6 +651,17 @@ const INVITE_GAIN = (
   </>
 );
 const INVITE_HOW = "초대 메시지를 복사해 Discord 등에 붙여 넣어요.";
+/* [파티원] 단추의 사람 여럿 (2026-09-19) */
+const PEOPLE_ICON = (
+  <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+    <g fill="currentColor">
+      <circle cx="7.2" cy="6.6" r="3" />
+      <path d="M1.2 17c.4-3.6 2.8-5.6 6-5.6s5.6 2 6 5.6z" />
+      <circle cx="14.2" cy="7.4" r="2.4" opacity=".6" />
+      <path d="M12.6 11.7c.5-.1 1-.2 1.6-.2 2.6 0 4.4 1.6 4.7 4.5h-4.2c-.2-1.8-.9-3.2-2.1-4.3z" opacity=".6" />
+    </g>
+  </svg>
+);
 /* [기록] — 시계 되감기. 카드 머리 줄에서 쓴다(표의 도구 열은 같은 그림을 제자리에 갖고 있다) */
 const LOG_ICON = (
   <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">
@@ -2730,8 +2741,7 @@ export default function GoldSettlement() {
      (빈 줄 · 퇴장한 사람 줄 · 새 줄). 사용자가 여러 번 말한 "직접 배치"다. (폐기, 같은 날) 이 시트를 "던전 중에 답해야 하는 괴물"이라며
      걷어내고 [받기]가 첫 빈 줄/새 줄에 앉히게 한 것 — 내 판단이었고 동의받은 적 없다 */
   const [waitPick, setWaitPick] = useState(null);
-  /* 헤더의 초대 코드 팝오버 (2026-09-06 사용자: 공유 창 안은 숨겨져 있다) */
-  const [invOpen, setInvOpen] = useState(false);
+  /* (폐기 2026-09-20) 헤더의 초대 팝오버 invOpen — [파티원] 단추의 작은 창(seatPop "party")으로 */
   /* 계정 쪽지 (H1, 2026-09-16) — 초상화+별명을 누르면. 초상화의 출처와 별명 바꾸기, 올리기·되돌리기·다시 가져오기 */
   /* 넓게 보기 (W, 2026-09-16) — 벌금판이 창 전체를 쓴다. 전체 화면(F11)이 아니라 창 안. Esc 나 [원래대로]로 돌아온다 */
   const [wide, setWide] = useState(false);
@@ -2756,6 +2766,8 @@ export default function GoldSettlement() {
      들어온 사람이 있으면 목록(누르면 그 자리에 바로). 사람이 있는 초상화는 누르는 곳이 아니다. 값: 줄 id 또는 "new:k"(줄이 아직 없는 점선 빈 자리) */
   const [seatPop, setSeatPop] = useState(null);
   const seatPopAnchors = useRef({});
+  /* 들어온 사람이 여럿일 때 먼저 놓을 사람 (2026-09-20) — 작은 사진을 누르면 그 사람부터. 없으면 온 순서 */
+  const [placeCur, setPlaceCur] = useState(null);
   useEffect(() => {
     if (seatPop == null) return;
     const h = (e) => {
@@ -2815,15 +2827,6 @@ export default function GoldSettlement() {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [acctOpen]);
-  const invWrapRef = useRef(null);
-  useEffect(() => {
-    if (!invOpen) return;
-    const h = (e) => {
-      if (invWrapRef.current && !invWrapRef.current.contains(e.target)) setInvOpen(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [invOpen]);
   /* 지난 판 이어서 — 고르기 창 */
   const [resumePick, setResumePick] = useState(false);
   const [arrived, setArrived] = useState({}); // 방금 앉은 줄 {자리 id: 시각} — 10초 뒤 지워집니다 (§3.1)
@@ -4772,7 +4775,7 @@ export default function GoldSettlement() {
         await roomApi.member(auth.token, relay.room, acct, "approve", id);
       } catch (e) {
         /* 정원은 서버가 수락 시점에 셉니다 — 방장이 고칠 수 있는 말로 바꿔 줍니다 */
-        say(e && e.status === 409 ? "빈 줄이 없어요. [자리 배치]에서 줄을 추가해 주세요." : e.message);
+        say(e && e.status === 409 ? "빈 줄이 없어요. [+ 인원 추가]로 줄을 추가해 주세요." : e.message);
         putSeats(seats);
         return;
       }
@@ -4804,7 +4807,7 @@ export default function GoldSettlement() {
     try {
       await roomApi.member(auth.token, relay.room, acct, "approve");
     } catch (e) {
-      say(e && e.status === 409 ? "빈 줄이 없어요. [자리 배치]에서 줄을 추가해 주세요." : e.message);
+      say(e && e.status === 409 ? "빈 줄이 없어요. [+ 인원 추가]로 줄을 추가해 주세요." : e.message);
       return;
     }
     setMembers((prev) => prev.map((m) => (m.acct === acct ? { ...m, st: "ok" } : m)));
@@ -4863,7 +4866,7 @@ export default function GoldSettlement() {
     if (roundLive) {
       const id0 = homeRowId(acct) || emptyRowId() || absentRowId(acct);
       if (!id0) {
-        say("빈 줄이 없어요. [자리 배치]에서 줄을 추가해 주세요.", 8000);
+        say("빈 줄이 없어요. [+ 인원 추가]로 줄을 추가해 주세요.", 8000);
         return null;
       }
       id = await seatMember(acct, nick, id0, opts);
@@ -4969,12 +4972,13 @@ export default function GoldSettlement() {
       if (m.st === "req") {
         /* 토스트 한 번(8초) — 방장의 눈은 항목에 가 있어서 한 번은 말해 준다. 들어온 사람은 표 바 [자리 배치 N] 옆 얼굴로 선다 (2026-09-17).
            (고침 2026-09-17) 보통 요청에도 "빈 줄이 없어요"라고 하던 갈래 */
+        /* (2026-09-20) 벌금표의 [파티원] 단추가 커지며 같은 말을 하고 배치할 때까지 남는다 — 지나가는 알림은 그 단추가 안 보일 때만(메모장 모드·다른 탭) */
         if (m.kicked) say("내보냈던 " + (m.nick || m.acct) + "님이 다시 참여를 요청했어요.", 8000);
-        else say((m.nick || m.acct) + "님이 초대를 수락했어요.", 8000);
+        else if (simple || !showSheet) say((m.nick || m.acct) + "님이 초대를 수락했어요.", 8000);
       } else if (m.st === "ok") {
         /* 시작 전엔 명단을 보는 효과가 앉힙니다 — 여기서도 앉히면 두 번 앉습니다. 진행 중엔 표 아래에 서니 한 번 말해 줍니다 (2026-09-06).
            (폐기 2026-09-06) 여기서 닉 일치·자리표시 줄에 바로 앉히던 것 */
-        if (roundLive && !seats.some((k) => k.acct === m.acct) && !ownRowOf(m.acct))
+        if (roundLive && !seats.some((k) => k.acct === m.acct) && !ownRowOf(m.acct) && (simple || !showSheet))
           say((m.nick || m.acct) + "님이 초대를 수락했어요.", 8000);
       }
       refreshMembers();
@@ -8380,6 +8384,41 @@ export default function GoldSettlement() {
      자기 줄이 남아 있는 사람은 그 줄 밑에 붙습니다. 시작 전에 처음 온 사람은 위 효과가 바로 앉혀 여기 서지 않습니다 */
   /* 기다리는 사람은 누구든 표 아래 한 곳 (2026-09-16) — 처음 오는 사람도, 나갔다 돌아오는 사람도 */
   const waitBelow = [...pending, ...waiting.map((w) => ({ ...w, waiting: true }))];
+  /* [파티원] (2026-09-20 확정) — 표가 주인이고 초대는 그 위에 얹는 기능이다. 들어온 사람은 표를 보기만 하고, 방장이 줄에 붙이는 것이 곧 허락이다.
+     들어온 사람 = 지금 접속해 있고 줄이 없는 사람, 온 순서대로. 접속을 끊은 사람은 파티원 창의 목록에만 남는다(서버는 줄 없는 회원의 on 도 준다) */
+  const partyCount = seats.filter((s) => s.acct && !(auth && s.acct === auth.id)).length;
+  const waitNow = waitBelow.filter((p) => p.on !== false).sort((a, b) => (a.t || 0) - (b.t || 0));
+  const curWait = waitNow.find((p) => p.acct === placeCur) || waitNow[0] || null;
+  /* 메모장 모드에는 표 바가 없어 안내를 세울 곳이 없다 — 거기서는 빈 사진 자리가 지금처럼 목록을 연다 */
+  const placeOn = !readOnly && !simple && !!curWait;
+  const seatAcctOf = (id) => (seats.find((k) => k.id === id) || {}).acct || null;
+  /* 어디에 놓아도 되는 줄 = 이름도 숫자도 없는 줄. 무엇이든 적힌 줄은 방장이 누군가를 두고 적은 줄이다 */
+  const blankRow = (x) => (!(x.name || "").trim() || isFillName(x.name)) && noFine(x);
+  const openRows = rows.filter((x) => !seatAcctOf(x.id));
+  const canFillAll = placeOn && waitNow.length >= 2 && openRows.length > 0 && openRows.every(blankRow);
+  const waitFace = (p, size) =>
+    p.ava && (p.ava.id || p.ava.p) ? (
+      <DcAva dc={avaDc(p.ava)} size={size} />
+    ) : (
+      <svg viewBox="0 0 20 20" width={Math.round(size * 0.55)} height={Math.round(size * 0.55)} aria-hidden="true">
+        <g fill="currentColor">
+          <circle cx="10" cy="6.4" r="3.4" />
+          <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+        </g>
+      </svg>
+    );
+  /* 누가 새로 들어온 순간 빈 사진 자리가 두 번 밝아진다 */
+  const waitCount = useRef(0);
+  const [justCame, setJustCame] = useState(false);
+  useEffect(() => {
+    const n = waitNow.length;
+    const more = n > waitCount.current;
+    waitCount.current = n;
+    if (!more) return;
+    setJustCame(true);
+    const t = setTimeout(() => setJustCame(false), 2600);
+    return () => clearTimeout(t);
+  }, [waitNow.length]);
   const waitWhy = (p) =>
     p.kicked ? "내보낸 사람 · 참여 요청" : "참여 요청";
   /* 이/가 — 이름 끝 받침으로 (순두부가 · 감독이) */
@@ -8413,12 +8452,15 @@ export default function GoldSettlement() {
        방장이 적어 둔 이름은 안 건드린다. 같은 이름이 이미 있으면 그대로 둔다 */
     const peopleNow = placerPeople();
     const takenNames = new Set(d.rows.map((r) => (r.name || "").trim()).filter((n) => n && !isFillName(n)));
+    /* (2026-09-20) 앱이 적은 닉네임은 방장이 손댄 이름이 아니다(named:false) — 그래야 사람이 바뀌거나 자리를 비울 때 이름이 사람을 따라간다 */
+    const autoIdx = new Set();
     const names = d.rows.map((r, i) => {
       const nm = (r.name || "").trim();
       if (r.acct && r.acct !== (r.oacct || null) && (!nm || isFillName(nm))) {
         const nick = ((peopleNow[r.acct] || {}).nick || "").trim();
         if (nick && !takenNames.has(nick)) {
           takenNames.add(nick);
+          autoIdx.add(i);
           return nick;
         }
       }
@@ -8427,6 +8469,7 @@ export default function GoldSettlement() {
     const dup = names.find((n, i) => names.indexOf(n) !== i);
     if (dup) return "'" + dup + "' 이름이 두 줄에 있어요. 한쪽을 고쳐 주세요.";
     const draft = d.rows.map((r, i) => ({ ...r, id: r.isNew ? "r" + seq.current++ : r.id, name: names[i] }));
+    const autoIds = new Set(draft.filter((r, i) => autoIdx.has(i)).map((r) => r.id));
     const byRow = new Map(rows.map((x) => [x.id, x]));
     const bySeat = new Map(seats.map((s) => [s.id, s]));
     const nextRows = draft.map((r) => {
@@ -8443,7 +8486,8 @@ export default function GoldSettlement() {
     const nextSeats = nextRows.map((x) => {
       const r = draft.find((q) => q.id === x.id);
       const s = bySeat.get(x.id) || { id: x.id, name: x.name, acct: null, mem: null, named: true };
-      let ns = s.name === x.name ? s : { ...s, name: x.name, named: true };
+      let ns = s.name === x.name ? s : { ...s, name: x.name, named: !autoIds.has(x.id) };
+      if (d.named && x.id in d.named) ns = { ...ns, named: !!d.named[x.id] }; // [되돌리기] — 앞 상태의 표시 그대로
       const want = r ? r.acct || null : s.acct || null;
       if ((s.acct || null) !== want)
         ns = want
@@ -8489,51 +8533,42 @@ export default function GoldSettlement() {
         for (const a of rejected) await roomApi.member(auth.token, relay.room, a, "remove");
         for (const a of unseat) await roomApi.member(auth.token, relay.room, a, "unseat");
         for (const [a, id] of approve) await roomApi.member(auth.token, relay.room, a, "approve", id);
-        say(d.note || "자리 배치를 저장했어요.");
+        say(d.note || "자리 배치를 저장했어요.", d.noteMs);
       } catch (e) {
         say((e && e.message) || "자리 배치를 서버에 저장하지 못했어요.");
       }
       if (approve.length || rejected.length) refreshMe();
       refreshMembers();
-    } else say(d.note || "자리 배치를 저장했어요.");
+    } else say(d.note || "자리 배치를 저장했어요.", d.noteMs);
     return null;
   };
-  /* 찬 초상화 팝오버의 [자리 비우기] (2026-09-19) — 줄의 이름·숫자는 그대로, 사람만 뺀다. 자리 배치 창에서 사람을 목록으로 끌어 빼는 것과 같은 저장 길 */
-  const quickUnseat = async (rowId) => {
-    setSeatPop(null);
-    const draft = rows.map((x) => {
-      const a = (seats.find((k) => k.id === x.id) || {}).acct || null;
+  /* ── 표에서 바로 하는 배치 (2026-09-20 확정) ── 놓는 순간 적용되고 저장이 없다. 방금 한 일은 알림의 [되돌리기]로 무른다.
+     자리 배치(파티원) 창과 같은 저장 길(applyPlacement)을 한 줄짜리 초안으로 탄다 */
+  const draftNow = () =>
+    rows.map((x) => {
+      const a = seatAcctOf(x.id);
       return { id: x.id, name: x.name || "", oname: x.name || "", acct: a, oacct: a, fine: !noFine(x) };
     });
-    const row = draft.find((r) => r.id === rowId);
-    if (!row || !row.acct || (auth && row.acct === auth.id)) return;
-    const who = (members.find((m) => m.acct === row.acct) || {}).nick || row.acct;
-    row.acct = null;
-    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: who + "님의 자리를 비웠어요." });
-    if (err) say(err);
+  const nickOf = (acct) => (members.find((m) => m.acct === acct) || {}).nick || acct;
+  /* 건드리기 전의 줄 — [되돌리기]가 이 줄만 앞 상태로 돌린다 */
+  const snapRow = (id) => {
+    const x = rows.find((r) => r.id === id) || {};
+    const s = seats.find((k) => k.id === id) || {};
+    return { id, name: x.name || "", acct: s.acct || null, named: s.named !== false };
   };
-  /* 빈 초상화 팝오버에서 사람을 누르면 — 그 줄(또는 새 줄)에 바로. 자리 배치 창과 같은 저장 길(applyPlacement)을 한 줄짜리 초안으로 탄다 */
-  const quickPlace = async (acct, target) => {
-    setSeatPop(null);
-    const draft = rows.map((x) => {
-      const a = (seats.find((k) => k.id === x.id) || {}).acct || null;
-      return { id: x.id, name: x.name || "", oname: x.name || "", acct: a, oacct: a, fine: !noFine(x) };
-    });
-    let id = target;
-    if (target === "new") {
-      id = "r" + seq.current++;
-      const taken = new Set(rows.map((x) => x.name));
-      let k = rows.length + 1;
-      while (taken.has(FILL_NAME(k))) k++;
-      draft.push({ id, name: FILL_NAME(k), oname: null, acct: null, oacct: null, fine: false });
-    }
-    const row = draft.find((r) => r.id === id);
-    if (!row || row.acct) return;
-    row.acct = acct;
-    const who = (members.find((m) => m.acct === acct) || {}).nick || acct;
-    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: who + "님을 " + row.name + " 줄에 배정했어요." });
-    if (err) return say(err);
-    /* 앉힌 줄의 이름 칸에 커서 — 이름은 방장이 적는 것이라, 바로 적을 수 있게 */
+  /* 앱이 적어 둔 닉네임인가 — 방장이 손대지 않았고(named:false) 지금도 그 사람의 닉네임 그대로 */
+  const autoNamedRow = (id) => {
+    const x = rows.find((r) => r.id === id) || {};
+    const s = seats.find((k) => k.id === id) || {};
+    return !!s.acct && s.named === false && (x.name || "").trim() === (nickOf(s.acct) || "").trim();
+  };
+  const freeFillName = (from) => {
+    const taken = new Set(rows.map((x) => x.name));
+    let k = from;
+    while (taken.has(FILL_NAME(k))) k++;
+    return FILL_NAME(k);
+  };
+  const focusRowName = (id) =>
     requestAnimationFrame(() => {
       const el = document.querySelector('.gs-rd[data-row="' + id + '"] .gs-rd-name, tr[data-row="' + id + '"] .gs-in-name');
       if (el && el.focus) {
@@ -8541,6 +8576,167 @@ export default function GoldSettlement() {
         if (el.select) el.select();
       }
     });
+  /* 알림 속 [되돌리기]는 늘 '지금'의 표를 보고 되돌려야 한다 — 알림을 띄운 렌더의 rows·seats 는 배치 전 것이다 */
+  const undoQuickRef = useRef(null);
+  const undoNote = (text, touched, added) => (
+    <>
+      {text}{" "}
+      <button className="gs-toast-link" onClick={() => undoQuickRef.current && undoQuickRef.current(touched, added)}>
+        되돌리기
+      </button>
+    </>
+  );
+  undoQuickRef.current = async (touched, added) => {
+    setToast(null);
+    const back = new Map(touched.map((t) => [t.id, t]));
+    const draft = draftNow()
+      .filter((r) => r.id !== added)
+      .map((r) => (back.has(r.id) ? { ...r, name: back.get(r.id).name, acct: back.get(r.id).acct } : r));
+    const named = {};
+    touched.forEach((t) => (named[t.id] = t.named));
+    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: added ? [added] : [], named, note: "되돌렸어요." });
+    if (err) say(err);
+  };
+  /* 찬 초상화 팝오버의 [자리 비우기] (2026-09-19) — 줄의 숫자는 그대로, 사람만 뺀다. 앱이 적어 둔 닉네임이면 이름도 같이 비운다 */
+  const quickUnseat = async (rowId) => {
+    setSeatPop(null);
+    const draft = draftNow();
+    const row = draft.find((r) => r.id === rowId);
+    if (!row || !row.acct || (auth && row.acct === auth.id)) return;
+    const who = nickOf(row.acct);
+    const touched = [snapRow(rowId)];
+    if (autoNamedRow(rowId)) row.name = freeFillName(draft.indexOf(row) + 1);
+    row.acct = null;
+    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: undoNote(who + " 님의 자리를 비웠어요.", touched, null), noteMs: 7000 });
+    if (err) say(err);
+  };
+  /* 켜진 빈 사진 자리를 누르면 — 그 줄(또는 새 줄)에 바로 */
+  const quickPlace = async (acct, target) => {
+    setSeatPop(null);
+    const draft = draftNow();
+    let id = target;
+    if (target === "new") {
+      id = "r" + seq.current++;
+      draft.push({ id, name: freeFillName(rows.length + 1), oname: null, acct: null, oacct: null, fine: false });
+    }
+    const row = draft.find((r) => r.id === id);
+    if (!row || row.acct) return;
+    const touched = target === "new" ? [] : [snapRow(id)];
+    const nm = (row.name || "").trim();
+    const auto = !nm || isFillName(nm); // 이름 없는 줄이면 닉네임이 적힌다(applyPlacement)
+    row.acct = acct;
+    const who = nickOf(acct);
+    const where = target === "new" ? "" : auto ? draft.indexOf(row) + 1 + "번째 줄" : "'" + nm + "' 줄";
+    const text = target === "new" ? "줄을 추가하고 " + who + " 님을 배치했어요." : who + " 님을 " + where + "에 배치했어요.";
+    if (placeCur === acct) setPlaceCur(null);
+    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: undoNote(text, touched, target === "new" ? id : null), noteMs: 7000 });
+    if (err) return say(err);
+    /* 닉네임이 적힌 줄만 이름 칸에 커서 — 글자가 전부 선택돼 있어 바로 치면 바뀐다. 방장이 적어 둔 이름은 이름도 커서도 안 건드린다 */
+    if (auto) focusRowName(id);
+  };
+  /* 사람이 있는 줄에 배치 — 있던 사람은 줄에서 빠지고 파티원으로는 남는다. 앱이 적어 둔 닉네임이면 새 사람의 닉네임으로 */
+  const quickReplace = async (rowId, acct) => {
+    setSeatPop(null);
+    const draft = draftNow();
+    const row = draft.find((r) => r.id === rowId);
+    if (!row || !row.acct || row.acct === acct || (auth && row.acct === auth.id)) return;
+    const old = nickOf(row.acct);
+    const touched = [snapRow(rowId)];
+    const auto = autoNamedRow(rowId);
+    if (auto) row.name = "";
+    row.acct = acct;
+    if (placeCur === acct) setPlaceCur(null);
+    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: undoNote(old + " 님 자리에 " + nickOf(acct) + " 님을 배치했어요.", touched, null), noteMs: 7000 });
+    if (err) return say(err);
+    if (auto) focusRowName(rowId);
+  };
+  /* [빈 줄에 차례로] — 남은 빈 줄이 전부 이름도 숫자도 없을 때만 나온다(어디에 놓아도 틀릴 수 없을 때) */
+  const quickFill = async () => {
+    const draft = draftNow();
+    const touched = [];
+    let k = 0;
+    for (const p of waitNow) {
+      const row = draft.find((r) => !r.acct && blankRow(rows.find((x) => x.id === r.id) || {}));
+      if (!row) break;
+      touched.push(snapRow(row.id));
+      row.acct = p.acct;
+      k++;
+    }
+    if (!k) return;
+    setPlaceCur(null);
+    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: undoNote(k + "명을 빈 줄에 차례로 배치했어요.", touched, null), noteMs: 7000 });
+    if (err) say(err);
+  };
+  /* [거절] — 서버에서 명단을 지우는 일이라 되돌리기가 없다. 한 번 묻는다 */
+  const askReject = (p) =>
+    setAsk({
+      title: (p.nick || p.acct) + " 님의 참여를 거절할까요?",
+      body: "거절해도 초대 링크로 다시 요청할 수 있어요.",
+      action: "거절",
+      onYes: () => {
+        if (placeCur === p.acct) setPlaceCur(null);
+        waitDeny(p);
+      },
+    });
+  /* 표 위의 사진은 끌어도 된다 — 줄에 놓으면 그 줄에. 줄에 앉은 사진은 안 끌린다(09-17: 평소 화면에서 사진이 끌려 사람이 바뀌던 오작동) */
+  const dropFaceRef = useRef(null);
+  dropFaceRef.current = (acct, rowId) => {
+    const cur = seatAcctOf(rowId);
+    if (!rows.some((x) => x.id === rowId) || (cur && auth && cur === auth.id)) return;
+    if (!cur) return quickPlace(acct, rowId);
+    setAsk({
+      title: nickOf(cur) + " 님 자리에 " + nickOf(acct) + " 님을 배치할까요?",
+      body: nickOf(cur) + " 님은 이 줄에서 빠지고, 파티원으로는 남아요.",
+      action: "배치",
+      onYes: () => quickReplace(rowId, acct),
+    });
+  };
+  const startFaceDrag = (e, p, onTap) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const face = e.currentTarget;
+    const d = { x0: e.clientX, y0: e.clientY, on: false, ghost: null, over: null };
+    /* 줄의 class 는 React 가 마우스 올림(gs-litrow)으로 다시 쓴다 — 직접 붙인 class 는 지워지므로 속성으로 표시한다 */
+    const clear = () => document.querySelectorAll("[data-drop]").forEach((el) => el.removeAttribute("data-drop"));
+    const move = (ev) => {
+      if (!d.on) {
+        if (Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < 5) return;
+        d.on = true;
+        setSeatPop(null);
+        const g = document.createElement("div");
+        g.className = "gs-facedrag";
+        const pic = face.cloneNode(true);
+        pic.removeAttribute("title");
+        g.appendChild(pic);
+        g.appendChild(document.createTextNode(p.nick || ""));
+        (document.querySelector(".gs") || document.body).appendChild(g);
+        d.ghost = g;
+        document.body.classList.add("gs-facedragging");
+      }
+      d.ghost.style.left = ev.clientX + "px";
+      d.ghost.style.top = ev.clientY + "px";
+      clear();
+      d.over = null;
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);
+      const host = under && under.closest ? under.closest("tr[data-row], .gs-rd[data-row]") : null;
+      if (!host) return;
+      d.over = host.getAttribute("data-row");
+      host.setAttribute("data-drop", "1");
+    };
+    const up = (ev) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      clear();
+      document.body.classList.remove("gs-facedragging");
+      if (d.ghost) d.ghost.remove();
+      if (ev.type === "pointercancel") return;
+      if (!d.on) return onTap && onTap();
+      if (d.over && dropFaceRef.current) dropFaceRef.current(p.acct, d.over);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
   const seatPopFor = (target, label, who) =>
     seatPop === target ? (
@@ -8548,6 +8744,9 @@ export default function GoldSettlement() {
         anchor={seatPopAnchors.current[target]}
         label={label}
         who={who || null}
+        bar={!simple}
+        placeWho={placeOn && who && !who.host ? curWait.nick || curWait.acct : null}
+        onReplace={() => curWait && quickReplace(target, curWait.acct)}
         onUnseat={() => quickUnseat(target)}
         linked={!!(auth && auth.dc)}
         tray={waitBelow.map((p) => ({ acct: p.acct, nick: p.nick || p.acct, ava: p.ava && (p.ava.id || p.ava.p) ? avaDc(p.ava) : null, dcu: p.dcu || "" }))}
@@ -9097,54 +9296,8 @@ export default function GoldSettlement() {
               )}
             </span>
           )}
-          {/* [초대] (§3.12.7) — 판 라벨 오른쪽 (2026-09-16 사용자). 연동 전엔 문 하나, 연동 뒤엔 디코 메시지 복사. 쪽지 모양 팝오버 */}
-          {!readOnly && !genView && (
-            <span className="gs-invwrap gs-invwrap-l" ref={invWrapRef}>
-              <button
-                className={"gs-btn gs-btn-ghost gs-invbtn" + (invOpen ? " on" : "")}
-                onClick={() => setInvOpen((v) => !v)}
-                aria-haspopup="dialog"
-                aria-expanded={invOpen}
-              >
-                초대
-              </button>
-              {invOpen && (
-                <div className="gs-invpop gs-invnote" role="dialog" aria-label="초대">
-                  {!auth || !auth.dc ? (
-                    <>
-                      <h4 className="gs-invnote-h">{INVITE_GATE_H}</h4>
-                      {/* (고침 2026-09-18~19) 왜 필요한지가 아니라 하면 뭐가 되는지. 초대해야만 되는 일 둘만 — 방송에 띄우는 것은 초대 없이도 방장 주소로 된다 */}
-                      {INVITE_GAIN}
-                      <div className="gs-invnote-acts">
-                        <button className="gs-btn gs-dcbtn" onClick={() => startDiscord()}>
-                          Discord 연동
-                        </button>
-                      </div>
-                      <div className="gs-invnote-foot">연동하지 않아도 벌금 기록과 방송은 지금 그대로 할 수 있어요.</div>
-                    </>
-                  ) : (
-                    <>
-                      {/* (고침 2026-09-18) 제목 = 문 이름. (폐기) '파티원 부르기' */}
-                      <h4 className="gs-invnote-h">초대</h4>
-                      {/* 머리의 [Discord 연동]으로 연동한 사람은 연동 전 창을 본 적이 없다 — 좋은 점 두 줄은 이 창에도 똑같이 (2026-09-19 사용자) */}
-                      {INVITE_GAIN}
-                      {/* (폐기 2026-09-18) "자리가 있던 사람은 …" — 방장이 할 일이 없는 상황의 설명. "링크는 늘 같아요 / 채널에 핀 …" — 고정 링크는 논의 중 */}
-                      <p className="gs-invnote-p gs-invnote-after">
-                        {INVITE_HOW}
-                        <br />
-                        들어온 사람은 [자리 배치]에 모이고 방장이 드래그로 배치해요.
-                      </p>
-                      <div className="gs-invnote-acts">
-                        <button className="gs-btn gs-invdiscbtn" onClick={copyInvite}>
-                          {flash === "inv" ? "복사했어요" : "초대 메시지 복사"}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </span>
-          )}
+          {/* (폐기 2026-09-19~20 사용자 확정) 머리의 [초대] 단추와 쪽지 모양 작은 창 — 초대와 배치는 한 가지 일의 앞뒤라 문을 하나로 합쳤다.
+              표 위 도구 줄 맨 왼쪽의 [파티원 초대]/[파티원]. 머리 줄에는 앱 전체의 것(방송 설정·튜토리얼·계정)만 남는다 */}
           <div className="gs-sysbar-r">
             {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리. 버튼은 이것 하나고(§5.7)
                 비로그인도 이 문으로 들어갑니다 — 주소 발급은 창 안 [내 방송용 주소
@@ -9215,7 +9368,7 @@ export default function GoldSettlement() {
                 <div className="gs-invpop gs-helppop" role="dialog" aria-label="튜토리얼">
                   <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
                   {TUTORIALS_OFF && (
-                    <p className="gs-guide-foot">튜토리얼은 새 화면에 맞춰 다시 만드는 중이에요. 초대는 시스템 줄의 [초대], 방송 주소는 [방송 설정]에 있어요.</p>
+                    <p className="gs-guide-foot">튜토리얼은 새 화면에 맞춰 다시 만드는 중이에요. 초대는 표 위의 [파티원 초대], 방송 주소는 [방송 설정]에 있어요.</p>
                   )}
                   {/* 행 = 이름 + 칩(추천·봤어요) + 역할 한 줄 + 서브, 오른쪽에 [보기]/[다시 보기] (2026-09-06 낮 사용자: 시인성·역할 설명).
                       역할 문구 — 파티원은 사용자 지정, 방장은 초안. (폐기, 같은 날) 한 줄에 이름·서브·버튼 안 `추천` */}
@@ -9997,7 +10150,7 @@ export default function GoldSettlement() {
 
         {/* 내용 상자 — 정산 장부·보낼 우편과 같은 뼈대입니다.
             머리줄(제목·모드)은 상자 밖에 두어 세 탭의 윗부분이 한 줄로 맞습니다 */}
-        <div className="gs-card gs-sheetbox" ref={sheetBoxRef}>
+        <div className={"gs-card gs-sheetbox" + (placeOn ? " gs-placing" : "") + (placeOn && justCame ? " gs-justcame" : "")} ref={sheetBoxRef}>
 
         {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다.
             방장이 메모장으로 바꾸면 자수 탭이 없어지므로(보통 항목이 없습니다) 뒷말도 같이
@@ -10063,162 +10216,228 @@ export default function GoldSettlement() {
         {/* 누르는 것(복사)은 왼쪽, 읽는 것(조작법)은 오른쪽 — 손이 가는 쪽에 버튼을 둡니다 */}
         {!simple && (
           <div className="gs-tablebar">
-            {/* [전부 비우기] — 표 바로 위 (2026-09-06 사용자 지정). 숫자만 비웁니다. 판을 닫는 [정산 끝내기]와 층이 다릅니다 */}
-            {/* [전부 비우기]와 [채팅 공유용 복사]는 왼쪽에 나란히, 마우스 안내는 오른쪽 (2026-09-06 사용자 지정 — 복사 버튼이 한가운데 떠 있던 것만 고침) */}
+            {/* 표 바 (2026-09-20 확정, 목업 5판) — 왼쪽은 사람, 오른쪽은 표 도구 한 줄([항목 관리] · 입력 단위 · [비우기] · [넓게]) + 그 아래 마우스 안내.
+                늘 두 줄 높이라 [파티원]이 커져도 표가 안 밀리고, 도구가 오른쪽에 붙어 있어 누가 들어와도 도구 단추가 옆으로 안 밀린다.
+                (폐기 2026-09-16~17) 조작 전부 왼쪽 한 줄 + 오른쪽 안내 — 들어온 사람의 얼굴 상자가 나올 때마다 [입력 단위]가 옆으로 밀렸다 */}
             <span className="gs-tablebar-l">
-              {!readOnly && roundLive && (
-                <span className="gs-tip">
-                  <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
-                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
-                        <path d="M6.6 6.2l3.4 3.4" />
-                        <path d="M7 13.6h7" />
-                      </g>
-                    </svg>
-                    비우기
-                  </button>
-                  <span className="gs-tip-body gs-tip-l" role="tooltip">
-                    지금 표를 <b>판 기록</b>에 남기고 숫자만 비워요. 이름과 자리는 그대로예요.
-                  </span>
-                </span>
-              )}
-              {/* (폐기 2026-09-16) [채팅 공유용 복사] — 오버레이가 대중화돼 거의 안 쓴다(사용자). 메모장 머리의 것도 함께 */}
-              {/* [자리 배치 N] + 들어온 사람의 작은 얼굴 (2026-09-17 확정) — [비우기] 옆. 누르면 자리 배치 창. 사람이 들어와도 표는 밀리지 않는다.
-                  (폐기) 표 아래 승인 대기 줄 · [승인] · [자리 지정] */}
+              {/* [파티원] — 초대와 배치의 문 하나. 평소에는 작은 단추, 누가 들어오면 도구 줄 높이만큼 커지며 누가 왔는지·할 일을 말한다.
+                  커진 뒤에도 왼쪽 칸은 그대로 [파티원] — 누르면 같은 작은 창(초대 메시지 복사 · 파티원 창 열기…).
+                  (폐기) 머리의 [초대] · 표 위 [자리 배치 N] + 얼굴 상자 */}
               {!readOnly && (
-                <button
-                  type="button"
-                  className={"gs-btn gs-btn-sm gs-btn-ghost gs-seatbtn" + (waitBelow.length ? " gs-seatbtn-has" : "")}
-                  onClick={() => setSeatOpen(true)}
-                >
-                  자리 배치<b>{waitBelow.length}</b>
-                </button>
-              )}
-              {!readOnly && waitBelow.length > 0 && (
-                <button
-                  type="button"
-                  className="gs-seatfaces"
-                  onClick={() => setSeatOpen(true)}
-                  aria-label={"들어온 사람 " + waitBelow.length + "명, 자리 배치 열기"}
-                >
-                  {waitBelow.map((p) => (
-                    <span key={p.acct} className="gs-seatface" title={(p.nick || "") + (p.dcu ? " " + p.dcu : "")}>
-                      {p.ava && (p.ava.id || p.ava.p) ? (
-                        <DcAva dc={avaDc(p.ava)} size={22} />
-                      ) : (
-                        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-                          <g fill="currentColor">
-                            <circle cx="10" cy="6.4" r="3.4" />
-                            <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
-                          </g>
-                        </svg>
-                      )}
-                    </span>
-                  ))}
-                </button>
-              )}
-              {/* [항목 관리] — 카드 모드에만. 카운터 모드는 표 머리에서 항목을 고친다. 단추 아래에 떠 있는 칸 (2026-09-18 확정 A) — 카드가 안 밀리고,
-                  바깥을 누르면 닫힌다. 칩은 표 머리와 같은 규칙: 이름 · "1회 [1] 만G" / "[룰렛] × [1] 만G" · ×, [+ 항목]. 창(단가·룰렛 설정·항목 추가)이 뜨면 이 칸은 닫힌다.
-                  (폐기 2026-09-18) 표 바 아래 펼침 — 펼치면 카드가 64px 내려갔다(기타를 안 밀리게 한 것과 규칙이 달랐다).
-                  (폐기 2026-09-17) 표 바 아래 한 줄 상자에 요약 — 이름·단가가 카드 단추에 이미 있어 같은 내용을 한 줄 더 썼다 */}
-              {cardsMode && !readOnly && (
-                <span className="gs-itemswrap">
-                  <button
-                    type="button"
-                    className="gs-btn gs-btn-sm gs-btn-ghost gs-itemsbtn"
-                    aria-expanded={itemsOpen}
-                    onClick={() => setItemsOpen((o) => !o)}
-                  >
-                    항목 관리
-                    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-                      <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
-                  {itemsOpen && (
-                    <div className="gs-itempop" role="dialog" aria-label="항목 관리">
-                      <div className="gs-itempop-h">항목</div>
-                      <div className="gs-itempop-list">
-                        {activeCols.map((c) => (
-                          <span key={c.id} className="gs-citem">
-                            <input
-                              className="gs-in gs-in-col gs-citem-name"
-                              value={c.name || ""}
-                              placeholder="항목"
-                              onChange={(e) => patchCol(c.id, "name", e.target.value)}
-                              aria-label="항목 이름"
-                            />
-                            {isRoulette(c) ? <span className="gs-citem-cap">배율:</span> : <span className="gs-citem-cap">1회</span>}
-                            {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
-                              /* 센 기록이 있으면 창에서 (표 머리와 같은 규칙) */
-                              <span className="gs-pricewrap">
-                                <button
-                                  className="gs-in gs-in-price gs-pricebtn"
-                                  onClick={() => {
-                                    setItemsOpen(false);
-                                    setPriceAsk(c.id);
-                                  }}
-                                  aria-label={isRoulette(c) ? "룰렛 단가 고치기" : "1회당 단가 고치기"}
-                                >
-                                  {formatNumInput(String(+(goldOf(c.price) / (goldOf(unit) || 1)).toFixed(4)))}
-                                </button>
-                                <span className="gs-price-suffix">{(UNITS.find((u) => u.v === unit) || {}).label || "G"}</span>
-                              </span>
-                            ) : (
-                              <PriceFree
-                                gold={goldOf(c.price)}
-                                per={goldOf(unit) || 1}
-                                suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
-                                onChange={(g) => patchCol(c.id, "price", commafy(g))}
-                              />
-                            )}
-                            {isRoulette(c) && (
+                <span className={"gs-pty" + (placeOn ? " gs-pty-open" : "")} role="group" aria-label="파티원">
+                  <span className={"gs-seatpopwrap" + (seatPop === "party" ? " open" : "")} ref={(el) => (seatPopAnchors.current.party = el)}>
+                    <button
+                      type="button"
+                      className="gs-btn gs-btn-sm gs-btn-ghost gs-ptybtn"
+                      onClick={() => setSeatPop(seatPop === "party" ? null : "party")}
+                      aria-haspopup="dialog"
+                      aria-expanded={seatPop === "party"}
+                    >
+                      {PEOPLE_ICON}
+                      <span>{partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}</span>
+                    </button>
+                    {seatPop === "party" && (
+                      <SeatPop
+                        party
+                        bar
+                        anchor={seatPopAnchors.current.party}
+                        label={partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}
+                        linked={!!(auth && auth.dc)}
+                        tray={[]}
+                        copied={flash === "inv"}
+                        onDiscord={() => startDiscord()}
+                        onCopyInvite={copyInvite}
+                        onOpenModal={() => {
+                          setSeatPop(null);
+                          setSeatOpen(true);
+                        }}
+                        onClose={() => setSeatPop(null)}
+                      />
+                    )}
+                  </span>
+                  {placeOn && (
+                    <span className="gs-pty-body" role="status">
+                      <button
+                        type="button"
+                        className="gs-pty-face gs-pty-cur"
+                        onPointerDown={(e) => startFaceDrag(e, curWait)}
+                        aria-label={(curWait.nick || "") + " — 끌어서 줄에 놓을 수 있어요"}
+                        title={(curWait.nick || "") + (curWait.dcu ? " " + curWait.dcu : "")}
+                      >
+                        {waitFace(curWait, 40)}
+                      </button>
+                      <span className="gs-pty-text">
+                        <span className="gs-pty-l1">
+                          <b>{curWait.nick || curWait.acct}</b>
+                          {waitNow.length === 1 ? " 님이 들어왔어요" : " 님 외 " + (waitNow.length - 1) + "명이 들어와 있어요"}
+                        </span>
+                        <span className="gs-pty-l2">
+                          {!openRows.length
+                            ? "빈 줄이 없어요. 바꿀 사람의 사진을 눌러요"
+                            : waitNow.length === 1
+                            ? "금색으로 켜진 자리를 눌러 줄에 배치해요"
+                            : "켜진 자리를 누르면 " + (curWait.nick || curWait.acct) + " 님부터 배치해요"}
+                        </span>
+                      </span>
+                      {waitNow.length > 1 && (
+                        <span className="gs-pty-rest">
+                          {waitNow
+                            .filter((p) => p.acct !== curWait.acct)
+                            .slice(0, 3)
+                            .map((p) => (
                               <button
-                                className="gs-rcbtn gs-rcgear"
-                                onClick={() => {
-                                  setItemsOpen(false);
-                                  setRouletteCfg(c.id);
+                                key={p.acct}
+                                type="button"
+                                className="gs-pty-face gs-pty-small"
+                                onPointerDown={(e) => startFaceDrag(e, p, () => setPlaceCur(p.acct))}
+                                onClick={(e) => {
+                                  if (e.detail === 0) setPlaceCur(p.acct); // 키보드로 누른 경우 — 마우스는 위의 끌기 처리가 받는다
                                 }}
-                                title="룰렛 설정 — 면 수·비율·양도권"
-                                aria-label="룰렛 설정"
+                                aria-label={(p.nick || "") + " 님부터 배치"}
+                                title={(p.nick || "") + (p.dcu ? " " + p.dcu : "")}
                               >
-                                {GEAR_ICON}
+                                {waitFace(p, 26)}
                               </button>
-                            )}
-                            <button
-                              className="gs-x gs-citem-x"
-                              onClick={() => {
-                                setItemsOpen(false);
-                                askDelCol(c);
-                              }}
-                              aria-label="항목 지우기"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                        <button
-                          className="gs-addcol gs-citem-add"
-                          onClick={() => {
-                            setItemsOpen(false);
-                            courseHit("addcol:open");
-                            setAddColOpen(true);
-                          }}
-                        >
-                          + 항목
+                            ))}
+                          {waitNow.length > 4 && <span className="gs-pty-more">+{waitNow.length - 4}</span>}
+                        </span>
+                      )}
+                      {canFillAll && (
+                        <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-pty-act" onClick={quickFill}>
+                          빈 줄에 차례로
                         </button>
-                      </div>
-                    </div>
+                      )}
+                      {!openRows.length && (
+                        <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-pty-act" onClick={() => quickPlace(curWait.acct, "new")}>
+                          줄 추가해서 배치
+                        </button>
+                      )}
+                      <button type="button" className="gs-pty-textbtn" onClick={() => askReject(curWait)}>
+                        거절
+                      </button>
+                    </span>
                   )}
                 </span>
               )}
-              {/* 조작은 전부 왼쪽 한 줄 — 동사 둘, 세로선, 입력 단위. 높이 34px 로 맞춘다 (2026-09-16).
-                  (폐기) 입력 단위를 오른쪽에 따로·안내 위에 쌓기 — 세 덩이가 제각각 떠 있었다(사용자) */}
-              {!readOnly && <span className="gs-tablebar-sep" aria-hidden="true" />}
-              {!readOnly && unitSeg(false)}
             </span>
-            {/* 오른쪽 끝 — 안내 한 줄 + [넓게] (W). 같은 줄, 같은 세로 가운데 */}
             <span className="gs-tablebar-end">
+              {!readOnly && (
+                <span className="gs-tabletools">
+                  {cardsMode && !readOnly && (
+                    <span className="gs-itemswrap">
+                      <button
+                        type="button"
+                        className="gs-btn gs-btn-sm gs-btn-ghost gs-itemsbtn"
+                        aria-expanded={itemsOpen}
+                        onClick={() => setItemsOpen((o) => !o)}
+                      >
+                        항목 관리
+                        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                          <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      {itemsOpen && (
+                        <div className="gs-itempop" role="dialog" aria-label="항목 관리">
+                          <div className="gs-itempop-h">항목</div>
+                          <div className="gs-itempop-list">
+                            {activeCols.map((c) => (
+                              <span key={c.id} className="gs-citem">
+                                <input
+                                  className="gs-in gs-in-col gs-citem-name"
+                                  value={c.name || ""}
+                                  placeholder="항목"
+                                  onChange={(e) => patchCol(c.id, "name", e.target.value)}
+                                  aria-label="항목 이름"
+                                />
+                                {isRoulette(c) ? <span className="gs-citem-cap">배율:</span> : <span className="gs-citem-cap">1회</span>}
+                                {rows.reduce((a, x) => a + num(x.counts[c.id]), 0) > 0 ? (
+                                  /* 센 기록이 있으면 창에서 (표 머리와 같은 규칙) */
+                                  <span className="gs-pricewrap">
+                                    <button
+                                      className="gs-in gs-in-price gs-pricebtn"
+                                      onClick={() => {
+                                        setItemsOpen(false);
+                                        setPriceAsk(c.id);
+                                      }}
+                                      aria-label={isRoulette(c) ? "룰렛 단가 고치기" : "1회당 단가 고치기"}
+                                    >
+                                      {formatNumInput(String(+(goldOf(c.price) / (goldOf(unit) || 1)).toFixed(4)))}
+                                    </button>
+                                    <span className="gs-price-suffix">{(UNITS.find((u) => u.v === unit) || {}).label || "G"}</span>
+                                  </span>
+                                ) : (
+                                  <PriceFree
+                                    gold={goldOf(c.price)}
+                                    per={goldOf(unit) || 1}
+                                    suffix={(UNITS.find((u) => u.v === unit) || {}).label || "G"}
+                                    onChange={(g) => patchCol(c.id, "price", commafy(g))}
+                                  />
+                                )}
+                                {isRoulette(c) && (
+                                  <button
+                                    className="gs-rcbtn gs-rcgear"
+                                    onClick={() => {
+                                      setItemsOpen(false);
+                                      setRouletteCfg(c.id);
+                                    }}
+                                    title="룰렛 설정 — 면 수·비율·양도권"
+                                    aria-label="룰렛 설정"
+                                  >
+                                    {GEAR_ICON}
+                                  </button>
+                                )}
+                                <button
+                                  className="gs-x gs-citem-x"
+                                  onClick={() => {
+                                    setItemsOpen(false);
+                                    askDelCol(c);
+                                  }}
+                                  aria-label="항목 지우기"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                            <button
+                              className="gs-addcol gs-citem-add"
+                              onClick={() => {
+                                setItemsOpen(false);
+                                courseHit("addcol:open");
+                                setAddColOpen(true);
+                              }}
+                            >
+                              + 항목
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </span>
+                  )}
+                  {unitSeg(false)}
+                  {!readOnly && roundLive && (
+                    <span className="gs-tip">
+                      <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
+                        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                          <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
+                            <path d="M6.6 6.2l3.4 3.4" />
+                            <path d="M7 13.6h7" />
+                          </g>
+                        </svg>
+                        비우기
+                      </button>
+                      <span className="gs-tip-body gs-tip-r" role="tooltip">
+                        지금 표를 <b>판 기록</b>에 남기고 숫자만 비워요. 이름과 자리는 그대로예요.
+                      </span>
+                    </span>
+                  )}
+                  {!wide && (
+                    <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(true)} title="벌금판을 창 전체로">
+                      ⤢ 넓게
+                    </button>
+                  )}
+                </span>
+              )}
               {readOnly ? (
                 /* 파티원 — 누른 건 방장 벌금판에 올라가고, 서버가 30초 안의 되돌리기만 받는다 (§3.6) */
                 <p className="gs-cellnote">
@@ -10230,11 +10449,6 @@ export default function GoldSettlement() {
                   칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
                   우클릭하면 1회 빠져요.
                 </p>
-              )}
-              {!readOnly && !wide && (
-                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(true)} title="벌금판을 창 전체로">
-                  ⤢ 넓게
-                </button>
               )}
             </span>
           </div>
@@ -10350,8 +10564,19 @@ export default function GoldSettlement() {
                       {!readOnly && !acct ? (
                         /* 빈 자리는 누르는 곳 (2026-09-18) — 여기에 누구를 놓나 */
                         <span className={"gs-seatpopwrap" + (seatPop === row.id ? " open" : "")} ref={(el) => (seatPopAnchors.current[row.id] = el)}>
-                          <button type="button" className="gs-rd-pic gs-rd-nopic gs-rd-picbtn" onClick={() => setSeatPop(seatPop === row.id ? null : row.id)} aria-label={nm + " 줄 — 누르면 배정"} aria-haspopup="dialog">
+                          <button
+                            type="button"
+                            className="gs-rd-pic gs-rd-nopic gs-rd-picbtn gs-rd-empty"
+                            onClick={() => (placeOn ? quickPlace(curWait.acct, row.id) : setSeatPop(seatPop === row.id ? null : row.id))}
+                            aria-label={nm + (placeOn ? " 줄 — 누르면 " + (curWait.nick || curWait.acct) + " 님을 배치" : " 줄 — 비어 있음")}
+                            aria-haspopup={placeOn ? undefined : "dialog"}
+                          >
                             {SIL}
+                            {placeOn && (
+                              <span className="gs-slotpre" aria-hidden="true">
+                                {waitFace(curWait, wide ? 96 : 76)}
+                              </span>
+                            )}
                           </button>
                           {seatPopFor(row.id, nm + " 줄")}
                         </span>
@@ -10819,13 +11044,25 @@ export default function GoldSettlement() {
                                   ) : (
                                     /* 빈 줄 — 점선 실루엣, 누르면 배정 팝오버 (2026-09-18). (폐기) 빈 32px — 누를 곳이 안 보였다 */
                                     <span className={"gs-seatpopwrap" + (seatPop === row.id ? " open" : "")} ref={(el) => (seatPopAnchors.current[row.id] = el)}>
-                                      <button type="button" className="gs-rowi gs-rowi-empty" onClick={() => setSeatPop(seatPop === row.id ? null : row.id)} aria-label={seatName(row, i) + " 줄 — 누르면 배정"} aria-haspopup="dialog">
+                                      <button
+                                        type="button"
+                                        className="gs-rowi gs-rowi-empty"
+                                        onClick={() => (placeOn ? quickPlace(curWait.acct, row.id) : setSeatPop(seatPop === row.id ? null : row.id))}
+                                        aria-label={seatName(row, i) + (placeOn ? " 줄 — 누르면 " + (curWait.nick || curWait.acct) + " 님을 배치" : " 줄 — 비어 있음")}
+                                        aria-haspopup={placeOn ? undefined : "dialog"}
+                                      >
                                         <svg viewBox="0 0 20 20" aria-hidden="true">
                                           <g fill="currentColor">
                                             <circle cx="10" cy="6.4" r="3.4" />
                                             <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
                                           </g>
                                         </svg>
+                                        {/* 놓기 전에 결과가 보인다 (2026-09-20) — 마우스를 올린 자리에 놓일 사람이 비친다 */}
+                                        {placeOn && (
+                                          <span className="gs-slotpre" aria-hidden="true">
+                                            {waitFace(curWait, 56)}
+                                          </span>
+                                        )}
                                       </button>
                                       {seatPopFor(row.id, seatName(row, i) + " 줄")}
                                     </span>
@@ -14049,7 +14286,7 @@ function PlacerAva({ p, size }) {
   );
 }
 /* 빈 초상화 팝오버 (2026-09-18) — 화면에 고정 좌표로 띄운다(표는 가로 스크롤 상자 안이라 absolute 면 잘린다). 아래가 모자라면 위로 */
-function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, onDiscord, onCopyInvite, onOpenModal, onClose }) {
+function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWho, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -14060,7 +14297,7 @@ function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, o
     const w = el.offsetWidth;
     const up = r.bottom + 8 + h > window.innerHeight && r.top - 8 - h > 0;
     setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), top: up ? r.top - 8 - h : r.bottom + 8 });
-  }, [anchor, tray.length, linked, !!who]);
+  }, [anchor, tray.length, linked, !!who, !!party, !!placeWho]);
   useEffect(() => {
     const k = (e) => {
       if (e.key === "Escape") onClose();
@@ -14074,14 +14311,17 @@ function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, o
       window.removeEventListener("resize", onClose);
     };
   }, [onClose]);
+  /* 작은 창의 틀 (2026-09-19 확정) — 제목 줄 · 본문 · 단추는 글 아래 오른쪽(.gs-pop-acts) · 맨 아래 점선 위 금색 링크.
+     (2026-09-20) [파티원] 단추의 작은 창(party)도 이 틀 — 초대 안내와 [파티원 창 열기…] */
   return (
     <div ref={ref} className="gs-seatpop" role="dialog" aria-label={label} style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden", left: 0, top: 0 }}>
       <div className="gs-seatpop-h">
         <b>{label}</b>
-        {!who && <em>비어 있음</em>}
+        {!who && !party && <span className="gs-seatpop-tag">비어 있음</span>}
       </div>
       {who ? (
-        /* 찬 줄 (2026-09-19, 안 3) — 빈 초상화로 넣을 수 있으면 찬 초상화로 뺄 수도 있어야 한다. 방장 자신은 못 뺀다(자리 배치 창과 같은 규칙) */
+        /* 찬 줄 (2026-09-19, 안 3) — 빈 초상화로 넣을 수 있으면 찬 초상화로 뺄 수도 있어야 한다. 방장 자신은 못 뺀다(파티원 창과 같은 규칙).
+           (2026-09-20) 기다리는 사람이 있으면 [○○ 님을 이 자리에 배치] — 빈 줄이 없는 날, 안 온 사람의 줄에 새 사람을 놓는 길 */
         <>
           <div className="gs-seatpop-who">
             <PlacerAva p={who} size={28} />
@@ -14091,33 +14331,51 @@ function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, o
           </div>
           {who.off && <p className="gs-seatpop-off">연결 끊김</p>}
           {!who.host && (
-            <button type="button" className="gs-btn gs-btn-ghost gs-btn-sm gs-seatpop-btn" onClick={onUnseat}>
-              자리 비우기
-            </button>
+            <div className="gs-pop-acts">
+              {placeWho && (
+                <button type="button" className="gs-btn gs-btn-sm gs-lbstart" onClick={onReplace}>
+                  {placeWho} 님을 이 자리에 배치
+                </button>
+              )}
+              <button type="button" className="gs-btn gs-btn-ghost gs-btn-sm" onClick={onUnseat}>
+                자리 비우기
+              </button>
+            </div>
           )}
         </>
       ) : !linked ? (
         <>
-          {/* (고침 2026-09-19) [초대] 창의 연동 전 모습과 같은 말. (폐기 09-17) "연동하면 초대 링크로 들어온 사람이 여기에 모여요. / 초대 받은 사람은 …" */}
+          {/* (고침 2026-09-19) 초대 문턱은 어디서 나오든 같은 말 */}
           <p className="gs-seatpop-t">{INVITE_GATE_H}</p>
           <div className="gs-seatpop-gain">{INVITE_GAIN}</div>
-          <button type="button" className="gs-btn gs-dcbtn gs-seatpop-btn" onClick={onDiscord}>
-            Discord 연동
-          </button>
+          <div className="gs-pop-acts">
+            <button type="button" className="gs-btn gs-btn-sm gs-dcbtn" onClick={onDiscord}>
+              Discord 연동
+            </button>
+          </div>
           <p className="gs-seatpop-note">연동하지 않아도 벌금 기록과 방송은 지금 그대로 할 수 있어요.</p>
         </>
-      ) : !tray.length ? (
+      ) : party || !tray.length ? (
         <>
-          {/* (고침 2026-09-19) 이미 연동한 사람에게 "연동하면 …"은 틀린 말 — [초대] 창의 연동 후 모습과 같은 말, 마지막 줄만 이 자리에 맞게 */}
-          <p className="gs-seatpop-t">아직 들어온 사람이 없어요</p>
+          {!party && <p className="gs-seatpop-t">아직 들어온 사람이 없어요</p>}
           <div className="gs-seatpop-gain">{INVITE_GAIN}</div>
           <p className="gs-seatpop-b">
             <span>{INVITE_HOW}</span>
-            <span>들어온 사람은 여기에 모이고, 누르면 이 줄에 배치해요.</span>
+            {bar ? (
+              <>
+                <span>들어온 사람은 표 위에 나타나요.</span>
+                <span>줄의 빈 사진 자리를 누르면 그 줄에 배치해요.</span>
+              </>
+            ) : (
+              /* 메모장 모드에는 표 바가 없다 — 들어온 사람은 이 창의 목록에 모인다 */
+              <span>들어온 사람은 여기에 모이고, 누르면 이 줄에 배치해요.</span>
+            )}
           </p>
-          <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-seatpop-btn" onClick={onCopyInvite}>
-            {copied ? "복사했어요" : "초대 메시지 복사"}
-          </button>
+          <div className="gs-pop-acts">
+            <button type="button" className="gs-btn gs-btn-sm gs-lbstart" onClick={onCopyInvite}>
+              {copied ? "복사했어요" : "초대 메시지 복사"}
+            </button>
+          </div>
         </>
       ) : (
         <>
@@ -14134,7 +14392,7 @@ function SeatPop({ anchor, label, linked, tray, copied, who, onPick, onUnseat, o
         </>
       )}
       <button type="button" className="gs-seatpop-more" onClick={onOpenModal}>
-        자리 배치 창 열기…
+        파티원 창 열기…
       </button>
     </div>
   );
@@ -14146,6 +14404,15 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
     rejected: [],
     deleted: [],
   }));
+  /* (고침 2026-09-20) 창이 열려 있는 동안 들어온 사람도 목록에 — 예전엔 연 순간의 목록뿐이라 닫았다 다시 열어야 보였다 */
+  const trayKey = tray.join("|");
+  useEffect(() => {
+    setD((d) => {
+      const known = new Set([...d.tray, ...d.rejected, ...d.rows.map((r) => r.acct).filter(Boolean)]);
+      const add = tray.filter((a) => !known.has(a));
+      return add.length ? { ...d, tray: [...d.tray, ...add] } : d;
+    });
+  }, [trayKey]);
   const [picked, setPicked] = useState(null); // {acct, from:"row"|"list", rowId}
   const [over, setOver] = useState(null); // {kind:"row"|"list"|"order", id, pos}
   const [ghost, setGhost] = useState(null); // {x, y, kind, acct, rowId}
@@ -14400,14 +14667,15 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
         className={"gs-dialog gs-sp-dialog" + (picked ? " gs-sp-picking" : "")}
         role="dialog"
         aria-modal="true"
-        aria-label="자리 배치"
+        aria-label="파티원"
         onClick={(e) => {
           if (!pickedRef.current) return;
           if (e.target.closest("[data-srow], [data-stray], .gs-sp-person, button, input")) return;
           setPicked(null);
         }}
       >
-        <h3>자리 배치</h3>
+        {/* (고침 2026-09-19) '자리 배치' → '파티원'. 사람을 들이는 일은 표에서 한다 — 이 창은 앉은 사람을 옮기거나 맞바꿀 때, 줄을 한꺼번에 고칠 때, 파티원을 내보낼 때 */}
+        <h3>파티원</h3>
         <div className="gs-sp-cols">
           <div className="gs-sp-left">
             <div className="gs-sp-colhead">
@@ -19143,7 +19411,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-rd-etc-ro{cursor:default}
 .gs-rd-etc-ro:hover{color:var(--ink-2); border-color:rgba(var(--ink-rgb),.45)}
 /* [기타] 팝오버 — 단추 아래에 떠서 카드를 안 민다 */
-.gs-rd-pop{position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:260px; padding:8px 10px; background:var(--paper); border:1px solid var(--gold); border-radius:2px; box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4)}
+.gs-rd-pop{position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:260px; padding:8px 10px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px; font-weight:400; box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4)}
 .gs-rd-pop-list{width:360px}
 .gs-rd-pop .gs-qx{min-height:0; padding:0}
 /* 빈 자리 */
@@ -19165,7 +19433,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 /* 카드 모드 항목 칩 — 표 바 [항목 관리]를 펼치면 바로 아래 (2026-09-17). 이름 · 단가 · × 그리고 [+ 항목] */
 /* [항목 관리] 칸 — 단추 아래에 뜬다 (2026-09-18 확정 A). 칩은 세로로 하나씩. (폐기) .gs-cardtools 표 바 아래 펼침 */
 .gs-itemswrap{position:relative; display:inline-flex}
-.gs-itempop{position:absolute; left:0; top:calc(100% + 6px); z-index:20; min-width:300px; padding:10px 12px 12px; background:var(--paper); border:1px solid var(--gold); border-radius:2px; box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); white-space:nowrap}
+.gs-itempop{position:absolute; left:0; top:calc(100% + 6px); z-index:20; min-width:300px; padding:10px 12px 12px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px; font-weight:400; box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); white-space:nowrap}
 .gs-itempop-h{font-size:10.5px; letter-spacing:.12em; color:var(--ink-2); margin-bottom:8px}
 .gs-itempop-list{display:flex; flex-direction:column; gap:6px; align-items:flex-start}
 .gs-itempop .gs-citem{width:100%; gap:4px; padding-right:4px}
@@ -19718,16 +19986,68 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-rowi-empty{border:1px dashed rgba(var(--ink-rgb),.4); background:transparent; color:rgba(var(--ink-rgb),.35); cursor:pointer; padding:0}
 .gs-rowi-empty svg{width:46%; height:46%}
 .gs-rowi-empty:hover,.gs-seatpopwrap.open .gs-rowi-empty{border-color:var(--gold); color:var(--gold)}
-.gs-seatpop{position:fixed; z-index:60; width:360px; padding:12px 16px 12px; background:var(--paper); border:1px solid var(--gold); border-radius:2px;
+/* 작은 창의 틀 (2026-09-19 확정) — 잉크 1px 테두리 · 본문 12.5px 보통 굵기 · 제목만 명조 굵게 · 단추는 글 아래 오른쪽 · 맨 아래 점선 위 금색 링크.
+   초상화 창·[파티원] 작은 창·[항목 관리]·[기타]가 같은 틀. (버그) 초상화 창은 표의 이름 칸(th) 안이라 굵은 글씨를 물려받았다 — font-weight 를 못박는다 */
+.gs-pop-acts{display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:12px}
+.gs-seatpop{position:fixed; z-index:60; width:340px; padding:14px 16px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px; font-weight:400; line-height:1.7; color:var(--ink-body);
   box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); font-size:12.5px; text-align:left; cursor:default; letter-spacing:0}
 .gs-seatpop-h{display:flex; align-items:baseline; gap:8px; padding-bottom:10px; border-bottom:1px dotted rgba(var(--ink-rgb),.3)}
 .gs-seatpop-h b{font-family:'Gowun Batang',serif; font-size:14px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.gs-seatpop-h em{font-style:normal; font-size:11.5px; color:var(--ink-2); flex:none}
+.gs-seatpop-h em,.gs-seatpop-tag{font-style:normal; font-size:11.5px; color:var(--ink-2); flex:none}
 .gs .gs-seatpop-t{margin:14px 0 0; font-family:'Gowun Batang',serif; font-weight:700; font-size:14.5px; color:var(--ink); line-height:1.5; word-break:keep-all}
 .gs .gs-seatpop-b{margin:6px 0 0; font-size:12.5px; color:var(--ink-body); line-height:1.7}
 .gs .gs-seatpop-b > span{display:block; text-wrap:balance; word-break:keep-all}
 .gs-seatpop-btn{margin-top:12px}
 .gs-seatpop-gain{margin-top:8px}
+/* ── 표 바 (2026-09-20 확정) — 왼쪽은 사람([파티원]), 오른쪽은 표 도구 한 줄 + 그 아래 마우스 안내. 늘 두 줄 높이 ── */
+.gs-tablebar{align-items:stretch}
+.gs-tablebar-l{flex-wrap:nowrap; min-width:0; align-items:flex-start}
+.gs-tablebar-end{flex-direction:column; align-items:flex-end; gap:4px; flex:none}
+.gs-tabletools{display:flex; align-items:center; gap:8px}
+.gs-tabletools .gs-itempop{left:auto; right:0}
+/* [파티원] — 평소에는 작은 단추, 누가 들어오면 도구 줄 높이만큼 커진다. 커진 뒤에도 왼쪽 칸은 그대로 [파티원] */
+.gs-pty{display:inline-flex; align-items:stretch; min-width:0; box-sizing:border-box}
+.gs-pty .gs-seatpopwrap{flex:none}
+.gs-ptybtn{gap:7px}
+.gs-pty-open{align-self:stretch; border:1px solid rgba(var(--gold-rgb),.8); border-radius:2px; background:rgba(var(--gold-rgb),.07); overflow:hidden; animation:gs-pty-grow .45s cubic-bezier(.2,.9,.3,1)}
+.gs-pty .gs-seatpopwrap{align-items:stretch}
+.gs-pty-open .gs-ptybtn{height:auto; align-self:stretch; border:0; border-right:1px solid rgba(var(--gold-rgb),.45); border-radius:0; background:transparent; padding-left:13px; padding-right:13px}
+.gs-pty-open .gs-ptybtn:hover,.gs-pty-open .gs-ptybtn:focus-visible,.gs-pty-open .gs-seatpopwrap.open .gs-ptybtn{background:rgba(var(--gold-rgb),.16)}
+@keyframes gs-pty-grow{from{max-width:112px; max-height:34px} to{max-width:720px; max-height:64px}}
+.gs-pty-body{display:inline-flex; align-items:center; gap:11px; min-width:0; padding:0 12px 0 9px; animation:gs-pty-fade .45s ease-out}
+@keyframes gs-pty-fade{0%,35%{opacity:0} 100%{opacity:1}}
+.gs-pty-text{display:flex; flex-direction:column; justify-content:center; line-height:1.25; white-space:nowrap; min-width:0; overflow:hidden}
+.gs-pty-l1{font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis}
+.gs-pty-l1 b{font-family:'Gowun Batang',serif; font-weight:700; font-size:15px; display:inline-block; max-width:9em; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom}
+.gs-pty-l2{font-size:12.5px; color:var(--gold); overflow:hidden; text-overflow:ellipsis}
+.gs-pty-face{display:inline-grid; place-items:center; flex:none; padding:0; border:0; border-radius:25%; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.4); cursor:grab; touch-action:none}
+.gs-pty-face .gs-ava{display:block; width:100%; height:100%; border:0; border-radius:25%; pointer-events:none}
+.gs-pty-cur{width:40px; height:40px}
+.gs-pty-small{width:26px; height:26px; opacity:.8}
+.gs-pty-small:hover,.gs-pty-small:focus-visible{opacity:1; outline:2px solid var(--gold); outline-offset:1px}
+/* 자리가 모자라면 작은 사진부터 접힌다 — 안 들어가는 사진은 다음 줄로 넘어가 가려진다. 몇 명인지는 첫 줄의 글이 말한다. 글은 맨 나중에 줄임표 */
+.gs-pty-rest{display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; max-height:26px; overflow:hidden; padding-left:10px; border-left:1px solid rgba(var(--ink-rgb),.25); flex:0 1000 auto; min-width:0}
+.gs-pty-more{line-height:26px}
+.gs-pty-more{font-family:var(--mono); font-size:11.5px; color:var(--ink-2); margin-left:2px}
+.gs-tablebar .gs-pty-act{height:28px; padding-left:10px; padding-right:10px; font-size:12.5px; flex:none; white-space:nowrap}
+.gs-pty-textbtn{border:0; background:transparent; padding:0 2px; font:inherit; font-size:12.5px; color:var(--ink-2); text-decoration:underline; text-underline-offset:3px; cursor:pointer; flex:none; white-space:nowrap}
+.gs-pty-textbtn:hover{color:var(--ink)}
+/* 기다리는 사람이 있으면 빈 사진 자리가 금색으로 켜진다 — 누르면 그 줄에 배치. 올리면 놓일 사람이 미리 비친다 */
+.gs-rowi-empty,.gs-rd-empty{position:relative}
+.gs-placing .gs-rowi-empty,.gs-placing .gs-rd-empty{border:1px solid var(--gold); color:var(--gold); box-shadow:0 0 0 3px rgba(var(--gold-rgb),.16)}
+.gs-justcame .gs-rowi-empty,.gs-justcame .gs-rd-empty{animation:gs-slot-glow 1.2s ease-in-out 2}
+@keyframes gs-slot-glow{0%,100%{box-shadow:0 0 0 3px rgba(var(--gold-rgb),.16)} 50%{box-shadow:0 0 0 6px rgba(var(--gold-rgb),.38)}}
+.gs-slotpre{position:absolute; inset:0; display:grid; place-items:center; overflow:hidden; border-radius:inherit; opacity:0; transition:opacity .12s; pointer-events:none}
+.gs-slotpre .gs-ava{display:block; width:100%; height:100%; border:0; border-radius:0}
+.gs-placing .gs-rowi-empty:hover .gs-slotpre,.gs-placing .gs-rowi-empty:focus-visible .gs-slotpre,.gs-placing .gs-rd-empty:hover .gs-slotpre,.gs-placing .gs-rd-empty:focus-visible .gs-slotpre{opacity:.6}
+/* 표 위의 사진을 끄는 동안 */
+.gs-facedrag{position:fixed; z-index:95; pointer-events:none; display:flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; background:var(--paper); border:1px solid var(--gold); border-radius:3px;
+  box-shadow:0 10px 26px rgba(var(--shadow-rgb),.45); transform:translate(-22px,-22px); color:var(--ink); font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700}
+.gs-facedrag .gs-pty-face{width:34px; height:34px; opacity:1}
+body.gs-facedragging,body.gs-facedragging *{cursor:grabbing !important; user-select:none}
+tr[data-drop] > th,tr[data-drop] > td{background:rgba(var(--gold-rgb),.14) !important}
+tr[data-drop] .gs-rowi,.gs-rd[data-drop] .gs-rd-pic{outline:2px solid var(--gold); outline-offset:2px}
+@media (prefers-reduced-motion: reduce){.gs-pty-open,.gs-pty-body,.gs-justcame .gs-rowi-empty,.gs-justcame .gs-rd-empty{animation:none}}
 .gs .gs-seatpop-note{margin:10px 0 0; font-size:12px; color:var(--ink-2); line-height:1.6}
 /* 찬 줄 (2026-09-19) */
 .gs-seatpop-who{display:flex; align-items:center; gap:8px; margin-top:12px; min-width:0}
