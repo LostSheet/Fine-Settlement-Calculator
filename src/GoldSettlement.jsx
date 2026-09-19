@@ -651,6 +651,32 @@ const INVITE_GAIN = (
   </>
 );
 const INVITE_HOW = "초대 메시지를 복사해 Discord 등에 붙여 넣어요.";
+/* 프로필 카드의 카메라 · 되감기 · 나가기 (2026-09-19) */
+const CAM_ICON = (
+  <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+      <path d="M1.8 5.2h2.4l1-1.6h5.6l1 1.6h2.4v7.6H1.8z" />
+      <circle cx="8" cy="8.8" r="2.3" />
+    </g>
+  </svg>
+);
+const SYNC_ICON = (
+  <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13 8a5 5 0 1 1-1.5-3.6" />
+      <path d="M13.2 2.6v2.6h-2.6" />
+    </g>
+  </svg>
+);
+const OUT_ICON = (
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6.4 2.6H3v10.8h3.4" />
+      <path d="M7 8h6.2" />
+      <path d="M10.8 5.4 13.4 8l-2.6 2.6" />
+    </g>
+  </svg>
+);
 /* [파티원] 단추의 사람 여럿 (2026-09-19) */
 const PEOPLE_ICON = (
   <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
@@ -1406,7 +1432,8 @@ const maskUrl = (u) => {
    (폐기, 같은 날) `🔔 …` 로 시작하던 마스크드 링크 — 이모지 때문에 디스코드가 안 풀었다. 문구는 초안 */
 const inviteMsg = (hostNick, url) =>
   /* 문구는 디스코드 기준 (§3.12.5). 코드·10분 얘기가 없다 */
-  `${hostNick}네 벌금팟 · Discord 연동으로 참여하세요.\n👉 [눌러서 참여하기](<${url}>)\n처음이면 방장 승인 뒤 자리가 정해지고, 방송에 띄우려면 내 방송 주소를 OBS에 한 번만 넣어요.`;
+  /* (고침 2026-09-20 사용자 문안) 받는 사람은 앱을 본 적이 없다 — 누르면 무엇이 필요한지만. (폐기) "…네 벌금팟 · Discord 연동으로 참여하세요. / 처음이면 방장 승인 뒤 자리가 정해지고, 방송에 띄우려면 내 방송 주소를 OBS에 한 번만 넣어요." */
+  `${hostNick}의 벌금팟에 초대해요.\n👉 [눌러서 참여하기](<${url}>)\nDiscord 연동이 필요해요.`;
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -2819,6 +2846,7 @@ export default function GoldSettlement() {
   const acctWrapRef = useRef(null);
   const picPick = useRef(null);
   const [picBusy, setPicBusy] = useState(false);
+  const [picDrop, setPicDrop] = useState(false); // 프로필 카드의 사진 위로 파일을 끌고 있는가
   useEffect(() => {
     if (!acctOpen) return;
     const h = (e) => {
@@ -9420,31 +9448,53 @@ export default function GoldSettlement() {
                   <span>{auth.nick}</span>
                 </button>
                 {acctOpen && (
-                  /* 계정 메뉴 (2026-09-16 사용자: 설명 없이) — 머리(초상화·별명·상태 한 줄) + 동사 셋 + 로그아웃. 문장은 없다 */
-                  <div className="gs-acctmenu" role="menu" aria-label="계정">
-                    <div className="gs-acctmenu-head">
-                      <DcAva dc={myAva(auth)} size={36} />
-                      <div className="gs-acctmenu-who">
-                        <b>{auth.nick}</b>
-                        <span>{auth.pic ? "올린 사진 · Discord 연동됨" : "Discord 연동됨"}</span>
-                      </div>
+                  /* 프로필 카드 (2026-09-19 확정) — 여기서 하는 일은 셋뿐이라 글자 목록을 없앴다: 사진 바꾸기·되돌리기 / 내 정보 / 로그아웃.
+                     사진이 곧 단추(누르면 파일 고르기, 끌어다 놓아도 된다), 모서리의 둥근 표시 하나가 Discord 쪽 일(바꾼 사진이 있으면 되돌리기, 없으면 다시 불러오기).
+                     (폐기 09-16) 머리 + 동사 셋 + 흐린 로그아웃의 목록 — 사진·초상화·프로필 사진 세 이름, 못 누르는 것처럼 보이던 로그아웃, 번역투 "올린 사진" */
+                  <div className="gs-pcard" role="dialog" aria-label="계정">
+                    <div className="gs-pc-avawrap">
+                      <button
+                        type="button"
+                        className={"gs-pc-ava" + (picDrop ? " is-drop" : "")}
+                        disabled={picBusy}
+                        onClick={() => picPick.current && picPick.current.click()}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setPicDrop(true);
+                        }}
+                        onDragLeave={() => setPicDrop(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setPicDrop(false);
+                          const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                          if (f) uploadPic(f);
+                        }}
+                        aria-label="프로필 사진 바꾸기"
+                        title="눌러서 고르거나 사진 파일을 여기로 끌어다 놓아요"
+                      >
+                        <DcAva dc={myAva(auth)} size={76} />
+                        <span className="gs-pc-over">
+                          {CAM_ICON}
+                          <i>{picBusy ? "올리는 중…" : "사진 바꾸기"}</i>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="gs-pc-badge"
+                        disabled={picBusy}
+                        onClick={() => (auth.pic ? savePic(null) : startDiscord())}
+                        aria-label={auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}
+                      >
+                        {SYNC_ICON}
+                        <span className="gs-pc-tip">{auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}</span>
+                      </button>
                     </div>
-                    <button
-                      className="gs-acctmenu-item"
-                      role="menuitem"
-                      disabled={picBusy}
-                      onClick={() => picPick.current && picPick.current.click()}
-                    >
-                      {picBusy ? "올리는 중…" : "사진 올리기"}
-                    </button>
-                    {auth.pic ? (
-                      <button className="gs-acctmenu-item" role="menuitem" disabled={picBusy} onClick={() => savePic(null)}>
-                        디스코드 초상화로 되돌리기
-                      </button>
-                    ) : (
-                      <button className="gs-acctmenu-item" role="menuitem" onClick={() => startDiscord()}>
-                        디스코드 초상화 다시 가져오기
-                      </button>
+                    <b className="gs-pc-name">{auth.nick}</b>
+                    {auth.dc && auth.dc.user && (
+                      <span className="gs-pc-dc">
+                        <i className="gs-dcmark" aria-hidden="true" />
+                        {Array.from(auth.dc.user).slice(0, 2).join("") + "••••"}
+                      </span>
                     )}
                     <input
                       ref={picPick}
@@ -9457,17 +9507,19 @@ export default function GoldSettlement() {
                         if (f) uploadPic(f);
                       }}
                     />
-                    <div className="gs-acctmenu-sep" aria-hidden="true" />
-                    <button
-                      className="gs-acctmenu-item gs-acctmenu-mute"
-                      role="menuitem"
-                      onClick={() => {
-                        setAcctOpen(false);
-                        askLogout();
-                      }}
-                    >
-                      이 브라우저에서 로그아웃
-                    </button>
+                    <div className="gs-pc-foot">
+                      <button
+                        type="button"
+                        className="gs-pc-out"
+                        onClick={() => {
+                          setAcctOpen(false);
+                          askLogout();
+                        }}
+                      >
+                        {OUT_ICON}
+                        로그아웃
+                      </button>
+                    </div>
                   </div>
                 )}
               </span>
@@ -10652,14 +10704,15 @@ export default function GoldSettlement() {
                               </>
                             ) : (
                               <>
+                                {/* (고침 2026-09-20) 뒤의 "G"는 TotalEdit 이 그린다 — 고치는 동안에는 입력 칸의 단위("만G") 뒤에 "G"가 또 붙어 "만G G"로 보였다 */}
                                 <TotalEdit
                                   display={Math.max(0, itemGold(row))}
                                   base={itemGold(row)}
                                   per={goldOf(unit) || 1}
                                   suffix={unitLabel}
+                                  tail={<em>G</em>}
                                   onCommit={(g) => editTotal(row, g)}
                                 />
-                                <em>G</em>
                               </>
                             )}
                           </span>
@@ -13507,20 +13560,24 @@ function ChatCopyBtn({ line, flash, onCopy }) {
 /* 카운터의 합계 칸 — 표시는 '45만'처럼 만 표기, 눌러서 고칠 땐 입력 단위(라디오) 기준.
    현재 값이 미리 채워져 나오므로 단위 해석이 화면에서 바로 배워집니다.
    blur/Enter 에 확정, Esc 는 버립니다. 차액은 기타 '조정'으로. */
-function TotalEdit({ display, base, per, suffix, onCommit }) {
+function TotalEdit({ display, base, per, suffix, tail, onCommit }) {
   const [draft, setDraft] = useState(null); // null = 안 고치는 중
   const esc = useRef(false);
+  /* tail — 읽는 동안에만 숫자 뒤에 붙는 것(카드의 "G"). 고치는 동안에는 입력 칸이 제 단위를 단다 */
   if (draft === null)
     return (
-      <button
-        className="gs-sumedit"
-        onClick={() =>
-          setDraft(base > 0 ? formatNumInput(String(+(base / per).toFixed(4))) : "")
-        }
-        aria-label={`합계 직접 수정 (${suffix})`}
-      >
-        {man(display)}
-      </button>
+      <>
+        <button
+          className="gs-sumedit"
+          onClick={() =>
+            setDraft(base > 0 ? formatNumInput(String(+(base / per).toFixed(4))) : "")
+          }
+          aria-label={`합계 직접 수정 (${suffix})`}
+        >
+          {man(display)}
+        </button>
+        {tail || null}
+      </>
     );
   return (
     <span className="gs-sumedit-wrap">
@@ -18209,7 +18266,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-dcbtn{background:#5865f2 !important; color:#fff !important; border-color:#5865f2 !important}
 /* 디스코드 마크 (2026-09-16 사용자) — 상표 마크를 글자색으로 칠한다. (폐기) 흰 네모 자리표시 */
 .gs-dcbtn{display:inline-flex; align-items:center; gap:7px}
-.gs-dcbtn::before{content:""; width:16px; height:16px; flex:none; background:currentColor;
+.gs-dcbtn::before,.gs-dcmark{content:""; width:16px; height:16px; flex:none; background:currentColor;
   -webkit-mask:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+PHBhdGggZD0nTTIwLjMxNyA0LjM2OThhMTkuNzkxMyAxOS43OTEzIDAgMDAtNC44ODUxLTEuNTE1Mi4wNzQxLjA3NDEgMCAwMC0uMDc4NS4wMzcxYy0uMjExLjM3NTMtLjQ0NDcuODY0OC0uNjA4MyAxLjI0OTUtMS44NDQ3LS4yNzYyLTMuNjgtLjI3NjItNS40ODY4IDAtLjE2MzYtLjM5MzMtLjQwNTgtLjg3NDItLjYxNzctMS4yNDk1YS4wNzcuMDc3IDAgMDAtLjA3ODUtLjAzNyAxOS43MzYzIDE5LjczNjMgMCAwMC00Ljg4NTIgMS41MTUuMDY5OS4wNjk5IDAgMDAtLjAzMjEuMDI3N0MuNTMzNCA5LjA0NTgtLjMxOSAxMy41Nzk5LjA5OTIgMTguMDU3OGEuMDgyNC4wODI0IDAgMDAuMDMxMi4wNTYxYzIuMDUyOCAxLjUwNzYgNC4wNDEzIDIuNDIyOCA1Ljk5MjkgMy4wMjk0YS4wNzc3LjA3NzcgMCAwMC4wODQyLS4wMjc2Yy40NjE2LS42MzA0Ljg3MzEtMS4yOTUyIDEuMjI2LTEuOTk0MmEuMDc2LjA3NiAwIDAwLS4wNDE2LS4xMDU3Yy0uNjUyOC0uMjQ3Ni0xLjI3NDMtLjU0OTUtMS44NzIyLS44OTIzYS4wNzcuMDc3IDAgMDEtLjAwNzYtLjEyNzdjLjEyNTgtLjA5NDMuMjUxNy0uMTkyMy4zNzE4LS4yOTE0YS4wNzQzLjA3NDMgMCAwMS4wNzc2LS4wMTA1YzMuOTI3OCAxLjc5MzMgOC4xOCAxLjc5MzMgMTIuMDYxNCAwYS4wNzM5LjA3MzkgMCAwMS4wNzg1LjAwOTVjLjEyMDIuMDk5LjI0Ni4xOTgxLjM3MjguMjkyNGEuMDc3LjA3NyAwIDAxLS4wMDY2LjEyNzYgMTIuMjk4NiAxMi4yOTg2IDAgMDEtMS44NzMuODkxNC4wNzY2LjA3NjYgMCAwMC0uMDQwNy4xMDY3Yy4zNjA0LjY5OC43NzE5IDEuMzYyOCAxLjIyNSAxLjk5MzJhLjA3Ni4wNzYgMCAwMC4wODQyLjAyODZjMS45NjEtLjYwNjcgMy45NDk1LTEuNTIxOSA2LjAwMjMtMy4wMjk0YS4wNzcuMDc3IDAgMDAuMDMxMy0uMDU1MmMuNTAwNC01LjE3Ny0uODM4Mi05LjY3MzktMy41NDg1LTEzLjY2MDRhLjA2MS4wNjEgMCAwMC0uMDMxMi0uMDI4NnpNOC4wMiAxNS4zMzEyYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU1LTIuNDE4OSAyLjE1Ny0yLjQxODkgMS4yMTA4IDAgMi4xNzU3IDEuMDk1MiAyLjE1NjggMi40MTkgMCAxLjMzMzItLjk1NTUgMi40MTg5LTIuMTU2OSAyLjQxODl6bTcuOTc0OCAwYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU0LTIuNDE4OSAyLjE1NjktMi40MTg5IDEuMjEwOCAwIDIuMTc1NyAxLjA5NTIgMi4xNTY4IDIuNDE5IDAgMS4zMzMyLS45NDYgMi40MTg5LTIuMTU2OCAyLjQxODlaJy8+PC9zdmc+") center/contain no-repeat;
   mask:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+PHBhdGggZD0nTTIwLjMxNyA0LjM2OThhMTkuNzkxMyAxOS43OTEzIDAgMDAtNC44ODUxLTEuNTE1Mi4wNzQxLjA3NDEgMCAwMC0uMDc4NS4wMzcxYy0uMjExLjM3NTMtLjQ0NDcuODY0OC0uNjA4MyAxLjI0OTUtMS44NDQ3LS4yNzYyLTMuNjgtLjI3NjItNS40ODY4IDAtLjE2MzYtLjM5MzMtLjQwNTgtLjg3NDItLjYxNzctMS4yNDk1YS4wNzcuMDc3IDAgMDAtLjA3ODUtLjAzNyAxOS43MzYzIDE5LjczNjMgMCAwMC00Ljg4NTIgMS41MTUuMDY5OS4wNjk5IDAgMDAtLjAzMjEuMDI3N0MuNTMzNCA5LjA0NTgtLjMxOSAxMy41Nzk5LjA5OTIgMTguMDU3OGEuMDgyNC4wODI0IDAgMDAuMDMxMi4wNTYxYzIuMDUyOCAxLjUwNzYgNC4wNDEzIDIuNDIyOCA1Ljk5MjkgMy4wMjk0YS4wNzc3LjA3NzcgMCAwMC4wODQyLS4wMjc2Yy40NjE2LS42MzA0Ljg3MzEtMS4yOTUyIDEuMjI2LTEuOTk0MmEuMDc2LjA3NiAwIDAwLS4wNDE2LS4xMDU3Yy0uNjUyOC0uMjQ3Ni0xLjI3NDMtLjU0OTUtMS44NzIyLS44OTIzYS4wNzcuMDc3IDAgMDEtLjAwNzYtLjEyNzdjLjEyNTgtLjA5NDMuMjUxNy0uMTkyMy4zNzE4LS4yOTE0YS4wNzQzLjA3NDMgMCAwMS4wNzc2LS4wMTA1YzMuOTI3OCAxLjc5MzMgOC4xOCAxLjc5MzMgMTIuMDYxNCAwYS4wNzM5LjA3MzkgMCAwMS4wNzg1LjAwOTVjLjEyMDIuMDk5LjI0Ni4xOTgxLjM3MjguMjkyNGEuMDc3LjA3NyAwIDAxLS4wMDY2LjEyNzYgMTIuMjk4NiAxMi4yOTg2IDAgMDEtMS44NzMuODkxNC4wNzY2LjA3NjYgMCAwMC0uMDQwNy4xMDY3Yy4zNjA0LjY5OC43NzE5IDEuMzYyOCAxLjIyNSAxLjk5MzJhLjA3Ni4wNzYgMCAwMC4wODQyLjAyODZjMS45NjEtLjYwNjcgMy45NDk1LTEuNTIxOSA2LjAwMjMtMy4wMjk0YS4wNzcuMDc3IDAgMDAuMDMxMy0uMDU1MmMuNTAwNC01LjE3Ny0uODM4Mi05LjY3MzktMy41NDg1LTEzLjY2MDRhLjA2MS4wNjEgMCAwMC0uMDMxMi0uMDI4NnpNOC4wMiAxNS4zMzEyYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU1LTIuNDE4OSAyLjE1Ny0yLjQxODkgMS4yMTA4IDAgMi4xNzU3IDEuMDk1MiAyLjE1NjggMi40MTkgMCAxLjMzMzItLjk1NTUgMi40MTg5LTIuMTU2OSAyLjQxODl6bTcuOTc0OCAwYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU0LTIuNDE4OSAyLjE1NjktMi40MTg5IDEuMjEwOCAwIDIuMTc1NyAxLjA5NTIgMi4xNTY4IDIuNDE5IDAgMS4zMzMyLS45NDYgMi40MTg5LTIuMTU2OCAyLjQxODlaJy8+PC9zdmc+") center/contain no-repeat}
 .gs-acctchip{display:inline-flex; align-items:center; gap:7px; height:32px; padding:0 10px 0 4px; border:1px solid rgba(var(--ink-rgb),.25);
@@ -19999,6 +20056,30 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs .gs-seatpop-b > span{display:block; text-wrap:balance; word-break:keep-all}
 .gs-seatpop-btn{margin-top:12px}
 .gs-seatpop-gain{margin-top:8px}
+/* 프로필 카드 (2026-09-19 확정) — 작은 창의 틀 */
+.gs-pcard{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:248px; padding:20px 16px 14px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px;
+  box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); display:flex; flex-direction:column; align-items:center; text-align:center; font-weight:400}
+.gs-pc-avawrap{position:relative; width:76px; height:76px}
+.gs-pc-ava{position:relative; display:block; width:76px; height:76px; padding:0; border:0; border-radius:25%; background:transparent; cursor:pointer; overflow:hidden}
+.gs-pc-ava .gs-ava{display:block; width:76px; height:76px; border:0; border-radius:25%}
+.gs-pc-over{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:rgba(0,0,0,.6); color:#fff; opacity:0; transition:opacity .14s}
+.gs-pc-over i{font-style:normal; font-size:11px}
+.gs-pc-ava:hover .gs-pc-over,.gs-pc-ava:focus-visible .gs-pc-over,.gs-pc-ava.is-drop .gs-pc-over,.gs-pc-ava:disabled .gs-pc-over{opacity:1}
+.gs-pc-ava:hover,.gs-pc-ava:focus-visible,.gs-pc-ava.is-drop{box-shadow:0 0 0 2px var(--gold); outline:0}
+.gs-pc-badge{position:absolute; right:-7px; bottom:-7px; width:24px; height:24px; display:grid; place-items:center; padding:0; border-radius:50%; background:var(--paper);
+  border:1px solid rgba(var(--ink-rgb),.5); color:var(--ink); cursor:pointer}
+.gs-pc-badge:hover,.gs-pc-badge:focus-visible{border-color:var(--gold); color:var(--gold); outline:0}
+.gs-pc-badge:disabled{opacity:.5; cursor:default}
+.gs-pc-tip{position:absolute; left:50%; top:calc(100% + 7px); transform:translateX(-50%); white-space:nowrap; padding:4px 8px; font-size:11.5px; color:var(--paper); background:var(--ink);
+  border-radius:2px; z-index:3; opacity:0; pointer-events:none; transition:opacity .12s}
+.gs-pc-badge:hover .gs-pc-tip,.gs-pc-badge:focus-visible .gs-pc-tip{opacity:1}
+.gs-pc-name{margin-top:12px; max-width:100%; font-family:'Gowun Batang',serif; font-size:17px; color:var(--ink); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.gs-pc-dc{display:inline-flex; align-items:center; gap:6px; margin-top:3px; font-family:var(--mono); font-size:11.5px; color:var(--ink-2)}
+.gs-dcmark{display:inline-block; width:14px; height:14px; background:#5865f2}
+.gs-pc-foot{align-self:stretch; display:flex; justify-content:center; margin-top:16px; padding-top:8px; border-top:1px dotted rgba(var(--ink-rgb),.3)}
+.gs-pc-out{display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border:0; border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer}
+.gs-pc-out:hover{background:rgba(var(--ink-rgb),.06)}
+.gs-pc-out svg{color:var(--ink-2)}
 /* ── 표 바 (2026-09-20 확정) — 왼쪽은 사람([파티원]), 오른쪽은 표 도구 한 줄 + 그 아래 마우스 안내. 늘 두 줄 높이 ── */
 .gs-tablebar{align-items:stretch}
 .gs-tablebar-l{flex-wrap:nowrap; min-width:0; align-items:flex-start}
