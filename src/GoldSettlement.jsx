@@ -17042,6 +17042,9 @@ const CSS = `
 
 /* 간단 모드 단위 라디오 */
 /* (폐기 2026-09-20) .gs-unitbar — 입력 단위는 세그 단추(.gs-unitseg)로 */
+/* 카운터 조작법 — 입력 단위 상자 바로 아래, 표 머리 위 */
+.gs-cellnote{margin:-9px 0 13px; padding-left:2px; font-size:11.5px; color:var(--ink-2);
+  letter-spacing:.01em}
 .gs-unitnote{flex:1; min-width:180px; font-size:11.5px; color:var(--ink-2);
   display:flex; align-items:center; flex-wrap:wrap; gap:0 6px}
 /* 친 숫자 → 그 금액. 한 짝이 한 칩이라 눈이 안 헤맵니다 */
@@ -17903,6 +17906,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-sysbar-away .gs-boardlabel .gs-btn{color:var(--blue); border-color:rgba(var(--blue-rgb),.6)}
 /* 초대 쪽지 — 잉크 선에 2px, 얕은 그림자, 명조 제목, 점선 아래 모노 바닥글 */
 /* (폐기 2026-09-20) 머리의 [초대] 쪽지 — 초대는 표 위 [파티원]의 작은 창이 맡는다. .gs-invnote-p·-list 는 그 창이 쓴다 */
+.gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
 .gs-invnote-foot{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3);
   font-size:11.5px; line-height:1.7; color:var(--ink-2)}
 /* 디스코드 단추 — 상표색 하나만 쓴다 */
