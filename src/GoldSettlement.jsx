@@ -16582,15 +16582,19 @@ const CSS = `
   padding:7px 0 0; width:100%; text-align:left}
 .gs-tip-more:hover{text-decoration:underline}
 .gs-intro-top{display:flex; align-items:flex-end; justify-content:space-between; gap:14px}
-.gs-tabs{display:flex; align-items:flex-end; gap:4px; min-height:48px}
+.gs-tabs{display:flex; align-items:flex-end; gap:4px; min-height:42px}
 .gs-tabs > .gs-tip{display:flex; align-items:flex-end}
-.gs-tab{display:inline-flex; align-items:center; gap:8px; height:44px; font:inherit; font-size:14px; font-weight:500;
-  cursor:pointer; color:var(--ink-body); padding:10px 15px; border:0; border-radius:7px 7px 0 0;
-  background:rgba(var(--shadow-rgb),.16); white-space:nowrap; transition:color .14s,background .14s}
-.gs-tab svg{flex:none}
+/* 직각 2px · 1px 잉크 선 · 그림자 없음 — 세그·단추·칩이 쓰는 규칙 그대로 (2026-09-20 사용자).
+   (폐기) 7px 둥글기 + 선 없는 채움 + 글자 500 — 화면에서 제일 큰 것이 제일 말랑했다 */
+.gs-tab{display:inline-flex; align-items:center; gap:7px; height:38px; font:inherit; font-size:14px; font-weight:400;
+  cursor:pointer; color:var(--ink-body); padding:8px 14px 10px; border:1px solid rgba(var(--ink-rgb),.3);
+  border-bottom:0; border-radius:2px 2px 0 0; margin-bottom:-1px;
+  background:transparent; white-space:nowrap; transition:color .14s,background .14s}
+.gs-tab svg{flex:none; width:13px; height:13px}
 .gs-tab:hover{color:var(--ink); background:rgba(var(--shadow-rgb),.08)}
-/* 선택한 탭과 본문은 같은 종이 면. 폭·글자 굵기는 선택 전후에 그대로 둡니다. */
-.gs-tab.on{position:relative; z-index:1; height:48px; background:var(--paper); color:var(--ink)}
+/* 선택한 탭과 본문은 같은 종이 면. 폭·글자 굵기는 선택 전후에 그대로 둡니다 —
+   400↔600 으로 바꾸면 글자 폭이 달라져 탭을 옮길 때마다 줄이 움찔합니다. 선택은 종이색과 잉크색이 맡습니다 */
+.gs-tab.on{position:relative; z-index:2; height:42px; background:var(--paper); color:var(--ink)}
 .gs-tab em{font-style:normal; font-family:inherit; font-size:11px; color:var(--ink-2);
   min-width:29px; text-align:right; font-variant-numeric:tabular-nums}
 .gs-viewseg{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px;
@@ -16605,8 +16609,11 @@ const CSS = `
 /* 연결형 탭 — 도구와 표를 같은 면에 두고 중복된 상자·여백을 걷습니다. */
 .gs-connected .gs-mast{margin-bottom:0}
 .gs-connected .gs-mastrow::after{content:none}
+/* 면도 같은 규칙 — 직각 2px 에 1px 잉크 선, 그림자 없음 (2026-09-20 사용자).
+   왼쪽 위만 직각인 것은 거기서 선택한 탭이 이어지기 때문입니다.
+   (폐기) 3px + 0 6px 18px 그림자 — 어둡게에서 바탕 대 면이 1.15:1 이라 경계를 그림자만 지고 있었습니다 */
 .gs-tabbed .gs-surface{margin-top:0; background:var(--paper); padding:14px 18px 20px;
-  border-radius:0 3px 3px 3px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.13)}
+  border:1px solid rgba(var(--ink-rgb),.3); border-radius:0 2px 2px 2px; box-shadow:none}
 .gs-surface > .gs-card{margin:0; padding:0; border:0; box-shadow:none; background:transparent}
 .gs-surface > .gs-cardhead{margin-bottom:12px; gap:12px; min-height:34px}
 .gs-sheethead .gs-sheetmodes{margin-right:auto}
