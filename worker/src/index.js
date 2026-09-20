@@ -466,17 +466,32 @@ export class Accounts {
     if (p === "/api/auth/discord/fake" && req.method === "GET") {
       if (!this.env.DISCORD_DEV_FAKE) return json({ error: "not found" }, 404);
       const state = url.searchParams.get("state") || "";
+      /* 자주 쓰는 사람은 한 번에 (2026-09-20) — 디스코드 계정이 하나뿐이라 여럿을 시험하기 어렵다(사용자).
+         테스N 을 누르면 그 사람으로 바로 들어간다. 아이디는 테스트용으로 고정이라 다시 눌러도 같은 계정이다 */
+      const who = [2, 3, 4, 5, 6, 7, 8].map((n) => ({ n, fid: "4000000000000000" + n + n, nick: "테스" + n, user: "tes" + n + "x" }));
+      const quick = who
+        .map(
+          (w) =>
+            '<a href="/api/auth/discord/callback?code=fake&state=' + encodeURIComponent(state) +
+            "&fid=" + w.fid + "&fname=" + encodeURIComponent(w.nick) + "&fuser=" + w.user +
+            '&fava=" style="display:inline-block;margin:0 8px 8px 0;padding:10px 16px;border:1px solid #888;border-radius:6px;text-decoration:none;color:inherit;font-size:16px">' +
+            w.nick + "</a>"
+        )
+        .join("");
       const html = `<!doctype html><meta charset="utf-8"><title>가짜 Discord</title>
-<body style="font:15px system-ui;padding:32px;max-width:420px">
+<body style="font:15px system-ui;padding:32px;max-width:460px">
 <h2>가짜 Discord 동의 창 (개발 전용)</h2>
-<form method="GET" action="/api/auth/discord/callback">
+<p style="color:#666;margin:0 0 10px">눌러서 바로 들어가기</p>
+<div style="margin-bottom:22px">${quick}</div>
+<details><summary style="cursor:pointer;color:#666">직접 적기</summary>
+<form method="GET" action="/api/auth/discord/callback" style="margin-top:12px">
 <input type="hidden" name="state" value="${state}">
 <p><label>디스코드 아이디(숫자) <input name="fid" value="100000000000000001" style="width:100%"></label></p>
 <p><label>표시 이름 <input name="fname" value="테스터" style="width:100%"></label></p>
 <p><label>사용자명 <input name="fuser" value="tester" style="width:100%"></label></p>
 <p><label>아바타 해시 <input name="fava" value="a1b2c3" style="width:100%"></label></p>
 <button name="code" value="fake" type="submit" style="font-size:16px;padding:8px 16px">승인</button>
-</form></body>`;
+</form></details></body>`;
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     if (p === "/api/auth/discord/callback" && req.method === "GET") {
