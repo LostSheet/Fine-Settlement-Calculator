@@ -2282,7 +2282,11 @@ export default function GoldSettlement() {
   const [rows, setRows] = useState(boot.current.rows);
   const [feePercent, setFeePercent] = useState(boot.current.feePercent);
   // 정산 방식도 수수료처럼 파티 장부에 붙어 다닙니다
-  const [splitMode, setSplitMode] = useState(boot.current.splitMode === "solo" ? "solo" : "pot");
+  /* (감춤 2026-09-21 사용자) 정산 방식은 벌금통 고정 — 고르는 자리를 감췄으니 값도 안 움직인다.
+     setSplitMode 를 빈 함수로 두면 저장본·파티 슬롯·복원이 "solo" 를 실어 와도 표가 흔들리지 않는다.
+     (되살릴 때) useState(boot.current.splitMode === "solo" ? "solo" : "pot") 로 되돌린다 */
+  const [splitMode] = useState("pot");
+  const setSplitMode = () => {};
   const [showSplitHelp, setShowSplitHelp] = useState(false);
   /* 방금 누른 것 — 이번 묶음의 기록 id 들. 새것이 뒤에 붙고, 카드는 아래가 고정이라
      방금 누른 줄이 늘 같은 자리에 있습니다. 기록에서 다시 읽으므로 취소도 기록과 한 몸입니다. */
@@ -11235,12 +11239,7 @@ export default function GoldSettlement() {
               <span className="gs-unit" id="gs-ledger-unit">단위: G</span>
             </div>
             <div className="gs-tools">
-              <SplitPick
-                value={splitMode}
-                onPick={setSplitMode}
-                readOnly={readOnly}
-                onHelp={() => setShowSplitHelp(true)}
-              />
+              {/* (감춤 2026-09-21 사용자) 정산 방식 고르기 — 벌금통 고정 */}
               <label className="gs-fee">
                 <span>수수료</span>
                 <NumInput
@@ -11271,7 +11270,7 @@ export default function GoldSettlement() {
                   <th className="gs-l">이름</th>
                   <th>벌금</th>
                   <th>받을 몫</th>
-                  <th>순액</th>
+                  <th className="gs-net">순액</th>
                   <th className="gs-tail">수수료</th>
                   <th className="gs-tail">최종</th>
                 </tr>
@@ -11285,7 +11284,7 @@ export default function GoldSettlement() {
                       <td className="gs-l gs-nm">{row.name || "—"}</td>
                       <Amount v={r.fines[i]} />
                       <Amount v={r.shares[i]} />
-                      <Amount v={net} sign className={net > 0 ? "gs-pos" : net < 0 ? "gs-neg" : ""} />
+                      <Amount v={net} sign className={"gs-net" + (net > 0 ? " gs-pos" : net < 0 ? " gs-neg" : "")} />
                       {/* 수수료는 실제값에서 빼서 구합니다 — 요율을 곱하면 통마다 걸린 내림과 안 맞습니다.
                           받는 사람 앞으로 온 통들의 금액 합 = 그 사람의 순액이라, 순액 − 실수령이 곧 수수료 합입니다 */}
                       <Amount v={net > 0 ? net - r.gotten[i] : 0} className="gs-tail" one />
@@ -11300,7 +11299,8 @@ export default function GoldSettlement() {
                 <tr>
                   <th scope="row" className="gs-l">합계</th>
                   <Amount v={r.total} />
-                  <td colSpan={2} />
+                  <td />
+                  <td className="gs-net" />
                   {/* 열을 다 더하면 우편으로 나가는 총액과 같습니다 (봉투의 수수료 도장 합) */}
                   <Amount v={r.feeTotal} className="gs-tail" one />
                   <td />
@@ -11344,12 +11344,7 @@ export default function GoldSettlement() {
             )}
           </div>
           <div className="gs-tools">
-            <SplitPick
-              value={splitMode}
-              onPick={setSplitMode}
-              readOnly={readOnly}
-              onHelp={() => setShowSplitHelp(true)}
-            />
+            {/* (감춤 2026-09-21 사용자) 정산 방식 고르기 — 벌금통 고정 */}
             <label className="gs-fee">
               <span>수수료</span>
               <NumInput
@@ -11593,7 +11588,7 @@ export default function GoldSettlement() {
           )}
         </InfoModal>
       )}
-      {showSplitHelp && <SplitHelp onClose={() => setShowSplitHelp(false)} />}
+      {/* (감춤 2026-09-21 사용자) 정산 방식 설명 창 — 여는 [?] 를 같이 감췄다 */}
       {demoOpen && (
         <div className="gs-demo" role="dialog" aria-label="처음부터 같이 해보기">
           {/* 문구는 350ms 뒤에야, 그리고 떴으면 800ms 는 (위 규칙). 그 전엔 창만 번져 들어옵니다 */}
@@ -15824,7 +15819,8 @@ const HOST_STEPS = [
   /* after — 채우기가 끝나면(4.5초) 그제야 [다음]이 나타나고, 넘어가는 건 사용자 몫 (2026-09-06 낮 사용자: 템포; (폐기) 4.5초 뒤 자동) */
   { ch: 5, sel: ".gs-grid", text: "한 판 돌았다고 칠게요… 넷이 더 들어와 여덟이 됐어요.", lock: true, wait: "auto", after: "다음", enter: "seed" },
   /* 정산 내역이 어두운 막에 가리면 안 됩니다 — 이 장은 막 없이 (2026-09-06 사용자) */
-  { ch: 5, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료와 나누는 방식도 여기서 정해요.", wait: "tab:ledger", clear: true },
+  /* (고침 2026-09-21 사용자) 나누는 방식을 감췄으니 안내에서도 뺀다. (폐기) "수수료와 나누는 방식도 여기서 정해요." */
+  { ch: 5, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료도 여기서 정해요.", wait: "tab:ledger", clear: true },
   { ch: 5, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. 디코에 붙여넣을 글도 여기서 복사해요.", wait: "tab:mail", clear: true },
   { ch: 5, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
   { ch: 5, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 잘못 누른 건 여기서 취소해요.", action: "다음 장", lock: true, clear: true },
@@ -18035,6 +18031,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ledger .gs-tail{color:rgba(var(--ink-rgb),.6)}
 .gs-ledger .gs-tail .gs-man{font-size:20px}
 .gs-one{display:block; font-size:20px; line-height:1.25}
+/* 순액은 이 표의 답 — 열 하나를 기둥으로 세웁니다 (2026-09-21 사용자).
+   색은 앱 문법 그대로: 밝게는 흰 기운으로 떠 보이고, 어둡게는 눌러 파 보입니다 */
+.gs-ledger .gs-net{background:rgba(var(--lift-rgb),.16)}
 
 /* 룰렛 열 머리 — 단가 자리에 설정 버튼이 앉습니다 */
 .gs-rcbtn{border:1px solid rgba(var(--gold-rgb),.55); border-radius:3px; background:transparent;
