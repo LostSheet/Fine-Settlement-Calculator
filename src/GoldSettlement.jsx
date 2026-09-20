@@ -9344,11 +9344,8 @@ export default function GoldSettlement() {
                     >
                       {TAB_ICONS[t.k]}
                       {t.label}
-                      {t.k === "ledger" && <em>{r ? r.fines.length : 0}명</em>}
-                      {/* 인게임에선 송금 1건 = 우편 1통 — 봉투(보내는 사람) 수가 아니라 송금 횟수 */}
-                      {t.k === "mail" && (
-                        <em>{r ? r.transfers.length : 0}통</em>
-                      )}
+                      {/* (폐기 2026-09-20 사용자) 탭 옆 숫자 `n명`·`n통` — 탭 이름과 구분이 안 가서
+                          글자 덩어리로만 보였다. 숫자는 그 화면을 열면 안에서 말한다 */}
                     </button>
                     <span
                       className={"gs-tip-body" + (t.k === "mail" ? " gs-tip-r" : "")}
@@ -16604,8 +16601,6 @@ const CSS = `
 /* 폭·글자 굵기는 선택 전후에 그대로 둡니다 — 400↔600 으로 바꾸면 글자 폭이 달라져
    탭을 옮길 때마다 줄이 움찔합니다. 선택은 잉크색과 밑줄이 맡습니다 */
 .gs-tab.on{position:relative; z-index:2; height:40px; color:var(--ink); border-bottom-color:var(--ink)}
-.gs-tab em{font-style:normal; font-family:inherit; font-size:11px; color:var(--ink-2);
-  min-width:29px; text-align:right; font-variant-numeric:tabular-nums}
 .gs-viewseg{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px;
   background:rgba(var(--lift-rgb),.22); margin-bottom:7px}
 .gs-viewseg button{width:33px; height:32px; display:grid; place-items:center; border:none;
