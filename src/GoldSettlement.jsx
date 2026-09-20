@@ -1267,9 +1267,10 @@ const roomApi = {
   read: (token, roomId) => callApi(`/api/r/${roomId}/read`, { token }),
   /* 서버는 {invite:{code,exp}} 로 감싸서 줍니다 — 호출한 쪽이 알맹이만 보게 풀어 둡니다 */
   invite: (token, roomId) =>
-    callApi(`/api/r/${roomId}/invite`, { method: "POST", body: {}, token }).then(
-      (r) => r.invite || r
-    ),
+    callApi(`/api/r/${roomId}/invite`, { method: "POST", body: {}, token }).then((r) => r.invite || r),
+  /* 새로 발급 (2026-09-20) — wipe 면 방장 말고 이 방의 명단을 비운다. 표의 줄·이름·숫자는 안 건드린다 */
+  reInvite: (token, roomId, wipe) =>
+    callApi(`/api/r/${roomId}/invite`, { method: "POST", body: wipe ? { wipe: 1 } : {}, token }).then((r) => r.invite || r),
   /* 지금 코드 (2026-09-06) — 살아 있으면 그대로, 죽었으면 null. 부팅과 새 판 만들기가 씁니다 */
   inviteNow: (token, roomId) => callApi(`/api/r/${roomId}/invite`, { token }).then((r) => r.invite || null),
   /* 코드의 시계 켜기 (2026-09-08 사용자 확정) — 부르는 순간(= 복사)부터 10분입니다 */
@@ -1318,7 +1319,9 @@ const roomApi = {
     callApi(`/api/r/${roomId}/seat`, { method: "POST", body: { rowId }, token }),
   /* 초대 링크는 방 주소 + 해시의 코드입니다 — 방 주소는 비밀이 아니고, 코드가 권한입니다 */
   /* 코드 없는 링크 (§3.12.5) — 방마다 하나, 늘 같다. code 인자는 옛 호출부 호환으로만 받고 무시한다 */
-  inviteUrl: (roomId) => `${RELAY_BASE}/r/${roomId}`,
+  /* 초대 주소 (2026-09-20) — 코드는 해시에 싣는다(서버 기록에 안 남고, 방송 화면에도 덜 남는다).
+     새로 발급하면 코드가 바뀌어 옛 주소가 죽는다. 방 주소(/r/ID)와 방송 주소는 그대로다 */
+  inviteUrl: (roomId, code) => `${RELAY_BASE}/r/${roomId}` + (code ? "#j=" + code : ""),
   /* 내 방송용 주소 — 지금 들어가 있는 방을 비춥니다. 읽기 전용, 영구(재발급 전까지) */
   obsUrl: (obsToken) => `${RELAY_BASE}/o/${obsToken}`,
   roomUrl: (roomId) => `${RELAY_BASE}/r/${roomId}`,
@@ -2842,6 +2845,12 @@ export default function GoldSettlement() {
       document.body.style.overflow = prev;
     };
   }, [wide]);
+  /* 초대의 남은 시간을 1분마다 다시 셈한다 (2026-09-20) */
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
   const [acctOpen, setAcctOpen] = useState(false);
   const acctWrapRef = useRef(null);
   const picPick = useRef(null);
@@ -5883,6 +5892,8 @@ export default function GoldSettlement() {
         if (e && e.status === 409 && e.code === "no party") setDenied("noparty");
         else if (e && e.status === 409) say("대기실이 가득 찼어요. 방장에게 정원을 늘려 달라고 해주세요.");
         /* 코드가 지난 것과 애초에 안 맞는 것은 사람이 할 일이 같아도 말이 다릅니다 (§8) */
+        /* 초대 없이·지난 초대로 온 사람 (2026-09-20) — 둘 다 방장에게 새 초대를 받아야 한다 */
+        else if (e && e.status === 410) setDenied("expired");
         else if (e && e.status === 403) setDenied(e.code === "expired" ? "expired" : "invite");
       });
   }, [readOnly, auth && auth.token, liveRoom, joinCode, !!you, left, joinOk, rejoinTick]);
@@ -6532,7 +6543,11 @@ export default function GoldSettlement() {
     </span>
   );
   /* [디코 메시지 복사] (§3.12.5) — 방 하나에 링크 하나. 코드도 arm 도 없다 */
-  const copyInvite = () => {
+  /* 초대가 살아 있나 · 몇 시간 남았나 (2026-09-20) */
+  const inviteLive = !!(relay.invite && relay.invite.code && (relay.invite.exp || 0) > nowTick);
+  const inviteLeftH = inviteLive ? Math.max(1, Math.ceil(((relay.invite.exp || 0) - nowTick) / 3600000)) : 0;
+  /* [초대 메시지 복사] — 살아 있으면 그대로 복사하고, 없거나 지났으면 먼저 발급한다. 단추 하나로 (2026-09-20 사용자) */
+  const copyInvite = async (opts) => {
     const a = authRef.current;
     const room = relayRef.current.room;
     if (!a) return;
@@ -6547,7 +6562,30 @@ export default function GoldSettlement() {
       tutHit("link");
       return;
     }
-    copy(inviteMsg(a.nick, roomApi.roomUrl(room)), "inv");
+    const iv = relayRef.current.invite;
+    let code = iv && iv.code && (iv.exp || 0) > Date.now() ? iv.code : null;
+    if (!code || (opts && opts.fresh)) {
+      try {
+        const got = await roomApi.reInvite(a.token, room, !!(opts && opts.wipe));
+        code = got.code;
+        putRelay({ ...relayRef.current, invite: { code: got.code, exp: got.exp } });
+        if (opts && opts.wipe) setMembers([]);
+      } catch (e) {
+        return say((e && e.message) || "초대를 발급하지 못했어요.");
+      }
+    }
+    copy(inviteMsg(a.nick, roomApi.inviteUrl(room, code)), "inv");
+  };
+  /* [새로 발급] — 줄에 붙은 사람이 있으면 한 번 묻는다. 시점으로 짐작하지 않는다(같은 날 두 번째 파티도, 판 도중 만료도 있다) */
+  const askReInvite = () => {
+    if (!partyCount) return copyInvite({ fresh: true });
+    setAsk({
+      title: "지금 파티원을 어떻게 할까요?",
+      body: "그대로 두면 파티원은 제 줄에 남아요. 옛 초대 링크만 막아요.\n비우면 파티원을 모두 내보내고 새로 받아요. 벌금 숫자는 그대로예요.",
+      action: "그대로 두고 발급",
+      alt: { label: "비우고 발급", onPick: () => copyInvite({ fresh: true, wipe: true }) },
+      onYes: () => copyInvite({ fresh: true }),
+    });
   };
   const hostInvite = (() => {
     /* 예시 파티의 문 — 진짜 코드를 내지 않습니다 (2026-09-06) */
@@ -6563,8 +6601,9 @@ export default function GoldSettlement() {
       .inviteNow(auth.token, relay.room)
       .then((inv) => {
         if (gone) return;
+        /* (고침 2026-09-20) 죽은 초대를 부팅이 자동으로 새로 내던 것 — 발급은 방장이 [초대 메시지 복사]를 누를 때만 한다.
+           자동으로 내면 방장 모르게 시계가 돌고, "비울까요?"를 물을 자리도 없다 */
         if (inv) putRelay({ ...relayRef.current, invite: { code: inv.code, exp: inv.exp } });
-        else if (boardOnRef.current) newInvite();
         else if (relayRef.current.invite) putRelay({ ...relayRef.current, invite: null });
       })
       .catch(() => {});
@@ -9378,7 +9417,7 @@ export default function GoldSettlement() {
               "이 주소는 더 이상 갱신되지 않아요. 방장에게 새 초대를 받아 주세요."
             ) : denied === "expired" ? (
               /* 판이 남아 있는 사람에게만 옵니다 — 볼 판이 없으면 안내 화면이 대신합니다 */
-              "초대가 만료됐어요 — 방장에게 새 초대를 받아 주세요."
+              "초대 기간이 끝났어요 — 방장에게 새 초대를 받아 주세요."
             ) : denied === "invite" ? (
               "이 초대는 쓸 수 없어요 — 방장에게 새 초대를 받아 주세요."
             ) : denied ? (
@@ -9758,7 +9797,7 @@ export default function GoldSettlement() {
                   : denied === "noparty"
                   ? "지금은 열린 판이 없어요."
                   : denied === "expired"
-                  ? "초대가 만료됐어요 — 방장에게 새 초대를 받아 주세요."
+                  ? "초대 기간이 끝났어요 — 방장에게 새 초대를 받아 주세요."
                   : denied === "gone"
                   ? "이 주소의 파티는 이제 없어요 — 방장에게 새 초대를 받아 주세요."
                   : denied === "member"
@@ -10094,6 +10133,8 @@ export default function GoldSettlement() {
                         linked={!!(auth && auth.dc)}
                         tray={[]}
                         copied={flash === "inv"}
+                        inviteLeftH={inviteLive ? inviteLeftH : 0}
+                        onReInvite={askReInvite}
                         onDiscord={() => startDiscord()}
                         onCopyInvite={copyInvite}
                         onOpenModal={() => {
@@ -14135,7 +14176,7 @@ function PlacerAva({ p, size }) {
   );
 }
 /* 빈 초상화 팝오버 (2026-09-18) — 화면에 고정 좌표로 띄운다(표는 가로 스크롤 상자 안이라 absolute 면 잘린다). 아래가 모자라면 위로 */
-function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWho, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
+function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWho, inviteLeftH, onReInvite, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -14220,9 +14261,20 @@ function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWh
               <span>들어온 사람은 여기에 모이고, 누르면 이 줄에 배치해요.</span>
             )}
           </p>
+          {/* 초대는 12시간 (2026-09-20 사용자) — 어제 파티와 오늘 파티를 가르는 경계다. 살아 있으면 남은 시간과 [새로 발급] */}
+          {inviteLeftH > 0 && (
+            <p className="gs-seatpop-note gs-invleft">
+              <span>이 초대는 {inviteLeftH}시간 동안 쓸 수 있어요.</span>
+              {onReInvite && (
+                <button type="button" className="gs-seatpop-relink" onClick={onReInvite}>
+                  새로 발급
+                </button>
+              )}
+            </p>
+          )}
           <div className="gs-pop-acts">
             <button type="button" className="gs-btn gs-btn-sm gs-lbstart" onClick={onCopyInvite}>
-              {copied ? "복사했어요" : "초대 메시지 복사"}
+              {copied ? "복사했어요" : inviteLeftH > 0 ? "초대 메시지 복사" : "초대 발급하고 메시지 복사"}
             </button>
           </div>
         </>
@@ -19734,6 +19786,9 @@ tr[data-drop] .gs-rowi,.gs-rd[data-drop] .gs-rd-pic{outline:2px solid var(--gold
 .gs-seatpop-p:hover{border-color:var(--gold); background:rgba(var(--gold-rgb),.1)}
 .gs-seatpop-p b{font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .gs-seatpop-p em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2); white-space:nowrap}
+.gs-invleft{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+.gs-seatpop-relink{border:0; background:transparent; padding:0; font:inherit; font-size:12px; color:var(--gold); cursor:pointer; text-decoration:underline; text-underline-offset:3px; flex:none}
+.gs-seatpop-relink:hover{text-decoration-thickness:2px}
 .gs-seatpop-more{display:block; width:100%; text-align:left; margin-top:14px; padding:10px 0 0; border:0; border-top:1px dotted rgba(var(--ink-rgb),.3); background:transparent;
   font:inherit; font-size:12px; color:var(--gold); cursor:pointer}
 .gs-seatpop-more:hover{text-decoration:underline}

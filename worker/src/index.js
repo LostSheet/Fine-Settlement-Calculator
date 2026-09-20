@@ -32,7 +32,8 @@ const json = (data, status = 200) =>
 
 /* 수명 (§1) */
 const SESSION_MS = 90 * 86400 * 1000;
-const INVITE_MS = 10 * 60 * 1000;
+/* 초대의 수명 (2026-09-20 사용자) — 만료는 "어제 파티와 오늘 파티"를 가르는 경계다. 한 판보다 길고 다음 날보다 짧아야 한다 */
+const INVITE_MS = 12 * 3600 * 1000;
 /* 코드 색인(계정부)은 방을 찾는 포인터일 뿐이고 유효는 방이 판단합니다 (2026-09-06) — 넉넉히 둡니다 */
 const INVITE_INDEX_MS = 7 * 86400 * 1000;
 /* 판의 수명 판단(자동 중단 24시간·판 삭제 90일)은 round.js 가 갖고 있습니다 */
@@ -1547,9 +1548,24 @@ export class Room {
     // 초대 재발급 — 옛 코드는 그 자리에서 무효, 기존 멤버는 무영향
     if (path === "/invite" && req.method === "POST") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
-      /* 시계는 아직 안 돕니다 (2026-09-08) — 복사할 때 /invite-arm 이 켭니다 */
-      const invite = { code: rid(8), exp: 0, armed: false };
+      /* 발급하면 바로 시계가 돕니다 (2026-09-20 사용자: 발급과 복사가 한 단추) — 옛 코드는 이 줄에서 죽습니다.
+         (폐기 2026-09-08) 복사할 때 /invite-arm 이 켜던 것 — 단추가 하나가 되면서 켤 자리가 없어졌습니다 */
+      const invite = { code: rid(8), exp: now + INVITE_MS, armed: true };
       await S.put("invite", invite);
+      /* "비우고 발급" (2026-09-20 사용자) — 새 사람들과 하는 다음 판. 방장 말고 다 내보냅니다.
+         줄과 벌금 숫자는 방장의 표에 그대로 있고, 여기서는 이 방의 명단만 비웁니다 */
+      if (b.wipe) {
+        const owner0 = await S.get("owner");
+        for (const [k] of await S.list({ prefix: "m:" })) {
+          const acct = k.slice(2);
+          if (acct === owner0) continue;
+          await S.delete(k);
+          await S.delete("x:" + acct);
+          await this.clearUndo(acct);
+          await this.releaseSeat(acct, req);
+          this.toScribe({ kind: "left", acct });
+        }
+      }
       /* 코드만으로 찾아오는 길 (§3.0 로비 입장칸) — 계정부 색인에 한 줄. 유효는 방이 판단하므로 색인은 넉넉히 */
       try {
         await this.toAccounts("/code-index", { code: invite.code, room: await this.roomId(req), exp: now + INVITE_INDEX_MS });
@@ -1778,6 +1794,13 @@ export class Room {
       /* 코드 없는 링크 (§3.12.5). 처음 온 사람은 늘 요청으로 서고 방장이 [받기]로 앉힙니다.
          내보냈던 사람도 같은 줄에 kicked 표시로 섭니다. 판이 있는지는 묻지 않습니다 — owner 가 있으면 열린 방입니다.
          (폐기 2026-09-15) 지목 초대(inv)·함께한 사람 노크(mate-of)·10분 코드·대기실 정원 */
+      /* 초대가 살아 있어야 들어옵니다 (2026-09-20 사용자) — 만료가 어제 파티와 오늘 파티를 가릅니다.
+         이미 명단에 있는 사람은 이 줄 위에서 돌아갑니다(자격은 명단에 있지 초대에 있지 않습니다).
+         (폐기 2026-09-15) 코드 없는 링크 — 한 번 새면 영영 열린 문이었고, 어제 사람과 오늘 사람이 안 갈렸습니다 */
+      const inv = await S.get("invite");
+      const jcode = String(b.j || "").toUpperCase();
+      if (!inv || !inv.code || jcode !== inv.code) return json({ error: "no invite" }, 403);
+      if (!this.inviteOk(inv, now)) return json({ error: "invite expired" }, 410);
       const kicked = !!(await S.get("x:" + me.id));
       const m = { nick: me.nick, dcu: me.dcu || "", rowId: null, st: "req", t: now };
       if (kicked) m.kicked = 1;
