@@ -4285,8 +4285,53 @@ export default function GoldSettlement() {
   };
   /* [해산] — 시작 전 판을 없앱니다 (2026-09-06 모델). 앉아 있던 파티원은 나가고 남는 것은 기본값뿐입니다.
      진행 중의 끝은 [정산 끝내기] 하나입니다 */
+  const disband = () => {
+    if (readOnly) return;
+    const a = authRef.current;
+    if (a && relayRef.current.room) roomApi.end(a.token, relayRef.current.room).catch(() => {});
+    setMembers([]);
+    setLobbyOn(false);
+    setRoundName(defaultRoundName());
+    setLog([]);
+    setUndoSnap(null);
+    setMemoFreeze(null);
+    setRoundId("");
+    setRoundLive(false);
+    setPaused(null);
+    putSeats((prev) => prev.filter((s0) => !!s0.acct && !!authRef.current && s0.acct === authRef.current.id));
+    boardOnRef.current = false;
+    putRelay({ ...relayRef.current, boardOn: false });
+    go(VIEW_LOBBY);
+  };
   /* 방 하나 규칙 (2026-09-07 사용자 확정) — 보관된 초대로 가려면: 진행 중이면 [정산 끝내기]가 먼저(끝내러 가기), 시작 전이면 [해산하고 가기]. 문구 초안 */
-  /* (폐기 2026-09-20) 부팅 때 보관된 초대로 가려고 지금 판을 해산하던 길 — 판을 끝내는 동사가 없어졌다 */
+  const askLeaveForJoin = () => {
+    if (!pendingJoin) return;
+    if (roundLive)
+      return setAsk({
+        title: "진행 중인 내 판을 끝내야 갈 수 있어요",
+        body: "[정산 끝내기]를 누르면 결과지가 기록에 남고 판이 닫혀요. 초대는 파티 허브에 보관해 둘게요.",
+        action: "끝내러 가기",
+        onYes: () => go(VIEW_BOARD),
+      });
+    if (boardOn)
+      return setAsk({
+        title: "내 판을 해산하고 초대받은 파티로 갈까요?",
+        body: "시작 전 판이 없어져요. 자리와 이름을 지우고 항목과 단가만 남겨요.",
+        action: "해산하고 가기",
+        tone: "danger",
+        onYes: () => {
+          disband();
+          goPendingJoin();
+        },
+      });
+    goPendingJoin();
+  };
+  /* 부팅 때 보관된 초대가 있으면 바로 묻습니다 — 링크를 눌렀는데 아무 일도 없으면 안 됩니다 */
+  useEffect(() => {
+    if (readOnly || tutorial || !pendingJoin) return;
+    askLeaveForJoin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   /* [혼자 세기] (2026-09-08 사용자 확정) — 판을 만들고, 그 판이 실제로 선 다음 렌더에서 바로 시작합니다.
      newBoard 직후에 startRound 를 부르면 아직 옛 자리(클로저)를 보므로 ref 로 한 박자 미룹니다 */
   const soloPending = useRef(false);
@@ -4315,6 +4360,17 @@ export default function GoldSettlement() {
     newBoard();
   };
   /* 대기실에서는 남이 앉아 있을 때만 묻고 혼자면 바로. 로비에서는(always) 판을 안 보고 누르는 것이라 늘 묻습니다 (2026-09-07 사용자; 문구 초안) */
+  const askDisband = (always) => {
+    const others = seats.filter((s0, i) => i > 0 && s0.acct).length;
+    if (!others && !always) return disband();
+    setAsk({
+      title: others ? "파티를 해산할까요?" : "판을 해산할까요?",
+      body: others ? "앉아 있는 파티원이 나가요." : "시작 전 판이 없어져요. 자리와 이름을 지우고 항목과 단가만 남겨요.",
+      action: "해산",
+      tone: "danger",
+      onYes: disband,
+    });
+  };
   /* 로비 모으기 열의 [로그인] — 버튼이 '로그인'이라 로그인 쪽으로 열고,
      끝나면 하려던 일(모으기)을 이어서 합니다. 가입은 창 아래 한 줄로 갈라져 있습니다 */
   const openLobbyLogin = () =>
@@ -5412,9 +5468,99 @@ export default function GoldSettlement() {
   /* [정산 끝내기] — 결과지를 판 기록에 남기고 판을 닫습니다. **아무도 내보내지 않습니다** —
      정산 직후 전광판이 꺼지면 이상하니까요 (§3.4). 공유도 안 끕니다: 파티원 화면과
      오버레이에는 끝난 판이 그대로 뜹니다. 방장은 홈(로비)으로 갑니다. */
+  const endRound = () => {
+    clearTimeout(pushTimer.current);
+    /* 마지막 한 장을 '끝났어요' 표시와 함께 보냅니다 — 안 보내면 파티원은 방장이 잠깐
+       자리를 비운 줄 알고, 판이 끝났다는 것을 알 길이 없습니다 */
+    if (auth && relay.room)
+      roomApi
+        .putState(auth.token, relay.room, { ...liveSnapshot(), end: 1 })
+        .catch(() => {
+          /* 못 보내도 이 브라우저의 장부는 그대로입니다 */
+        })
+        /* 끝내기 = 해산 (2026-09-06 모델) — 결과지 한 장이 먼저 가고, 그 다음 판이 없어집니다 */
+        .then(() => roomApi.end(auth.token, relay.room).catch(() => {}));
+    const nm = closeRound();
+    setRoundLive(false);
+    setRoundId("");
+    setPaused(null);
+    /* 이름은 그 판과 함께 기록으로 갔습니다 — 다음 판은 다시 그날 기본값입니다 (§3.1) */
+    setRoundName(defaultRoundName());
+    setTab("sheet");
+    /* 판이 없어집니다 (2026-09-06 모델) — 서버는 명단·내보냄 표시·판 존재 표시를 비우고(/end), 여기서는 자리를 방장 줄만
+       남깁니다. 남는 것은 결과지와 기본값뿐입니다. (폐기 2026-09-05) 모으기만 접고 사람·이름은 다음 대기실로 남기던 규칙 —
+       다음 대기실에 지난 사람의 글자 이름이 서는 그림이 됐다 */
+    setMembers([]);
+    setLobbyOn(false);
+    putSeats((prev) => prev.filter((s0) => !!s0.acct && !!authRef.current && s0.acct === authRef.current.id));
+    boardOnRef.current = false;
+    putRelay({ ...relayRef.current, boardOn: false });
+    /* 끝낸 직후의 일은 장부 읽기·우편 보내기입니다 (§3.4 여정표) — 로비 직행이 아니라
+       결과 화면을 거칩니다. 판 기록에 막 들어간 그 판을 열고, [닫기]가 나가는 문입니다 */
+    if (typeof nm === "string") {
+      setJustEnded(nm);
+      openGen(nm);
+    }
+    courseHit("ended"); // 튜토리얼 7장 — 결과지로
+  };
   /* [정산 끝내기]가 눌리는 자리는 둘입니다 (2026-09-08 사용자 확정 ①) — 벌금판 우상단, 그리고 로비 진행 중 카드.
      away = 로비에서 누른 것: 벌금표를 안 보고 마감하는 것이라 지금 값을 적어 보이고 빨강으로 묻습니다.
      ev 가 그대로 흘러들면 늘 참이 되므로 부르는 쪽은 반드시 () => askEndRound() 꼴입니다 */
+  const askEndRound = (away) => {
+    courseHit("endask"); // 튜토리얼 7장
+    /* 기록이 없으면 남길 결과지도 없습니다 — 판을 접고 로비로 (2026-09-05 ⑤). 끝내기의 도착지는 언제나 로비 */
+    if (!log.length)
+      return setAsk({
+        /* (폐기 2026-09-06) `아직 기록이 없어요. / 이 판을 접고 로비로 갈까요? 이름과 항목은 그대로 남아요.` [접기] —
+           접기라는 세 번째 동사. 기록 없는 끝은 해산입니다 (초안)
+           (폐기 2026-09-08) `판이 없어지고 로비로 가요. 항목·단가·인원은 그대로예요.` — 자리에 앉은 사람은 방장 줄만
+           남는데 "인원 그대로"라고 했고(사용자 지적), 로비에서 누르면 "로비로 가요"도 거짓이었습니다 */
+        title: "기록이 없어요 — 해산할까요?",
+        body: away
+          ? "판이 없어져요. 항목·단가·정원은 그대로예요."
+          : "판이 없어지고 로비로 가요. 항목·단가·정원은 그대로예요.",
+        action: "해산",
+        tone: "danger",
+        onYes: () => {
+          endRound();
+          go(VIEW_LOBBY);
+        },
+      });
+    if (!away)
+      return setAsk({
+        title: "이 판을 마감할까요?",
+        body: "결과지가 판 기록에 남아요.",
+        action: "정산 끝내기",
+        onYes: endRound,
+      });
+    /* 로비에서 (2026-09-08 사용자: 경고를 강하게) — 표를 보고 누르는 문이 아니라서 지금 값을 대신 적습니다.
+       빨강은 되돌릴 수 없는 것에만인데(§9-4) 이건 정말 되돌릴 수 없습니다. 문구 초안 */
+    const heads = seats.filter((x) => x.acct || ((x.name || "").trim() && !isFillName(x.name))).length;
+    const mins = roundSinceMin();
+    /* 앉은 파티원 — 방(relay.room)이 아니라 사람을 셉니다: 혼자 세기 판도 방은 만들기 때문입니다 (버그 기록 2026-09-08) */
+    const mates = seats.filter((x) => x.acct && (!auth || x.acct !== auth.id)).length;
+    return setAsk({
+      title: "판을 보지 않고 마감할까요?",
+      body: (
+        <>
+          <b>{roundName || defaultRoundName()}</b> · {heads}명 · 벌금{" "}
+          {man(rows.reduce((a, r) => a + itemGold(r), 0))}
+          {mins != null && (mins < 1 ? " · 방금 시작" : " · " + mins + "분째")}
+          <br />
+          지금 값 그대로 결과지가 되고 판이 없어져요. 되돌릴 수 없어요.
+          {mates > 0 && (
+            <>
+              <br />
+              파티원 {mates}명은 다음 판에 다시 들어와야 해요.
+            </>
+          )}
+        </>
+      ),
+      action: "정산 끝내기",
+      tone: "danger",
+      onYes: endRound,
+    });
+  };
   /* [중단] — 아무것도 지우지 않고 얼립니다. 사람·셈·연결 그대로이고 [이어가기]로 돌아옵니다.
      방장 화면은 홈(로비)으로 물러나고, 거기 중단된 판 카드가 섭니다 (§3.1) */
   /* 손으로 얼리는 [중단]은 폐지했습니다 (§3.4) — 브라우저를 닫아도 판은 살아 있고,
