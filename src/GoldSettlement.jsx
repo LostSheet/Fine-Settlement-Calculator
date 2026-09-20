@@ -3621,7 +3621,6 @@ export default function GoldSettlement() {
     } catch (e) {}
   }, []);
   /* (폐기 2026-09-20 사용자) nameEdit — 판 이름을 고치는 기능이 없어졌다. roundName 은 그날 기본값으로 결과지·판 기록에 남는다 */
-  const [gensOpen, setGensOpen] = useState(false); // 판 기록 창
   /* (폐기 2026-09-08) revealInv — 초대 코드는 이제 펴지지 않습니다. 복사로만 옮깁니다 (사용자: 시청자가 알면 난리가 난다) */
   const [capDraft, setCapDraft] = useState(null); // 인원 수 숫자 칸 — 떠날 때 확정
   const [justEnded, setJustEnded] = useState(null); // 방금 끝낸 판의 기록 이름 — 결과 화면 경유
@@ -7932,21 +7931,6 @@ export default function GoldSettlement() {
     /* (폐기 2026-09-15) 판이 없으면 로비로 — 로비가 없고 판은 늘 있다 (§3.12.2) */
     return;
   }, [readOnly, !!genView, atLobby, boardOn, !!justEnded]);
-  const askDropGen = (g) =>
-    setAsk({
-      title: "이 기록을 지울까요?",
-      body: (g.title || g.name) + " — 이 브라우저에서 지워요. 되돌릴 수 없어요.",
-      action: "지우기",
-      tone: "danger",
-      onYes: () => {
-        if (genView === g.name) closeGen();
-        dropPartySlot(g.name);
-        putPartyReg({
-          ...partyReg,
-          list: partyReg.list.filter((x) => x.name !== g.name),
-        });
-      },
-    });
   /* 방장 쪽 신분증 — 파티원이 한 명이라도 붙어 있었으면 그 판은 파티입니다.
      배지는 그래도 `내 판`입니다 (§3.5): 이 기록을 보는 사람이 그 판의 방장이니까요.
      함께한 사람은 아래 칩으로 보입니다 */
@@ -8223,12 +8207,9 @@ export default function GoldSettlement() {
      장부 로그에 `비움` 한 줄이 남습니다 (§3.4). 파티원의 "방금 바뀐" 카드에도 뜹니다 */
   const wipeCounts = () => {
     if (readOnly) return;
-    /* 기록이 있으면 판 기록에 남기고 새 판을 연다 — 이때는 되돌리기를 주지 않는다 (되돌리면 같은 판이 기록과 표에 둘로 남는다).
-       기록이 없으면 숫자만 지우는 것이라 되돌리기를 준다 (§3.12.2) */
-    const hasLog = (log || []).length > 0;
-    if (!hasLog) takeSnap("비우기", "숫자를 비웠어요. 이름과 자리는 그대로예요.");
-    /* 지금 표를 결과지째 판 기록으로 넘기고 새 판 열쇠를 쥔다 — 자리·이름·항목은 그대로 */
-    const nm = hasLog ? closeRound() : null;
+    /* (고침 2026-09-20 사용자) 숫자만 비운다. 어디에도 남기지 않으니 늘 되돌리기를 준다 —
+       되돌리기가 유일한 안전줄이다. (폐기) 기록이 있으면 판 기록에 남기고 그때는 되돌리기를 안 주던 것 */
+    takeSnap("비우기", "숫자를 비웠어요. 이름과 자리는 그대로예요.");
     const gid = newRoundId();
     setRows((prev) =>
       prev.map((x) => ({ ...x, counts: simple ? { [SIMPLE_ID]: "" } : {}, sums: {}, extras: [] }))
@@ -8240,12 +8221,11 @@ export default function GoldSettlement() {
     setRoundName(defaultRoundName());
     setPaused(null);
     if (auth && relay.room && !tutorialRef.current) roomApi.round(auth.token, relay.room).catch(() => {});
-    if (nm) say(typeof nm === "string" ? "지난 판을 판 기록에 남겼어요 — " + nm : "지난 판을 판 기록에 남겼어요.", 6000);
   };
   const askWipeCounts = () =>
     setAsk({
-      title: "판을 나눌까요?",
-      body: "지금 표를 판 기록에 남기고 숫자를 비워요. 이름, 항목, 자리는 그대로예요.",
+      title: "숫자를 비울까요?",
+      body: "이름, 항목, 자리는 그대로예요.\n되돌릴 수 있어요.",
       action: "비우기",
       onYes: wipeCounts,
     });
@@ -9726,17 +9706,8 @@ export default function GoldSettlement() {
       {/* (폐기 2026-09-06) 판 중의 파티 줄 `파티원 n · 모집 중 · m분 남음 [들어오려는 사람 k] [초대 링크]` — 진행 중엔
           "모집 중"이 상태가 아니고, 들어오려는 사람은 사건이라 표 아래 줄이 맡으며, 코드는 공유 창에 삽니다.
           진행 중 화면은 마스트와 표뿐입니다 */}
-      {gensOpen && (
-        <GenModal
-          gens={gensList()}
-          onOpen={(name) => {
-            setGensOpen(false);
-            openGen(name);
-          }}
-          onDrop={askDropGen}
-          onClose={() => setGensOpen(false)}
-        />
-      )}
+      {/* (폐기 2026-09-20 사용자) 판 기록 목록 창 — 여는 문이 어디에도 없었고(로비와 함께 사라졌다),
+          기록의 단위가 사용자가 아는 단위와 달랐다. [정산 끝내기]의 결과 화면은 그대로다 */}
       {/* ── 벌금표 ───────────────────────────────────── */}
       {/* (폐기 2026-09-05) 파티원의 대기실 카드 — 파티원도 방장과 같은 판을 봅니다 (§5.3):
           준비 상태의 표(명단·항목, 잠긴 칸)가 곧 대기실이고, 시작하면 자기 줄 칸에 불이 들어옵니다.
@@ -10273,7 +10244,7 @@ export default function GoldSettlement() {
                         비우기
                       </button>
                       <span className="gs-tip-body gs-tip-r" role="tooltip">
-                        지금 표를 <b>판 기록</b>에 남기고 숫자만 비워요. 이름과 자리는 그대로예요.
+                        <b>숫자만</b> 비워요. 이름과 자리는 그대로예요.
                       </span>
                     </span>
                   )}
@@ -14848,72 +14819,9 @@ function IconHistory() {
 
 /* 판 기록 창 — 로비 히어로의 아이콘으로 엽니다 (§3.1). 헤더 드롭다운에 있던 내용
    그대로이고, 줄을 누르면 그 판의 결과지로 갑니다 */
-function GenModal({ gens, onOpen, onDrop, onClose }) {
-  return (
-    <InfoModal title="판 기록" onClose={onClose}>
-      <p className="gs-gens-lead">
-        끝난 판이 여기 남아요. 보기만 할 수 있고, 최근 20판까지 남습니다.
-      </p>
-      <GenList gens={gens} onOpen={onOpen} onDrop={onDrop} />
-      {/* 모달의 마무리는 오른쪽 하단입니다 (§9-6) */}
-                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
-    </InfoModal>
-  );
-}
 
-/* 판 기록 목록 — 창과 목록을 따로 두어, 줄의 생김새를 한 군데서만 고칩니다.
-   줄마다 판의 신분증입니다: 배지(누구의 판)·기간·인원·파티원 전부·총액·[×] */
-function GenList({ gens, onOpen, onDrop }) {
-  if (!gens.length) return <p className="gs-gens-empty">아직 끝난 판이 없어요.</p>;
-  return (
-    <>
-      {gens.map((g) => (
-        <div className="gs-hisrow" key={g.name}>
-          {/* 배지가 '누구의 판'을 말합니다 — 제목을 따로 되풀이하지 않습니다 */}
-          <span className={"gs-idsrc" + (g.src === "party" ? "" : " gs-idsrc-local")}>
-            {g.title}
-          </span>
-          <button className="gs-hisbody" onClick={() => onOpen(g.name)}>
-            {/* 방장이 지은 판 이름이 첫 줄입니다 (§3.1) — 찾는 열쇠가 시각뿐이면
-                비슷한 시각 스무 줄에서 어느 것이 그 판인지 못 찾습니다.
-                이름이 없는 옛 기록은 예전처럼 시각이 첫 줄입니다 */}
-            <span className="gs-hist1">
-              <b>{g.rname || fmtWhenShort(g.from || g.t)}</b>
-              <span>{g.n}명</span>
-              {g.rname && <span>{fmtWhenShort(g.from || g.t)}</span>}
-            </span>
-            {/* 파티원 전부 — "외 4명"으로 줄이지 않습니다. 계정이 붙은 사람만이 아니라 방장이 직접 적은 이름도 그대로 남습니다(realNames).
-                칩이 아니라 가운뎃점으로 나눈 평문 (2026-09-07 밤 사용자 지정; (폐기) 이름마다 둥근 칩 .gs-idmem — 이름이 데이터가 아니라 상태 배지처럼 보였다) */}
-            {g.mems.length > 0 && (
-              <span className="gs-idmems">
-                {g.mems.map((n, i) => (
-                  <span
-                    key={n + "@" + i}
-                    className={
-                      "gs-idmem" +
-                      (g.host && n === g.host
-                        ? " gs-idmem-host"
-                        : g.me && n === g.me
-                        ? " gs-idmem-me"
-                        : "")
-                    }
-                  >
-                    {i > 0 && <em className="gs-idmem-sep" aria-hidden="true">·</em>}
-                    {n}
-                  </span>
-                ))}
-              </span>
-            )}
-          </button>
-          <span className="gs-hisgold">{man(g.gold || 0)}</span>
-          <button className="gs-x" onClick={() => onDrop(g)} aria-label={g.title + " 기록 지우기"}>
-            ×
-          </button>
-        </div>
-      ))}
-    </>
-  );
-}
+/* (폐기 2026-09-20 사용자) GenModal·GenList·askDropGen — 판 기록 목록. 여는 문이 없었고 기록의 단위가 사용자가 아는 단위와 달랐다.
+   저장소 자체는 [정산 끝내기]의 결과 화면과 [지난 판 이어서…]가 그대로 쓴다 */
 
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
