@@ -11272,8 +11272,8 @@ export default function GoldSettlement() {
                   <th>벌금</th>
                   <th>받을 몫</th>
                   <th>순액</th>
-                  <th>수수료</th>
-                  <th>최종</th>
+                  <th className="gs-tail">수수료</th>
+                  <th className="gs-tail">최종</th>
                 </tr>
               </thead>
               <tbody>
@@ -11288,10 +11288,10 @@ export default function GoldSettlement() {
                       <Amount v={net} sign className={net > 0 ? "gs-pos" : net < 0 ? "gs-neg" : ""} />
                       {/* 수수료는 실제값에서 빼서 구합니다 — 요율을 곱하면 통마다 걸린 내림과 안 맞습니다.
                           받는 사람 앞으로 온 통들의 금액 합 = 그 사람의 순액이라, 순액 − 실수령이 곧 수수료 합입니다 */}
-                      <Amount v={net > 0 ? net - r.gotten[i] : 0} />
+                      <Amount v={net > 0 ? net - r.gotten[i] : 0} className="gs-tail" />
                       {/* 최종 — 받는 사람은 실제로 손에 들어오는 돈, 보내는 사람은 부치는 돈(음수).
                           색은 순액 열이 맡습니다. 여기까지 칠하면 보내는 사람 행에서 같은 값이 두 번 강조됩니다 */}
-                      <Amount v={net > 0 ? r.gotten[i] : net} sign />
+                      <Amount v={net > 0 ? r.gotten[i] : net} sign className="gs-tail" />
                     </tr>
                   );
                 })}
@@ -11302,7 +11302,7 @@ export default function GoldSettlement() {
                   <Amount v={r.total} />
                   <td colSpan={2} />
                   {/* 열을 다 더하면 우편으로 나가는 총액과 같습니다 (봉투의 수수료 도장 합) */}
-                  <Amount v={r.feeTotal} />
+                  <Amount v={r.feeTotal} className="gs-tail" />
                   <td />
                 </tr>
               </tfoot>
@@ -18020,6 +18020,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ledger em{font-style:normal; font-size:13px; color:var(--ink-2); margin-left:9px;
   font-family:'IBM Plex Sans KR',sans-serif}
 .gs-dim{color:rgba(var(--ink-rgb),.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:14px}
+/* 장부의 꼬리 두 열(수수료·최종) — 정산의 답은 순액이고 이 둘은 우편이 그 위에 얹는 것이라,
+   정확히 적되 먼저 읽히지는 않게 한 단계 낮춥니다 (2026-09-21 사용자) */
+.gs-ledger .gs-tail{color:rgba(var(--ink-rgb),.6)}
+.gs-ledger .gs-tail .gs-man{font-size:20px}
 
 /* 룰렛 열 머리 — 단가 자리에 설정 버튼이 앉습니다 */
 .gs-rcbtn{border:1px solid rgba(var(--gold-rgb),.55); border-radius:3px; background:transparent;
