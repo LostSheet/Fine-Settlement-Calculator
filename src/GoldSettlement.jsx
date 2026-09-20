@@ -16621,6 +16621,13 @@ const CSS = `
 .gs-tabbed .gs-surface{margin-top:18px; background:var(--paper); padding:14px 18px 20px;
   border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; box-shadow:none}
 .gs-surface > .gs-card{margin:0; padding:0; border:0; box-shadow:none; background:transparent}
+/* 박스는 가장자리가 없는 내용에만 준다 (2026-09-20 사용자 확정).
+   보낼 우편은 봉투가 제 빗금 가장자리와 그림자를 갖고 있어 박스를 두르지 않고,
+   정산 장부는 박스를 표에만 줘서 도구 줄이 박스 밖에 선다 */
+.gs-tabbed .gs-mailsec,.gs-tabbed .gs-ledgersec{background:transparent; border:0; border-radius:0;
+  padding:0; box-shadow:none}
+.gs-surface.gs-ledgersec > .gs-ledgerbox{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3);
+  border-radius:2px; padding:14px 18px 20px}
 .gs-surface > .gs-cardhead{margin-bottom:12px; gap:12px; min-height:34px}
 .gs-sheethead .gs-sheetmodes{margin-right:auto}
 .gs-sheethead .gs-sheetactions{margin-left:auto}
