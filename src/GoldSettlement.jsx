@@ -16542,8 +16542,9 @@ const CSS = `
 /* 탭과 수명 동사는 한 덩어리로 오른쪽 끝에 섭니다 (§3.4) — 탭을 왼쪽 끝까지 보내지
    않고, 그 오른쪽에 [정산 끝내기]·[중단]을 잇습니다. 마스트 왼쪽은 [전부 비우기]뿐입니다 */
 /* 제목 아래 모드 — 화면에서 가장 먼저 읽혀야 하는 상태라 크게, 아이콘까지 붙입니다 */
-/* 왼쪽 위 = 탭 (2026-09-20) — 바닥선에 닿아야 아래 카드로 이어지는 서류철로 읽힌다 */
-.gs-mastleft{display:flex; align-items:flex-end; gap:9px; flex-wrap:wrap; min-height:34px}
+/* 왼쪽 위 = 탭 (2026-09-20) — 바닥선에 닿아야 아래 카드로 이어지는 서류철로 읽힌다.
+   컨트롤보다 한 단 내려 선다 (2026-09-20 사용자): 위는 설정, 아래는 화면 — 같은 줄에 두면 둘의 무게가 같아진다 */
+.gs-mastleft{display:flex; align-items:flex-end; gap:9px; flex-wrap:wrap; min-height:34px; margin-top:24px}
 /* 수명 동사 — 무대 우상단 모서리. 로비 [시작]과 같은 좌표라, 판이 열려도 닫혀도
    손이 가는 자리가 안 바뀝니다 (§3.1·§3.4). 둘 다 유령 버튼입니다.
    탭과 같은 바닥선에 서야 나란히 선 것으로 읽힙니다 */
@@ -17665,7 +17666,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
    탭과 같은 바닥선에 두되 발치만 6px 띄웁니다 — 탭은 카드로 이어지는 서류철이라 선에 닿아야 하지만
    모서리가 둥근 버튼이 닿으면 얹힌 것도 뜬 것도 아닌 모양이 됩니다 (.gs-mastverbs 와 같은 규격).
    (폐기 2026-09-20) 전폭 시스템 줄 .gs-sysbar/-in — 왼쪽 646px 가 비는데 오른쪽 빈 자리가 따로 또 있었습니다 */
-.gs-sysbar-r{display:flex; align-items:center; gap:10px; margin-left:auto; margin-bottom:6px}
+.gs-sysbar-r{display:flex; align-items:center; gap:10px; margin-left:auto;
+  align-self:flex-start; margin-top:-12px} /* 줄 위쪽 끝에 붙여 뷰포트 쪽으로 (2026-09-20 사용자) */
 /* 줄 안 컨트롤은 전부 32px 한 높이·같은 좌우 여백으로. 칩마다 높이와 여백이 다르면
    같은 줄에 선 것들이 저마다 다른 물건처럼 보입니다 */
 .gs-sysbar-r .gs-btn{height:32px; padding-top:0; padding-bottom:0;
