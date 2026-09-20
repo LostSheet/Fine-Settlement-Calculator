@@ -16627,7 +16627,13 @@ const CSS = `
 .gs-tabbed .gs-mailsec,.gs-tabbed .gs-ledgersec{background:transparent; border:0; border-radius:0;
   padding:0; box-shadow:none}
 .gs-surface.gs-ledgersec > .gs-ledgerbox{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3);
-  border-radius:2px; padding:14px 18px 20px}
+  border-radius:2px; padding:0; overflow:hidden}
+/* 표의 바깥 선은 박스가 맡는다 — 네 변이 다 한 겹 (2026-09-20 사용자 확정) */
+.gs-surface.gs-ledgersec .gs-ledger thead th{border-top:0}
+.gs-surface.gs-ledgersec .gs-ledger tfoot th,.gs-surface.gs-ledgersec .gs-ledger tfoot td{border-bottom:0}
+/* 박스에 붙는 양 끝 칸만 안쪽 여백을 준다 — 글자가 테두리에 닿지 않게 */
+.gs-ledgersec .gs-ledger th:first-child,.gs-ledgersec .gs-ledger td:first-child{padding-left:18px}
+.gs-ledgersec .gs-ledger th:last-child,.gs-ledgersec .gs-ledger td:last-child{padding-right:18px}
 .gs-surface > .gs-cardhead{margin-bottom:12px; gap:12px; min-height:34px}
 .gs-sheethead .gs-sheetmodes{margin-right:auto}
 .gs-sheethead .gs-sheetactions{margin-left:auto}
