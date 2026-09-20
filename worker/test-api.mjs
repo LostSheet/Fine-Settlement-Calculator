@@ -276,24 +276,23 @@ const main = async () => {
   await step("my/room: 로그인 없으면 401", async () => {
     eq((await api("POST", "/api/my/room")).status, 401, "status");
   });
-  /* 코드의 시계는 발급이 아니라 **부를 때**부터 돕니다 (2026-09-08 사용자 확정) —
-     발급은 armed:false·exp:0 이고, [디코 메시지 복사]가 /invite-arm 으로 켭니다.
-     앱이 하는 그대로 두 번에 나눠 부릅니다 */
-  await step("invite: 발급은 시계가 안 돈다 (armed:false)", async () => {
+  let issuedInvite;
+  await step("invite: 발급 시각 기록, 발급부터 30분", async () => {
     const r = await api("POST", "/api/r/" + room + "/invite", { token: A.token });
     eq(r.status, 200, "status");
-    expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(r.data.invite.code), "코드 8자: " + r.data.invite.code);
-    eq(!!r.data.invite.armed, false, "armed");
-    eq(r.data.invite.exp, 0, "exp");
-    invite = r.data.invite.code;
+    issuedInvite = r.data.invite;
+    expect(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(issuedInvite.code), "코드 8자");
+    eq(issuedInvite.armed, true, "armed");
+    expect(Math.abs(issuedInvite.issuedAt - Date.now()) < 60000, "발급 시각");
+    eq(issuedInvite.exp - issuedInvite.issuedAt, 30 * 60 * 1000, "유효기간");
+    invite = issuedInvite.code;
   });
-  await step("invite-arm: 부르는 순간부터 10분", async () => {
+  await step("invite-arm: 이미 발급한 초대의 시각을 연장하지 않음", async () => {
     const r = await api("POST", "/api/r/" + room + "/invite-arm", { token: A.token });
     eq(r.status, 200, "status");
     eq(r.data.invite.code, invite, "같은 코드");
-    eq(!!r.data.invite.armed, true, "armed");
-    const left = r.data.invite.exp - Date.now();
-    expect(Math.abs(left - 10 * 60 * 1000) < 60000, "만료가 10분이 아님: " + left);
+    eq(r.data.invite.issuedAt, issuedInvite.issuedAt, "발급 시각 유지");
+    eq(r.data.invite.exp, issuedInvite.exp, "만료 시각 유지");
   });
   await step("invite: 방장 아니면 403", async () => {
     await reg(B);

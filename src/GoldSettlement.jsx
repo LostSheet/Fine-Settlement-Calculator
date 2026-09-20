@@ -688,6 +688,13 @@ const PEOPLE_ICON = (
     </g>
   </svg>
 );
+/* 각 화면의 내용과 맞춘 탭 아이콘 */
+const TAB_ICONS = {
+  sheet: <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" /></svg>,
+  ledger: <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1ZM12 5v15" /></svg>,
+  mail: <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>,
+};
+
 /* [기록] — 시계 되감기. 카드 머리 줄에서 쓴다(표의 도구 열은 같은 그림을 제자리에 갖고 있다) */
 const LOG_ICON = (
   <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">
@@ -1012,7 +1019,7 @@ function loadRelay() {
       /* 내 방 — 계정당 하나. 서버가 처음 필요할 때 만들어 줍니다 */
       room: typeof v.room === "string" ? v.room : undefined,
       invite:
-        v.invite && typeof v.invite.code === "string" ? { code: v.invite.code, exp: v.invite.exp } : undefined,
+        v.invite && typeof v.invite.code === "string" ? { code: v.invite.code, issuedAt: v.invite.issuedAt, exp: v.invite.exp } : undefined,
       /* 로비 초안 열은 없어졌습니다 — 로비가 홈이라 항목을 지금 판의 것으로 바로 고칩니다 */
       lobbyCap: v.lobbyCap >= 2 && v.lobbyCap <= 16 ? v.lobbyCap : undefined,
       /* 화면 취향들 — 여기서 안 받아 주면 새로고침마다 기본값으로 돌아갑니다 */
@@ -1273,9 +1280,6 @@ const roomApi = {
     callApi(`/api/r/${roomId}/invite`, { method: "POST", body: wipe ? { wipe: 1 } : {}, token }).then((r) => r.invite || r),
   /* 지금 코드 (2026-09-06) — 살아 있으면 그대로, 죽었으면 null. 부팅과 새 판 만들기가 씁니다 */
   inviteNow: (token, roomId) => callApi(`/api/r/${roomId}/invite`, { token }).then((r) => r.invite || null),
-  /* 코드의 시계 켜기 (2026-09-08 사용자 확정) — 부르는 순간(= 복사)부터 10분입니다 */
-  armInvite: (token, roomId) =>
-    callApi(`/api/r/${roomId}/invite-arm`, { method: "POST", body: {}, token }).then((r) => r.invite || null),
   /* 정산 끝내기·해산 — 판이 없어집니다 (2026-09-06 모델) */
   end: (token, roomId) => callApi(`/api/r/${roomId}/end`, { method: "POST", body: {}, token }),
   /* 외형을 고쳤다고 내 오버레이에 알립니다 (2026-09-07) — 서버는 그 계정의 소켓에만 그대로 넘깁니다 */
@@ -1433,10 +1437,12 @@ const maskUrl = (u) => {
    `<>` 로 감싸 미리보기 카드도 억제합니다. 이모지를 넣으면 안 풀립니다(사용자 실측) — 앞머리에 기호를 붙이지 않습니다.
    (폐기 2026-09-08 낮) 맨 주소 세 줄 — 채팅창에 주소가 그대로 보여 시청자가 읽고 들어올 수 있었다.
    (폐기, 같은 날) `🔔 …` 로 시작하던 마스크드 링크 — 이모지 때문에 디스코드가 안 풀었다. 문구는 초안 */
-const inviteMsg = (hostNick, url) =>
-  /* 문구는 디스코드 기준 (§3.12.5). 코드·10분 얘기가 없다 */
+const inviteExpiryLabel = (exp) => new Intl.DateTimeFormat("ko-KR", {
+  month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit",
+}).format(new Date(exp));
+const inviteMsg = (hostNick, url, exp) =>
   /* (고침 2026-09-20 사용자 문안) 받는 사람은 앱을 본 적이 없다 — 누르면 무엇이 필요한지만. (폐기) "…네 벌금팟 · Discord 연동으로 참여하세요. / 처음이면 방장 승인 뒤 자리가 정해지고, 방송에 띄우려면 내 방송 주소를 OBS에 한 번만 넣어요." */
-  `${hostNick}의 벌금팟에 초대해요.\n👉 [눌러서 참여하기](<${url}>)\nDiscord 연동이 필요해요.`;
+  `${hostNick}의 벌금팟에 초대해요.\n👉 [눌러서 참여하기](<${url}>)\nDiscord 연동이 필요해요.` + (exp ? `\n${inviteExpiryLabel(exp)} 만료` : "");
 
 /* 주소창이 우리 것인지. 아티팩트처럼 iframe 에 갇혀 있으면 바깥 주소를 만질 수 없어서
    URL 공유 대신 '공유 코드' 로 동작을 바꿉니다. */
@@ -2349,7 +2355,6 @@ export default function GoldSettlement() {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [helpOpen]);
-  const [showHub, setShowHub] = useState(false);
   /* 보기 방식 — 탭(한 카드만 크게, 방송용)과 세로(세 카드를 이어서). */
   const [view, setView] = useState(boot.current.view);
   const [tab, setTab] = useState(boot.current.tab);
@@ -2773,8 +2778,6 @@ export default function GoldSettlement() {
   const [waitPick, setWaitPick] = useState(null);
   /* (폐기 2026-09-20) 헤더의 초대 팝오버 invOpen — [파티원] 단추의 작은 창(seatPop "party")으로 */
   /* 계정 쪽지 (H1, 2026-09-16) — 초상화+별명을 누르면. 초상화의 출처와 별명 바꾸기, 올리기·되돌리기·다시 가져오기 */
-  /* 넓게 보기 (W, 2026-09-16) — 벌금판이 창 전체를 쓴다. 전체 화면(F11)이 아니라 창 안. Esc 나 [원래대로]로 돌아온다 */
-  const [wide, setWide] = useState(false);
   /* 벌금표가 마지막으로 잰 무대 폭(1080 이면 null). 정산 장부·보낼 우편 탭도 이 폭을 쓴다 — 탭을 바꿔도 너비는 벌금표를 따른다
      (2026-09-18 사용자). 저장본에도 적어 다른 탭에서 새로고침해도 같은 폭으로 뜬다 */
   const [stageNeed, setStageNeed] = useState(boot.current.stage || null);
@@ -2832,25 +2835,23 @@ export default function GoldSettlement() {
       localStorage.setItem("goldSettlement.memberView", memberView);
     } catch (e) {}
   }, [memberView]);
-  useEffect(() => {
-    if (!wide) return;
-    const h = (e) => {
-      if (e.key === "Escape") setWide(false);
-    };
-    window.addEventListener("keydown", h);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", h);
-      document.body.style.overflow = prev;
-    };
-  }, [wide]);
-  /* 초대의 남은 시간을 1분마다 다시 셈한다 (2026-09-20) */
+  /* 카운트다운 없이, 마감 5분 전·만료 경계와 창 복귀 때만 상태를 갱신합니다. */
   const [nowTick, setNowTick] = useState(Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNowTick(Date.now()), 60000);
-    return () => clearInterval(t);
-  }, []);
+    const update = () => setNowTick(Date.now());
+    update();
+    const delay = (relay.invite?.exp || 0) - Date.now();
+    const timers = [delay - 5 * 60 * 1000, delay]
+      .filter((ms) => ms > 0)
+      .map((ms) => setTimeout(update, Math.min(ms + 1, 2147483647)));
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      timers.forEach(clearTimeout);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [relay.invite?.exp]);
   const [acctOpen, setAcctOpen] = useState(false);
   const acctWrapRef = useRef(null);
   const picPick = useRef(null);
@@ -2954,16 +2955,6 @@ export default function GoldSettlement() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [roomOpen]);
-  /* 죽은 링크가 화면에 떠 있는 상태(`0분 남음`)를 아예 안 만듭니다 (§9) —
-     초대를 보여 주는 자리(대기실·파티 서랍)를 여는 순간 만료돼 있으면 그때 새로 냅니다.
-     복사는 복사만 하고, 새로 발급은 눌러야 한다는 규칙은 그대로입니다 */
-  useEffect(() => {
-    if (!(roomOpen || lobbyOn) || readOnly || !auth || !relay.room) return;
-    /* 1분도 안 남은 것은 죽은 링크나 마찬가지입니다 — 분 단위로 적으니 화면에도
-       `0분 남음`으로 뜨고, 그걸 복사해 올리면 파티원이 문 앞에서 막힙니다 */
-    if (relay.invite && relay.invite.exp && relay.invite.exp - Date.now() > 60000) return;
-    ensureInvite();
-  }, [roomOpen, lobbyOn]);
   const [presets, setPresets] = useState(loadPresets);
   const savePresetNow = (name) => {
     const nm = (name || "").trim();
@@ -3778,7 +3769,7 @@ export default function GoldSettlement() {
       room: room.roomId,
       invite:
         room.invite && room.invite.code
-          ? { code: room.invite.code, exp: room.invite.exp }
+          ? { code: room.invite.code, issuedAt: room.invite.issuedAt, exp: room.invite.exp }
           : relayRef.current.invite,
       on: true,
     });
@@ -4246,7 +4237,7 @@ export default function GoldSettlement() {
       putRelay({
         ...relayRef.current,
         room: roomId,
-        invite: inv ? { code: inv.code, exp: inv.exp } : relayRef.current.invite,
+        invite: inv ? { code: inv.code, issuedAt: inv.issuedAt, exp: inv.exp } : relayRef.current.invite,
         lobbyCap: cap,
         on: true,
       });
@@ -4393,7 +4384,7 @@ export default function GoldSettlement() {
       putRelay({
         ...relay,
         room: r.roomId,
-        invite: r.invite && r.invite.code ? { code: r.invite.code, exp: r.invite.exp } : relay.invite,
+        invite: r.invite && r.invite.code ? { code: r.invite.code, issuedAt: r.invite.issuedAt, exp: r.invite.exp } : relay.invite,
       });
       return r.roomId;
     } catch (e) {
@@ -4405,18 +4396,7 @@ export default function GoldSettlement() {
     if (!auth || !relay.room) return;
     try {
       const inv = await roomApi.invite(auth.token, relay.room);
-      putRelay({ ...relayRef.current, invite: { code: inv.code, exp: inv.exp } });
-    } catch (e) {
-      say(e.message);
-    }
-  };
-  /* 로비 밖에서도 초대를 낼 수 있습니다 — 방이 없으면 먼저 팝니다 */
-  const ensureInvite = async () => {
-    const room = await ensureRoom();
-    if (!room || !auth) return;
-    try {
-      const inv = await roomApi.invite(auth.token, room);
-      putRelay({ ...relay, room, invite: { code: inv.code, exp: inv.exp } });
+      putRelay({ ...relayRef.current, invite: { code: inv.code, issuedAt: inv.issuedAt, exp: inv.exp } });
     } catch (e) {
       say(e.message);
     }
@@ -4452,7 +4432,7 @@ export default function GoldSettlement() {
         room: r.roomId,
         invite:
           r.invite && r.invite.code
-            ? { code: r.invite.code, exp: r.invite.exp }
+            ? { code: r.invite.code, issuedAt: r.invite.issuedAt, exp: r.invite.exp }
             : relayRef.current.invite,
       });
       const got = await roomApi.read(a.token, r.roomId);
@@ -5179,7 +5159,7 @@ export default function GoldSettlement() {
         /* 자동 중단은 방장이 앱을 닫아 둔 사이에 걸립니다 — 다시 열 때 여기서 만납니다 */
         setPaused(r.paused || null);
         if (r.invite && r.invite.code)
-          putRelay({ ...relayRef.current, invite: { code: r.invite.code, exp: r.invite.exp } });
+          putRelay({ ...relayRef.current, invite: { code: r.invite.code, issuedAt: r.invite.issuedAt, exp: r.invite.exp } });
         refreshMembers();
       })
       .catch(() => {});
@@ -6541,10 +6521,9 @@ export default function GoldSettlement() {
       {/* (폐기 2026-09-16) 단위 예시 "5 → 5만 · 2.32 → 2만 3,200" — 사용자: 룩이 나쁘다, 없앤다 */}
     </span>
   );
-  /* [디코 메시지 복사] (§3.12.5) — 방 하나에 링크 하나. 코드도 arm 도 없다 */
-  /* 초대가 살아 있나 · 몇 시간 남았나 (2026-09-20) */
+  /* 발급한 초대의 만료 시각과 유효 여부 */
   const inviteLive = !!(relay.invite && relay.invite.code && (relay.invite.exp || 0) > nowTick);
-  const inviteLeftH = inviteLive ? Math.max(1, Math.ceil(((relay.invite.exp || 0) - nowTick) / 3600000)) : 0;
+  const inviteSoon = inviteLive && relay.invite.exp - nowTick <= 5 * 60 * 1000;
   /* [초대 메시지 복사] — 살아 있으면 그대로 복사하고, 없거나 지났으면 먼저 발급한다. 단추 하나로 (2026-09-20 사용자) */
   const copyInvite = async (opts) => {
     const a = authRef.current;
@@ -6562,18 +6541,20 @@ export default function GoldSettlement() {
       return;
     }
     const iv = relayRef.current.invite;
+    let expiresAt = iv && iv.exp;
     let code = iv && iv.code && (iv.exp || 0) > Date.now() ? iv.code : null;
     if (!code || (opts && opts.fresh)) {
       try {
         const got = await roomApi.reInvite(a.token, room, !!(opts && opts.wipe));
         code = got.code;
-        putRelay({ ...relayRef.current, invite: { code: got.code, exp: got.exp } });
+        expiresAt = got.exp;
+        putRelay({ ...relayRef.current, invite: { code: got.code, issuedAt: got.issuedAt, exp: got.exp } });
         if (opts && opts.wipe) setMembers([]);
       } catch (e) {
         return say((e && e.message) || "초대를 발급하지 못했어요.");
       }
     }
-    copy(inviteMsg(a.nick, roomApi.inviteUrl(room, code)), "inv");
+    copy(inviteMsg(a.nick, roomApi.inviteUrl(room, code), expiresAt), "inv");
   };
   /* [새로 발급] — 줄에 붙은 사람이 있으면 한 번 묻는다. 시점으로 짐작하지 않는다(같은 날 두 번째 파티도, 판 도중 만료도 있다) */
   const askReInvite = () => {
@@ -6602,7 +6583,7 @@ export default function GoldSettlement() {
         if (gone) return;
         /* (고침 2026-09-20) 죽은 초대를 부팅이 자동으로 새로 내던 것 — 발급은 방장이 [초대 메시지 복사]를 누를 때만 한다.
            자동으로 내면 방장 모르게 시계가 돌고, "비울까요?"를 물을 자리도 없다 */
-        if (inv) putRelay({ ...relayRef.current, invite: { code: inv.code, exp: inv.exp } });
+        if (inv) putRelay({ ...relayRef.current, invite: { code: inv.code, issuedAt: inv.issuedAt, exp: inv.exp } });
         else if (relayRef.current.invite) putRelay({ ...relayRef.current, invite: null });
       })
       .catch(() => {});
@@ -8973,18 +8954,8 @@ export default function GoldSettlement() {
                   tutHit("link");
                   return;
                 }
-                /* 복사가 곧 부르는 순간입니다 (2026-09-08 사용자 확정) — 여기서부터 10분.
-                   클립보드부터 쓰고 서버는 뒤로 흘려보냅니다: 왕복을 기다렸다 쓰면 브라우저가 붙여넣기를 막습니다 */
-                copy(inviteMsg(auth.nick, hostInvite.url), "inv");
+                copyInvite();
                 if (!lobbyOn) startParty();
-                if (auth && relay.room)
-                  roomApi
-                    .armInvite(auth.token, relay.room)
-                    .then((inv) => {
-                      if (inv && inv.code)
-                        putRelay({ ...relayRef.current, invite: { code: inv.code, exp: inv.exp } });
-                    })
-                    .catch(() => {});
               }}
             >
               {flash === "inv" ? "복사했어요" : "초대 메시지 복사"}
@@ -9022,8 +8993,8 @@ export default function GoldSettlement() {
       if (need) root.style.setProperty("--stage", need + "px");
       else root.style.removeProperty("--stage");
     };
-    /* 메모장·카드 모드·[넓게]는 무대 1080 (모드에 따라 바뀐다) */
-    if (wide || simple || cardsMode) {
+    /* 메모장·카드 모드는 무대 1080 */
+    if (simple || cardsMode) {
       setStageNeed(null);
       put(null);
       return;
@@ -9037,7 +9008,7 @@ export default function GoldSettlement() {
       /* 표는 width:100% 라 무대를 넓히면 따라 넓어진다(그래서 항목 이름을 줄여도 표가 안 줄어 관찰자가 안 운다 — 줄·항목이 바뀔 때마다 다시 잰다).
          재기 전에 무대를 1080 으로 되돌려 표의 본래 폭(넘치는 만큼)을 읽는다. 같은 프레임 안이라 깜빡임은 없다 */
       root.style.setProperty("--stage", "1080px");
-      const w = Math.ceil(grid.getBoundingClientRect().width) + 38; /* 카드 안쪽 여백 18×2 + 테두리 1×2 */
+      const w = Math.ceil(grid.getBoundingClientRect().width) + 36; /* 연결된 본문 안쪽 여백 18×2 */
       const need = w > 1080 ? w : null;
       put(need);
       setStageNeed(need);
@@ -9048,7 +9019,7 @@ export default function GoldSettlement() {
     return () => {
       if (ro) ro.disconnect();
     };
-  }, [simple, cardsMode, readOnly, wide, rows, cols, seats, unit, tabNow]);
+  }, [simple, cardsMode, readOnly, rows, cols, seats, unit, tabNow]);
   useLayoutEffect(() => {
     const card = sheetBoxRef.current;
     const tbl = gridRef.current;
@@ -9062,7 +9033,7 @@ export default function GoldSettlement() {
     if (need > room + 1) card.style.minWidth = need + (card.offsetWidth - room) + "px";
   }, [cols, simple, readOnly, tab, view, unit]);
   return (
-    <div ref={rootRef} className={"gs" + (tabbed ? " gs-tabbed" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
+    <div ref={rootRef} className={"gs" + (tabbed ? " gs-tabbed" : "") + (!ready && !guestLobby && !showLobby && !inviteGate && !blockedCard ? " gs-connected" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
       {DEMO &&
         (() => {
           /* 진행 표시 (2026-09-06 사용자 확정) — 장 점을 선으로 잇고 지금 장은 크게, 옆에 `3장 파티원 모으기 · 2/4`.
@@ -9637,11 +9608,12 @@ export default function GoldSettlement() {
                       onClick={() => pickTab(t.k)}
                       aria-current={tab === t.k ? "true" : undefined}
                     >
+                      {TAB_ICONS[t.k]}
                       {t.label}
-                      {t.k === "ledger" && r && <em>{r.fines.length}명</em>}
+                      {t.k === "ledger" && <em>{r ? r.fines.length : 0}명</em>}
                       {/* 인게임에선 송금 1건 = 우편 1통 — 봉투(보내는 사람) 수가 아니라 송금 횟수 */}
-                      {t.k === "mail" && r && r.transfers.length > 0 && (
-                        <em>{r.transfers.length}통</em>
+                      {t.k === "mail" && (
+                        <em>{r ? r.transfers.length : 0}통</em>
                       )}
                     </button>
                     <span
@@ -9768,54 +9740,9 @@ export default function GoldSettlement() {
         </section>
       )}
       {showSheet && !showLobby && !inviteGate && !blockedCard && (
-      <section className={"gs-mail gs-sheetsec" + (wide ? " gs-wide" : "")}>
-        {wide && (
-          <div className="gs-widebar">
-            <h2 className="gs-widebar-h">{roundName || ""}</h2>
-            {boardLabel && (
-              <span className={"gs-boardlabel" + (boardLabel.away ? " gs-boardlabel-away" : "")} role="status">
-                <i className="gs-boardlabel-sq" aria-hidden="true" />
-                <span className="gs-boardlabel-t">{boardLabel.text}</span>
-              </span>
-            )}
-            <div className="gs-widebar-r">
-              {!readOnly && modeSeg()}
-              <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(false)}>
-                ⤡ 원래대로
-              </button>
-            </div>
-          </div>
-        )}
-        <div className="gs-cardhead">
-          {/* (폐기 2026-09-20 사용자) 탭 제목 h2 — 어느 탭인지는 왼쪽 위의 탭이 이미 말한다 */}
-          <div className="gs-headleft">
-            {simple && <span className="gs-headnote">메모장에 적은 내용이 오른쪽 표에 바로 들어가요</span>}
-            {/* 파티원도 봅니다 (2026-09-06) — 기록은 이미 판과 함께 넘어오고, 단가 변경(`단가 3만 → 5만`)도 한 줄로 남아 있어
-                단가 × 횟수와 금액이 다를 때 왜 그런지 여기서 읽힙니다. 취소는 방장만 */}
-            {!simple && (
-              <span className="gs-tip">
-                <button
-                  key={toast ? toast.t : 0}
-                  className={
-                    "gs-btn gs-btn-ghost gs-logbtn" +
-                    (showLog ? " gs-logbtn-on" : "") +
-                    (toast && toast.log ? " gs-logbtn-blink" : "")
-                  }
-                  onClick={() => openLog(null)}
-                  aria-haspopup="dialog"
-                >
-                  기록
-                  {log.length > 0 && <em>{log.length}</em>}
-                </button>
-                <span className="gs-tip-body" role="tooltip">
-                  모든 입력과 수정을 <b>시각과 함께</b> 기록해요. 어느 줄이든 취소할 수 있어요.
-                </span>
-              </span>
-            )}
-          </div>
-
-          {/* 버튼은 성격끼리 묶고, 글자 수는 버튼 안으로 넣어 줄을 흐트러뜨리지 않습니다 */}
-          <div className="gs-tools">
+      <section className={"gs-mail gs-sheetsec" + (!ready && !guestLobby ? " gs-surface" : "")}>
+        <div className="gs-cardhead gs-sheethead">
+          <div className="gs-tools gs-sheetmodes">
             {/* 준비 상태의 도구 — 인원 수(= 칸 수, §3.1)와 프리셋. 옛 로비의 명단 발치·항목 카드
                 머리에서 이사했습니다. 사람·이름이 앉은 칸 아래로는 줄지 않습니다(putCap) */}
             {ready && (
@@ -9913,13 +9840,6 @@ export default function GoldSettlement() {
               <span className="gs-caplab">모드</span>
               {/* 설명은 옆의 ? 하나가 맡습니다 — 버튼마다 툴팁이 뜨면 누를 때마다 성가십니다 */}
               {modeSeg()}
-              {/* [넓게] (옮김 2026-09-20 사용자) — "표를 어떻게 볼까"라서 모드 옆이 제자리다(넓게 본 화면의 [원래대로]도 머리에 있다).
-                  표 바 오른쪽에 있던 것을 빼서 그쪽 무리가 상자 셋 → 둘이 됐다. 메모장 모드에는 표 바가 없어 예전에도 [넓게]가 없었다 — 그대로 둔다 */}
-              {!simple && !wide && (
-                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(true)} title="벌금판을 창 전체로">
-                  ⤢ 넓게
-                </button>
-              )}
               {/* 올리면 설명, 더 보고 싶을 때만 선택 화면으로 — 눌러서 화면이 튀지 않게 */}
               <span className="gs-tip gs-tip-act">
                 <span className="gs-guide" role="button" tabIndex={0} aria-label="모드 설명">
@@ -9952,10 +9872,51 @@ export default function GoldSettlement() {
             )}
 
           </div>
+          <div className="gs-tools gs-sheetactions">
+            {/* 파티원도 봅니다 (2026-09-06) — 기록은 이미 판과 함께 넘어오고, 단가 변경(`단가 3만 → 5만`)도 한 줄로 남아 있어
+                단가 × 횟수와 금액이 다를 때 왜 그런지 여기서 읽힙니다. 취소는 방장만 */}
+            {!simple && (
+              <span className="gs-tip">
+                <button
+                  key={toast ? toast.t : 0}
+                  className={
+                    "gs-btn gs-btn-ghost gs-logbtn" +
+                    (showLog ? " gs-logbtn-on" : "") +
+                    (toast && toast.log ? " gs-logbtn-blink" : "")
+                  }
+                  onClick={() => openLog(null)}
+                  aria-haspopup="dialog"
+                >
+                  기록
+                  {log.length > 0 && <em>{log.length}</em>}
+                </button>
+                <span className="gs-tip-body" role="tooltip">
+                  모든 입력과 수정을 <b>시각과 함께</b> 기록해요. 어느 줄이든 취소할 수 있어요.
+                </span>
+              </span>
+            )}
+            {!simple && !readOnly && roundLive && (
+              <span className="gs-tip">
+                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
+                      <path d="M6.6 6.2l3.4 3.4" />
+                      <path d="M7 13.6h7" />
+                    </g>
+                  </svg>
+                  비우기
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  <b>숫자만</b> 비워요. 이름과 자리는 그대로예요.
+                </span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* 내용 상자 — 정산 장부·보낼 우편과 같은 뼈대입니다.
-            머리줄(제목·모드)은 상자 밖에 두어 세 탭의 윗부분이 한 줄로 맞습니다 */}
+            모드와 표 도구는 연결된 본문 안의 두 줄에 둡니다 */}
         <div className={"gs-card gs-sheetbox" + (placeOn ? " gs-placing" : "") + (placeOn && justCame ? " gs-justcame" : "")} ref={sheetBoxRef}>
 
         {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다.
@@ -10019,11 +9980,12 @@ export default function GoldSettlement() {
         )}
         {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
         {/* 입력 단위 (§3.12.7) — 메모장 모드에는 표 바가 없어 표 위에 홀로 선다. 카운터 모드는 표 바 안 */}
+        {simple && <p className="gs-headnote gs-memonote">메모장에 적은 내용이 오른쪽 표에 바로 들어가요</p>}
         {simple && unitSeg(true)}
         {/* 누르는 것(복사)은 왼쪽, 읽는 것(조작법)은 오른쪽 — 손이 가는 쪽에 버튼을 둡니다 */}
         {!simple && (
           <div className="gs-tablebar">
-            {/* 표 바 (2026-09-20 확정, 목업 5판) — 왼쪽은 사람, 오른쪽은 표 도구 한 줄([항목 관리] · 입력 단위 · [비우기] · [넓게]) + 그 아래 마우스 안내.
+            {/* 표 바 (2026-09-20 확정, 목업 5판) — 왼쪽은 사람, 오른쪽은 표 도구 한 줄([항목 관리] · 입력 단위) + 그 아래 마우스 안내.
                 늘 두 줄 높이라 [파티원]이 커져도 표가 안 밀리고, 도구가 오른쪽에 붙어 있어 누가 들어와도 도구 단추가 옆으로 안 밀린다.
                 (폐기 2026-09-16~17) 조작 전부 왼쪽 한 줄 + 오른쪽 안내 — 들어온 사람의 얼굴 상자가 나올 때마다 [입력 단위]가 옆으로 밀렸다 */}
             <span className="gs-tablebar-l">
@@ -10060,7 +10022,9 @@ export default function GoldSettlement() {
                         linked={!!(auth && auth.dc)}
                         tray={[]}
                         copied={flash === "inv"}
-                        inviteLeftH={inviteLive ? inviteLeftH : 0}
+                        inviteLive={inviteLive}
+                        inviteSoon={inviteSoon}
+                        inviteExpiresAt={relay.invite?.exp || 0}
                         onReInvite={askReInvite}
                         onDiscord={() => startDiscord()}
                         onCopyInvite={copyInvite}
@@ -10231,23 +10195,7 @@ export default function GoldSettlement() {
                     </span>
                   )}
                   {unitSeg(false)}
-                  {!readOnly && roundLive && (
-                    <span className="gs-tip">
-                      <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
-                        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                          <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
-                            <path d="M6.6 6.2l3.4 3.4" />
-                            <path d="M7 13.6h7" />
-                          </g>
-                        </svg>
-                        비우기
-                      </button>
-                      <span className="gs-tip-body gs-tip-r" role="tooltip">
-                        <b>숫자만</b> 비워요. 이름과 자리는 그대로예요.
-                      </span>
-                    </span>
-                  )}
+
                 </span>
               )}
               {readOnly ? (
@@ -10317,16 +10265,16 @@ export default function GoldSettlement() {
           />
         )}
         {(cardsMode && !readOnly) || memberCards ? (
-          /* 카드 모드 (K1) — 초상화(카드 폭) · 이름 + 합계 · 항목 단추(표의 칸과 같은 물건) · 기타. 넓게 보기에서는 초상화가 정사각·열이 늘어난다 */
+          /* 카드 모드 (K1) — 초상화(카드 폭) · 이름 + 합계 · 항목 단추(표의 칸과 같은 물건) · 기타. 두 열 배치는 그대로 유지한다 */
           <>
           {/* 레이드 창 (2026-09-17 확정) — 가로 카드 한 줄: 왼쪽 초상화, 오른쪽 위 이름·합계, 아래 항목 단추·[기타]. 4명씩 세로 한 열, 두 열 나란히
-              (로스트아크 레이드 창의 파티 1·2). 인원이 4의 배수가 아니면 남는 칸은 점선 빈 자리(누르면 자리 배치 창). [넓게] 16명은 4열, 단추 2×2.
+              (로스트아크 레이드 창의 파티 1·2). 인원이 4의 배수가 아니면 남는 칸은 점선 빈 자리(누르면 자리 배치 창).
               (폐기) 세로 카드 4열 — 참고 앱 뼈대(위 정사각 초상화·01 번호·직접 입력 줄)를 따라 만들어 더 나빴다(사용자): 8명이 한 화면에 안 들어가고,
               단추는 점선에 흐린 ＋라 누르는 곳으로 안 보였고, 기타를 펼치면 카드가 밀렸고, 이름·합계를 못 고쳤다 */}
           {(() => {
             /* (고침 2026-09-18 사용자) 세로 채우기(1~4 왼쪽, 5~8 오른쪽)에서 가로 채우기(1 2 / 3 4 / …)로 — 사람을 더하면 마지막 칸 다음에 서고,
                그 다음 칸이 [+ 인원 추가]. 4의 배수까지 빈 자리를 채우던 것도 폐기 */
-            const cols = wide ? 4 : 2;
+            const cols = 2;
             const SIL = (
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <g fill="currentColor">
@@ -10337,7 +10285,7 @@ export default function GoldSettlement() {
             );
             return (
               <>
-              <div className={"gs-rdgrid" + (cols === 4 ? " gs-rdgrid-four" : "") + (wide ? " gs-rdgrid-wide" : "")} style={{ "--cols": cols }}>
+              <div className="gs-rdgrid" style={{ "--cols": cols }}>
                 {rows.map((row, i) => {
                   const st = seats.find((k) => k.id === row.id);
                   const acct = st && st.acct;
@@ -10386,7 +10334,7 @@ export default function GoldSettlement() {
                             {SIL}
                             {placeOn && (
                               <span className="gs-slotpre" aria-hidden="true">
-                                {waitFace(curWait, wide ? 96 : 76)}
+                                {waitFace(curWait, 76)}
                               </span>
                             )}
                           </button>
@@ -10402,7 +10350,7 @@ export default function GoldSettlement() {
                             aria-label={nm + " 줄의 사람"}
                             aria-haspopup="dialog"
                           >
-                            {pic ? <DcAva dc={pic} size={wide ? 96 : 76} /> : SIL}
+                            {pic ? <DcAva dc={pic} size={76} /> : SIL}
                           </button>
                           {seatPopFor(row.id, nm + " 줄", {
                             acct,
@@ -10414,7 +10362,7 @@ export default function GoldSettlement() {
                           })}
                         </span>
                       ) : (
-                        <div className={"gs-rd-pic" + (pic ? "" : " gs-rd-nopic")}>{pic ? <DcAva dc={pic} size={wide ? 96 : 76} /> : SIL}</div>
+                        <div className={"gs-rd-pic" + (pic ? "" : " gs-rd-nopic")}>{pic ? <DcAva dc={pic} size={76} /> : SIL}</div>
                       )}
                       <div className="gs-rd-body">
                         <div className="gs-rd-head">
@@ -11287,11 +11235,12 @@ export default function GoldSettlement() {
 
       {/* ── 장부 ─────────────────────────────────────── */}
       {showLedger && !ready && !showLobby && !guestLobby && !guestBlocked && r && (
-        <section className="gs-mail gs-ledgersec">
-          {/* 보낼 우편 탭과 같은 뼈대 — 머리줄은 밖에, 내용 상자는 안에.
-             탭을 바꿔도 정산 방식·수수료 칸이 같은 자리에 있습니다 */}
+        <section className="gs-mail gs-ledgersec gs-surface">
+          {/* 단위는 한 번만 안내하고, 공통 설정은 우편 화면과 같은 오른쪽 자리에 둡니다. */}
           <div className="gs-cardhead">
-            <div className="gs-headleft" />
+            <div className="gs-headleft">
+              <span className="gs-unit" id="gs-ledger-unit">단위: G</span>
+            </div>
             <div className="gs-tools">
               <SplitPick
                 value={splitMode}
@@ -11322,9 +11271,8 @@ export default function GoldSettlement() {
               </span>
             </div>
           )}
-          <span className="gs-unit gs-unit-in">단위: G(골드)</span>
           <div className="gs-scroll">
-            <table className="gs-ledger">
+            <table className="gs-ledger" aria-label="정산 장부" aria-describedby="gs-ledger-unit">
               <thead>
                 <tr>
                   <th className="gs-l">이름</th>
@@ -11355,19 +11303,22 @@ export default function GoldSettlement() {
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row" className="gs-l">합계</th>
+                  <Amount v={r.total} />
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
             </table>
           </div>
-          {/* 접으면 표가 아래로 밀려서, 펼치는 대신 팝업으로 띄웁니다 (탭 화면 배려) */}
-          <button className="gs-ask-open" onClick={() => setShowHub(true)}>
-            총무한테 전부 보내고 나누면 안 되나요?
-          </button>
           </div>
         </section>
       )}
 
       {/* 탭 화면에서 장부에 보여줄 사람이 아직 없을 때 */}
       {showLedger && !ready && !showLobby && !guestLobby && !guestBlocked && !r && tabbed && (
-        <section className="gs-mail gs-ledgersec">
+        <section className="gs-mail gs-ledgersec gs-surface">
           <div className="gs-card gs-ledgerbox">
             {confessTab && (
               <div className="gs-slip gs-slip-back" role="status">
@@ -11387,7 +11338,7 @@ export default function GoldSettlement() {
 
       {/* ── 우편 ─────────────────────────────────────── */}
       {showMail && !ready && !showLobby && !guestLobby && !guestBlocked && (
-      <section className="gs-mail">
+      <section className="gs-mail gs-mailsec gs-surface">
         <div className="gs-cardhead">
           <div className="gs-headleft">
             {r && r.transfers.length > 0 && (
@@ -11451,16 +11402,6 @@ export default function GoldSettlement() {
                 />
               ))}
             </div>
-            <p className="gs-proof">
-              {r.exact ? (
-                <>
-                  송금 <b>{r.transfers.length}회</b>. 더 줄일 수 없는 최소 횟수예요.
-                </>
-              ) : (
-                <>송금 {r.transfers.length}회. 인원이 15명을 넘어 근사 계산이에요.</>
-              )}{" "}
-              이동 {G(r.moved)} · 수수료 {G(r.feeTotal)}.
-            </p>
           </>
         )}
       </section>
@@ -11720,28 +11661,6 @@ export default function GoldSettlement() {
             setCoach(null);
           }}
         />
-      )}
-      {showHub && r && (
-        <InfoModal title="총무한테 전부 보내고 나누면 안 되나요?" onClose={() => setShowHub(false)}>
-          <table className="gs-vs">
-            <tbody>
-              <tr>
-                <th>총무 방식</th>
-                <td>송금 {r.hubCount}회</td>
-                <td className="gs-vs-fee">수수료 {G(r.hubFee)}</td>
-              </tr>
-              <tr>
-                <th>지금 방식</th>
-                <td>송금 {r.transfers.length}회</td>
-                <td className="gs-vs-fee">수수료 {G(r.feeTotal)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p>
-            총무를 거치면 같은 돈이 우편을 두 번 타서 수수료를 두 번 떼여요.{" "}
-            <b>{G(r.hubFee - r.feeTotal)}</b> 차이예요.
-          </p>
-        </InfoModal>
       )}
       {presetOpen && (
         <PresetModal
@@ -14095,7 +14014,7 @@ function PlacerAva({ p, size }) {
   );
 }
 /* 빈 초상화 팝오버 (2026-09-18) — 화면에 고정 좌표로 띄운다(표는 가로 스크롤 상자 안이라 absolute 면 잘린다). 아래가 모자라면 위로 */
-function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWho, inviteLeftH, onReInvite, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
+function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWho, inviteLive, inviteSoon, inviteExpiresAt, onReInvite, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -14180,10 +14099,13 @@ function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWh
               <span>들어온 사람은 여기에 모이고, 누르면 이 줄에 배치해요.</span>
             )}
           </p>
-          {/* 초대는 12시간 (2026-09-20 사용자) — 어제 파티와 오늘 파티를 가르는 경계다. 살아 있으면 남은 시간과 [새로 발급] */}
-          {inviteLeftH > 0 && (
+          {/* 남은 시간 대신 발급할 때 정한 만료 시각을 한 번 표시합니다. */}
+          {inviteExpiresAt > 0 && (
             <p className="gs-seatpop-note gs-invleft">
-              <span>이 초대는 {inviteLeftH}시간 동안 쓸 수 있어요.</span>
+              <span className="gs-inv-timing">
+                <time dateTime={new Date(inviteExpiresAt).toISOString()}>{inviteExpiryLabel(inviteExpiresAt)} 만료</time>
+                {inviteSoon && <span className="gs-inv-soon" role="status">마감 임박</span>}
+              </span>
               {onReInvite && (
                 <button type="button" className="gs-seatpop-relink" onClick={onReInvite}>
                   새로 발급
@@ -14193,7 +14115,7 @@ function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWh
           )}
           <div className="gs-pop-acts">
             <button type="button" className="gs-btn gs-btn-sm gs-lbstart" onClick={onCopyInvite}>
-              {copied ? "복사했어요" : inviteLeftH > 0 ? "초대 메시지 복사" : "초대 발급하고 메시지 복사"}
+              {copied ? "복사했어요" : inviteLive ? "초대 메시지 복사" : "초대 발급하고 메시지 복사"}
             </button>
           </div>
         </>
@@ -16560,10 +16482,10 @@ const CSS = `
    어두운 팔레트에서 통째로 갈아끼울 수 있게 했습니다. */
 .gs{
   --kraft:#c3a97f; --kraft-dk:#a2865a;
-  --paper:#f1e9d9; --paper-2:#e4d7bd; --paper-3:#e8ddc6;
-  --ink:#221d17; --ink-2:#6d6152; --ink-body:#4a4136; --ink-hover:#3a322a;
+  --paper:#f1e9d9; --paper-2:#e4d7bd; --paper-3:#e8ddc6; --envelope-paper:#fcf5e7;
+  --ink:#221d17; --ink-2:#6d6152; --ink-body:#4a4136; --ink-hover:#624a34;
   --red:#9c2b22; --red-dk:#7d211a; --blue:#23486b; --gold:#8a6415;
-  --chip-bg:#221d17; --chip-fg:#f1e9d9; --tip-em:#e8c98a;
+  --chip-bg:#71563c; --chip-fg:#fff9ee; --tip-em:#ffe0a3; --cast-on:#28633b;
   --ink-rgb:34,29,23;      /* 선·그림자처럼 잉크에 알파를 준 자리 */
   --lift-rgb:255,255,255;  /* 종이 위로 떠 보이게 하는 흰 기운 */
   --kraft-rgb:196,168,120; --kraftdk-rgb:162,134,90;
@@ -16589,10 +16511,10 @@ const CSS = `
    순검정 대신 따뜻한 갈색 계열로 낮추고, 대비는 유지합니다. */
 .gs-dark{
   --kraft:#241f19; --kraft-dk:#4a4036;
-  --paper:#302a22; --paper-2:#3a3229; --paper-3:#413830;
+  --paper:#302a22; --paper-2:#3a3229; --paper-3:#413830; --envelope-paper:#41382e;
   --ink:#ece4d6; --ink-2:#a1968a; --ink-body:#cabfae; --ink-hover:#6a5b49;
   --red:#e0776b; --red-dk:#c85a4e; --blue:#8db7e2; --gold:#dcae5e;
-  --chip-bg:#574a3c; --chip-fg:#f4ece0; --tip-em:#e8c98a;
+  --chip-bg:#574a3c; --chip-fg:#f4ece0; --tip-em:#e8c98a; --cast-on:#6fbf73;
   --ink-rgb:236,228,214;
   --lift-rgb:0,0,0;        /* 밝은 기운 대신 어둡게 눌러서 칸을 파 보이게 */
   --kraft-rgb:120,104,84; --kraftdk-rgb:150,130,105;
@@ -16666,16 +16588,17 @@ const CSS = `
   padding:7px 0 0; width:100%; text-align:left}
 .gs-tip-more:hover{text-decoration:underline}
 .gs-intro-top{display:flex; align-items:flex-end; justify-content:space-between; gap:14px}
-.gs-tabs{display:flex; align-items:flex-end; gap:4px}
-.gs-tab{font:inherit; font-size:14px; letter-spacing:.02em; cursor:pointer; color:var(--ink-body);
-  padding:8px 13px 9px; border:1px solid rgba(var(--kraftdk-rgb),.75); border-bottom:none;
-  border-radius:7px 7px 0 0; background:rgba(var(--ink-rgb),.06); white-space:nowrap}
-.gs-tab:hover{background:rgba(var(--ink-rgb),.13)}
-/* 열린 탭은 종이색으로 바닥선을 덮어서, 아래 카드로 이어진 서류철처럼 보입니다 */
-.gs-tab.on{position:relative; z-index:1; background:var(--paper); border-color:var(--kraft-dk);
-  color:var(--ink); font-weight:600; padding:10px 15px 11px}
-.gs-tab em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2);
-  margin-left:6px}
+.gs-tabs{display:flex; align-items:flex-end; gap:4px; min-height:48px}
+.gs-tabs > .gs-tip{display:flex; align-items:flex-end}
+.gs-tab{display:inline-flex; align-items:center; gap:8px; height:44px; font:inherit; font-size:14px; font-weight:500;
+  cursor:pointer; color:var(--ink-body); padding:10px 15px; border:0; border-radius:7px 7px 0 0;
+  background:rgba(var(--shadow-rgb),.16); white-space:nowrap; transition:color .14s,background .14s}
+.gs-tab svg{flex:none}
+.gs-tab:hover{color:var(--ink); background:rgba(var(--shadow-rgb),.08)}
+/* 선택한 탭과 본문은 같은 종이 면. 폭·글자 굵기는 선택 전후에 그대로 둡니다. */
+.gs-tab.on{position:relative; z-index:1; height:48px; background:var(--paper); color:var(--ink)}
+.gs-tab em{font-style:normal; font-family:inherit; font-size:11px; color:var(--ink-2);
+  min-width:29px; text-align:right; font-variant-numeric:tabular-nums}
 .gs-viewseg{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px;
   background:rgba(var(--lift-rgb),.22); margin-bottom:7px}
 .gs-viewseg button{width:33px; height:32px; display:grid; place-items:center; border:none;
@@ -16685,6 +16608,30 @@ const CSS = `
 .gs-viewseg .gs-tip + .gs-tip button{border-left:1px solid rgba(var(--ink-rgb),.3)}
 /* 탭 화면은 카드가 하나뿐이라 사이 여백을 조금 좁힙니다 */
 .gs-tabbed .gs-card,.gs-tabbed .gs-mail{margin-top:14px}
+/* 연결형 탭 — 도구와 표를 같은 면에 두고 중복된 상자·여백을 걷습니다. */
+.gs-connected .gs-mast{margin-bottom:0}
+.gs-connected .gs-mastrow::after{content:none}
+.gs-tabbed .gs-surface{margin-top:0; background:var(--paper); padding:14px 18px 20px;
+  border-radius:0 3px 3px 3px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.13)}
+.gs-surface > .gs-card{margin:0; padding:0; border:0; box-shadow:none; background:transparent}
+.gs-surface > .gs-cardhead{margin-bottom:12px; gap:12px; min-height:34px}
+.gs-sheethead .gs-sheetmodes{margin-right:auto}
+.gs-sheethead .gs-sheetactions{margin-left:auto}
+.gs-sheethead .gs-btn{height:34px; padding-top:0; padding-bottom:0; display:inline-flex; align-items:center}
+.gs-surface .gs-tablebar{margin-bottom:12px}
+.gs-memonote{margin:0 0 10px}
+.gs-surface.gs-sheetsec > .gs-sheetbox{animation:gs-sheet-in .28s cubic-bezier(.2,.7,.3,1)}
+@keyframes gs-sheet-in{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
+@media(prefers-reduced-motion:reduce){.gs-surface.gs-sheetsec > .gs-sheetbox{animation:none}.gs-tab{transition:none}}
+.gs-ledgersec > .gs-ledgerbox{animation:gs-sheet-in .28s cubic-bezier(.2,.7,.3,1)}
+@media(prefers-reduced-motion:reduce){.gs-ledgersec > .gs-ledgerbox{animation:none}}
+.gs-ledgersec .gs-ledger th{padding-top:10px; border-top:1px solid rgba(var(--ink-rgb),.18);
+  border-bottom:3px double rgba(var(--ink-rgb),.24); border-right:1px solid rgba(var(--ink-rgb),.18)}
+.gs-ledgersec .gs-ledger td{border-bottom:1px solid rgba(var(--ink-rgb),.18); border-right:1px solid rgba(var(--ink-rgb),.18)}
+.gs-ledgersec .gs-ledger th:first-child,.gs-ledgersec .gs-ledger td:first-child{border-right:3px double rgba(var(--red-rgb),.3)}
+.gs-ledgersec .gs-ledger th:last-child,.gs-ledgersec .gs-ledger td:last-child{border-right:0}
+.gs-ledgersec .gs-ledger tfoot th,.gs-ledgersec .gs-ledger tfoot td{
+  padding:12px 10px; border-top:3px double rgba(var(--ink-rgb),.35); border-bottom:1px solid rgba(var(--ink-rgb),.35)}
 /* 카드 */
 .gs-card{background:var(--paper); border:1px solid var(--kraft-dk); padding:20px 18px 22px;
   margin-top:22px; box-shadow:0 1px 0 rgba(var(--lift-rgb),.4) inset, 0 6px 18px rgba(var(--shadow-rgb),.13)}
@@ -16875,7 +16822,7 @@ const CSS = `
   padding:6px 12px; color:var(--ink-2); white-space:nowrap}
 .gs-seg > .gs-tip + .gs-tip button,.gs-seg button + button{border-left:1px solid rgba(var(--ink-rgb),.3)}
 .gs-seg .gs-tip-body{width:250px}
-.gs-seg button:hover:not(:disabled){background:rgba(var(--ink-rgb),.07); color:var(--ink)}
+.gs-seg button:hover:not(:disabled):not(.on){background:rgba(var(--ink-rgb),.07); color:var(--ink)}
 .gs-seg button.on{background:var(--chip-bg); color:var(--chip-fg)}
 
 /* 금액만 모드: 왼쪽 메모장 + 오른쪽 표 */
@@ -17094,7 +17041,6 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-ledgersec .gs-ledgerbox{margin-top:0; position:relative}
 /* 벌금표도 같은 뼈대 — 머리줄은 상자 밖, 내용은 상자 안 */
 .gs-sheetsec .gs-sheetbox{margin-top:0}
-.gs-unit-in{display:block; text-align:right; margin:0 0 10px}
 /* 정산 방식 — 모드와 같은 세그먼트 */
 .gs-splitpick{display:inline-flex; align-items:center; gap:10px}
 /* 장부·우편 머리 높이를 못 박습니다 — 탭을 바꿔도 조절칸이 1px도 안 움직이게
@@ -17989,8 +17935,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 @keyframes gs-in{from{opacity:0; transform:translateY(10px) rotate(-.4deg)} to{opacity:1; transform:none}}
 .gs-env-air{padding:6px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.16);
   background:repeating-linear-gradient(45deg,
-    var(--red) 0 9px, var(--paper) 9px 18px, var(--blue) 18px 27px, var(--paper) 27px 36px)}
-.gs-env-body{position:relative; background:var(--paper); padding:18px 20px; display:flex;
+    var(--red) 0 9px, var(--envelope-paper) 9px 18px, var(--blue) 18px 27px, var(--envelope-paper) 27px 36px)}
+.gs-env-body{position:relative; background:var(--envelope-paper); padding:18px 20px; display:flex;
   align-items:flex-start; justify-content:space-between; gap:16px; overflow:hidden}
 .gs-env-body::after{content:''; position:absolute; inset:0; pointer-events:none;
   background:radial-gradient(90% 120% at 100% 0%, rgba(var(--kraft-rgb),.22), transparent 60%)}
@@ -18035,10 +17981,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-empty p{margin:0; font-family:'Gowun Batang',serif; font-size:17px}
 .gs-empty-sub{margin-top:8px !important; font-family:'IBM Plex Sans KR',sans-serif !important;
   font-size:13px !important; color:var(--ink-2)}
-.gs-proof{margin:15px 0 0; font-family:var(--mono); font-size:13.5px; line-height:1.8;
-  color:var(--ink-body); border-left:2px solid var(--ink); padding-left:11px; max-width:70ch}
-.gs-proof b{color:var(--red)}
-
 /* 정산 장부 — 핵심(이름·만 표기 금액) 24px, 서브는 한 단계씩 */
 .gs-ledger{width:100%; border-collapse:collapse; font-family:var(--mono);
   font-size:13.5px; min-width:520px}
@@ -18349,6 +18291,40 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0}
 .gs-spin-self:hover{color:var(--ink)}
 
+/* 라이트 룰렛 — 원판의 면별 색은 테마 고유색, 패널·숫자 창·결과는 앱 팔레트를 따릅니다. */
+.gs:not(.gs-dark) .gs-spin{
+  --sp-ink:var(--ink); --sp-ink2:var(--ink-2); --sp-gold:var(--gold);
+  background:radial-gradient(120% 90% at 50% 12%, #fff9ee 0%, var(--paper) 60%, var(--paper-2) 100%);
+  box-shadow:inset 0 0 40px rgba(var(--gold-rgb),.06), 0 18px 50px rgba(var(--shadow-rgb),.25)}
+.gs:not(.gs-dark) .gs-spin .gs-spin-ask,
+.gs:not(.gs-dark) .gs-spin .gs-spin-status{color:var(--ink-body)}
+.gs:not(.gs-dark) .gs-spin .gs-spin-out > b{color:var(--ink)}
+.gs:not(.gs-dark) .gs-spin-gone{color:var(--gold)}
+.gs:not(.gs-dark) .gs-reel,.gs:not(.gs-dark) .gs-slook-reel{
+  background:linear-gradient(var(--paper-2), #fff9ee 30% 70%, var(--paper-2));
+  border-color:var(--kraft-dk); box-shadow:0 0 0 1px rgba(var(--gold-rgb),.45), inset 0 0 20px rgba(var(--shadow-rgb),.1)}
+.gs:not(.gs-dark) .gs-reel-n.side,.gs:not(.gs-dark) .gs-slook-reel-side{color:var(--ink); opacity:.3}
+.gs:not(.gs-dark) .gs-reel-n.big,.gs:not(.gs-dark) .gs-slook-reel-mid{color:var(--ink); text-shadow:none}
+.gs:not(.gs-dark) .gs-reel-line,.gs:not(.gs-dark) .gs-slook-reel-line{border-color:rgba(var(--gold-rgb),.4)}
+.gs:not(.gs-dark) .gs-reel-notch.l{border-left-color:var(--gold)}
+.gs:not(.gs-dark) .gs-reel-notch.r{border-right-color:var(--gold)}
+.gs:not(.gs-dark) .gs-wheel-disc{
+  box-shadow:0 0 0 7px var(--paper-2), 0 0 0 9px var(--gold), 0 8px 24px rgba(var(--shadow-rgb),.22), inset 0 0 26px rgba(0,0,0,.15)}
+.gs:not(.gs-dark) .gs-rc-pvdisc{box-shadow:0 0 0 3px var(--paper-2), 0 0 0 4.5px var(--gold), inset 0 0 12px rgba(0,0,0,.15)}
+.gs:not(.gs-dark) .gs-wheel::before{background:repeating-conic-gradient(var(--gold) 0 1.1deg, transparent 1.1deg 12.857deg)}
+.gs:not(.gs-dark) .gs-wheel-hub,.gs:not(.gs-dark) .gs-rc-pvhub{
+  background:radial-gradient(circle at 34% 30%, #fff9ee, var(--paper-2) 70%); border-color:var(--gold);
+  box-shadow:0 3px 10px rgba(var(--shadow-rgb),.2), inset 0 1px 2px rgba(255,255,255,.5)}
+.gs:not(.gs-dark) .gs-wheel-hubv{color:var(--ink)}
+.gs:not(.gs-dark) .gs-wheel-hubq{color:var(--ink-2); opacity:.65}
+.gs:not(.gs-dark) .gs-spin-tchip{background:var(--paper-2); border-color:rgba(var(--gold-rgb),.5)}
+.gs:not(.gs-dark) .gs-spin-tchip.pass,.gs:not(.gs-dark) .gs-spin-delta .up{color:var(--red)}
+.gs:not(.gs-dark) .gs-spin-tchip.pass{border-color:var(--red)}
+.gs:not(.gs-dark) .gs-spin-tchip.mult{color:var(--gold); border-color:var(--gold)}
+.gs:not(.gs-dark) .gs-spin-delta .dn{color:var(--blue)}
+.gs:not(.gs-dark) .gs-spin-slot{border-color:rgba(var(--gold-rgb),.35)}
+.gs:not(.gs-dark) .gs-spin-slot.next{border-color:var(--gold)}
+
 /* 양도 대상 고르는 중 — 줄을 누를 수 있습니다 */
 .gs-pickable{cursor:pointer}
 .gs-pickable:hover{background:rgba(var(--gold-rgb),.14)}
@@ -18560,19 +18536,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rc-reset:hover{color:var(--ink)}
 .gs-note{margin:14px 0 0; font-size:12px; line-height:1.85; color:var(--ink-body); max-width:74ch}
 .gs-note b{font-weight:600; color:var(--ink)}
-/* 접히는 문답 */
-/* 총무 질문 — 펼치는 대신 팝업을 여는 글줄 버튼 */
-.gs-ask-open{margin:14px 0 0; border:none; border-left:2px solid var(--red); padding:2px 0 2px 11px;
-  background:none; font:inherit; font-size:12.5px; color:var(--red); cursor:pointer;
-  display:flex; align-items:baseline; gap:6px}
-.gs-ask-open::before{content:'＋'; font-size:11px; opacity:.8}
-.gs-ask-open:hover{text-decoration:underline}
-.gs-vs{border-collapse:collapse; margin-top:12px; font-size:12px; color:var(--red)}
-.gs-vs th{text-align:left; font-weight:500; padding:4px 16px 4px 0; white-space:nowrap}
-.gs-vs td{padding:4px 16px 4px 0; font-family:var(--mono); white-space:nowrap}
-.gs-vs-fee{font-size:13px}
-.gs-vs tr:first-child{opacity:.72}
-
 @media (prefers-reduced-motion:reduce){ .gs-env{animation:none} }
 
 /* ================= 계정·로비 =================
@@ -18895,29 +18858,17 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-tablebar-l{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 /* 표 바 (2026-09-16 정리) — 왼쪽: [비우기] [채팅 공유용 복사] │ 입력 단위 [세그], 오른쪽: 마우스 안내. 조작은 전부 34px 한 높이 */
 .gs-tablebar .gs-btn{height:34px; padding-top:0; padding-bottom:0; display:inline-flex; align-items:center; box-sizing:border-box}
-.gs-tablebar .gs-wipebtn{margin-right:0}
 .gs-tablebar-sep{width:1px; height:22px; background:rgba(var(--ink-rgb),.22); margin:0 6px; flex:none}
 .gs-tablebar-end{display:flex; align-items:center; gap:12px}
-.gs-widebtn{white-space:nowrap}
-/* 넓게 보기 (W, 2026-09-16) — 벌금판 섹션이 창 전체를 덮는다. 머리줄: 판 이름 · 판 라벨 · 모드 · [원래대로] */
-.gs-sheetsec.gs-wide{position:fixed !important; inset:0; z-index:90; margin:0 !important; padding:0 22px 24px; background:var(--paper); overflow:auto;
-  display:flex; flex-direction:column; min-width:0; width:auto !important; max-width:none !important}
-.gs-wide .gs-cardhead{display:none}
-.gs-wide > .gs-card{max-width:none !important; width:auto !important; margin:0 !important; flex:1 0 auto}
-.gs-widebar{display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid rgba(var(--ink-rgb),.2); margin-bottom:14px; flex:none}
-.gs-widebar-h{font-family:'Gowun Batang',serif; font-size:18px; font-weight:700; margin:0; color:var(--ink)}
-.gs-widebar-r{margin-left:auto; display:flex; align-items:center; gap:10px}
 /* ── 카드 모드 — 레이드 창 (2026-09-17 확정) ──
-   두 열, 가로로 채움(1 2 / 3 4 …, 09-18 사용자), 마지막 칸이 [+ 인원 추가]. [넓게]는 4열. 1080 폭에서 8명 465px, 단추 118×44.
+   두 열, 가로로 채움(1 2 / 3 4 …, 09-18 사용자), 마지막 칸이 [+ 인원 추가]. 1080 폭에서 8명 465px, 단추 118×44.
    (폐기) 세로 카드 4열(.gs-cardp) — 참고 앱 뼈대, 8명이 한 화면에 안 들어갔다 */
 .gs-rdgrid{display:grid; grid-template-columns:repeat(var(--cols,2), minmax(0,1fr)); gap:10px 18px}
 .gs-rd{display:grid; grid-template-columns:76px minmax(0,1fr); gap:0 14px; align-items:center; padding:10px 14px 10px 10px; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; background:var(--paper-2); min-width:0}
-.gs-rdgrid-wide .gs-rd{grid-template-columns:96px minmax(0,1fr)}
 .gs-rd-mine{border-color:var(--gold); box-shadow:inset 0 0 0 1px rgba(var(--gold-rgb),.5)}
 .gs-rd-far{opacity:.5}
 .gs-rd-far .gs-hit{cursor:default}
 .gs-rd-pic{width:76px; height:76px; border-radius:25%; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.35); display:flex; align-items:center; justify-content:center; flex:none}
-.gs-rdgrid-wide .gs-rd-pic{width:96px; height:96px}
 .gs-rd-pic .gs-ava{width:100%; height:100%; border:0; border-radius:0; display:block; object-fit:cover}
 .gs-rd-nopic svg{width:46%; height:46%}
 .gs-rd-body{display:flex; flex-direction:column; gap:9px; min-width:0}
@@ -18956,7 +18907,8 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-rd-pop-list{width:360px}
 .gs-rd-pop .gs-qx{min-height:0; padding:0}
 /* 빈 자리 */
-.gs-rd-empty{border-style:dashed; background:transparent; cursor:pointer; min-height:98px}
+.gs-rd-empty{border-style:dashed; background:transparent; cursor:pointer}
+.gs-rd.gs-rd-empty{min-height:98px}
 .gs-rd-empty:hover{border-color:rgba(var(--ink-rgb),.6)}
 .gs-rd-empty .gs-rd-body{gap:4px}
 .gs-rd-emptytxt{font-family:'Gowun Batang',serif; font-size:15px; color:rgba(var(--ink-rgb),.5)}
@@ -18967,10 +18919,6 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-rd-addslot:hover{border-color:var(--ink)}
 .gs-rd-addslot:hover .gs-rd-emptytxt,.gs-rd-addslot:hover .gs-rd-plus{color:var(--ink)}
 .gs-rd-plus{font-size:34px; line-height:1; color:rgba(var(--ink-rgb),.45); font-family:'IBM Plex Sans KR',system-ui,sans-serif}
-/* 4열(16명 넓게)에서는 카드가 좁아 단추를 2×2 로 */
-.gs-rdgrid-four .gs-rd-items{display:grid; grid-template-columns:1fr 1fr}
-.gs-rdgrid-four .gs-rd-etcwrap{display:flex}
-.gs-rdgrid-four .gs-rd-etc{flex:1; justify-content:center}
 /* 카드 모드 항목 칩 — 표 바 [항목 관리]를 펼치면 바로 아래 (2026-09-17). 이름 · 단가 · × 그리고 [+ 항목] */
 /* [항목 관리] 칸 — 단추 아래에 뜬다 (2026-09-18 확정 A). 칩은 세로로 하나씩. (폐기) .gs-cardtools 표 바 아래 펼침 */
 .gs-itemswrap{position:relative; display:inline-flex}
@@ -19371,7 +19319,9 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
    나가는 중만 초록이고, 나머지는 고장이 아니라 그냥 안 나가는 것이라 조용합니다 */
 .gs-castdot{display:inline-block; width:6px; height:6px; border-radius:50%; flex:none;
   margin-left:7px; background:rgba(var(--ink-rgb),.32)}
-.gs-castdot-on{background:#6fbf73}
+.gs-castdot-on{background:var(--cast-on)}
+/* 상태 점에는 버튼 안의 건수용 em 투명도를 적용하지 않습니다. */
+.gs-btn .gs-castdot{width:7px; height:7px; opacity:1}
 .gs-castdot-down{background:var(--red)}
 .gs-castdot-idle,.gs-castdot-recruit,.gs-castdot-none{background:transparent;
   box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.45)}
@@ -19564,7 +19514,6 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-tablebar-end{flex-direction:column; align-items:flex-end; gap:9px; flex:none}
 .gs-tabletools{display:flex; align-items:center; gap:18px}
 .gs-tablebar .gs-unitseg{gap:10px}
-.gs-modebar .gs-widebtn{margin-left:10px}
 .gs-tabletools .gs-itempop{left:auto; right:0}
 /* [파티원] — 평소에는 작은 단추, 누가 들어오면 도구 줄 높이만큼 커진다. 커진 뒤에도 왼쪽 칸은 그대로 [파티원] */
 .gs-pty{display:inline-flex; align-items:stretch; align-self:stretch; min-width:0; box-sizing:border-box}
@@ -19627,6 +19576,8 @@ tr[data-drop] .gs-rowi,.gs-rd[data-drop] .gs-rd-pic{outline:2px solid var(--gold
 .gs-seatpop-p b{font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .gs-seatpop-p em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2); white-space:nowrap}
 .gs-invleft{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+.gs-inv-timing{display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px}
+.gs-inv-soon{font-size:11px; font-weight:600; color:var(--gold); white-space:nowrap}
 .gs-seatpop-relink{border:0; background:transparent; padding:0; font:inherit; font-size:12px; color:var(--gold); cursor:pointer; text-decoration:underline; text-underline-offset:3px; flex:none}
 .gs-seatpop-relink:hover{text-decoration-thickness:2px}
 .gs-seatpop-more{display:block; width:100%; text-align:left; margin-top:14px; padding:10px 0 0; border:0; border-top:1px dotted rgba(var(--ink-rgb),.3); background:transparent;

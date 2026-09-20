@@ -32,8 +32,8 @@ const json = (data, status = 200) =>
 
 /* 수명 (§1) */
 const SESSION_MS = 90 * 86400 * 1000;
-/* 초대의 수명 (2026-09-20 사용자) — 만료는 "어제 파티와 오늘 파티"를 가르는 경계다. 한 판보다 길고 다음 날보다 짧아야 한다 */
-const INVITE_MS = 12 * 3600 * 1000;
+/* 초대는 발급 시각부터 30분. 복사나 조회로 만료를 연장하지 않습니다. */
+const INVITE_MS = 30 * 60 * 1000;
 /* 코드 색인(계정부)은 방을 찾는 포인터일 뿐이고 유효는 방이 판단합니다 (2026-09-06) — 넉넉히 둡니다 */
 const INVITE_INDEX_MS = 7 * 86400 * 1000;
 /* 판의 수명 판단(자동 중단 24시간·판 삭제 90일)은 round.js 가 갖고 있습니다 */
@@ -1291,11 +1291,7 @@ export class Room {
     const st = await S.get("state");
     return !!(st && st.roundId && !st.end);
   }
-  /* 코드의 시계는 방장이 [디코 메시지 복사]를 누른 때부터 10분입니다 (2026-09-08 사용자 확정).
-     방을 만든 순간이 아닙니다 — 방장은 항목을 정리하다 한참 뒤에 부르고, 그 사이가 깎이면 안 됩니다.
-     아직 안 뿌린 코드(armed:false)는 아무도 모르므로 입장에도 안 씁니다.
-     (폐기 2026-09-08) 서기 소켓이 붙어 있는 동안 무한 연장 — 방송 내내 안 죽어서 유출되면 그 판 내내 살아 있었다.
-     (폐기 2026-09-06) 발급 뒤 10분 고정 — 20분 모으다 보면 링크가 죽어 다시 붙여야 했다 */
+  /* 발급한 초대만 입장에 씁니다. 만료 시각과 같아지는 순간부터 신규 입장을 막습니다. */
   inviteOk(inv, now) {
     return !!inv && !!inv.armed && (inv.exp || 0) > now;
   }
@@ -1550,7 +1546,7 @@ export class Room {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
       /* 발급하면 바로 시계가 돕니다 (2026-09-20 사용자: 발급과 복사가 한 단추) — 옛 코드는 이 줄에서 죽습니다.
          (폐기 2026-09-08) 복사할 때 /invite-arm 이 켜던 것 — 단추가 하나가 되면서 켤 자리가 없어졌습니다 */
-      const invite = { code: rid(8), exp: now + INVITE_MS, armed: true };
+      const invite = { code: rid(8), issuedAt: now, exp: now + INVITE_MS, armed: true };
       await S.put("invite", invite);
       /* "비우고 발급" (2026-09-20 사용자) — 새 사람들과 하는 다음 판. 방장 말고 다 내보냅니다.
          줄과 벌금 숫자는 방장의 표에 그대로 있고, 여기서는 이 방의 명단만 비웁니다 */
@@ -1575,9 +1571,7 @@ export class Room {
       return json({ invite });
     }
 
-    /* 시계 켜기 (2026-09-08 사용자 확정) — 방장이 [디코 메시지 복사]를 누른 순간이 부르는 순간입니다.
-       다시 누르면 다시 10분입니다: 늦게 오는 사람에게 다시 보내는 김에 되살아납니다.
-       진짜 무효화는 [새로 발급](POST /invite)이 맡습니다 */
+    /* 옛 앱의 미발급 코드 활성화 통로. 이미 발급한 초대는 다시 복사해도 시간을 바꾸지 않습니다. */
     if (path === "/invite-arm" && req.method === "POST") {
       if (!(await this.isOwner(me))) return json({ error: "forbidden" }, 403);
       let inv = await S.get("invite");
@@ -1589,7 +1583,8 @@ export class Room {
           /* 색인이 안 돼도 링크로 들어오는 길은 삽니다 */
         }
       }
-      const invite = { ...inv, armed: true, exp: now + INVITE_MS };
+      if (inv.armed) return json({ invite: inv });
+      const invite = { ...inv, armed: true, issuedAt: now, exp: now + INVITE_MS };
       await S.put("invite", invite);
       return json({ invite });
     }
