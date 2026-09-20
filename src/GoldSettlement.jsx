@@ -11288,10 +11288,10 @@ export default function GoldSettlement() {
                       <Amount v={net} sign className={net > 0 ? "gs-pos" : net < 0 ? "gs-neg" : ""} />
                       {/* 수수료는 실제값에서 빼서 구합니다 — 요율을 곱하면 통마다 걸린 내림과 안 맞습니다.
                           받는 사람 앞으로 온 통들의 금액 합 = 그 사람의 순액이라, 순액 − 실수령이 곧 수수료 합입니다 */}
-                      <Amount v={net > 0 ? net - r.gotten[i] : 0} className="gs-tail" />
+                      <Amount v={net > 0 ? net - r.gotten[i] : 0} className="gs-tail" one />
                       {/* 최종 — 받는 사람은 실제로 손에 들어오는 돈, 보내는 사람은 부치는 돈(음수).
                           색은 순액 열이 맡습니다. 여기까지 칠하면 보내는 사람 행에서 같은 값이 두 번 강조됩니다 */}
-                      <Amount v={net > 0 ? r.gotten[i] : net} sign className="gs-tail" />
+                      <Amount v={net > 0 ? r.gotten[i] : net} sign className="gs-tail" one />
                     </tr>
                   );
                 })}
@@ -11302,7 +11302,7 @@ export default function GoldSettlement() {
                   <Amount v={r.total} />
                   <td colSpan={2} />
                   {/* 열을 다 더하면 우편으로 나가는 총액과 같습니다 (봉투의 수수료 도장 합) */}
-                  <Amount v={r.feeTotal} className="gs-tail" />
+                  <Amount v={r.feeTotal} className="gs-tail" one />
                   <td />
                 </tr>
               </tfoot>
@@ -16320,8 +16320,18 @@ function Confirm({ ask, onCancel, onDone }) {
 }
 
 /* 장부 한 칸: '21만5000' 을 크게, 원래 숫자는 아래에 작고 흐리게 */
-function Amount({ v, sign, className = "" }) {
+function Amount({ v, sign, className = "", one }) {
   const plus = sign && v > 0 ? "+" : "";
+  /* one — 만 표기와 원 표기를 병기하지 않고 숫자 한 줄만 (2026-09-21 사용자, 장부의 꼬리 두 열) */
+  if (one)
+    return (
+      <td className={className}>
+        <span className="gs-one">
+          {plus}
+          {won(v)}
+        </span>
+      </td>
+    );
   return (
     <td className={className}>
       <span className="gs-man">
@@ -18024,6 +18034,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
    정확히 적되 먼저 읽히지는 않게 한 단계 낮춥니다 (2026-09-21 사용자) */
 .gs-ledger .gs-tail{color:rgba(var(--ink-rgb),.6)}
 .gs-ledger .gs-tail .gs-man{font-size:20px}
+.gs-one{display:block; font-size:20px; line-height:1.25}
 
 /* 룰렛 열 머리 — 단가 자리에 설정 버튼이 앉습니다 */
 .gs-rcbtn{border:1px solid rgba(var(--gold-rgb),.55); border-radius:3px; background:transparent;
