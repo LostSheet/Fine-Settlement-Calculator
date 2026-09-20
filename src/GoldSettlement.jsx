@@ -8414,7 +8414,10 @@ export default function GoldSettlement() {
   const waitBelow = [...pending, ...waiting.map((w) => ({ ...w, waiting: true }))];
   /* [파티원] (2026-09-20 확정) — 표가 주인이고 초대는 그 위에 얹는 기능이다. 들어온 사람은 표를 보기만 하고, 방장이 줄에 붙이는 것이 곧 허락이다.
      들어온 사람 = 지금 접속해 있고 줄이 없는 사람, 온 순서대로. 접속을 끊은 사람은 파티원 창의 목록에만 남는다(서버는 줄 없는 회원의 on 도 준다) */
-  const partyCount = seats.filter((s) => s.acct && !(auth && s.acct === auth.id)).length;
+  const partyAccts = seats.filter((s) => s.acct && !(auth && s.acct === auth.id)).map((s) => s.acct);
+  const partyCount = partyAccts.length;
+  /* 단추 둘째 줄의 "m명 연결됨" — 줄에 붙은 사람 중 지금 앱을 열어 둔 사람. (폐기 2026-09-20 사용자) "지금 접속 m명" — 친구 목록의 '접속 중'으로 읽힌다 */
+  const partyOn = partyAccts.filter((a) => (members.find((m) => m.acct === a) || {}).on !== false).length;
   const waitNow = waitBelow.filter((p) => p.on !== false).sort((a, b) => (a.t || 0) - (b.t || 0));
   const curWait = waitNow.find((p) => p.acct === placeCur) || waitNow[0] || null;
   /* 메모장 모드에는 표 바가 없어 안내를 세울 곳이 없다 — 거기서는 빈 사진 자리가 지금처럼 목록을 연다 */
@@ -10166,6 +10169,13 @@ export default function GoldSettlement() {
               <span className="gs-caplab">모드</span>
               {/* 설명은 옆의 ? 하나가 맡습니다 — 버튼마다 툴팁이 뜨면 누를 때마다 성가십니다 */}
               {modeSeg()}
+              {/* [넓게] (옮김 2026-09-20 사용자) — "표를 어떻게 볼까"라서 모드 옆이 제자리다(넓게 본 화면의 [원래대로]도 머리에 있다).
+                  표 바 오른쪽에 있던 것을 빼서 그쪽 무리가 상자 셋 → 둘이 됐다. 메모장 모드에는 표 바가 없어 예전에도 [넓게]가 없었다 — 그대로 둔다 */}
+              {!simple && !wide && (
+                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(true)} title="벌금판을 창 전체로">
+                  ⤢ 넓게
+                </button>
+              )}
               {/* 올리면 설명, 더 보고 싶을 때만 선택 화면으로 — 눌러서 화면이 튀지 않게 */}
               <span className="gs-tip gs-tip-act">
                 <span className="gs-guide" role="button" tabIndex={0} aria-label="모드 설명">
@@ -10285,8 +10295,16 @@ export default function GoldSettlement() {
                       aria-haspopup="dialog"
                       aria-expanded={seatPop === "party"}
                     >
-                      {PEOPLE_ICON}
-                      <span>{partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}</span>
+                      {/* 두 줄 (2026-09-20 사용자) — 도구 줄이 두 줄 높이라 한 줄짜리 단추는 아래가 비어 보였다. 커진 뒤의 왼쪽 칸도 같은 두 줄이다 */}
+                      <span className="gs-ptylab">
+                        <span className="gs-ptylab-1">
+                          {PEOPLE_ICON}
+                          <span>{partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}</span>
+                        </span>
+                        <span className="gs-ptylab-2">
+                          {partyCount > 0 ? partyCount + "명 · " + partyOn + "명 연결됨" : "초대하면 파티원이 직접 자수해요"}
+                        </span>
+                      </span>
                     </button>
                     {seatPop === "party" && (
                       <SeatPop
@@ -10482,11 +10500,6 @@ export default function GoldSettlement() {
                         지금 표를 <b>판 기록</b>에 남기고 숫자만 비워요. 이름과 자리는 그대로예요.
                       </span>
                     </span>
-                  )}
-                  {!wide && (
-                    <button className="gs-btn gs-btn-sm gs-btn-ghost gs-widebtn" onClick={() => setWide(true)} title="벌금판을 창 전체로">
-                      ⤢ 넓게
-                    </button>
                   )}
                 </span>
               )}
@@ -20082,17 +20095,23 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-pc-out svg{color:var(--ink-2)}
 /* ── 표 바 (2026-09-20 확정) — 왼쪽은 사람([파티원]), 오른쪽은 표 도구 한 줄 + 그 아래 마우스 안내. 늘 두 줄 높이 ── */
 .gs-tablebar{align-items:stretch}
-.gs-tablebar-l{flex-wrap:nowrap; min-width:0; align-items:flex-start}
-.gs-tablebar-end{flex-direction:column; align-items:flex-end; gap:4px; flex:none}
-.gs-tabletools{display:flex; align-items:center; gap:8px}
+/* 왼쪽은 stretch — [파티원]이 늘 줄 높이를 쓴다. 오른쪽 무리는 간격을 벌린다 (2026-09-20 사용자: "오른쪽이 지나치게 빽빽하다") */
+.gs-tablebar-l{flex-wrap:nowrap; min-width:0; align-items:stretch}
+.gs-tablebar-end{flex-direction:column; align-items:flex-end; gap:9px; flex:none}
+.gs-tabletools{display:flex; align-items:center; gap:18px}
+.gs-tablebar .gs-unitseg{gap:10px}
+.gs-modebar .gs-widebtn{margin-left:10px}
 .gs-tabletools .gs-itempop{left:auto; right:0}
 /* [파티원] — 평소에는 작은 단추, 누가 들어오면 도구 줄 높이만큼 커진다. 커진 뒤에도 왼쪽 칸은 그대로 [파티원] */
-.gs-pty{display:inline-flex; align-items:stretch; min-width:0; box-sizing:border-box}
+.gs-pty{display:inline-flex; align-items:stretch; align-self:stretch; min-width:0; box-sizing:border-box}
 .gs-pty .gs-seatpopwrap{flex:none}
-.gs-ptybtn{gap:7px}
+.gs-tablebar .gs-ptybtn{height:auto; align-self:stretch; padding-left:14px; padding-right:16px; border-color:rgba(var(--gold-rgb),.8); color:var(--gold)}
+.gs-ptylab{display:flex; flex-direction:column; align-items:flex-start; gap:4px; line-height:1.15; text-align:left}
+.gs-ptylab-1{display:inline-flex; align-items:center; gap:7px; font-size:13.5px; white-space:nowrap}
+.gs-ptylab-2{font-size:11.5px; font-weight:400; letter-spacing:0; color:var(--ink-2); white-space:nowrap}
 .gs-pty-open{align-self:stretch; border:1px solid rgba(var(--gold-rgb),.8); border-radius:2px; background:rgba(var(--gold-rgb),.07); overflow:hidden; animation:gs-pty-grow .45s cubic-bezier(.2,.9,.3,1)}
 .gs-pty .gs-seatpopwrap{align-items:stretch}
-.gs-pty-open .gs-ptybtn{height:auto; align-self:stretch; border:0; border-right:1px solid rgba(var(--gold-rgb),.45); border-radius:0; background:transparent; padding-left:13px; padding-right:13px}
+.gs-tablebar .gs-pty-open .gs-ptybtn{border:0; border-right:1px solid rgba(var(--gold-rgb),.45); border-radius:0; background:transparent}
 .gs-pty-open .gs-ptybtn:hover,.gs-pty-open .gs-ptybtn:focus-visible,.gs-pty-open .gs-seatpopwrap.open .gs-ptybtn{background:rgba(var(--gold-rgb),.16)}
 @keyframes gs-pty-grow{from{max-width:112px; max-height:34px} to{max-width:720px; max-height:64px}}
 .gs-pty-body{display:inline-flex; align-items:center; gap:11px; min-width:0; padding:0 12px 0 9px; animation:gs-pty-fade .45s ease-out}
