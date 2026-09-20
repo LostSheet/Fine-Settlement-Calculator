@@ -9250,6 +9250,8 @@ export default function GoldSettlement() {
           </div>
         </section>
       )}
+      {/* 머리 섹션 — 컨트롤과 탭이 한 덩이고, 아래 1px 선이 뷰포트 끝까지 가서 틀과 내용을 가른다 (2026-09-20 사용자) */}
+      <div className="gs-mastband">
       <header className="gs-mast">
         {/* 판의 신분증 — 탭 위, 마스트 왼쪽 버튼들이 있던 자리입니다 */}
         {mastBody && idBand && (
@@ -9623,6 +9625,7 @@ export default function GoldSettlement() {
         </div>
         </div>
       </header>
+      </div>
 
       {/* ── 자수 — 파티원의 기본 화면. 항목마다 큰 카드 하나이고,
              누르면 +1회 · 우클릭하면 −1회입니다. 서버가 방장 앱에 넘겨 장부에 적히고,
@@ -16527,6 +16530,9 @@ const CSS = `
 
 /* 머리 — 방송 화면에선 세로가 금이라 낮게 갑니다 */
 .gs-mast{margin-bottom:14px}
+/* 머리 섹션 (2026-09-20 사용자 확정) — 컨테이너 여백을 상쇄해 뷰포트 양옆에 딱 붙고,
+   밑선 하나로 닫는다. 안쪽 .gs-mast 는 본문과 같은 열이라 선만 끝까지 가고 내용은 열을 지킨다 */
+.gs-mastband{margin:-20px -20px 0; padding:20px 20px 0; border-bottom:1px solid rgba(var(--ink-rgb),.22)}
 .gs-eyebrow{display:flex; align-items:center; gap:12px; font-family:var(--mono);
   font-size:10px; letter-spacing:.24em; text-transform:uppercase; color:var(--ink-2)}
 .gs-eyebrow i{flex:1; height:1px; opacity:.5;
@@ -16544,7 +16550,9 @@ const CSS = `
 /* 제목 아래 모드 — 화면에서 가장 먼저 읽혀야 하는 상태라 크게, 아이콘까지 붙입니다 */
 /* 왼쪽 위 = 탭 (2026-09-20) — 바닥선에 닿아야 아래 카드로 이어지는 서류철로 읽힌다.
    컨트롤보다 한 단 내려 선다 (2026-09-20 사용자): 위는 설정, 아래는 화면 — 같은 줄에 두면 둘의 무게가 같아진다 */
-.gs-mastleft{display:flex; align-items:flex-end; gap:9px; flex-wrap:wrap; min-height:34px; margin-top:24px}
+/* 탭 윗선이 컨트롤 아랫선보다 8px 위 — 살짝 겹쳐야 두 단이 한 섹션으로 읽힌다 (2026-09-20 사용자 지정).
+   컨트롤은 위에서 8~42px, 탭은 34~74px */
+.gs-mastleft{display:flex; align-items:flex-end; gap:9px; flex-wrap:wrap; min-height:34px; margin-top:14px}
 /* 수명 동사 — 무대 우상단 모서리. 로비 [시작]과 같은 좌표라, 판이 열려도 닫혀도
    손이 가는 자리가 안 바뀝니다 (§3.1·§3.4). 둘 다 유령 버튼입니다.
    탭과 같은 바닥선에 서야 나란히 선 것으로 읽힙니다 */
@@ -16582,19 +16590,20 @@ const CSS = `
   padding:7px 0 0; width:100%; text-align:left}
 .gs-tip-more:hover{text-decoration:underline}
 .gs-intro-top{display:flex; align-items:flex-end; justify-content:space-between; gap:14px}
-.gs-tabs{display:flex; align-items:flex-end; gap:4px; min-height:42px}
+.gs-tabs{display:flex; align-items:flex-end; gap:4px; min-height:40px}
 .gs-tabs > .gs-tip{display:flex; align-items:flex-end}
-/* 직각 2px · 1px 잉크 선 · 그림자 없음 — 세그·단추·칩이 쓰는 규칙 그대로 (2026-09-20 사용자).
-   (폐기) 7px 둥글기 + 선 없는 채움 + 글자 500 — 화면에서 제일 큰 것이 제일 말랑했다 */
-.gs-tab{display:inline-flex; align-items:center; gap:7px; height:38px; font:inherit; font-size:14px; font-weight:400;
-  cursor:pointer; color:var(--ink-body); padding:8px 14px 10px; border:1px solid rgba(var(--ink-rgb),.3);
-  border-bottom:0; border-radius:2px 2px 0 0; margin-bottom:-1px;
-  background:transparent; white-space:nowrap; transition:color .14s,background .14s}
+/* 탭은 디바이더 위에 서서 밑줄로 고른 것을 말한다 (2026-09-20 사용자 확정).
+   (폐기) 7px 둥글기 + 선 없는 채움 + 글자 500 → 2px 상자 + 1px 선 — 둘 다 상자에 이어 붙는 서류철이었다.
+   밑줄은 잉크다: 금색은 "지금 이걸 봐라"에 쓰는 색이라 늘 떠 있는 표시에 쓰면 그 신호가 묽어진다 */
+.gs-tab{display:inline-flex; align-items:center; gap:7px; height:40px; font:inherit; font-size:14px; font-weight:400;
+  cursor:pointer; color:var(--ink-2); padding:8px 14px; border:0;
+  border-bottom:2px solid transparent; border-radius:0; margin-bottom:-1px;
+  background:transparent; white-space:nowrap; transition:color .14s,border-color .14s}
 .gs-tab svg{flex:none; width:13px; height:13px}
-.gs-tab:hover{color:var(--ink); background:rgba(var(--shadow-rgb),.08)}
-/* 선택한 탭과 본문은 같은 종이 면. 폭·글자 굵기는 선택 전후에 그대로 둡니다 —
-   400↔600 으로 바꾸면 글자 폭이 달라져 탭을 옮길 때마다 줄이 움찔합니다. 선택은 종이색과 잉크색이 맡습니다 */
-.gs-tab.on{position:relative; z-index:2; height:42px; background:var(--paper); color:var(--ink)}
+.gs-tab:hover{color:var(--ink); background:transparent}
+/* 폭·글자 굵기는 선택 전후에 그대로 둡니다 — 400↔600 으로 바꾸면 글자 폭이 달라져
+   탭을 옮길 때마다 줄이 움찔합니다. 선택은 잉크색과 밑줄이 맡습니다 */
+.gs-tab.on{position:relative; z-index:2; height:40px; color:var(--ink); border-bottom-color:var(--ink)}
 .gs-tab em{font-style:normal; font-family:inherit; font-size:11px; color:var(--ink-2);
   min-width:29px; text-align:right; font-variant-numeric:tabular-nums}
 .gs-viewseg{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px;
@@ -16612,8 +16621,10 @@ const CSS = `
 /* 면도 같은 규칙 — 직각 2px 에 1px 잉크 선, 그림자 없음 (2026-09-20 사용자).
    왼쪽 위만 직각인 것은 거기서 선택한 탭이 이어지기 때문입니다.
    (폐기) 3px + 0 6px 18px 그림자 — 어둡게에서 바탕 대 면이 1.15:1 이라 경계를 그림자만 지고 있었습니다 */
-.gs-tabbed .gs-surface{margin-top:0; background:var(--paper); padding:14px 18px 20px;
-  border:1px solid rgba(var(--ink-rgb),.3); border-radius:0 2px 2px 2px; box-shadow:none}
+/* 내용은 디바이더 아래 한 칸 떨어져 제 상자로 선다 — 왼쪽 위가 직각이던 것은 거기서 탭이 이어졌기 때문인데,
+   이제 이어지지 않으니 네 귀가 같다 (2026-09-20 사용자 확정) */
+.gs-tabbed .gs-surface{margin-top:18px; background:var(--paper); padding:14px 18px 20px;
+  border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; box-shadow:none}
 .gs-surface > .gs-card{margin:0; padding:0; border:0; box-shadow:none; background:transparent}
 .gs-surface > .gs-cardhead{margin-bottom:12px; gap:12px; min-height:34px}
 .gs-sheethead .gs-sheetmodes{margin-right:auto}
