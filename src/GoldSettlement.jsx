@@ -3620,7 +3620,7 @@ export default function GoldSettlement() {
       }
     } catch (e) {}
   }, []);
-  const [nameEdit, setNameEdit] = useState(false); // 마스트의 판 이름 편집 중
+  /* (폐기 2026-09-20 사용자) nameEdit — 판 이름을 고치는 기능이 없어졌다. roundName 은 그날 기본값으로 결과지·판 기록에 남는다 */
   const [gensOpen, setGensOpen] = useState(false); // 판 기록 창
   /* (폐기 2026-09-08) revealInv — 초대 코드는 이제 펴지지 않습니다. 복사로만 옮깁니다 (사용자: 시청자가 알면 난리가 난다) */
   const [capDraft, setCapDraft] = useState(null); // 인원 수 숫자 칸 — 떠날 때 확정
@@ -9119,10 +9119,8 @@ export default function GoldSettlement() {
       {/* ── 시스템 줄 — 뷰포트 맨 위에 딱 붙는 전폭 바. 안쪽 내용은 본문과 같은 열 ── */}
       <div className={"gs-sysbar" + (boardLabel && boardLabel.away ? " gs-sysbar-away" : "")}>
         <div className="gs-sysbar-in">
-          {/* 브랜드 = 홈(내 판). 로비는 없습니다 (§3.12) */}
-          <button className="gs-sysbrand" onClick={goBoard} aria-label="내 판으로">
-            벌금 정산
-          </button>
+          {/* (폐기 2026-09-20 사용자) 브랜드 '벌금 정산' — 화면이 하나뿐이라 돌아갈 곳을 가리킬 일이 없다.
+              판 기록에서 돌아오는 길은 신분증 띠의 [내 판으로]가 맡는다 */}
           {/* (폐기 2026-09-16) 화면 이름 "벌금판"/"로비" — 화면이 하나라 말할 것이 없다(사용자). 판 기록을 볼 때만 어디인지 적는다 */}
           {!inviteGate && genView && <span className="gs-sysscreen">판 기록</span>}
           {/* 파티 칩 하나 (2026-09-07 사용자 확정: 헤더 리뉴얼 — 방은 하나) — 지금 내가 속한 방 하나만 말하고, 누르면 파티 허브.
@@ -9641,44 +9639,10 @@ export default function GoldSettlement() {
           {/* 탭 줄 왼쪽에는 [전부 비우기] 하나만 남습니다 (§3.4) — 판을 닫는 동사는
               우상단 모서리로 갔고, [처음부터]는 폐지했습니다(문이 둘이면 하나는 못 찾습니다).
               [파티 모드 시작하기]는 머리줄 파티 칩이 됐습니다(문과 상태가 한 자리). */}
+          {/* 탭이 왼쪽 위에 선다 (2026-09-20 사용자) — 판 이름이 있던 자리다. 탭은 아래 카드로 이어지는 서류철이라 바닥선에 닿는다.
+              (폐기 2026-09-20 사용자) 판 이름 + 연필 — 이름을 고치는 기능 자체를 없앴다. 결과지·판 기록에 남는 이름은 그날 기본값(§8)이다 */}
           <div className="gs-mastleft">
-            {/* 판 이름 — 글자 + 연필, 누르면 입력칸 (§3.1). 옛 로비 히어로에서 이사했습니다.
-                [시작] 때 그 판의 이름이 되어 결과지·판 기록에 남습니다 */}
-            {!readOnly &&
-              (nameEdit ? (
-                <input
-                  className="gs-lbhero-name"
-                  value={roundName}
-                  placeholder={defaultRoundName()}
-                  maxLength={24}
-                  autoFocus
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => setRoundName(e.target.value)}
-                  onBlur={(e) => {
-                    if (!e.target.value.trim()) setRoundName(defaultRoundName());
-                    setNameEdit(false);
-                  }}
-                  onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-                  aria-label="판 이름"
-                />
-              ) : (
-                <button
-                  className={
-                    "gs-lbhero-nameview" +
-                    (ready && (!roundName || roundName === defaultRoundName()) ? " gs-lbhero-ph" : "")
-                  }
-                  onClick={() => setNameEdit(true)}
-                >
-                  <b>{roundName || defaultRoundName()}</b>
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="m11.3 2.7 2 2L5 13l-2.6.6L3 11l8.3-8.3Z" /><path d="m9.8 4.2 2 2" /></g></svg>
-                </button>
-              ))}
-            {/* 상태 칩 (§3.0, 2026-09-05) — 들어온 판이 시작 전인지 진행 중인지 이름 옆에서 말한다.
-                로비 카드의 제목과 같은 말이라 들어오기 전과 후가 이어진다. 파티원도 같은 칩 */}
-            {/* (폐기 2026-09-15) 상태 칩 시작 전/진행 중 — 판의 상태가 없다 (§3.12.2) */}
-            {/* (2026-09-06) [전부 비우기]는 표 바로 위로 옮겼습니다 — 표와 가까울수록 */}
-          </div>
-          <div className="gs-mastside">
+
             {tabbed && !ready && !guestLobby && (
               <nav className="gs-tabs" aria-label="화면 선택">
                 {[
@@ -9710,14 +9674,6 @@ export default function GoldSettlement() {
                 ))}
               </nav>
             )}
-            {/* 수명 동사는 상태가 바뀌어도 같은 자리입니다 (§3.4) — 로비에서 [시작]이 앉는
-                우상단 모서리를 판에서는 [정산 끝내기]가 씁니다. 탭을 왼쪽 끝으로 보내지
-                않고 탭 오른쪽에 이어 붙이되, 탭은 아래 카드로 이어지는 서류철이라 선에
-                닿고 이건 버튼이라 선에서 떠 있습니다 — 머리를 탭과 맞추고 발치를 띄웁니다.
-                파티원 화면에는 뜨지 않습니다.
-                [중단]은 폐지했습니다: 브라우저를 닫아도 판은 살아 있고, 얼리는 일은
-                무활동 24시간 자동 중단이 맡습니다 */}
-            {/* (폐기 2026-09-15) 마스트 우상단 동사 [시작하기]·[해산]·[정산 끝내기] — 판을 나누는 건 표 위의 [비우기] 하나 (§3.12.2·§3.12.8) */}
           </div>
         </div>
       </header>
@@ -9860,8 +9816,8 @@ export default function GoldSettlement() {
           </div>
         )}
         <div className="gs-cardhead">
+          {/* (폐기 2026-09-20 사용자) 탭 제목 h2 — 어느 탭인지는 왼쪽 위의 탭이 이미 말한다 */}
           <div className="gs-headleft">
-            <h2 className="gs-h2">벌금표</h2>
             {simple && <span className="gs-headnote">메모장에 적은 내용이 오른쪽 표에 바로 들어가요</span>}
             {/* 파티원도 봅니다 (2026-09-06) — 기록은 이미 판과 함께 넘어오고, 단가 변경(`단가 3만 → 5만`)도 한 줄로 남아 있어
                 단가 × 횟수와 금액이 다를 때 왜 그런지 여기서 읽힙니다. 취소는 방장만 */}
@@ -11364,9 +11320,7 @@ export default function GoldSettlement() {
           {/* 보낼 우편 탭과 같은 뼈대 — 머리줄은 밖에, 내용 상자는 안에.
              탭을 바꿔도 정산 방식·수수료 칸이 같은 자리에 있습니다 */}
           <div className="gs-cardhead">
-            <div className="gs-headleft">
-              <h2 className="gs-h2">정산 장부</h2>
-            </div>
+            <div className="gs-headleft" />
             <div className="gs-tools">
               <SplitPick
                 value={splitMode}
@@ -11443,11 +11397,6 @@ export default function GoldSettlement() {
       {/* 탭 화면에서 장부에 보여줄 사람이 아직 없을 때 */}
       {showLedger && !ready && !showLobby && !guestLobby && !guestBlocked && !r && tabbed && (
         <section className="gs-mail gs-ledgersec">
-          <div className="gs-cardhead">
-            <div className="gs-headleft">
-              <h2 className="gs-h2">정산 장부</h2>
-            </div>
-          </div>
           <div className="gs-card gs-ledgerbox">
             {confessTab && (
               <div className="gs-slip gs-slip-back" role="status">
@@ -11470,7 +11419,6 @@ export default function GoldSettlement() {
       <section className="gs-mail">
         <div className="gs-cardhead">
           <div className="gs-headleft">
-            <h2 className="gs-h2">보낼 우편</h2>
             {r && r.transfers.length > 0 && (
               <button className="gs-btn" onClick={openMail}>
                 Discord 공유용 복사
@@ -16770,9 +16718,9 @@ const CSS = `
   height:1px; background:var(--kraft-dk)}
 /* 탭과 수명 동사는 한 덩어리로 오른쪽 끝에 섭니다 (§3.4) — 탭을 왼쪽 끝까지 보내지
    않고, 그 오른쪽에 [정산 끝내기]·[중단]을 잇습니다. 마스트 왼쪽은 [전부 비우기]뿐입니다 */
-.gs-mastside{display:flex; align-items:flex-end; gap:12px; margin-left:auto}
 /* 제목 아래 모드 — 화면에서 가장 먼저 읽혀야 하는 상태라 크게, 아이콘까지 붙입니다 */
-.gs-mastleft{display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding-bottom:9px}
+/* 왼쪽 위 = 탭 (2026-09-20) — 바닥선에 닿아야 아래 카드로 이어지는 서류철로 읽힌다 */
+.gs-mastleft{display:flex; align-items:flex-end; gap:9px; flex-wrap:wrap; min-height:34px}
 /* 수명 동사 — 무대 우상단 모서리. 로비 [시작]과 같은 좌표라, 판이 열려도 닫혀도
    손이 가는 자리가 안 바뀝니다 (§3.1·§3.4). 둘 다 유령 버튼입니다.
    탭과 같은 바닥선에 서야 나란히 선 것으로 읽힙니다 */
@@ -17011,6 +16959,8 @@ const CSS = `
 
 /* 모드·규칙 전환 */
 .gs-headleft{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+/* 탭 제목이 없어진 뒤 (2026-09-20) — 빈 왼쪽 칸이 자리만 잡고, 도구는 오른쪽 끝에 그대로 선다 */
+.gs-headleft:empty{gap:0}
 /* overflow:hidden 을 두면 안쪽 툴팁이 잘립니다. 모서리는 2px 라 티가 안 나 그냥 뺍니다. */
 .gs-seg{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px}
 .gs-seg button{border:0; background:transparent; font:inherit; font-size:12px; cursor:pointer;
@@ -17784,9 +17734,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-fresh{margin-top:12px; padding:10px 12px; border:1px dashed rgba(var(--gold-rgb),.5);
   border-radius:6px; background:rgba(var(--gold-rgb),.06)}
 .gs-obs-fresh p{margin:0 0 8px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-/* 시스템 줄 왼쪽 — 앱 이름 (워드프로세서의 앱 바 관행) */
-.gs-sysbrand{font-size:14px; font-weight:800; letter-spacing:.04em; color:var(--ink);
-  opacity:.92}
+/* (폐기 2026-09-20 사용자) .gs-sysbrand — 머리 줄의 '벌금 정산' */
 /* 지금 어느 화면인지 — 브랜드 옆 한 마디 (2026-09-05) */
 .gs-sysscreen{font-size:12.5px; color:var(--ink-2); margin-left:11px; padding-left:13px;
   border-left:1px solid rgba(var(--ink-rgb),.22); letter-spacing:.03em; white-space:nowrap}
@@ -18765,23 +18713,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   padding-bottom:6px}
 .gs-lbhero-h{margin:0; font-size:11px; letter-spacing:.12em; font-weight:600;
   color:var(--ink-2); text-transform:none}
-/* 판 이름 — 눌러서 고칩니다. 칸처럼 안 보이다가 마우스를 올리면 고칠 수 있다는 것이
-   드러납니다: 늘 테두리가 있으면 로비에 입력칸이 둘(이름·명단)이 되어 시끄럽습니다 */
-.gs-lbhero-name{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:21px;
-  color:var(--ink); background:transparent; border:1px solid transparent; border-radius:6px;
-  padding:2px 7px; margin-left:-8px; width:100%; max-width:19em; text-overflow:ellipsis}
-.gs-lbhero-name::placeholder{color:rgba(var(--ink-rgb),.35); font-weight:400}
-.gs-lbhero-namewrap{display:flex; align-items:center; gap:2px; min-width:0}
-/* 읽기 얼굴 — 글자 + 연필이 한 몸입니다. 누르면 입력칸으로 바뀝니다 (표준 문법) */
-.gs-lbhero-nameview{display:inline-flex; align-items:center; gap:8px; border:0;
-  background:none; cursor:pointer; font:inherit; color:var(--ink); padding:2px 0;
-  margin-left:0; min-width:0; max-width:100%; text-align:left}
-.gs-lbhero-nameview b{font-family:'Gowun Batang',serif; font-weight:700; font-size:21px;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.gs-lbhero-nameview svg{flex:none; color:var(--ink-2)}
-.gs-lbhero-nameview:hover svg{color:var(--ink)}
-.gs-lbhero-name:hover{border-color:rgba(var(--ink-rgb),.22)}
-.gs-lbhero-name:focus{outline:0; border-color:var(--gold); background:rgba(var(--ink-rgb),.05)}
+/* (폐기 2026-09-20 사용자) .gs-lbhero-name* — 마스트의 판 이름 + 연필 */
 /* 2열 벤토 (§3.1). 왼쪽이 명단·항목, 오른쪽이 모으기입니다 — 첫 할 일이 읽기
    시작점에 있어야 합니다. 왼쪽을 조금 넓게 두어 이름 줄이 먼저 접히지 않게 합니다 */
 .gs-bento{display:grid; grid-template-columns:minmax(0,1.18fr) minmax(0,1fr); gap:15px;
@@ -19008,9 +18940,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-recfoot{display:flex; align-items:center; gap:12px; margin-top:10px; font-size:11.5px; color:var(--ink-2)}
 .gs-lh-recfoot .gs-auth-linkb{margin-left:auto}
 .gs-lh-stat b{color:var(--ink-body); font-weight:600}
-/* 브랜드는 버튼입니다 (로비 문) — 글자 룩은 위 .gs-sysbrand 규칙 그대로 */
-button.gs-sysbrand{background:none; border:0; padding:0; cursor:pointer; font-family:inherit; line-height:inherit}
-button.gs-sysbrand:hover{opacity:1; color:var(--gold)}
 /* 준비 상태의 표 — 칸은 잠겨 있고 ＋도 없습니다. 세기 시작하는 문은 [시작] 하나입니다 (§3.1) */
 .gs-hit-ready{opacity:.55; cursor:default}
 .gs-hit-ready .gs-hit-ghost{visibility:hidden}
@@ -19333,7 +19262,6 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-strip-move{margin-left:auto; font-size:12px}
 .gs-invite-typed{color:var(--ink-2); font-weight:400}
 .gs-lh-loginnote{margin-top:14px}
-.gs-lbhero-ph b{color:var(--ink-2); font-weight:400}
 .gs-invmodal-live{margin:0 0 2px}
 .gs-blocked-acts{justify-content:flex-end; margin-top:12px}
 .gs-recruit-code{margin-top:4px}
