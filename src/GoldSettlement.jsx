@@ -3810,7 +3810,15 @@ export default function GoldSettlement() {
      문구는 §8 초안 */
   const askLogout = () => {
     if (!auth) return;
-    if (!auth.anon) return doLogout(false);
+    /* (2026-09-20) 정식 계정도 한 번 묻는다 — 프로필 카드에서 눈에 띄는 단추가 됐고, 누르면 서버가 이 세션을 바로 끊는다.
+       잃는 것이 없다는 것까지 말해 준다(자리와 방송 주소는 계정에 남는다) */
+    if (!auth.anon)
+      return setAsk({
+        title: "로그아웃할까요?",
+        body: "이 브라우저에서만 로그아웃해요.\n내 줄과 방송 주소는 그대로예요.",
+        action: "로그아웃",
+        onYes: () => doLogout(false),
+      });
     setAsk({
       title: "게스트 계정은 로그아웃하면 다시 못 들어와요",
       body: "아이디를 정하면 어디서든 로그인할 수 있어요. 지금 로그아웃하면 이 계정과 파티 자리를 버려요.",
@@ -4716,10 +4724,10 @@ export default function GoldSettlement() {
   const sayJoin = (nick, seatId) => {
     const st = seats.find((k) => k.id === seatId);
     /* 맨 아래 새 줄은 이 렌더의 자리 목록에 아직 없습니다 */
-    if (!st) return say((nick || "파티원") + "님을 새 줄에 배정했어요.", 8000);
+    if (!st) return say((nick || "파티원") + "님을 새 줄에 배치했어요.", 8000);
     const i = seats.indexOf(st);
     const where = st && !isBlankSeat(st) ? "'" + (st.name || "").trim() + "' 줄" : i + 1 + "번 줄";
-    say((nick || "파티원") + "님을 " + where + "에 배정했어요.", 8000);
+    say((nick || "파티원") + "님을 " + where + "에 배치했어요.", 8000);
   };
   /* 그 자리에 사람을 앉힙니다 — 서버 명단·자리·판의 줄 이름이 같이 움직입니다 */
   /* 앉는 순간 (C1, 2026-09-16) — 대기 줄의 초상화+이름이 그 줄 이름 칸으로 미끄러져 들어간다. 움직임 줄이기면 건너뛴다 */
@@ -6208,6 +6216,9 @@ export default function GoldSettlement() {
   const guestSeated = guestWaiting;
   /* 메모장에는 보통 항목이 없습니다 (§3.4: 모드도 판의 일부) — 셀 칸이 없으니 자수 탭도
      서지 않습니다. 방장이 메모장으로 바꾸면 파티원은 벌금표에서 그 판을 그대로 봅니다 */
+  /* 승인을 기다리는 사람 (2026-09-20) — 내보냈다 다시 온 사람·정원이 차서 기다리는 사람은 st 가 "req" 라 guestPlaying 이 아니다.
+     그 사람도 표는 보고 있으니 왜 못 누르는지 한 줄로 말해 준다. 누를 자격은 그대로 없다(confessTab 은 안 건드린다) */
+  const guestPending = !!you && you.st === "req" && !vlobby && !ended && !genView;
   const confessTab = guestPlaying && !simple;
   /* 되돌리기 칩의 시계 — confessTab 이 선 뒤에 걸어야 합니다 (버그 기록 2026-09-07: 선언 전에 의존성으로 읽어 TDZ 로 앱이 통째로 죽었다) */
   useEffect(() => {
@@ -8867,240 +8878,7 @@ export default function GoldSettlement() {
             ? { dot: true, text: "방장 · 모집 중 " + seatedCount + "/" + lobbyCap }
             : { dot: false, text: "시작 전 · 내 판" }
           : { dot: false, text: "파티 없음" };
-  const partyHub = (where) => {
-    const goBox = (cls, onGo, inner) => (
-      <div
-        className={"gs-lh-box gs-lh-go" + (cls ? " " + cls : "")}
-        role="button"
-        tabIndex={0}
-        onClick={onGo}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onGo()}
-      >
-        {inner}
-      </div>
-    );
-    const names = (list) => (list.length ? list.join(" · ") : "아직 아무도 없어요");
-    /* 머리 (2026-09-07 사용자 확정) — 팝오버(판 화면)는 아바타·닉·역할 뱃지·상태 한 줄: 계정 카드가 없는 화면이라 내가 누군지 여기서 말한다.
-       로비 카드는 역할·상태만 — 바로 옆 계정 카드가 나를 말하니 "나"는 한 화면에 한 번(사용자: 칩=허브인데 로비에선 중복) */
-    const myNick = (viewer && you && you.nick) || (auth && auth.nick) || "";
-    const head = (dot, text, role) =>
-      where === "pop" && auth ? (
-        <div className="gs-hub-me">
-          <Ava id={auth.id} nick={myNick} size={30} host={role === "방장"} />
-          <b>{myNick}</b>
-          {role && <span className={"gs-rolebadge" + (role === "방장" ? "" : " gs-rolebadge-dim")}>{role}</span>}
-          <span className="gs-hub-st">
-            {dot && <em className="gs-livechip-dot" aria-hidden="true" />}
-            {text}
-          </span>
-        </div>
-      ) : (
-        <h4 className={"gs-lbcard-h" + (dot ? " gs-lh-facet" : "")}>
-          {dot && <em className="gs-livechip-dot" aria-hidden="true" />}
-          {role ? role + " · " : ""}
-          {text}
-        </h4>
-      );
-    /* 보관된 초대 — 어느 얼굴에서든 맨 위 한 줄 (초안) */
-    const pending =
-      !viewer && pendingJoin ? (
-        <div className="gs-hub-pending" role="status">
-          <span>
-            <b>받은 초대</b>가 기다려요.
-          </span>
-          <span className="gs-hub-pending-r">
-            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={dropPendingJoin}>
-              지우기
-            </button>
-            <button className="gs-btn gs-btn-sm gs-lbstart" onClick={askLeaveForJoin}>
-              참여하기
-            </button>
-          </span>
-        </div>
-      ) : null;
-    if (viewer) {
-      /* 파티원 — 앉은 사람·내 벌금·[파티 나가기]. (폐기 2026-09-07) 빵부스러기 줄의 [파티 나가기] */
-      const list =
-        vlobby && vlobby.names
-          ? vlobby.names.filter((x) => x.live).map((x) => x.n)
-          : rows.filter((r) => (rows2v.find((x) => x.rowId === r.id) || {}).a).map((r) => seatName(r, rows.indexOf(r)));
-      return (
-        <>
-          {head(true, <>{ownerNick ? ownerNick + "네 파티" : "파티"} · {vlobby ? "시작 전" : "진행 중"}</>, "파티원")}
-          <div className="gs-lh-box">
-            <p className="gs-lh-facts">
-              {list.length}명{myRow ? " · 내 벌금 " + man(myGold) : ""}
-            </p>
-            <p className="gs-lh-names">{names(list)}</p>
-            <div className="gs-lh-acts">
-              <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={leaveRoom}>
-                파티 나가기
-              </button>
-            </div>
-          </div>
-        </>
-      );
-    }
-    if (seatedNow && !boardOn) {
-      /* 남의 파티에 앉은 채 (내 판 없음) — 돌아가기·나가기 */
-      return (
-        <>
-          {pending}
-          {head(true, <>{seatedName} · {meSeat.round ? "진행 중" : "시작 전"}</>, "파티원")}
-          <div className="gs-lh-boxwrap">
-            {goBox(
-              "",
-              () => enterRoom(meCur, { push: true }),
-              <>
-                <p className="gs-lh-sub">{meSeat.round ? "파티가 진행 중이에요." : "방장이 시작하길 기다려요."}</p>
-                <span className="gs-lh-goto">돌아가기 ›</span>
-              </>
-            )}
-            <button className="gs-lh-x" onClick={askLeaveFromLobby} aria-label="파티 나가기">
-              나가기
-            </button>
-          </div>
-          {/* 문 둘은 여기에도 — 누르면 방 하나 규칙이 먼저 묻습니다(나가고 만들기 / 나가고 옮기기) */}
-          <div className="gs-lh-acts">
-            <button className="gs-btn gs-btn-ghost gs-lifebtn gs-lh-newbtn" onClick={askNewBoard}>
-              + 새 판 만들기
-            </button>
-          </div>
-          {JOIN_BY_CODE && <JoinBox onJoin={joinByCode} />}
-        </>
-      );
-    }
-    if (!boardOn) {
-      /* 판 없음 — 새 판 만들기와 참여 칸. 시작 전에 해산당한 쪽지도 여기 (초안) */
-      return (
-        <>
-          {pending}
-          {disbandNote && !seatedNow && (
-            <div className="gs-note" role="status">
-              <span>
-                <b>{disbandNote.host ? disbandNote.host + "네 파티" : "파티"}</b>가 해산됐어요.
-              </span>
-              <button className="gs-note-x" onClick={dropDisbandNote} aria-label="닫기">
-                ×
-              </button>
-            </div>
-          )}
-          {/* 판을 만드는 문이 둘 (2026-09-08 사용자 확정) — 위는 파티원을 부르는 길(대기실로), 아래는 혼자 세는 길(바로 벌금표로).
-              (폐기, 하루 전) 문 하나 [+ 새 판 만들기] — 파티원을 부르는 길과 혼자 쓰는 길이 안 갈려 기존 방식으로 쓰던 사람이 초대 UI 앞에서 멈췄다.
-              (폐기, 같은 날) 이 둘을 대기실 모집 카드에 넣은 것 — 판을 만드는 자리는 로비다(사용자 정정) */}
-          {head(false, "파티 없음", null)}
-          <div className="gs-lh-box empty">
-            {/* 사용자 지정 문구 그대로 (2026-09-08). (폐기) `초대 코드를 주면 각자 자기 화면에서 자수해요. 방장은 확인만 해요.` — 아래 문장과 축이 달라 나란히 놓아도 대비가 안 됐다 */}
-            <p className="gs-forklead">
-              파티원들이 자수해서 방장의 기록을 도와줘요
-              <br />
-              파티원마다 OBS 주소가 하나씩 있어요
-            </p>
-            <div className="gs-lh-acts">
-              <button className="gs-btn gs-lifebtn gs-lbstart gs-lh-newbtn" onClick={askNewBoard}>
-                파티원 초대하여 시작하기
-              </button>
-            </div>
-            <div className="gs-forksolo">
-              {/* 꼬리표는 이 단 전체에 붙습니다 (2026-09-08 사용자 확정 ②) — (폐기) 버튼 안 사각 뱃지 `기존 방식`:
-                  버튼이 옆으로 늘어나고 테두리 안에 테두리가 또 생겼다. (검토 후 폐기) 버튼 밑 한 줄 · 이름에 괄호 · 모서리 리본 */}
-              <span className="gs-seclab">기존 방식</span>
-              {/* 사용자 지정 문구 그대로 (2026-09-08). (폐기) `혼자 세려면 부르지 않고 바로 시작해요. 방장이 다 입력하고, 내 방송 주소만 OBS에 넣으면 돼요.` */}
-              <p className="gs-forklead">
-                파티원들이 앱을 안 쓰고, 방장이 전부 기록해요.
-                <br />
-                방장의 OBS 주소를 다른 파티원들이 공유해요.
-              </p>
-              <div className="gs-lh-acts">
-                <button className="gs-btn gs-lifebtn gs-solobtn" onClick={askSoloBoard}>
-                  혼자 세기
-                </button>
-              </div>
-            </div>
-            {/* 두 방식이 뭐가 다른지 (2026-09-08 사용자) — OBS 공유 설정 안의 그 창(GainGuide)을 여기서도 엽니다 */}
-            <button className="gs-auth-linkb gs-forkways" onClick={() => setWaysOpen(true)}>
-              두 방식이 뭐가 달라요?
-            </button>
-          </div>
-          {/* (임시로 닫음 2026-09-08 사용자) 비밀 파티 입장 칸 — 주소나 코드 8자를 붙여넣던 자리.
-              링크를 누르면 바로 들어가는데 코드를 옮겨 적는 길을 열어 두면 코드가 도는 이유만 생깁니다 */}
-          {JOIN_BY_CODE && <JoinBox onJoin={joinByCode} />}
-        </>
-      );
-    }
-    const own = seatedNow ? (
-      /* 규칙 이전에 생긴 상태(남의 파티 착석 + 내 판) — 판은 그대로 문이 있고, 파티 줄 하나만 덧붙입니다 */
-      <p className="gs-hub-own">
-        <em className="gs-livechip-dot" aria-hidden="true" />
-        {seatedName} · {meSeat.round ? "진행 중" : "시작 전"}
-        <button className="gs-auth-linkb" onClick={() => enterRoom(meCur, { push: true })}>
-          돌아가기
-        </button>
-        <button className="gs-auth-linkb" onClick={askLeaveFromLobby}>
-          나가기
-        </button>
-      </p>
-    ) : null;
-    if (roundLive) {
-      const filled = seats.filter((x) => x.acct || ((x.name || "").trim() && !isFillName(x.name)));
-      const sinceMin = roundSinceMin();
-      return (
-        <>
-          {pending}
-          {head(true, <>진행 중 · <b>{roundName || defaultRoundName()}</b></>, hasPartyNow ? "방장" : null)}
-          {/* (폐기 2026-09-07 사용자) `판을 두고 나온 상태예요 — 파티원은 그대로 셀 수 있어요.` — 로비를 보는 건 나간 게 아니다 */}
-          {/* 여기에도 [정산 끝내기] (2026-09-08 사용자 확정 ①) — 뒤로 나온 사람이 판을 끝낼 길이 없어 벌금판으로
-              다시 들어가야 했다(사용자: 어떻게 다음 판 하지?). 시작 전 카드의 [× 해산]과 같은 자리·같은 몸이되
-              빨강이 아니다 — 마감은 버리는 일이 아니다. 무게는 확인창이 진다 */}
-          <div className="gs-lh-boxwrap">
-            {goBox(
-              "live",
-              goBoard,
-              <>
-                <p className="gs-lh-facts">
-                  {filled.length}명 · 벌금 {man(rows.reduce((a, r) => a + itemGold(r), 0))}
-                  {sinceMin != null && (sinceMin < 1 ? " · 방금 시작" : " · " + sinceMin + "분째")}
-                </p>
-                {seatNamesNow.length > 0 && <p className="gs-lh-names">{seatNamesNow.join(" · ")}</p>}
-                <span className="gs-lh-goto">벌금판으로 ›</span>
-              </>
-            )}
-            <button className="gs-lh-x gs-lh-end" onClick={() => askEndRound(true)}>
-              정산 끝내기
-            </button>
-          </div>
-          {own}
-          {hasPartyNow && where !== "board" && <div className="gs-hub-inv">{inviteLine()}</div>}
-        </>
-      );
-    }
-    /* 시작 전·모집 중 — 롤식 상자(상자 전체가 대기실 문, 우상단 [× 해산]) + 초대 한 덩이 */
-    return (
-      <>
-        {pending}
-        {head(hasPartyNow, hasPartyNow ? "모집 중" : "시작 전", hasPartyNow ? "방장" : null)}
-        <div className="gs-lh-boxwrap">
-          {goBox(
-            "",
-            goBoard,
-            <>
-              {/* `앉음` 라벨은 뺐습니다 (2026-09-07 사용자) */}
-              <p className="gs-lh-facts">
-                대기실 {seatedCount}/{lobbyCap}
-              </p>
-              <p className="gs-lh-names">{names(seatNamesNow)}</p>
-              <span className="gs-lh-goto">대기실로 ›</span>
-            </>
-          )}
-          <button className="gs-lh-x" onClick={() => askDisband(true)} aria-label="판 해산">
-            <span aria-hidden="true">×</span> 해산
-          </button>
-        </div>
-        {own}
-        {hasPartyNow && <div className="gs-hub-inv">{inviteLine()}</div>}
-      </>
-    );
-  };
+  /* (폐기 2026-09-20) partyHub — 로비의 '내 파티' 상자. 로비 화면이 없어진 뒤로 아무도 안 불렀다 */
   const inviteLine = () => (
     <>
       {!hostInvite ? (
@@ -9744,7 +9522,7 @@ export default function GoldSettlement() {
                   Discord 연동을 통해 참여하기
                 </button>
                 <p className="gs-invite-note">
-                  연동하면 참여를 요청해요. 방장이 승인하면 표의 한 줄을 배정받아요.
+                  연동하면 참여를 요청해요. 방장이 표의 한 줄에 배치하면 내 칸을 눌러요.
                 </p>
               </>
             )}
@@ -10218,16 +9996,17 @@ export default function GoldSettlement() {
             방장이 메모장으로 바꾸면 자수 탭이 없어지므로(보통 항목이 없습니다) 뒷말도 같이
             내려놓고, 읽기 전용 표시만 남깁니다 (§3.4) */}
         {/* 파티원 (2026-09-17) — 누를 수 없을 때만 한 줄: 메모장 판(항목 없음) · 방장 부재 · 줄 배정 전 */}
-        {guestPlaying && (!confessTab || !scribeOn || !you.rowId) && (
+        {(guestPlaying || guestPending) && (simple || guestPending || !scribeOn || !you.rowId) && (
           <div className="gs-slip gs-slip-back" role="status">
             <span className="gs-slip-msg">
-              {!confessTab ? (
+              {simple ? (
+                /* 메모장 판에는 누를 칸이 없다 — 줄이 있든 없든 읽기 전용이다 */
                 <>
                   <b>읽기 전용</b>이에요
                 </>
-              ) : !you.rowId ? (
+              ) : guestPending || !you.rowId ? (
                 <>
-                  <b>자리를 기다리는 중이에요.</b> 방장이 줄을 배정하면 내 칸을 누를 수 있어요.
+                  <b>자리를 기다리는 중이에요.</b> 방장이 줄에 배치하면 내 칸을 누를 수 있어요.
                 </>
               ) : (
                 <>
@@ -14576,7 +14355,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
     });
     setOver(null);
   };
-  /* [전부 배정] — 들어온 순서대로 위에서부터 빈 줄 */
+  /* [전부 배치] — 들어온 순서대로 위에서부터 빈 줄 */
   const assignAll = () => {
     setD((d0) => {
       const d = copyD(d0);
@@ -14829,7 +14608,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                 들어온 사람<b>{D.tray.length}</b>
               </span>
               <button type="button" className="gs-btn gs-btn-sm gs-btn-ghost" disabled={!D.tray.length || !empties} onClick={assignAll}>
-                전부 배정
+                전부 배치
               </button>
             </div>
             <div className="gs-sp-list">
@@ -14843,7 +14622,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                     {!linked
                       ? INVITE_GATE_H
                       : D.rows.some((r) => r.acct && !isHost(r.acct))
-                      ? "배정할 사람이 없어요"
+                      ? "배치할 사람이 없어요"
                       : "아직 들어온 사람이 없어요"}
                   </p>
                   {/* 문장 하나 = 한 덩이 — 줄바꿈(br)으로 나누면 줄 길이 고르기(balance)가 문장마다 안 먹었다 */}
@@ -15045,184 +14824,7 @@ function JoinBox({ onJoin }) {
 /* 로비 두 열 (2026-09-07 사용자 확정: 헤더 리뉴얼) — 1열은 계정 카드와 기록 카드가 위아래로, 2열은 파티 허브(헤더 칩과 같은 내용).
    (폐기, 같은 날) 왼쪽 한 카드에 계정·주소·내 판이 함께, 오른쪽에 `파티 참여` 카드와 기록 카드 — 아바타와 기록이 한 카드일 이유가 없었고(사용자),
    내 판·파티 참여·헤더 칩 셋이 같은 일을 따로 말했다. 기록은 없어도 카드가 선다(`아직 기록이 없어요`, 초안) */
-function LobbyHome({
-  auth,
-  obsUrl,
-  showObs,
-  onToggleObs,
-  onCopy,
-  flash,
-  onSettings,
-  onLogin,
-  onUpgrade,
-  onNick,
-  hub,
-  gens,
-  onOpenGen,
-  onDropGen,
-  onAllGens,
-  tutLine,
-  onTut,
-  onDropTut,
-}) {
-  /* 누적 한 줄 — 기록 카드 발치, 로컬 집계 (§3.0) */
-  const total = gens.reduce((a, g) => a + (g.gold || 0), 0);
-  /* 닉 고치기 (2026-09-08 사용자: 로비에서 바로) — 판 이름과 같은 문법. 2~3글자가 아니면 되돌립니다 */
-  const [nickEdit, setNickEdit] = useState(false);
-  const [nickDraft, setNickDraft] = useState("");
-  const startNick = () => {
-    setNickDraft((auth && auth.nick) || "");
-    setNickEdit(true);
-  };
-  const doneNick = () => {
-    setNickEdit(false);
-    const nm = nickDraft.trim();
-    const len = [...nm].length;
-    if (!nm || nm === (auth && auth.nick)) return;
-    onNick(len >= 2 && len <= 3 ? nm : null);
-  };
-  return (
-    <section className="gs-lobbyhome" aria-label="로비">
-      {/* 같이 해보기 권유 (2026-09-06 사용자 확정) — 초대 없이 들어온 모든 사용자에게 한 번, 헤더 아래·두 카드 위 띠.
-          [됐어요]로 접으면 [?]에만 남습니다. 문구는 초안 */}
-      {tutLine && (
-        <div className="gs-tutline" role="status">
-          <span>
-            <b>리뉴얼됐어요.</b> 4인 파티를 예시로 처음부터 같이 열어 봐요.
-          </span>
-          <span className="gs-tutline-r">
-            <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={onDropTut}>
-              됐어요
-            </button>
-            <button className="gs-btn gs-btn-sm gs-lbstart" onClick={onTut}>
-              같이 해보기
-            </button>
-          </span>
-        </div>
-      )}
-      <div className="gs-lobbyhome-col">
-        <div className="gs-card gs-lh-me">
-          <h4 className="gs-lbcard-h">계정</h4>
-          {auth ? (
-            <>
-              {/* 계정 줄 — 설정(닉·로그아웃·아이디 만들기)은 오버레이 공유 설정 창(§5.7)이 집이고, 로비는 진열대입니다 */}
-              <div className="gs-lh-acct">
-                <Ava id={auth.id} nick={auth.nick} size={36} />
-                {/* 글자 + 연필, 누르면 입력칸 (2026-09-08 사용자: 로비에서 바로 바꾸게) — 판 이름과 같은 문법 */}
-                {nickEdit ? (
-                  <input
-                    className="gs-in gs-lh-nickin"
-                    value={nickDraft}
-                    maxLength={3}
-                    autoFocus
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => setNickDraft(e.target.value)}
-                    onBlur={doneNick}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") e.currentTarget.blur();
-                      if (e.key === "Escape") {
-                        setNickDraft((auth && auth.nick) || "");
-                        setNickEdit(false);
-                      }
-                    }}
-                    aria-label="닉네임"
-                  />
-                ) : (
-                  <button className="gs-lh-nick gs-lh-nickbtn" onClick={startNick} aria-label="닉네임 바꾸기">
-                    <b>{auth.nick}</b>
-                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                      <g fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="m11.3 2.7 2 2L5 13l-2.6.6L3 11l8.3-8.3Z" />
-                        <path d="m9.8 4.2 2 2" />
-                      </g>
-                    </svg>
-                  </button>
-                )}
-                {auth.anon ? (
-                  <span className="gs-acct-badge">게스트</span>
-                ) : (
-                  <span className="gs-acct-idm">{(auth.id || "").slice(0, 2) + "••••"}</span>
-                )}
-                <button className="gs-auth-linkb gs-lh-set" onClick={onSettings}>
-                  설정
-                </button>
-              </div>
-              {obsUrl && (
-                <div className="gs-lh-addr">
-                  <span className="gs-caplab">내 방송용 주소</span>
-                  <code className="gs-lh-url">{showObs ? obsUrl : maskUrl(obsUrl)}</code>
-                  <button
-                    className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
-                    onClick={onToggleObs}
-                    aria-label={showObs ? "가리기" : "보기"}
-                    title={showObs ? "가리기" : "보기"}
-                  >
-                    <Eye on={showObs} />
-                  </button>
-                  <button className="gs-btn gs-btn-sm" onClick={() => onCopy(obsUrl, "obsurl")}>
-                    {flash === "obsurl" ? "복사했어요" : "복사"}
-                  </button>
-                </div>
-              )}
-              {/* 게스트 안내는 여기 (2026-09-07; (폐기) 대기실 모집 카드 발치) — 방장은 파티의 앵커라 브라우저 저장소를 잃으면 방을 되찾을 길이 없습니다 (§3.11) */}
-              {/* 문구는 2026-09-08 사용자 지정. 잃는 것을 시스템 말이 아니라 사람이 할 수 있는
-                  일로 적습니다 — 계정의 값어치는 OBS 에 넣어 둔 주소가 그대로 남는 것입니다.
-                  (폐기) `게스트 계정은 이 브라우저에 묶여 있어요 — 아이디를 정하면 어디서든 이어요.` */}
-              {auth.anon && (
-                <p className="gs-lh-note">
-                  <button className="gs-auth-linkb" onClick={onUpgrade}>
-                    아이디를 만들면
-                  </button>{" "}
-                  방송용 주소를 계속 유지할 수 있어요 — 게스트 주소는 이 브라우저에만 남아요.
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              {/* 문 하나 (2026-09-07 사용자 지정 라벨) — 시작하기 랜딩(게스트·가입·로그인)을 열고, 끝나면 OBS 공유 창이 떠서 거기서 주소를 받습니다.
-                  (폐기, 같은 날) 안내 한 줄 + 글자 `로그인` — 문이 안 보였다. 버튼 밑에 따로 `로그인`을 두는 것도 폐기(사용자: 버튼이 곧 로그인인데 이상하다) */}
-              <button className="gs-btn gs-lifebtn gs-lbstart gs-lh-getaddr" onClick={onLogin}>
-                로그인하여 방송용 주소 받기
-              </button>
-              <p className="gs-lh-note gs-lh-loginnote">파티원을 부르거나 방송에 띄우려면 계정이 필요해요 — 게스트로도 받을 수 있어요. 벌금만 셀 거면 필요 없어요.</p>
-            </>
-          )}
-        </div>
-        {/* 판 기록의 집 (§3.0) — 내 판과 참여한 판이 이름표를 달고 섭니다. 없어도 카드는 섭니다 (2026-09-07) */}
-        <div className="gs-card gs-lh-recs">
-          <h4 className="gs-lbcard-h">
-            기록{gens.length > 0 && <span className="gs-lbroster-n">{gens.length}</span>}
-          </h4>
-          {gens.length > 0 ? (
-            <>
-              <GenList gens={gens.slice(0, 3)} onOpen={onOpenGen} onDrop={onDropGen} />
-              <div className="gs-lh-recfoot">
-                <span className="gs-lh-stat">
-                  여태 <b>{gens.length}판</b> · 벌금 <b>{man(total)}</b>
-                </span>
-                {gens.length > 3 && (
-                  <button className="gs-auth-linkb" onClick={onAllGens}>
-                    전체 보기
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="gs-lh-box empty gs-lh-norec">
-              <p className="gs-lh-sub">아직 기록이 없어요. 판을 끝내면 결과지가 여기 남아요.</p>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="gs-lobbyhome-col">
-        <div className="gs-card gs-lh-hub">
-          <h4 className="gs-lbcard-h gs-lh-hubh">파티</h4>
-          {hub}
-        </div>
-      </div>
-    </section>
-  );
-}
+/* (폐기 2026-09-20) LobbyHome — 로비 화면. §3.12 한 화면으로 바뀐 뒤로 아무 데서도 안 그렸다 */
 
 /* 판 기록 아이콘 — 시계 문자판에 되돌아가는 화살표가 걸린 모양입니다 (§3.1).
    지나간 판을 되짚는 문이라, 목록도 달력도 아닌 이 글리프가 맞습니다 */
@@ -17387,15 +16989,7 @@ const CSS = `
   line-height:2.06; white-space:pre-wrap}
 
 /* 간단 모드 단위 라디오 */
-.gs-unitbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 15px;
-  padding:10px 12px; border-left:2px solid var(--kraft-dk); background:rgba(var(--kraft-rgb),.22)}
-.gs-unitbar label{display:inline-flex; align-items:center; gap:5px; font-size:12.5px;
-  cursor:pointer; color:var(--ink-2)}
-.gs-unitbar label.on{color:var(--ink); font-weight:600}
-/* 카운터 조작법 — 입력 단위 상자 바로 아래, 표 머리 위 */
-.gs-cellnote{margin:-9px 0 13px; padding-left:2px; font-size:11.5px; color:var(--ink-2);
-  letter-spacing:.01em}
-.gs-unitbar input{accent-color:var(--ink); margin:0}
+/* (폐기 2026-09-20) .gs-unitbar — 입력 단위는 세그 단추(.gs-unitseg)로 */
 .gs-unitnote{flex:1; min-width:180px; font-size:11.5px; color:var(--ink-2);
   display:flex; align-items:center; flex-wrap:wrap; gap:0 6px}
 /* 친 숫자 → 그 금액. 한 짝이 한 칩이라 눈이 안 헤맵니다 */
@@ -18247,17 +17841,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 계정 메뉴 (2026-09-16) — 쪽지가 아니라 메뉴. 머리 한 줄 + 항목, 설명 문장 없음 */
 .gs-acctwrap{position:relative; display:inline-flex}
 .gs-acctchip.on{border-color:rgba(var(--ink-rgb),.6); background:rgba(var(--ink-rgb),.06)}
-.gs-acctmenu{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:236px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.4);
-  border-radius:2px; box-shadow:0 10px 26px rgba(var(--shadow-rgb),.28); padding:6px 0; text-align:left}
-.gs-acctmenu-head{display:flex; align-items:center; gap:10px; padding:8px 12px 10px; border-bottom:1px solid rgba(var(--ink-rgb),.14); margin-bottom:4px}
-.gs-acctmenu-who{display:flex; flex-direction:column; min-width:0; gap:1px}
-.gs-acctmenu-who b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.gs-acctmenu-who span{font-size:11px; color:var(--ink-2); letter-spacing:.02em}
-.gs-acctmenu-item{display:block; width:100%; text-align:left; font:inherit; font-size:13px; color:var(--ink); background:transparent; border:0; padding:8px 12px; cursor:pointer}
-.gs-acctmenu-item:hover{background:rgba(var(--ink-rgb),.06)}
-.gs-acctmenu-item:disabled{opacity:.5; cursor:default}
-.gs-acctmenu-mute{color:var(--ink-2)}
-.gs-acctmenu-sep{height:1px; background:rgba(var(--ink-rgb),.14); margin:4px 0}
+/* (폐기 2026-09-20) .gs-acctmenu* — 계정 메뉴는 프로필 카드(.gs-pcard)로 */
 /* (폐기 2026-09-16) 머리글·들여쓰기 계층 — 표준 메뉴는 같은 크기의 항목과 구분선뿐 */
 .gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px}
 /* 남의 판 — 라벨과 시스템 줄 밑선만 파란색. 줄 전체를 칠하지 않는다 */
@@ -18265,14 +17849,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-sysbar-away .gs-boardlabel{border-color:var(--blue); color:var(--blue); background:rgba(var(--blue-rgb),.08)}
 .gs-sysbar-away .gs-boardlabel-sq{background:var(--blue)}
 .gs-sysbar-away .gs-boardlabel .gs-btn{color:var(--blue); border-color:rgba(var(--blue-rgb),.6)}
-.gs-invbtn.on{background:rgba(var(--ink-rgb),.08)}
 /* 초대 쪽지 — 잉크 선에 2px, 얕은 그림자, 명조 제목, 점선 아래 모노 바닥글 */
-.gs-invpop.gs-invnote{width:min(400px, 92vw); border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; padding:14px 16px;
-  box-shadow:0 8px 22px rgba(var(--shadow-rgb),.22)}
-.gs-invnote-h{margin:0 0 4px; font-family:'Gowun Batang',serif; font-size:15px; font-weight:700; color:var(--ink)}
-.gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-.gs-invnote-acts{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px}
-/* 발치 글꼴 (고침 2026-09-17) — 영문 고정폭(Cutive Mono)에 한글이 섞여 글자 사이가 벌어져 보였다 */
+/* (폐기 2026-09-20) 머리의 [초대] 쪽지 — 초대는 표 위 [파티원]의 작은 창이 맡는다. .gs-invnote-p·-list 는 그 창이 쓴다 */
 .gs-invnote-foot{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3);
   font-size:11.5px; line-height:1.7; color:var(--ink-2)}
 /* 디스코드 단추 — 상표색 하나만 쓴다 */
@@ -19530,7 +19108,6 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-tablebar .gs-segbox{height:34px; box-sizing:border-box}
 .gs-tablebar .gs-segbtn{height:100%; padding:0 11px; display:inline-flex; align-items:center; font-size:12.5px}
 .gs-tablebar .gs-cellnote{margin:0; white-space:nowrap}
-.gs-invbtn-n{margin-left:6px; font-family:var(--mono); font-size:11.5px; color:var(--gold); font-weight:400}
 .gs-invmodal .gs-lbsec{margin-top:12px}
 .gs-easebar{margin-top:12px}
 /* 초대 — 코드가 주인공 (⑥) */
@@ -19657,11 +19234,8 @@ tr.gs-row-arrive th.gs-stick{animation:gs-arrive 30s linear forwards}
 .gs-invwrap{position:relative; display:inline-flex}
 /* 라벨 오른쪽의 [초대] (2026-09-16) — 팝오버는 왼쪽 모서리 기준 */
 .gs-invwrap-l{margin-left:8px}
-.gs-invwrap-l .gs-invpop{right:auto; left:0}
 /* [?] 팝오버 감싸개 — 이게 없으면 팝오버 기준이 페이지 전체가 되어 맨 아래에 그려짐 (2026-09-06 운영에서 발견) */
 .gs-helpwrap{position:relative; display:inline-flex}
-.gs-invbtn{display:inline-flex; align-items:center; gap:6px; height:32px; padding-top:0; padding-bottom:0}
-.gs-invbtn.on{border-color:rgba(var(--gold-rgb),.6); color:var(--gold)}
 .gs-invpop{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:min(440px, 92vw); background:var(--paper);
   border:1px solid rgba(var(--gold-rgb),.5); border-radius:4px; padding:12px 14px 14px; box-shadow:0 12px 34px rgba(var(--shadow-rgb),.35); text-align:left}
 .gs-wipebtn{display:inline-flex; align-items:center; gap:6px; margin-right:8px}
@@ -19700,7 +19274,6 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* 유령 칩 (2026-09-08 사용자 확정, 목업 ③) — 채움을 빼고 점선 테두리와 글자만. 점선은 이 앱에서 이미
    "빈 칸 · 빈 줄 · 아직 아무도 없는 자리"를 뜻하므로 나간 자리와 말이 맞습니다.
    (폐기) 채운 칩 + 두께 없는 dashed — 아바타 자리에 서니 이 표에서 가장 진한 덩이가 되어 깨진 아바타로 읽혔다 */
-.gs-lb-tag-left{background:transparent; border:1px dashed rgba(var(--ink-rgb),.34); color:var(--ink-2)}
 .gs-strip-move{margin-left:auto; font-size:12px}
 .gs-invite-typed{color:var(--ink-2); font-weight:400}
 .gs-lh-loginnote{margin-top:14px}
@@ -19852,7 +19425,6 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-obs-life{margin:10px 0 0; font-size:12.5px; color:var(--ink-2)}
 /* 2026-09-19 — [초대] 창의 글머리 두 줄, 방송 설정의 한 줄 안내·연동 줄·받는 길 둘 */
 .gs-invnote-list{margin:2px 0 0; padding:0 0 0 16px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-.gs-invnote-after{margin-top:10px}
 .gs-obs-say{margin:10px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
 .gs-obs-dcline{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:10px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
 .gs-obs-dcline span{flex:1 1 220px; min-width:0}
@@ -20166,12 +19738,7 @@ tr[data-drop] .gs-rowi,.gs-rd[data-drop] .gs-rd-pic{outline:2px solid var(--gold
   font:inherit; font-size:12px; color:var(--gold); cursor:pointer}
 .gs-seatpop-more:hover{text-decoration:underline}
 /* ── 자리 배치 (2026-09-17) ── */
-.gs-seatbtn b{font-weight:600; margin-left:6px; font-family:var(--mono); color:var(--ink-2)}
-.gs-seatbtn-has{border-color:rgba(var(--gold-rgb),.75) !important; color:var(--gold) !important}
-.gs-seatbtn-has b{color:var(--gold)}
-.gs-seatfaces{display:inline-flex; align-items:center; gap:6px; height:34px; box-sizing:border-box; padding:0 7px; max-width:320px; overflow:hidden;
-  border:1px dashed rgba(var(--gold-rgb),.6); border-radius:2px; background:rgba(var(--gold-rgb),.06); cursor:pointer; font:inherit; color:var(--ink-2)}
-.gs-seatfaces:hover{border-color:var(--gold)}
+/* (폐기 2026-09-20) .gs-seatbtn* · .gs-seatfaces* — 표 위 [자리 배치 N] + 얼굴 상자는 [파티원] 하나로 */
 .gs-seatface{display:inline-grid; place-items:center; flex:none; width:22px; height:22px; border-radius:25%; overflow:hidden; background:rgba(var(--ink-rgb),.08)}
 .gs-seatface .gs-ava{width:22px; height:22px; border:0; border-radius:25%}
 .gs-sp-dialog{max-width:800px; padding:18px 20px 16px; overflow:visible; max-height:none}
