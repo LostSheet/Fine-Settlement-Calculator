@@ -11272,7 +11272,8 @@ export default function GoldSettlement() {
                   <th>벌금</th>
                   <th>받을 몫</th>
                   <th>순액</th>
-                  <th>실수령</th>
+                  <th>수수료</th>
+                  <th>최종</th>
                 </tr>
               </thead>
               <tbody>
@@ -11285,13 +11286,12 @@ export default function GoldSettlement() {
                       <Amount v={r.fines[i]} />
                       <Amount v={r.shares[i]} />
                       <Amount v={net} sign className={net > 0 ? "gs-pos" : net < 0 ? "gs-neg" : ""} />
-                      {net > 0 ? (
-                        <Amount v={r.gotten[i]} />
-                      ) : (
-                        <td>
-                          <span className="gs-dim">{net < 0 ? "보내기만" : "해당 없음"}</span>
-                        </td>
-                      )}
+                      {/* 수수료는 실제값에서 빼서 구합니다 — 요율을 곱하면 통마다 걸린 내림과 안 맞습니다.
+                          받는 사람 앞으로 온 통들의 금액 합 = 그 사람의 순액이라, 순액 − 실수령이 곧 수수료 합입니다 */}
+                      <Amount v={net > 0 ? net - r.gotten[i] : 0} />
+                      {/* 최종 — 받는 사람은 실제로 손에 들어오는 돈, 보내는 사람은 부치는 돈(음수).
+                          색은 순액 열이 맡습니다. 여기까지 칠하면 보내는 사람 행에서 같은 값이 두 번 강조됩니다 */}
+                      <Amount v={net > 0 ? r.gotten[i] : net} sign />
                     </tr>
                   );
                 })}
@@ -11300,7 +11300,10 @@ export default function GoldSettlement() {
                 <tr>
                   <th scope="row" className="gs-l">합계</th>
                   <Amount v={r.total} />
-                  <td colSpan={3} />
+                  <td colSpan={2} />
+                  {/* 열을 다 더하면 우편으로 나가는 총액과 같습니다 (봉투의 수수료 도장 합) */}
+                  <Amount v={r.feeTotal} />
+                  <td />
                 </tr>
               </tfoot>
             </table>
