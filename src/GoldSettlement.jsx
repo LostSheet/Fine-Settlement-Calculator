@@ -6453,7 +6453,9 @@ export default function GoldSettlement() {
      상관없습니다: 모으기는 상설이고(§3.1), [시작]은 대기실 표시만 내립니다 */
   /* 코드의 생사는 서버가 압니다 (2026-09-06: 방장이 앱을 열어 둔 동안 살고 닫으면 10분 뒤 만료) — 앱은 시계를 안 봅니다.
      (폐기) 만료 시각으로 걸러 `m분 남음`을 세던 것 — 20분 모으다 보면 링크가 죽어 다시 붙여야 했다 */
-  /* 판 라벨 (§3.12.7): 내 판이면 자리 수, 남의 판이면 방장 이름과 방송 상태 */
+  /* 마스트 줄의 왼쪽(탭·신분증)이 설 수 있는 화면인가 — 오른쪽 컨트롤 넷은 이 조건과 상관없이 늘 선다 */
+  const mastBody = !guestBlocked && !showLobby && !inviteGate;
+  /* 판 라벨 (§3.12.7): 남의 판에 참여 중일 때만 뜬다. 내 판에서는 아무것도 안 뜬다 */
   const boardLabel = (() => {
     if (genView) return null;
     if (viewer) {
@@ -6461,11 +6463,12 @@ export default function GoldSettlement() {
       /* 배지가 말하는 것은 둘뿐이다 (2026-09-20 확정): 어디에 있나 · 거기서 나가는 문.
          줄이 있는지는 표가 말하고, 못 누르는 까닭은 표 위 한 줄이 말한다.
          (폐기) "· 내 방송에 나가는 중"(방송은 [방송 설정]의 점이 맡는다) · "· 승인 대기 중"(표 위 한 줄이 맡는다) */
-      return { away: true, text: (ownerNick || "방장") + "네 판", act: "나가기" };
+      return { away: true, text: (ownerNick || "방장") + "의 벌금 파티에 참여 중", act: "나가기" };
     }
-    if (readOnly) return null;
-    /* (폐기 2026-09-20 사용자) "· 8자리"(표가 이미 센다) · "· 승인 대기 n명"([파티원] 단추가 더 자세히 말한다) */
-    return { away: false, text: "내 판" };
+    /* 내 판에서는 비워 둔다 (2026-09-20 사용자 확정). "내 판" 두 글자는 아무것도 말하지 않으면서
+       오른쪽 단추들과 같은 옷을 입고 서 있었다. 자리를 비우면 배지가 뜬다는 것 자체가 신호가 된다.
+       (폐기) "내 판" · "내 판 · 8자리" · "· 승인 대기 n명" */
+    return null;
   })();
   /* 모드 세그 — 메모장 · 카운터 · 카드. 마스트와 넓게 보기 머리줄이 같이 쓴다 */
   const modeSeg = () => (
@@ -9066,273 +9069,6 @@ export default function GoldSettlement() {
         })()}
       <style>{CSS}</style>
 
-      {/* ── 시스템 줄 — 뷰포트 맨 위에 딱 붙는 전폭 바. 안쪽 내용은 본문과 같은 열 ── */}
-      <div className={"gs-sysbar" + (boardLabel && boardLabel.away ? " gs-sysbar-away" : "")}>
-        <div className="gs-sysbar-in">
-          {/* (폐기 2026-09-20 사용자) 브랜드 '벌금 정산' — 화면이 하나뿐이라 돌아갈 곳을 가리킬 일이 없다.
-              판 기록에서 돌아오는 길은 신분증 띠의 [내 판으로]가 맡는다 */}
-          {/* (폐기 2026-09-16) 화면 이름 "벌금판"/"로비" — 화면이 하나라 말할 것이 없다(사용자). 판 기록을 볼 때만 어디인지 적는다 */}
-          {!inviteGate && genView && <span className="gs-sysscreen">판 기록</span>}
-          {/* 파티 칩 하나 (2026-09-07 사용자 확정: 헤더 리뉴얼 — 방은 하나) — 지금 내가 속한 방 하나만 말하고, 누르면 파티 허브.
-              로비에서는 없습니다(로비 2열이 같은 허브). (폐기, 같은 날) liveAway·memberAway·readyAway 세 칩 — 내 판 모집 중 + 남의 파티 착석이면 둘이 나란히 섰다.
-              (폐기 2026-09-05) 파티 칩(`내 파티 · n명 ●`·`{방장}네 파티`)과 파티 서랍 */}
-          {/* 판 라벨 (§3.12.7) — 읽는 것이지 누르는 것이 아닙니다. 남의 판이면 라벨과 밑선만 파란색 */}
-          {boardLabel && !inviteGate && !genView && (
-            <span className={"gs-boardlabel" + (boardLabel.away ? " gs-boardlabel-away" : "")} role="status">
-              {/* 점은 남의 판에만 (2026-09-20 사용자) — 그 판이 지금 살아 있는지를 말한다. 방장 쪽 회색 네모는 뺐다:
-                  불이 안 들어오는 불이었고, 뜻(방송에 나가는 중)은 옆의 [방송 설정] 점이 이미 말한다 */}
-              {boardLabel.away && <i className={"gs-boardlabel-dot" + (liveState === "on" ? " on" : "")} aria-hidden="true" />}
-              <span className="gs-boardlabel-t">{boardLabel.text}</span>
-              {boardLabel.away && (
-                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-boardlabel-leave" onClick={leaveRoom}>
-                  {boardLabel.act}
-                </button>
-              )}
-            </span>
-          )}
-          {/* (폐기 2026-09-19~20 사용자 확정) 머리의 [초대] 단추와 쪽지 모양 작은 창 — 초대와 배치는 한 가지 일의 앞뒤라 문을 하나로 합쳤다.
-              표 위 도구 줄 맨 왼쪽의 [파티원 초대]/[파티원]. 머리 줄에는 앱 전체의 것(방송 설정·튜토리얼·계정)만 남는다 */}
-          <div className="gs-sysbar-r">
-            {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리. 버튼은 이것 하나고(§5.7)
-                비로그인도 이 문으로 들어갑니다 — 주소 발급은 창 안 [내 방송용 주소
-                받기]가 대문을 엽니다. 얼굴은 고정 라벨 + 송출 점: 상태어는 창 첫 줄과
-                이 툴팁이 말합니다 */}
-            {(!readOnly || shareGuest) && (
-              <span className="gs-tip">
-                <button
-                  className={"gs-btn gs-btn-ghost gs-obsbtn" + (dotState === "on" ? " on" : "")}
-                  onClick={() => {
-                    courseHit("obs"); // 튜토리얼 6장·파티원 4걸음
-                    setObsOpen(true);
-                  }}
-                >
-                  {/* OBS 로고는 상표라 안 씁니다 — 이름을 글자로 쓰는 건 괜찮지만
-                      마크를 넣으면 OBS 쪽이 만든 것처럼 보일 여지가 있습니다.
-                      대신 송출을 뜻하는 모니터 아이콘을 답니다. */}
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="1.6" y="2.6" width="12.8" height="8.6" rx="1.4" />
-                      <path d="M5.6 14h4.8M8 11.2V14" />
-                    </g>
-                  </svg>
-                  방송 설정
-                  <em className={"gs-castdot gs-castdot-" + dotState} aria-hidden="true" />
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  {shareGuest ? (
-                    <>
-                      <b>내 방송용 주소</b>와 오버레이 외형을 여기서 챙겨요. 주소는 사람마다
-                      하나씩이에요.
-                    </>
-                  ) : (
-                    <>
-                      {castLine(boardBlank && castState !== "down" && castState !== "none" ? "blank" : castState, "내")}
-                      <br />
-                      눌러서 주소와 오버레이 외형을 챙겨요.
-                    </>
-                  )}
-                </span>
-              </span>
-            )}
-            {/* [?] = 튜토리얼 고르기 팝오버 (2026-09-06 사용자 확정) — 방장·파티원 둘 다 늘 보이고, 이 화면에 맞는 쪽이 채운 [보기]와 `추천`.
-                (폐기) 사용법 모달(화면별 사용법 목록). 점은 이 화면에 맞는 튜토리얼을 아직 안 봤을 때 */}
-            <span className="gs-helpwrap" ref={helpWrapRef}>
-              <button
-                className={"gs-tutbtn" + (helpOpen ? " on" : "")}
-                onClick={() => {
-                  if (DEMO) return;
-                  setHelpAuto(false);
-                  setHelpOpen((v) => !v);
-                }}
-                aria-haspopup="dialog"
-                aria-label="튜토리얼"
-              >
-                {/* 말풍선 안의 물음표 — 안내라는 뜻 (2026-09-07 밤 사용자 확정 A안; (폐기) 37px 물음표 원 .gs-qm — 무엇이 열릴지 안 보였다) */}
-                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 9.6a2.4 2.4 0 0 1-2.4 2.4H5.2L2 14.4V4a2.4 2.4 0 0 1 2.4-2.4h7.2A2.4 2.4 0 0 1 14 4z" />
-                    <path d="M6.4 5.6a1.7 1.7 0 0 1 3.3.6c0 1.1-1.7 1.5-1.7 1.5" />
-                    <path d="M8 10.1h.01" />
-                  </g>
-                </svg>
-                튜토리얼
-                {!DEMO && !coach && !coachSeen(recMember ? "mtour" : "party") && <i className="gs-qdot" aria-hidden="true" />}
-              </button>
-              {helpOpen && !DEMO && (
-                <div className="gs-invpop gs-helppop" role="dialog" aria-label="튜토리얼">
-                  <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
-                  {TUTORIALS_OFF && (
-                    <p className="gs-guide-foot">튜토리얼은 새 화면에 맞춰 다시 만드는 중이에요. 초대는 표 위의 [파티원 초대], 방송 주소는 [방송 설정]에 있어요.</p>
-                  )}
-                  {/* 행 = 이름 + 칩(추천·봤어요) + 역할 한 줄 + 서브, 오른쪽에 [보기]/[다시 보기] (2026-09-06 낮 사용자: 시인성·역할 설명).
-                      역할 문구 — 파티원은 사용자 지정, 방장은 초안. (폐기, 같은 날) 한 줄에 이름·서브·버튼 안 `추천` */}
-                  {TUTORIALS_OFF ? null : [
-                    { k: "host", name: "방장 튜토리얼", role: "판을 열고 파티원을 부르는 사람", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
-                    { k: "member", name: "파티원 튜토리얼", role: "초대를 받은 사람", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
-                    /* 혼자 쓰기 (2026-09-07 밤 사용자 확정) — 대기실의 [혼자 세기]와 짝입니다. 되짚을 자리가 여기입니다 */
-                    { k: "solo", name: "혼자 쓰기", role: "파티원을 부르지 않는 사람", sub: SOLO_CHAPTERS.length + "장 · 벌금표부터 방송 주소까지", seen: coachSeen("solo"), go: startSoloCourse },
-                  ]
-                    .sort((a, b) => (a.k === recKey ? -1 : b.k === recKey ? 1 : 0))
-                    .map((r) => (
-                      <div key={r.k} className={"gs-helprow" + (r.k === recKey ? " gs-helprow-rec" : "")}>
-                        <div className="gs-helprow-main">
-                          <div className="gs-helprow-top">
-                            <b>{r.name}</b>
-                            {r.k === recKey && <em className="gs-rec">추천</em>}
-                            {r.seen && <span className="gs-helpseen">봤어요</span>}
-                          </div>
-                          <p className="gs-helprow-role">{r.role}</p>
-                          <p className="gs-helprow-sub">{r.sub}</p>
-                        </div>
-                        <button
-                          className={"gs-btn gs-btn-sm" + (r.k === recKey ? "" : " gs-btn-ghost")}
-                          onClick={() => {
-                            setHelpOpen(false);
-                            r.go();
-                          }}
-                        >
-                          {r.seen ? "다시 보기" : "보기"}
-                        </button>
-                      </div>
-                    ))}
-                  <p className="gs-guide-foot">OBS에 넣는 방법과 방송 주소 안내는 [방송 설정] 창에 있어요.</p>
-                </div>
-              )}
-            </span>
-            {/* 하는 일과 나를 가릅니다 — 왼쪽은 이 앱으로 하는 일, 오른쪽은 내 것입니다 */}
-            <span className="gs-sysbar-sep" aria-hidden="true" />
-            {/* 계정 (§3.12.7) — 디스코드 초상화와 별명. 로그인했다는 표시는 이것 하나 */}
-            {auth && auth.dc && !inviteGate && (
-              <span className="gs-acctwrap" ref={acctWrapRef}>
-                <button
-                  className={"gs-acctchip" + (acctOpen ? " on" : "")}
-                  onClick={() => setAcctOpen((v) => !v)}
-                  aria-haspopup="dialog"
-                  aria-expanded={acctOpen}
-                >
-                  <DcAva dc={myAva(auth)} size={24} />
-                  <span>{auth.nick}</span>
-                </button>
-                {acctOpen && (
-                  /* 프로필 카드 (2026-09-19 확정) — 여기서 하는 일은 셋뿐이라 글자 목록을 없앴다: 사진 바꾸기·되돌리기 / 내 정보 / 로그아웃.
-                     사진이 곧 단추(누르면 파일 고르기, 끌어다 놓아도 된다), 모서리의 둥근 표시 하나가 Discord 쪽 일(바꾼 사진이 있으면 되돌리기, 없으면 다시 불러오기).
-                     (폐기 09-16) 머리 + 동사 셋 + 흐린 로그아웃의 목록 — 사진·초상화·프로필 사진 세 이름, 못 누르는 것처럼 보이던 로그아웃, 번역투 "올린 사진" */
-                  <div className="gs-pcard" role="dialog" aria-label="계정">
-                    <div className="gs-pc-avawrap">
-                      <button
-                        type="button"
-                        className={"gs-pc-ava" + (picDrop ? " is-drop" : "")}
-                        disabled={picBusy}
-                        onClick={() => picPick.current && picPick.current.click()}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          setPicDrop(true);
-                        }}
-                        onDragLeave={() => setPicDrop(false)}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setPicDrop(false);
-                          const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-                          if (f) uploadPic(f);
-                        }}
-                        aria-label="프로필 사진 바꾸기"
-                        title="눌러서 고르거나 사진 파일을 여기로 끌어다 놓아요"
-                      >
-                        <DcAva dc={myAva(auth)} size={76} />
-                        <span className="gs-pc-over">
-                          {CAM_ICON}
-                          <i>{picBusy ? "올리는 중…" : "사진 바꾸기"}</i>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="gs-pc-badge"
-                        disabled={picBusy}
-                        onClick={() => (auth.pic ? savePic(null) : startDiscord())}
-                        aria-label={auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}
-                      >
-                        {SYNC_ICON}
-                        <span className="gs-pc-tip">{auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}</span>
-                      </button>
-                    </div>
-                    <b className="gs-pc-name">{auth.nick}</b>
-                    {auth.dc && auth.dc.user && (
-                      <span className="gs-pc-dc">
-                        <i className="gs-dcmark" aria-hidden="true" />
-                        {Array.from(auth.dc.user).slice(0, 2).join("") + "••••"}
-                      </span>
-                    )}
-                    <input
-                      ref={picPick}
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      onChange={(e) => {
-                        const f = e.target.files && e.target.files[0];
-                        e.target.value = "";
-                        if (f) uploadPic(f);
-                      }}
-                    />
-                    <div className="gs-pc-foot">
-                      <button
-                        type="button"
-                        className="gs-pc-out"
-                        onClick={() => {
-                          setAcctOpen(false);
-                          askLogout();
-                        }}
-                      >
-                        {OUT_ICON}
-                        로그아웃
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </span>
-            )}
-            {/* 연동 전엔 문 하나 (B1′, 2026-09-16) — 계정이 없든 주소만 받았든 같은 모습.
-                (2026-09-17 사용자) 다른 Discord 단추와 같은 상표색 + 마크. (폐기) 실루엣 얼굴 자리가 붙은 유령 단추 */}
-            {(!auth || !auth.dc) && !inviteGate && !readOnly && (
-              <button className="gs-btn gs-dcbtn gs-dcdoor" onClick={() => startDiscord()}>
-                Discord 연동
-              </button>
-            )}
-            {/* 화면 밝기 — 밝게 ↔ 어둡게 (시스템 상태 없음, 2026-09-16) */}
-            <span className="gs-viewseg">
-              <span className="gs-tip">
-                <button
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                  aria-label={`화면 밝기: ${theme === "dark" ? "어둡게" : "밝게"}`}
-                >
-                  {theme === "light" ? (
-                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                        <circle cx="8" cy="8" r="3.1" />
-                        <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" />
-                      </g>
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                      <path
-                        d="M13 10.3A5.6 5.6 0 0 1 5.7 3a5.8 5.8 0 1 0 7.3 7.3z"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  <b>{theme === "dark" ? "어둡게" : "밝게"}</b> — 눌러서 {theme === "dark" ? "밝게" : "어둡게"}로 바꿔요.
-                </span>
-              </span>
-            </span>
-            {/* 계정 서랍은 폐지 — 닉·로그아웃·아이디 정하기는 전부 오버레이 공유 설정
-                창 하단의 계정 섹션입니다 (§5.7). 헤더에 계정 버튼은 따로 없습니다 */}
-          </div>
-        </div>
-      </div>
 
       {/* ── 내가 앉아 있는 방의 판이 다시 열렸어요 — 자기 앱에 돌아와 있는 사람에게
              화면을 잡아채지 않고 문 하나만 놓습니다 (§3.4·§8) ── */}
@@ -9514,10 +9250,9 @@ export default function GoldSettlement() {
           </div>
         </section>
       )}
-      {!guestBlocked && !showLobby && !inviteGate && (
       <header className="gs-mast">
         {/* 판의 신분증 — 탭 위, 마스트 왼쪽 버튼들이 있던 자리입니다 */}
-        {idBand && (
+        {mastBody && idBand && (
           <div className="gs-idbar" role="status">
             <div className="gs-idbar-t">
               <span className={"gs-idsrc" + (idBand.src === "party" ? "" : " gs-idsrc-local")}>
@@ -9591,7 +9326,7 @@ export default function GoldSettlement() {
               (폐기 2026-09-20 사용자) 판 이름 + 연필 — 이름을 고치는 기능 자체를 없앴다. 결과지·판 기록에 남는 이름은 그날 기본값(§8)이다 */}
           <div className="gs-mastleft">
 
-            {tabbed && !ready && !guestLobby && (
+            {mastBody && tabbed && !ready && !guestLobby && (
               <nav className="gs-tabs" aria-label="화면 선택">
                 {[
                   /* (폐기 2026-09-17) 파티원의 [자수] 탭 — 파티원도 벌금표에서 내 줄을 눌러 센다(방장 화면을 그대로) */
@@ -9624,9 +9359,270 @@ export default function GoldSettlement() {
               </nav>
             )}
           </div>
+        {/* (폐기 2026-09-20 사용자) 브랜드 '벌금 정산' — 화면이 하나뿐이라 돌아갈 곳을 가리킬 일이 없다.
+            판 기록에서 돌아오는 길은 신분증 띠의 [내 판으로]가 맡는다 */}
+        {/* (폐기 2026-09-16) 화면 이름 "벌금판"/"로비" — 화면이 하나라 말할 것이 없다(사용자). 판 기록을 볼 때만 어디인지 적는다 */}
+        {!inviteGate && genView && <span className="gs-sysscreen">판 기록</span>}
+        {/* 파티 칩 하나 (2026-09-07 사용자 확정: 헤더 리뉴얼 — 방은 하나) — 지금 내가 속한 방 하나만 말하고, 누르면 파티 허브.
+            로비에서는 없습니다(로비 2열이 같은 허브). (폐기, 같은 날) liveAway·memberAway·readyAway 세 칩 — 내 판 모집 중 + 남의 파티 착석이면 둘이 나란히 섰다.
+            (폐기 2026-09-05) 파티 칩(`내 파티 · n명 ●`·`{방장}네 파티`)과 파티 서랍 */}
+        {/* 판 라벨 (§3.12.7) — 읽는 것이지 누르는 것이 아닙니다. 남의 판이면 라벨과 밑선만 파란색 */}
+        {boardLabel && !inviteGate && !genView && (
+          <span className={"gs-boardlabel" + (boardLabel.away ? " gs-boardlabel-away" : "")} role="status">
+            {/* 점은 남의 판에만 (2026-09-20 사용자) — 그 판이 지금 살아 있는지를 말한다. 방장 쪽 회색 네모는 뺐다:
+                불이 안 들어오는 불이었고, 뜻(방송에 나가는 중)은 옆의 [방송 설정] 점이 이미 말한다 */}
+            {boardLabel.away && <i className={"gs-boardlabel-dot" + (liveState === "on" ? " on" : "")} aria-hidden="true" />}
+            <span className="gs-boardlabel-t">{boardLabel.text}</span>
+            {boardLabel.away && (
+              <button className="gs-btn gs-btn-sm gs-btn-ghost gs-boardlabel-leave" onClick={leaveRoom}>
+                {boardLabel.act}
+              </button>
+            )}
+          </span>
+        )}
+        {/* (폐기 2026-09-19~20 사용자 확정) 머리의 [초대] 단추와 쪽지 모양 작은 창 — 초대와 배치는 한 가지 일의 앞뒤라 문을 하나로 합쳤다.
+            표 위 도구 줄 맨 왼쪽의 [파티원 초대]/[파티원]. 머리 줄에는 앱 전체의 것(방송 설정·튜토리얼·계정)만 남는다 */}
+        <div className="gs-sysbar-r">
+          {/* 방송 조작 — 어느 탭에 있든 항상 같은 자리. 버튼은 이것 하나고(§5.7)
+              비로그인도 이 문으로 들어갑니다 — 주소 발급은 창 안 [내 방송용 주소
+              받기]가 대문을 엽니다. 얼굴은 고정 라벨 + 송출 점: 상태어는 창 첫 줄과
+              이 툴팁이 말합니다 */}
+          {(!readOnly || shareGuest) && (
+            <span className="gs-tip">
+              <button
+                className={"gs-btn gs-btn-ghost gs-obsbtn" + (dotState === "on" ? " on" : "")}
+                onClick={() => {
+                  courseHit("obs"); // 튜토리얼 6장·파티원 4걸음
+                  setObsOpen(true);
+                }}
+              >
+                {/* OBS 로고는 상표라 안 씁니다 — 이름을 글자로 쓰는 건 괜찮지만
+                    마크를 넣으면 OBS 쪽이 만든 것처럼 보일 여지가 있습니다.
+                    대신 송출을 뜻하는 모니터 아이콘을 답니다. */}
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="1.6" y="2.6" width="12.8" height="8.6" rx="1.4" />
+                    <path d="M5.6 14h4.8M8 11.2V14" />
+                  </g>
+                </svg>
+                방송 설정
+                <em className={"gs-castdot gs-castdot-" + dotState} aria-hidden="true" />
+              </button>
+              <span className="gs-tip-body gs-tip-r" role="tooltip">
+                {shareGuest ? (
+                  <>
+                    <b>내 방송용 주소</b>와 오버레이 외형을 여기서 챙겨요. 주소는 사람마다
+                    하나씩이에요.
+                  </>
+                ) : (
+                  <>
+                    {castLine(boardBlank && castState !== "down" && castState !== "none" ? "blank" : castState, "내")}
+                    <br />
+                    눌러서 주소와 오버레이 외형을 챙겨요.
+                  </>
+                )}
+              </span>
+            </span>
+          )}
+          {/* [?] = 튜토리얼 고르기 팝오버 (2026-09-06 사용자 확정) — 방장·파티원 둘 다 늘 보이고, 이 화면에 맞는 쪽이 채운 [보기]와 `추천`.
+              (폐기) 사용법 모달(화면별 사용법 목록). 점은 이 화면에 맞는 튜토리얼을 아직 안 봤을 때 */}
+          <span className="gs-helpwrap" ref={helpWrapRef}>
+            <button
+              className={"gs-tutbtn" + (helpOpen ? " on" : "")}
+              onClick={() => {
+                if (DEMO) return;
+                setHelpAuto(false);
+                setHelpOpen((v) => !v);
+              }}
+              aria-haspopup="dialog"
+              aria-label="튜토리얼"
+            >
+              {/* 말풍선 안의 물음표 — 안내라는 뜻 (2026-09-07 밤 사용자 확정 A안; (폐기) 37px 물음표 원 .gs-qm — 무엇이 열릴지 안 보였다) */}
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 9.6a2.4 2.4 0 0 1-2.4 2.4H5.2L2 14.4V4a2.4 2.4 0 0 1 2.4-2.4h7.2A2.4 2.4 0 0 1 14 4z" />
+                  <path d="M6.4 5.6a1.7 1.7 0 0 1 3.3.6c0 1.1-1.7 1.5-1.7 1.5" />
+                  <path d="M8 10.1h.01" />
+                </g>
+              </svg>
+              튜토리얼
+              {!DEMO && !coach && !coachSeen(recMember ? "mtour" : "party") && <i className="gs-qdot" aria-hidden="true" />}
+            </button>
+            {helpOpen && !DEMO && (
+              <div className="gs-invpop gs-helppop" role="dialog" aria-label="튜토리얼">
+                <p className="gs-helppop-h">{helpAuto ? "처음이시죠? 튜토리얼을 볼까요?" : "튜토리얼을 볼까요?"}</p>
+                {TUTORIALS_OFF && (
+                  <p className="gs-guide-foot">튜토리얼은 새 화면에 맞춰 다시 만드는 중이에요. 초대는 표 위의 [파티원 초대], 방송 주소는 [방송 설정]에 있어요.</p>
+                )}
+                {/* 행 = 이름 + 칩(추천·봤어요) + 역할 한 줄 + 서브, 오른쪽에 [보기]/[다시 보기] (2026-09-06 낮 사용자: 시인성·역할 설명).
+                    역할 문구 — 파티원은 사용자 지정, 방장은 초안. (폐기, 같은 날) 한 줄에 이름·서브·버튼 안 `추천` */}
+                {TUTORIALS_OFF ? null : [
+                  { k: "host", name: "방장 튜토리얼", role: "판을 열고 파티원을 부르는 사람", sub: TOUR_CHAPTERS.length + "장 · 판 만들기부터 끝내기까지", seen: coachSeen("party"), go: startPartyCourse },
+                  { k: "member", name: "파티원 튜토리얼", role: "초대를 받은 사람", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
+                  /* 혼자 쓰기 (2026-09-07 밤 사용자 확정) — 대기실의 [혼자 세기]와 짝입니다. 되짚을 자리가 여기입니다 */
+                  { k: "solo", name: "혼자 쓰기", role: "파티원을 부르지 않는 사람", sub: SOLO_CHAPTERS.length + "장 · 벌금표부터 방송 주소까지", seen: coachSeen("solo"), go: startSoloCourse },
+                ]
+                  .sort((a, b) => (a.k === recKey ? -1 : b.k === recKey ? 1 : 0))
+                  .map((r) => (
+                    <div key={r.k} className={"gs-helprow" + (r.k === recKey ? " gs-helprow-rec" : "")}>
+                      <div className="gs-helprow-main">
+                        <div className="gs-helprow-top">
+                          <b>{r.name}</b>
+                          {r.k === recKey && <em className="gs-rec">추천</em>}
+                          {r.seen && <span className="gs-helpseen">봤어요</span>}
+                        </div>
+                        <p className="gs-helprow-role">{r.role}</p>
+                        <p className="gs-helprow-sub">{r.sub}</p>
+                      </div>
+                      <button
+                        className={"gs-btn gs-btn-sm" + (r.k === recKey ? "" : " gs-btn-ghost")}
+                        onClick={() => {
+                          setHelpOpen(false);
+                          r.go();
+                        }}
+                      >
+                        {r.seen ? "다시 보기" : "보기"}
+                      </button>
+                    </div>
+                  ))}
+                <p className="gs-guide-foot">OBS에 넣는 방법과 방송 주소 안내는 [방송 설정] 창에 있어요.</p>
+              </div>
+            )}
+          </span>
+          {/* 하는 일과 나를 가릅니다 — 왼쪽은 이 앱으로 하는 일, 오른쪽은 내 것입니다 */}
+          <span className="gs-sysbar-sep" aria-hidden="true" />
+          {/* 계정 (§3.12.7) — 디스코드 초상화와 별명. 로그인했다는 표시는 이것 하나 */}
+          {auth && auth.dc && !inviteGate && (
+            <span className="gs-acctwrap" ref={acctWrapRef}>
+              <button
+                className={"gs-acctchip" + (acctOpen ? " on" : "")}
+                onClick={() => setAcctOpen((v) => !v)}
+                aria-haspopup="dialog"
+                aria-expanded={acctOpen}
+              >
+                <DcAva dc={myAva(auth)} size={24} />
+                <span>{auth.nick}</span>
+              </button>
+              {acctOpen && (
+                /* 프로필 카드 (2026-09-19 확정) — 여기서 하는 일은 셋뿐이라 글자 목록을 없앴다: 사진 바꾸기·되돌리기 / 내 정보 / 로그아웃.
+                   사진이 곧 단추(누르면 파일 고르기, 끌어다 놓아도 된다), 모서리의 둥근 표시 하나가 Discord 쪽 일(바꾼 사진이 있으면 되돌리기, 없으면 다시 불러오기).
+                   (폐기 09-16) 머리 + 동사 셋 + 흐린 로그아웃의 목록 — 사진·초상화·프로필 사진 세 이름, 못 누르는 것처럼 보이던 로그아웃, 번역투 "올린 사진" */
+                <div className="gs-pcard" role="dialog" aria-label="계정">
+                  <div className="gs-pc-avawrap">
+                    <button
+                      type="button"
+                      className={"gs-pc-ava" + (picDrop ? " is-drop" : "")}
+                      disabled={picBusy}
+                      onClick={() => picPick.current && picPick.current.click()}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setPicDrop(true);
+                      }}
+                      onDragLeave={() => setPicDrop(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setPicDrop(false);
+                        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                        if (f) uploadPic(f);
+                      }}
+                      aria-label="프로필 사진 바꾸기"
+                      title="눌러서 고르거나 사진 파일을 여기로 끌어다 놓아요"
+                    >
+                      <DcAva dc={myAva(auth)} size={76} />
+                      <span className="gs-pc-over">
+                        {CAM_ICON}
+                        <i>{picBusy ? "올리는 중…" : "사진 바꾸기"}</i>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="gs-pc-badge"
+                      disabled={picBusy}
+                      onClick={() => (auth.pic ? savePic(null) : startDiscord())}
+                      aria-label={auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}
+                    >
+                      {SYNC_ICON}
+                      <span className="gs-pc-tip">{auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}</span>
+                    </button>
+                  </div>
+                  <b className="gs-pc-name">{auth.nick}</b>
+                  {auth.dc && auth.dc.user && (
+                    <span className="gs-pc-dc">
+                      <i className="gs-dcmark" aria-hidden="true" />
+                      {Array.from(auth.dc.user).slice(0, 2).join("") + "••••"}
+                    </span>
+                  )}
+                  <input
+                    ref={picPick}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files && e.target.files[0];
+                      e.target.value = "";
+                      if (f) uploadPic(f);
+                    }}
+                  />
+                  <div className="gs-pc-foot">
+                    <button
+                      type="button"
+                      className="gs-pc-out"
+                      onClick={() => {
+                        setAcctOpen(false);
+                        askLogout();
+                      }}
+                    >
+                      {OUT_ICON}
+                      로그아웃
+                    </button>
+                  </div>
+                </div>
+              )}
+            </span>
+          )}
+          {/* 연동 전엔 문 하나 (B1′, 2026-09-16) — 계정이 없든 주소만 받았든 같은 모습.
+              (2026-09-17 사용자) 다른 Discord 단추와 같은 상표색 + 마크. (폐기) 실루엣 얼굴 자리가 붙은 유령 단추 */}
+          {(!auth || !auth.dc) && !inviteGate && !readOnly && (
+            <button className="gs-btn gs-dcbtn gs-dcdoor" onClick={() => startDiscord()}>
+              Discord 연동
+            </button>
+          )}
+          {/* 화면 밝기 — 밝게 ↔ 어둡게 (시스템 상태 없음, 2026-09-16) */}
+          <span className="gs-viewseg">
+            <span className="gs-tip">
+              <button
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                aria-label={`화면 밝기: ${theme === "dark" ? "어둡게" : "밝게"}`}
+              >
+                {theme === "light" ? (
+                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                      <circle cx="8" cy="8" r="3.1" />
+                      <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" />
+                    </g>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <path
+                      d="M13 10.3A5.6 5.6 0 0 1 5.7 3a5.8 5.8 0 1 0 7.3 7.3z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </button>
+              <span className="gs-tip-body gs-tip-r" role="tooltip">
+                <b>{theme === "dark" ? "어둡게" : "밝게"}</b> — 눌러서 {theme === "dark" ? "밝게" : "어둡게"}로 바꿔요.
+              </span>
+            </span>
+          </span>
+          {/* 계정 서랍은 폐지 — 닉·로그아웃·아이디 정하기는 전부 오버레이 공유 설정
+              창 하단의 계정 섹션입니다 (§5.7). 헤더에 계정 버튼은 따로 없습니다 */}
+        </div>
         </div>
       </header>
-      )}
 
       {/* ── 자수 — 파티원의 기본 화면. 항목마다 큰 카드 하나이고,
              누르면 +1회 · 우클릭하면 −1회입니다. 서버가 방장 앱에 넘겨 장부에 적히고,
@@ -17391,7 +17387,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-pressing{padding-bottom:300px}
 .gs-coaching{padding-bottom:200px} /* 예시 앱 바닥 여백 — 표 아래 말풍선을 토스트 자리 위로 올릴 스크롤 여지 (2026-09-06 낮) */
 .gs-coaching .gs-press{display:none} /* 같이 해보기 걸음이 떠 있는 동안 — 표 아래 줄의 [자리 정하기]를 덮었음 (2026-09-06) */ /* '방금 바뀐' 카드(고정, 아래 오른쪽)가 표 끝 줄의 버튼을 덮지 않게 내려 볼 여지 (2026-09-06) */
-.gs-demoband ~ .gs-sysbar{margin-top:0} /* 시스템 줄의 위 당김(-20px)은 띠가 없을 때의 것 — 사이에 <style> 이 있어 형제 선택자는 ~ */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach.gs-coach-top{z-index:55} /* 같이 해보기가 시트 안을 가리킬 때만 (2026-09-06) */
 .gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px; pointer-events:none}
@@ -17665,30 +17660,29 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 @media (prefers-reduced-motion:reduce){ .gs-live-dot,.gs-slip-pulse{animation:none} }
 
 /* 명단 — 버튼 아래 작은 목록 */
-/* 시스템 줄 — 컨테이너 여백을 상쇄해 뷰포트 위·양옆에 딱 붙습니다.
-   안쪽 내용은 .gs-mast 와 같은 폭 규격이라 본문 오른쪽 끝과 열이 맞습니다 */
-.gs-sysbar{margin:-20px -20px 18px; padding:7px 20px;
-  background:rgba(var(--ink-rgb),.05); border-bottom:1px solid rgba(var(--ink-rgb),.14)}
-.gs-sysbar-in{max-width:var(--stage); margin:0 auto; display:flex; align-items:center; gap:12px}
-.gs-sysbar-r{display:flex; align-items:center; gap:10px; margin-left:auto}
+/* 앱 전체의 것 넷(방송 설정·튜토리얼·계정·밝기) — 탭 줄 오른쪽 끝에 섭니다 (2026-09-20 사용자 확정).
+   그 자리는 [정산 끝내기]·[중단]이 서던 자리라 .gs-mastrow 가 space-between 으로 이미 비워 두고 있었습니다.
+   탭과 같은 바닥선에 두되 발치만 6px 띄웁니다 — 탭은 카드로 이어지는 서류철이라 선에 닿아야 하지만
+   모서리가 둥근 버튼이 닿으면 얹힌 것도 뜬 것도 아닌 모양이 됩니다 (.gs-mastverbs 와 같은 규격).
+   (폐기 2026-09-20) 전폭 시스템 줄 .gs-sysbar/-in — 왼쪽 646px 가 비는데 오른쪽 빈 자리가 따로 또 있었습니다 */
+.gs-sysbar-r{display:flex; align-items:center; gap:10px; margin-left:auto; margin-bottom:6px}
 /* 줄 안 컨트롤은 전부 32px 한 높이·같은 좌우 여백으로. 칩마다 높이와 여백이 다르면
    같은 줄에 선 것들이 저마다 다른 물건처럼 보입니다 */
-.gs-sysbar .gs-btn{height:32px; padding-top:0; padding-bottom:0;
+.gs-sysbar-r .gs-btn{height:32px; padding-top:0; padding-bottom:0;
   display:inline-flex; align-items:center}
 /* 테마·도움말은 테두리를 벗겨 아이콘만 남깁니다 — 평생 몇 번 안 누르는 것들이
    계정·오버레이와 같은 무게로 서 있으면 눈이 우선순위를 못 잡습니다 (§9) */
-.gs-sysbar .gs-viewseg{margin-bottom:0; border-color:transparent}
-.gs-sysbar .gs-viewseg button{height:30px; width:31px} /* 테두리 포함 32px — 줄 안 한 높이 */
-.gs-sysbar .gs-qm{width:32px; height:32px; font-size:12px; border-color:transparent}
-.gs-sysbar .gs-qm:hover,.gs-sysbar .gs-viewseg:hover{border-color:rgba(var(--ink-rgb),.3)}
+.gs-sysbar-r .gs-viewseg{margin-bottom:0; border-color:transparent}
+.gs-sysbar-r .gs-viewseg button{height:30px; width:31px} /* 테두리 포함 32px — 줄 안 한 높이 */
+.gs-sysbar-r .gs-qm{width:32px; height:32px; font-size:12px; border-color:transparent}
+.gs-sysbar-r .gs-qm:hover,.gs-sysbar-r .gs-viewseg:hover{border-color:rgba(var(--ink-rgb),.3)}
 /* 하는 일(왼쪽)과 나(오른쪽)를 가르는 실선 */
 .gs-sysbar-sep{width:1px; height:18px; background:rgba(var(--ink-rgb),.18); flex:none}
 /* ── §3.12.7 판 라벨 · 초대 쪽지 · 계정 칩 · 둥근 네모 초상화 · 대기 줄 · 입력 단위 ──
    규칙 하나: 알약과 금색을 걷고, 직각에 2px, 잉크 선, 종이 바탕. 앱의 상태 칩·표가 이미 이 규칙이다 */
-/* 내 판 (2026-09-20 확정) — 상자도 표시도 없다. 이름이니 명조로 선다. 집은 조용해야 하지만, 조용한 것을 단추 모양으로 만들면 안 된다.
-   (폐기) 흐린 테두리 + 반투명 바탕 + 안 켜지는 회색 네모 — 파티원 상자의 껍데기라 누를 수 없는데 단추로 보였다 */
-.gs-boardlabel{display:inline-flex; align-items:center; margin-left:14px; font-family:'Gowun Batang',serif;
-  font-size:15px; font-weight:700; letter-spacing:0; color:var(--ink); white-space:nowrap}
+.gs-boardlabel{display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px;
+  border:1px solid var(--blue); border-radius:2px; background:rgba(var(--blue-rgb),.08);
+  font-size:12.5px; letter-spacing:.03em; color:var(--blue); white-space:nowrap; margin-bottom:6px}
 /* 남의 판 라벨의 실시간 점 (A1) — 붙어 있으면 초록, 끊기면 회색 */
 .gs-boardlabel-dot{width:7px; height:7px; border-radius:50%; background:rgba(var(--ink-rgb),.3); flex:none}
 .gs-boardlabel-dot.on{background:#6fbf73; box-shadow:0 0 0 2px rgba(111,191,115,.25)}
@@ -17697,16 +17691,12 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-acctchip.on{border-color:rgba(var(--ink-rgb),.6); background:rgba(var(--ink-rgb),.06)}
 /* (폐기 2026-09-20) .gs-acctmenu* — 계정 메뉴는 프로필 카드(.gs-pcard)로 */
 /* (폐기 2026-09-16) 머리글·들여쓰기 계층 — 표준 메뉴는 같은 크기의 항목과 구분선뿐 */
-/* 남의 판 — 상자가 생긴다. 상자가 보이면 그 자체로 "여기는 내 집이 아니다"라는 뜻이다.
-   두 칸: 왼쪽은 어디인지, 오른쪽은 나가는 문 (표 위 [파티원] 단추와 같은 문법) */
-.gs-sysbar-away{border-bottom:2px solid var(--blue)}
-.gs-boardlabel-away{height:32px; border:1px solid var(--blue); border-radius:2px; background:rgba(var(--blue-rgb),.08);
-  font-family:inherit; font-size:13.5px; font-weight:400; color:var(--blue); overflow:hidden}
-.gs-boardlabel-away .gs-boardlabel-dot{margin-left:11px}
-.gs-boardlabel-away .gs-boardlabel-t{padding:0 12px}
-.gs-boardlabel-away .gs-btn{height:100%; padding:0 11px; border:0; border-left:1px solid rgba(var(--blue-rgb),.5); border-radius:0;
-  font-size:11.5px; background:rgba(var(--blue-rgb),.1); color:var(--blue)}
-.gs-boardlabel-away .gs-btn:hover{background:rgba(var(--blue-rgb),.2)}
+/* 파랑인 까닭 (2026-09-20 확정): 앱에서 파랑은 사람 이름·"나"·자리를 가리킨다. "누구의 판인가"도 같은 식구다.
+   무채색은 안 된다 — 옆에 선 [방송 설정]·[튜토리얼]·계정 칩이 전부 무채색 상자라 안 눌리는 네 번째 상자가 된다.
+   금색도 안 된다 — "지금 이걸 봐라"에 쓰는 색이고, 따뜻한 종이 바탕에 묻는다.
+   (폐기 2026-09-20) 줄 밑선 .gs-sysbar-away — 밑선을 그릴 줄 자체가 없어졌다 */
+.gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px;
+  color:var(--blue); border-color:rgba(var(--blue-rgb),.6)}
 /* 초대 쪽지 — 잉크 선에 2px, 얕은 그림자, 명조 제목, 점선 아래 모노 바닥글 */
 /* (폐기 2026-09-20) 머리의 [초대] 쪽지 — 초대는 표 위 [파티원]의 작은 창이 맡는다. .gs-invnote-p·-list 는 그 창이 쓴다 */
 .gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
@@ -17751,8 +17741,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-segbtn:first-child{border-left:0}
 .gs-segbtn.on{background:var(--chip-bg); color:var(--chip-fg); font-weight:600}
 /* (폐기 2026-09-16) .gs-unitex-line — 단위 예시 줄 */
-.gs-sysbar .gs-roomchip{height:32px; padding:0 11px}
-.gs-sysbar .gs-backrow{margin:0 0 0 -4px}
+.gs-sysbar-r .gs-roomchip{height:32px; padding:0 11px}
+.gs-sysbar-r .gs-backrow{margin:0 0 0 -4px}
 /* 제목 줄 — 파티명 상자와 높이가 맞도록, 제목의 옛 윗여백(장식 줄 시절)을 걷어냅니다 */
 .gs-mastrow .gs-title{margin-top:0}
 /* 뒤로가기 — 제목 위에 따로 두어 '목록으로 돌아간다'로 읽히게 */
@@ -19084,7 +19074,7 @@ tr.gs-row-arrive th.gs-stick{animation:gs-arrive 30s linear forwards}
 .gs-resumechip{display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:3px 4px 3px 10px; border:1px solid rgba(var(--gold-rgb),.55); border-radius:3px; color:var(--ink-body)}
 .gs-resumechip-x{font-size:16px; line-height:1; padding:0 4px}
 /* 파티원 쪽 (2026-09-06): 초대장 정중앙 · 해산 쪽지 · 공유 창 초대 코드 */
-.gs-invitegate .gs-sysbar{display:none}
+.gs-invitegate .gs-mast{display:none}
 .gs-invitegate{padding-top:0; padding-bottom:0; min-height:0}
 .gs-invitegate .gs-invitesec{min-height:100vh; min-height:100dvh; margin-top:0; margin-bottom:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-top:0; padding-bottom:0}
 .gs-invite-brand{font-size:13px; font-weight:800; letter-spacing:.06em; opacity:.6; margin-bottom:14px}
