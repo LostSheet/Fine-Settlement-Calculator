@@ -6458,14 +6458,15 @@ export default function GoldSettlement() {
     if (genView) return null;
     if (viewer) {
       if (!you || !you.st) return null;
-      /* 배지가 말하는 것은 둘뿐이다 (2026-09-20 확정): 어디에 있나 · 거기서 나가는 문.
-         줄이 있는지는 표가 말하고, 못 누르는 까닭은 표 위 한 줄이 말한다.
-         (폐기) "· 내 방송에 나가는 중"(방송은 [방송 설정]의 점이 맡는다) · "· 승인 대기 중"(표 위 한 줄이 맡는다) */
-      return { away: true, text: (ownerNick || "방장") + "네 판", act: "나가기" };
+      const who = (ownerNick || "방장") + "네 판";
+      /* 라벨이 동작(나가기·신청 취소)과 실시간 점까지 든다 (A1, 2026-09-16) — 쪽지는 없다 */
+      return you.st === "ok"
+        ? { away: true, text: who + " · 내 방송에 나가는 중", act: "나가기" }
+        : { away: true, text: who + " · 승인 대기 중", act: "요청 취소" };
     }
     if (readOnly) return null;
-    /* (폐기 2026-09-20 사용자) "· 8자리"(표가 이미 센다) · "· 승인 대기 n명"([파티원] 단추가 더 자세히 말한다) */
-    return { away: false, text: "내 판" };
+    const waitN = (members || []).filter((m) => m.st === "req").length;
+    return { away: false, text: "내 판 · " + seats.length + "자리" + (waitN ? " · 승인 대기 " + waitN + "명" : "") };
   })();
   /* 모드 세그 — 메모장 · 카운터 · 카드. 마스트와 넓게 보기 머리줄이 같이 쓴다 */
   const modeSeg = () => (
@@ -9079,9 +9080,11 @@ export default function GoldSettlement() {
           {/* 판 라벨 (§3.12.7) — 읽는 것이지 누르는 것이 아닙니다. 남의 판이면 라벨과 밑선만 파란색 */}
           {boardLabel && !inviteGate && !genView && (
             <span className={"gs-boardlabel" + (boardLabel.away ? " gs-boardlabel-away" : "")} role="status">
-              {/* 점은 남의 판에만 (2026-09-20 사용자) — 그 판이 지금 살아 있는지를 말한다. 방장 쪽 회색 네모는 뺐다:
-                  불이 안 들어오는 불이었고, 뜻(방송에 나가는 중)은 옆의 [방송 설정] 점이 이미 말한다 */}
-              {boardLabel.away && <i className={"gs-boardlabel-dot" + (liveState === "on" ? " on" : "")} aria-hidden="true" />}
+              {boardLabel.away ? (
+                <i className={"gs-boardlabel-dot" + (liveState === "on" ? " on" : "")} aria-hidden="true" />
+              ) : (
+                <i className="gs-boardlabel-sq" aria-hidden="true" />
+              )}
               <span className="gs-boardlabel-t">{boardLabel.text}</span>
               {boardLabel.away && (
                 <button className="gs-btn gs-btn-sm gs-btn-ghost gs-boardlabel-leave" onClick={leaveRoom}>
@@ -17685,10 +17688,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-sysbar-sep{width:1px; height:18px; background:rgba(var(--ink-rgb),.18); flex:none}
 /* ── §3.12.7 판 라벨 · 초대 쪽지 · 계정 칩 · 둥근 네모 초상화 · 대기 줄 · 입력 단위 ──
    규칙 하나: 알약과 금색을 걷고, 직각에 2px, 잉크 선, 종이 바탕. 앱의 상태 칩·표가 이미 이 규칙이다 */
-/* 내 판 (2026-09-20 확정) — 상자도 표시도 없다. 이름이니 명조로 선다. 집은 조용해야 하지만, 조용한 것을 단추 모양으로 만들면 안 된다.
-   (폐기) 흐린 테두리 + 반투명 바탕 + 안 켜지는 회색 네모 — 파티원 상자의 껍데기라 누를 수 없는데 단추로 보였다 */
-.gs-boardlabel{display:inline-flex; align-items:center; margin-left:14px; font-family:'Gowun Batang',serif;
-  font-size:15px; font-weight:700; letter-spacing:0; color:var(--ink); white-space:nowrap}
+.gs-boardlabel{display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px; margin-left:12px;
+  border:1px solid rgba(var(--ink-rgb),.4); border-radius:2px; background:rgba(var(--lift-rgb),.22);
+  font-size:12.5px; letter-spacing:.03em; color:var(--ink); white-space:nowrap}
+.gs-boardlabel-sq{width:8px; height:8px; background:rgba(var(--ink-rgb),.35); flex:none}
 /* 남의 판 라벨의 실시간 점 (A1) — 붙어 있으면 초록, 끊기면 회색 */
 .gs-boardlabel-dot{width:7px; height:7px; border-radius:50%; background:rgba(var(--ink-rgb),.3); flex:none}
 .gs-boardlabel-dot.on{background:#6fbf73; box-shadow:0 0 0 2px rgba(111,191,115,.25)}
@@ -17697,16 +17700,12 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-acctchip.on{border-color:rgba(var(--ink-rgb),.6); background:rgba(var(--ink-rgb),.06)}
 /* (폐기 2026-09-20) .gs-acctmenu* — 계정 메뉴는 프로필 카드(.gs-pcard)로 */
 /* (폐기 2026-09-16) 머리글·들여쓰기 계층 — 표준 메뉴는 같은 크기의 항목과 구분선뿐 */
-/* 남의 판 — 상자가 생긴다. 상자가 보이면 그 자체로 "여기는 내 집이 아니다"라는 뜻이다.
-   두 칸: 왼쪽은 어디인지, 오른쪽은 나가는 문 (표 위 [파티원] 단추와 같은 문법) */
+.gs-boardlabel .gs-btn{height:22px; padding:0 7px; font-size:11px; border-radius:2px}
+/* 남의 판 — 라벨과 시스템 줄 밑선만 파란색. 줄 전체를 칠하지 않는다 */
 .gs-sysbar-away{border-bottom:2px solid var(--blue)}
-.gs-boardlabel-away{height:32px; border:1px solid var(--blue); border-radius:2px; background:rgba(var(--blue-rgb),.08);
-  font-family:inherit; font-size:13.5px; font-weight:400; color:var(--blue); overflow:hidden}
-.gs-boardlabel-away .gs-boardlabel-dot{margin-left:11px}
-.gs-boardlabel-away .gs-boardlabel-t{padding:0 12px}
-.gs-boardlabel-away .gs-btn{height:100%; padding:0 11px; border:0; border-left:1px solid rgba(var(--blue-rgb),.5); border-radius:0;
-  font-size:11.5px; background:rgba(var(--blue-rgb),.1); color:var(--blue)}
-.gs-boardlabel-away .gs-btn:hover{background:rgba(var(--blue-rgb),.2)}
+.gs-sysbar-away .gs-boardlabel{border-color:var(--blue); color:var(--blue); background:rgba(var(--blue-rgb),.08)}
+.gs-sysbar-away .gs-boardlabel-sq{background:var(--blue)}
+.gs-sysbar-away .gs-boardlabel .gs-btn{color:var(--blue); border-color:rgba(var(--blue-rgb),.6)}
 /* 초대 쪽지 — 잉크 선에 2px, 얕은 그림자, 명조 제목, 점선 아래 모노 바닥글 */
 /* (폐기 2026-09-20) 머리의 [초대] 쪽지 — 초대는 표 위 [파티원]의 작은 창이 맡는다. .gs-invnote-p·-list 는 그 창이 쓴다 */
 .gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
