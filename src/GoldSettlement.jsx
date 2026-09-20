@@ -3812,8 +3812,7 @@ export default function GoldSettlement() {
       leaveToLobby();
       return;
     }
-    /* (고침 2026-09-20 사용자) 로비가 없어졌으니 로그아웃해도 벌금표에 그대로 있는다 — 연동 전 화면과 같다 */
-    go(VIEW_BOARD);
+    go(VIEW_LOBBY);
   };
   /* [로그아웃] — 게스트에겐 사실상 계정 버리기라 한 번 묻습니다 (§3.11, 2026-09-05).
      문구는 §8 초안 */
@@ -4261,6 +4260,29 @@ export default function GoldSettlement() {
   /* [+ 새 판 만들기] (2026-09-06 모델: 판은 만들면 생기고 끝내면 없다) — 오늘 날짜 이름, 방장 줄과 빈 자리(정원은 빈 자리
      효과가 채움), 항목·단가·인원은 기본값 그대로. 로그인돼 있으면 로비를 열어 판 존재 표시를 켜고 코드가 없거나 죽었으면
      새로 냅니다(startParty). 비로그인은 이 브라우저만의 판입니다. 그리고 대기실로 */
+  const newBoard = () => {
+    if (readOnly) return;
+    if (tutorialRef.current) {
+      /* 같이 해보기 1걸음 — 진짜 판 대신 예시 판 */
+      tutNewBoard();
+      tutHit("newboard");
+      return;
+    }
+    setRoundName(defaultRoundName());
+    setLog([]);
+    setUndoSnap(null);
+    setMemoFreeze(null);
+    setOpenRow(null);
+    setRoundId("");
+    setRoundLive(false);
+    setPaused(null);
+    setMembers([]);
+    putSeats((prev) => prev.filter((s0) => !!s0.acct && !!authRef.current && s0.acct === authRef.current.id));
+    boardOnRef.current = true;
+    putRelay({ ...relayRef.current, boardOn: true });
+    go(VIEW_BOARD);
+    if (authRef.current) startParty();
+  };
   /* [해산] — 시작 전 판을 없앱니다 (2026-09-06 모델). 앉아 있던 파티원은 나가고 남는 것은 기본값뿐입니다.
      진행 중의 끝은 [정산 끝내기] 하나입니다 */
   /* 방 하나 규칙 (2026-09-07 사용자 확정) — 보관된 초대로 가려면: 진행 중이면 [정산 끝내기]가 먼저(끝내러 가기), 시작 전이면 [해산하고 가기]. 문구 초안 */
@@ -4270,7 +4292,28 @@ export default function GoldSettlement() {
   const soloPending = useRef(false);
   /* 이 판을 [혼자 세기]로 만들었는가 — 결과지의 [다음 판 만들기]가 같은 문으로 잇습니다 (2026-09-08) */
   const soloRun = useRef(false);
+  const askSoloBoard = () => {
+    soloPending.current = true;
+    askNewBoard();
+  };
   /* 남의 파티에 앉은 채 새 판을 만들면 먼저 나갑니다 (방 하나 규칙, 2026-09-07). 문구 초안 */
+  const askNewBoard = () => {
+    if (readOnly) return;
+    /* askSoloBoard 가 세워 둔 깃발을 그대로 물려받습니다 — 이 문으로 직접 들어오면 파티 판입니다 */
+    soloRun.current = soloPending.current;
+    if (!tutorialRef.current && seatedNow)
+      return setAsk({
+        title: seatedName + "에서 나가고 내 판을 만들까요?",
+        body: meSeat && meSeat.round ? "그 파티의 내 자리가 비어요. 벌금은 줄에 남아요." : "그 파티의 내 자리가 비어요.",
+        action: "나가고 만들기",
+        tone: "danger",
+        onYes: async () => {
+          await leaveFromLobby();
+          newBoard();
+        },
+      });
+    newBoard();
+  };
   /* 대기실에서는 남이 앉아 있을 때만 묻고 혼자면 바로. 로비에서는(always) 판을 안 보고 누르는 것이라 늘 묻습니다 (2026-09-07 사용자; 문구 초안) */
   /* 로비 모으기 열의 [로그인] — 버튼이 '로그인'이라 로그인 쪽으로 열고,
      끝나면 하려던 일(모으기)을 이어서 합니다. 가입은 창 아래 한 줄로 갈라져 있습니다 */
@@ -7887,6 +7930,20 @@ export default function GoldSettlement() {
   /* [다음 판 만들기] (2026-09-08 사용자 확정 — 목업 B, 버튼은 줄 오른쪽) — 막 끝낸 결과지의 발치에만 섭니다.
      앞 판과 같은 문으로 잇습니다: 파티였으면 대기실로, [혼자 세기]였으면 바로 벌금표로.
      기록을 먼저 접어야 새 판 화면이 그 위에 덮이지 않습니다 */
+  const nextPending = useRef(false);
+  const nextRound = () => {
+    closeGenInner();
+    nextPending.current = true;
+  };
+  useEffect(() => {
+    if (!nextPending.current) return;
+    /* 기록이 다 접힌 다음에야 readOnly 가 풀립니다 (버그 기록 위) */
+    if (genView) return;
+    nextPending.current = false;
+    if (soloRun.current) askSoloBoard();
+    else askNewBoard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genView]);
   /* [닫기] — 끝난 파티 화면을 접고 이 브라우저의 내 장부로 갑니다.
      뷰어인지는 부트에서 정해지므로 주소에서 방을 떼고 다시 엽니다 */
   /* [들어가기] — 같은 문을 다시 지납니다 (2026-09-06). 입장을 다시 걸면 앉는 순간 소켓이 새로 붙어 새 판을 받습니다 */
@@ -7913,7 +7970,79 @@ export default function GoldSettlement() {
   /* ---------- 판의 신분증 띠 ----------
      판 전체에 걸리는 정보라 카드(탭 내용) 안이 아니라 탭 위에 둡니다. 끝난 판·기록에서는
      마스트 왼쪽 버튼들이 어차피 쓸모없으니 그 자리를 이 띠가 씁니다. */
-/* (폐기 2026-09-20 사용자) idBand — 끝난 판·판 기록의 신분증 띠. 그 화면으로 가는 길이 없다 */
+  const idBand = (() => {
+    if (genView) {
+      const g = partyReg.list.find((x) => x.gen && x.name === genView) || null;
+      const need = !g || g.gold == null || !Array.isArray(g.mems);
+      const slot = need ? loadPartySlot(genView) : null;
+      return {
+        src: g && g.src === "party" ? "party" : "local",
+        /* 배지는 보는 사람 기준입니다 (§3.5) — 목록의 줄과 같은 규칙으로 짓습니다 */
+        title: genBadge(g),
+        when: g ? fmtWhenLong(g.from || g.t, g.to || g.t) : genView,
+        gold: g && g.gold != null ? g.gold : slotGold(slot),
+        host: (g && g.host) || "",
+        me: (g && g.me) || "",
+        mems: g && Array.isArray(g.mems) ? g.mems : realNames((slot && slot.rows) || []),
+        /* 막 끝낸 판은 기록 열람이 아니라 정산의 마지막 장면입니다 (§3.4) — 말과 문이 다릅니다 */
+        msg:
+          genView === justEnded ? (
+            <>
+              <b>끝났어요.</b> 정산 결과는 계속 볼 수 있고, 판 기록에도 남았어요.
+            </>
+          ) : (
+            <>
+              <b>판 기록</b>을 보는 중이에요 — 여기서는 못 고쳐요.
+            </>
+          ),
+        /* 로비에서 열었거나 막 끝낸 판이면 [닫기](로비로), 판에서 들춰봤으면 [지금 판으로] */
+        act: {
+          label: genView === justEnded || atLobby ? "닫기" : "지금 판으로",
+          ghost: genView === justEnded || atLobby,
+          on: closeGen,
+        },
+        /* 발치 한 줄 — 막 끝낸 판에만 (2026-09-08 확정 B). 판 기록을 그냥 들춰볼 때는 안 섭니다:
+           그때는 다음 판이 아니라 옛 결과를 보러 온 것입니다. 문구 초안 —
+           (사용자 지정 2026-09-08) 초대 링크 재사용 얘기는 안 합니다 */
+        foot:
+          genView === justEnded
+            ? {
+                label: "다음 판 만들기",
+                note: soloRun.current
+                  ? "항목과 단가는 그대로예요."
+                  : "항목과 단가는 그대로예요. 파티원은 다시 들어와야 해요.",
+                on: nextRound,
+              }
+            : null,
+      };
+    }
+    if (ended) {
+      const k = lastLive.current || {};
+      return {
+        src: "party",
+        title: (k.host || ownerNick || "방장") + "네 파티",
+        when: fmtWhenLong(k.from, k.to),
+        gold: slotGold(currentLedger()),
+        host: k.host || ownerNick || "",
+        me: k.me || (auth && auth.nick) || "",
+        mems: Array.isArray(k.mems) && k.mems.length ? k.mems : realNames(rows),
+        /* 띠 하나, 얼굴 둘 (2026-09-06): 판이 없는 동안 [로비로]뿐, 방장이 새 판을 만들면 [들어가기]가 선다 (초안).
+           (폐기 2026-09-06) `끝났어요. 정산 결과는 계속 볼 수 있고, 판 기록에도 남았어요.` [닫기] — 결과지가 이미 말한다 */
+        msg: boardOpened ? (
+          <>
+            <em className="gs-livechip-dot" aria-hidden="true" /> <b>새 판이 열렸어요</b>
+          </>
+        ) : (
+          <b>판이 끝났어요</b>
+        ),
+        act: boardOpened
+          ? { label: "들어가기", ghost: false, on: rejoinNow }
+          : { label: "내 판으로", ghost: true, on: leaveEnded },
+        act2: boardOpened ? { label: "내 판으로", on: leaveEnded } : null,
+      };
+    }
+    return null;
+  })();
   /* [프리셋] 불러오기 — 로비에서만 엽니다 (§3.4). 판을 닫는 일이 아니라 로비의 항목과
      자리를 갈아끼우는 일이라, 결과지도 확인창도 없습니다. 판을 닫고 새로 여는 길은
      [정산 끝내기] → [시작] 하나뿐입니다 */
@@ -9274,6 +9403,70 @@ export default function GoldSettlement() {
       {!guestBlocked && !showLobby && !inviteGate && (
       <header className="gs-mast">
         {/* 판의 신분증 — 탭 위, 마스트 왼쪽 버튼들이 있던 자리입니다 */}
+        {idBand && (
+          <div className="gs-idbar" role="status">
+            <div className="gs-idbar-t">
+              <span className={"gs-idsrc" + (idBand.src === "party" ? "" : " gs-idsrc-local")}>
+                {idBand.title}
+              </span>
+              {idBand.when && <h4 className="gs-idname">{idBand.when}</h4>}
+              <span className="gs-idmsg">{idBand.msg}</span>
+              <span className="gs-idbar-r">
+                <span className="gs-idtot">{man(idBand.gold || 0)}</span>
+                {idBand.act2 && (
+                  <button className="gs-btn gs-btn-sm gs-btn-ghost" onClick={idBand.act2.on}>
+                    {idBand.act2.label}
+                  </button>
+                )}
+                <button
+                  className={"gs-btn gs-btn-sm" + (idBand.act.ghost ? " gs-btn-ghost" : "")}
+                  onClick={idBand.act.on}
+                >
+                  {idBand.act.label}
+                </button>
+              </span>
+            </div>
+            {/* 막 끝낸 판의 발치 한 줄 (2026-09-08 사용자 확정 — 목업 B) — 말은 왼쪽, [다음 판 만들기]는 오른쪽 끝.
+                띠는 판 전체를 말하는 자리라 탭을 뭘 누르든 같은 자리에 있고, [닫기]와 떨어져 있어 갈림길로 안 읽힙니다.
+                (검토 후 폐기) 띠 오른쪽 [닫기] 옆 — 결과지를 열자마자 가장 큰 소리가 "다음 판"이 되고 말 붙일 자리가 없다.
+                (검토 후 폐기) 정산 장부 카드 발치(탭 셋 중 하나에만·표 여덟 줄 아래에 묻힘) · 화면 발치 고정 줄(없는 부품, 토스트와 자리 다툼) */}
+            {/* 파티원은 줄이지 않습니다 — 날짜는 잘 잊어도 누구랑 했는지는 기억합니다 */}
+            {idBand.mems.length > 0 && (
+              <div className="gs-idmems">
+                {idBand.mems.map((n, i) => (
+                  <span
+                    key={n + "@" + i}
+                    className={
+                      "gs-idmem" +
+                      (idBand.host && n === idBand.host
+                        ? " gs-idmem-host"
+                        : idBand.me && n === idBand.me
+                        ? " gs-idmem-me"
+                        : "")
+                    }
+                  >
+                    {/* 가운뎃점으로 나눈 평문 (2026-09-07 밤 사용자 지정) — 로비 기록 줄(GenList)에는 이 구분자가
+                        있는데 여기만 빠져서 이름이 통째로 붙어 나왔습니다 (버그 기록 2026-09-08 사용자 지적) */}
+                    {i > 0 && (
+                      <em className="gs-idmem-sep" aria-hidden="true">
+                        ·
+                      </em>
+                    )}
+                    {n}
+                  </span>
+                ))}
+              </div>
+            )}
+            {idBand.foot && (
+              <div className="gs-idfoot">
+                <button className="gs-btn gs-btn-sm gs-lbstart gs-idnext" onClick={idBand.foot.on}>
+                  {idBand.foot.label}
+                </button>
+                <span>{idBand.foot.note}</span>
+              </div>
+            )}
+          </div>
+        )}
         {/* 빵부스러기 (§3.0, 2026-09-05) — 판에서 로비로 가는 문이 브랜드 글자뿐이라 안 보였다.
             기록 보는 중엔 띠의 버튼이 문이라 안 세운다. 오른쪽은 파티원의 나가기(옛 파티 서랍에서 이사) */}
         <div className="gs-mastrow">
@@ -9328,7 +9521,42 @@ export default function GoldSettlement() {
       {/* ── 모집 카드 — 준비 상태의 표 위 (§3.1, 2026-09-05). 옛 로비의 모으기 열이 가로로
              누운 것입니다: 초대 링크 · 함께한 사람(지목 초대) · 신청. [시작]하면 사라지고
              파티 서랍(방 칩)이 이어받습니다. 비로그인은 모을 수 없어 카드가 없습니다 ── */}
+      {ready && auth && !showLobby && (
+        <section className="gs-mail gs-recruitsec">
+          <div className="gs-card gs-recruit">
+            {/* 머리가 "초대를 냈는지"를 말합니다 (2026-09-05 목업 확정): 모집 중 · 남은 시간 · 앉은 수.
+                (폐기, 당일) 제목 `파티원 모으기` + 이름 적힌 칸까지 센 수 — 초대가 나갔는지 안 읽혔다 */}
+            {/* 남은 시간은 없습니다 (2026-09-06) — 코드는 방장이 앱을 열어 둔 동안 삽니다. `앉음` 라벨은 뺐습니다 (2026-09-07 사용자).
+                (폐기 2026-09-08) h4 머리줄 — 카드가 한 행이 되면서 상태·인원도 그 줄의 앞머리가 됐습니다 */}
+            <span className="gs-recruit-live">
+              <i className="gs-livechip-dot" aria-hidden="true" /> 모집 중
+            </span>
+            <span className="gs-lbroster-n gs-recruit-n">
+              {seatSum.on}/{lobbyCap}
+            </span>
+            {/* 사람과 초대 도구가 머리줄에 이어 붙습니다 — 카드 전체가 한 행 (2026-09-08 사용자 확정).
+                (폐기, 같은 날) 좌우 두 덩이 — 오른쪽 목록이 바로 아래 대기실 표와 같은 말을 했다.
+                (폐기 2026-09-07) 카드 발치의 게스트 안내 — 로비 계정 카드로 */}
+            <span className="gs-recruit-who">{seatNamesNow.length ? seatNamesNow.join(" · ") : "아직 아무도 없어요"}</span>
+            {inviteLine()}
+          </div>
+        </section>
+      )}
       {/* 비로그인 방장의 시작 전 판 (2026-09-05 ③) — 모집 카드 대신 한 줄: 주소가 있어야 부르고 띄웁니다 */}
+      {ready && !auth && !showLobby && (
+        <section className="gs-mail gs-recruitsec">
+          <div className="gs-card gs-recruit gs-recruit-live">
+            <span className="gs-recruit-livehead">
+              파티원을 부르거나 방송에 띄우려면 방송용 주소가 필요해요.
+            </span>
+            <span className="gs-recruit-liveacts">
+              <button className="gs-btn gs-btn-sm" onClick={() => setObsOpen(true)}>
+                주소 받기
+              </button>
+            </span>
+          </div>
+        </section>
+      )}
       {/* (폐기 2026-09-06) 판 중의 파티 줄 `파티원 n · 모집 중 · m분 남음 [들어오려는 사람 k] [초대 링크]` — 진행 중엔
           "모집 중"이 상태가 아니고, 들어오려는 사람은 사건이라 표 아래 줄이 맡으며, 코드는 공유 창에 삽니다.
           진행 중 화면은 마스트와 표뿐입니다 */}
@@ -11391,6 +11619,33 @@ export default function GoldSettlement() {
       {/* (폐기 2026-09-06) 판 중 초대 링크 창 — 코드는 공유 창(OBS 공유 설정)에, 들어오려는 사람은 표 아래 줄에 */}
       {/* (폐기 2026-09-06, 당일) [자리 정하기] 시트 */}
       {/* 지난 판 이어서 — 고르기 (2026-09-06). [시작] 때 그 판의 줄이 열립니다 */}
+      {resumePick && !readOnly && (
+        <InfoModal title="지난 판 이어서" onClose={() => setResumePick(false)}>
+          <div className="gs-key">
+            <p className="gs-ppl-who">[시작]을 누르면 고른 판의 줄·숫자·기록이 그대로 열려요. 파티원은 자기 줄로 돌아가요.</p>
+            <div className="gs-seatlist">
+              {gensList()
+                .filter((g) => g.gen && (!g.host || g.host === g.me))
+                .map((g) => (
+                  <button
+                    key={g.name}
+                    className="gs-seatopt"
+                    onClick={() => {
+                      putRelay({ ...relayRef.current, resumeFrom: g.name });
+                      setResumePick(false);
+                    }}
+                  >
+                    {g.rname || g.name}
+                    <em className="gs-seatopt-g">
+                      {g.n}명 · {man(g.gold || 0)}
+                    </em>
+                  </button>
+                ))}
+            </div>
+                {/* (폐기 2026-09-16) [닫기] — 취소가 필요 없는 창은 오른쪽 위 × 만 (§9-3 보충) */}
+          </div>
+        </InfoModal>
+      )}
       {/* 자리 배치 창 (2026-09-17 확정). (폐기) 표 아래 사람의 [자리 정하기] 시트 */}
       {seatOpen && !readOnly && (
         <SeatPlacer
