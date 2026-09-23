@@ -2700,7 +2700,7 @@ export const PAGE_HTML = `<!doctype html>
       rows.forEach(function (r) { r.d = share - r.g; });
     };
 
-    var push = function () {
+    var stateNow = function () {
       reNet();
       var st = {
         name: "예시 파티",
@@ -2720,7 +2720,10 @@ export const PAGE_HTML = `<!doctype html>
           { n: rows[4].n, live: false },
         ] };
       }
-      onState(st);
+      return st;
+    };
+    var push = function () {
+      onState(stateNow());
       /* 소켓 쪽 꼬리와 같은 줄입니다 — 대기실은 기다릴 판이 없으니 바로 그립니다 */
       if (dead || lobby) render();
       else pump();
@@ -2758,6 +2761,20 @@ export const PAGE_HTML = `<!doctype html>
     if (isPv) SCRIPT = [["pvstart", 1400], ["confess", 3400], ["confess", 3400], ["confess", 3400], ["confess", 3400],
       ["confess", 3400], ["confess", 3400], ["confess", 3400], ["confess", 3400]];
 
+    /* 설정은 바로 입힌다 — 카드·스와이프·슬라이드를 기다리지 않는다 (2026-09-24 사용자: 거듭 바꾸면 늦게 반영됐다).
+       판 숫자가 카드 뒤에 앉는 규칙은 방송의 이야기라 여기 해당하지 않는다. 스와이프 도중이면 그것만 끝나길 잠깐 기다린다 */
+    var pvApplyNow = function () {
+      if (!lastState) return;
+      if (applying) { setTimeout(pvApplyNow, 120); return; }
+      applyFxCfg(lastState);
+      var v = viewOf(lastState);
+      clearTimeout(slideTimer);
+      sliding = false;
+      board = v.board; cols = v.cols; showNet = v.net; showSum = v.sum; slideOn = v.slide !== false;
+      phase = 0;
+      next = null;
+      render();
+    };
     /* 부모 창(앱)이 보내는 설정 — 계정 외형과 같은 길(applyLook)로 입힌다: t·bg·s·line·slide·net·sum·fx·off */
     if (isPv) {
       window.addEventListener("message", function (ev) {
@@ -2767,9 +2784,10 @@ export const PAGE_HTML = `<!doctype html>
         if (d.cols && d.cols.length) {
           var same = pvCols && pvCols.length === d.cols.length &&
             pvCols.every(function (c, i) { return c.id === d.cols[i].id && c.t === d.cols[i].t; });
-          if (!same) { pvCols = d.cols; reset(); lobbyOn = false; }
+          if (!same) { pvCols = d.cols; reset(); lobbyOn = false; fxQ = []; }
         }
-        push();
+        onState(stateNow());
+        pvApplyNow();
       });
       if (window.parent && window.parent !== window) window.parent.postMessage({ gs: "pv-ready" }, "*");
     }
