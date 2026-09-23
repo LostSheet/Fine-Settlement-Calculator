@@ -11411,13 +11411,9 @@ export default function GoldSettlement() {
       {showMail && !ready && !showLobby && !guestLobby && !guestBlocked && (
       <section className="gs-mail gs-mailsec gs-surface">
         <div className="gs-cardhead">
-          <div className="gs-headleft">
-            {r && r.transfers.length > 0 && (
-              <button className="gs-btn" onClick={openMail}>
-                Discord 공유용 복사
-              </button>
-            )}
-          </div>
+          {/* 왼쪽은 비운다 (2026-09-24 사용자 확정: 결정표 12) — [Discord 공유용 복사]는 하는 일이라 오른쪽으로. 벌금표 도구 줄과 같은 규칙.
+              (폐기) 왼쪽의 복사 단추 — "누르는 것은 왼쪽" 규칙이었는데, 이제 세 탭 모두 왼쪽은 설정·오른쪽은 하는 일이다 */}
+          <div className="gs-headleft" />
           <div className="gs-tools">
             {/* (감춤 2026-09-21 사용자) 정산 방식 고르기 — 벌금통 고정 */}
             <label className="gs-fee">
@@ -11431,6 +11427,12 @@ export default function GoldSettlement() {
               />
               <span>%</span>
             </label>
+            {r && r.transfers.length > 0 && <i className="gs-toolsep" aria-hidden="true" />}
+            {r && r.transfers.length > 0 && (
+              <button className="gs-btn" onClick={openMail}>
+                Discord 공유용 복사
+              </button>
+            )}
           </div>
         </div>
 
