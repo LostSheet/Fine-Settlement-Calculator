@@ -10008,6 +10008,8 @@ export default function GoldSettlement() {
                       )}
                     </span>
                   )}
+                  {/* [항목 관리] │ 입력 단위 (2026-09-24 사용자) — 모드 │ 표 도구와 같은 디바이더 */}
+                  {cardsMode && !readOnly && <i className="gs-toolsep" aria-hidden="true" />}
                   {unitSeg(false)}
 
                 </span>
@@ -16708,6 +16710,21 @@ const CSS = `
   background:transparent; white-space:nowrap; transition:color .14s,border-color .14s}
 .gs-tab svg{flex:none; width:13px; height:13px}
 .gs-tab:hover{color:var(--ink); background:transparent}
+/* 밝게 · 크라프트 위에 선 것 (2026-09-24 사용자 확정) — 밝게 팔레트의 보조 잉크·금색·잉크 선은 종이(#f1e9d9)에 맞춰져 있어서
+   크라프트(#c3a97f) 위에 서면 보조 글 2.67:1, 금색 2.38:1, 선 1.7~1.9:1 로 떨어진다. 도구 줄·안내·카드 격자를 종이 상자 밖으로 내면서 생겼다.
+   팔레트는 그대로 두고 크라프트 위에 선 것에만 한 단 진하게: 보조 글 #4a4136(4.43), 금색 #6e4f10(3.34), 선 잉크 .5(2.58).
+   어둡게는 크라프트가 종이보다 어두워 오히려 좋아지므로(5.64 / 7.98) 손대지 않는다. 종이 상자 안(표·카드)도 그대로 */
+.gs:not(.gs-dark) .gs-tab{color:#4a4136}
+.gs:not(.gs-dark) .gs-tab:hover,.gs:not(.gs-dark) .gs-tab.on{color:var(--ink)}
+.gs:not(.gs-dark) .gs-surface > .gs-cardhead,.gs:not(.gs-dark) .gs-sheetsec > .gs-cellnote-row{--ink-2:#4a4136}
+.gs:not(.gs-dark) .gs-surface > .gs-cardhead .gs-seg,
+.gs:not(.gs-dark) .gs-surface > .gs-cardhead .gs-seg button + button,
+.gs:not(.gs-dark) .gs-surface > .gs-cardhead .gs-guide{border-color:rgba(var(--ink-rgb),.5)}
+.gs:not(.gs-dark) .gs-surface > .gs-cardhead .gs-toolsep{background:rgba(var(--ink-rgb),.4)}
+.gs:not(.gs-dark) .gs-surface > .gs-cardhead .gs-ptybtn{color:#6e4f10; border-color:rgba(110,79,16,.9)}
+.gs:not(.gs-dark) .gs-rd-empty{border-color:rgba(var(--ink-rgb),.6)}
+.gs:not(.gs-dark) .gs-rd-empty .gs-rd-pic{background:rgba(var(--ink-rgb),.18)}
+.gs:not(.gs-dark) .gs-rd-emptytxt,.gs:not(.gs-dark) .gs-rd-plus{color:#4a4136}
 /* 폭·글자 굵기는 선택 전후에 그대로 둡니다 — 400↔600 으로 바꾸면 글자 폭이 달라져
    탭을 옮길 때마다 줄이 움찔합니다. 선택은 잉크색과 밑줄이 맡습니다 */
 .gs-tab.on{position:relative; z-index:2; height:40px; color:var(--ink); border-bottom-color:var(--ink)}
