@@ -726,6 +726,10 @@ export const PAGE_HTML = `<!doctype html>
   var isDemo = ROOM === DEMO_ROOM;
   var q = new URLSearchParams(location.search);
   var forced = q.get("mode");
+  /* 앱 안 미리보기 (2026-09-24 사용자 확정) — 방송 설정 창이 예시 방을 iframe 으로 띄우고 지금 고른 설정을 메시지로 보냅니다.
+     미리보기가 곧 진짜 오버레이라, 오버레이를 고치면 미리보기가 저절로 따라옵니다. 예시 방 + pv=1 일 때만 켜집니다.
+     (폐기 2026-09-06) 주소 카드 맨 위의 iframe 미리보기 — 스크롤을 잡아먹고 주소가 안 보였다. 이번엔 각 설정 옆 작은 칸이다 */
+  var isPv = isDemo && q.get("pv") === "1";
   /* 소스 나누기 — board 는 현황판만, spin 은 룰렛만 그립니다. 없으면 둘 다.
      파일은 하나고 분기만 다릅니다 — 소스마다 딴 페이지를 만들 이유가 없어요. */
   var TYPE = q.get("type") === "board" ? "board" : q.get("type") === "spin" ? "spin" : "all";
@@ -2671,13 +2675,16 @@ export const PAGE_HTML = `<!doctype html>
     var COLS = [{ id: "c1", t: "잡힘" }, { id: "c2", t: "죽음" }];
     var PRICE = [30000, 50000];
     var rows, feed, seq, lobbyOn;
+    /* 미리보기 — 앱이 보낸 내 항목 이름. 없으면 위의 예시 열 */
+    var pvCols = null;
+    var colsNow = function () { return pvCols || COLS; };
     var at = 0; /* 대본 커서 — reset 이 안 건드립니다 */
 
     var reset = function () {
       /* 줄 고유번호를 답니다 — 순위가 바뀔 때 FLIP 이 같은 줄을 따라가는 열쇠입니다 (§4.4) */
       rows = SAMPLE.map(function (p, i) {
         return { k: "r" + i, n: p[0], g: p[1],
-                 c: [Math.round(p[1] / 150000), Math.round(p[1] / 260000)], d: 0 };
+                 c: colsNow().map(function (col, j) { return Math.round(p[1] / (150000 + j * 110000)); }), d: 0 };
       });
       feed = [];
       seq = 0;
@@ -2697,7 +2704,7 @@ export const PAGE_HTML = `<!doctype html>
       reNet();
       var st = {
         name: "예시 파티",
-        cols: COLS,
+        cols: colsNow(),
         board: rows.map(function (r) {
           return { k: r.k, n: r.n, g: r.g, c: r.c.slice(), d: r.d };
         }),
@@ -2722,10 +2729,12 @@ export const PAGE_HTML = `<!doctype html>
     /* 자수 한 번 — 카드가 뜨고, 카드가 지나간 뒤에 금액과 순위가 따라옵니다 */
     var confess = function () {
       var r = rows[Math.floor(Math.random() * rows.length)];
-      var ci = Math.random() < 0.6 ? 0 : 1;
-      r.c[ci] += 1;
-      r.g += PRICE[ci];
-      feed.push({ i: "f" + ++seq, k: "add", n: r.n, t: COLS[ci].t, g: PRICE[ci] });
+      var cs = colsNow();
+      var ci = cs.length > 1 && Math.random() >= 0.6 ? 1 : 0;
+      var price = PRICE[ci] || 30000;
+      r.c[ci] = (r.c[ci] || 0) + 1;
+      r.g += price;
+      feed.push({ i: "f" + ++seq, k: "add", n: r.n, t: cs[ci] ? cs[ci].t : "항목", g: price });
       push();
     };
 
@@ -2745,10 +2754,31 @@ export const PAGE_HTML = `<!doctype html>
       ["confess", 6000],
     ];
 
+    /* 미리보기 대본 — 대기실 없이 판을 세우고 3.4초마다 알림 하나, 여덟 번마다 처음부터 */
+    if (isPv) SCRIPT = [["pvstart", 1400], ["confess", 3400], ["confess", 3400], ["confess", 3400], ["confess", 3400],
+      ["confess", 3400], ["confess", 3400], ["confess", 3400], ["confess", 3400]];
+
+    /* 부모 창(앱)이 보내는 설정 — 계정 외형과 같은 길(applyLook)로 입힌다: t·bg·s·line·slide·net·sum·fx·off */
+    if (isPv) {
+      window.addEventListener("message", function (ev) {
+        var d = ev.data;
+        if (!d || d.gs !== "pv") return;
+        if (d.look && typeof d.look === "object") applyLook(d.look, true);
+        if (d.cols && d.cols.length) {
+          var same = pvCols && pvCols.length === d.cols.length &&
+            pvCols.every(function (c, i) { return c.id === d.cols[i].id && c.t === d.cols[i].t; });
+          if (!same) { pvCols = d.cols; reset(); lobbyOn = false; }
+        }
+        push();
+      });
+      if (window.parent && window.parent !== window) window.parent.postMessage({ gs: "pv-ready" }, "*");
+    }
+
     var tick = function () {
       var s = SCRIPT[at % SCRIPT.length];
       at++;
-      if (s[0] === "lobby") { reset(); push(); }
+      if (s[0] === "pvstart") { reset(); lobbyOn = false; push(); }
+      else if (s[0] === "lobby") { reset(); push(); }
       else if (s[0] === "start") { lobbyOn = false; push(); }
       else if (s[0] === "confess") confess();
       setTimeout(tick, s[1]);
