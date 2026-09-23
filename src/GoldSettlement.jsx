@@ -9015,7 +9015,11 @@ export default function GoldSettlement() {
       /* 표는 width:100% 라 무대를 넓히면 따라 넓어진다(그래서 항목 이름을 줄여도 표가 안 줄어 관찰자가 안 운다 — 줄·항목이 바뀔 때마다 다시 잰다).
          재기 전에 무대를 1080 으로 되돌려 표의 본래 폭(넘치는 만큼)을 읽는다. 같은 프레임 안이라 깜빡임은 없다 */
       root.style.setProperty("--stage", "1080px");
-      const w = Math.ceil(grid.getBoundingClientRect().width) + 36; /* 연결된 본문 안쪽 여백 18×2 */
+      /* 무대 = 표 상자의 바깥 폭. 표가 넘치면 아래 layout effect 가 상자의 min-width 를 표 폭 + 테두리로 늘려 두니 그 폭이 곧 필요한 무대다.
+         (고침 2026-09-24) 표 폭 + 상수 36(옛 상자 안쪽 여백 18×2)을 더하던 것 — 박스가 표만 감싸며 여백이 0 이 되자
+         꼭 맞는 표도 1078+36 = 1114 > 1080 으로 읽혀 무대가 저절로 1114 로 늘었다 */
+      const card = sheetBoxRef.current;
+      const w = Math.ceil((card || grid).getBoundingClientRect().width);
       const need = w > 1080 ? w : null;
       put(need);
       setStageNeed(need);
@@ -9868,239 +9872,11 @@ export default function GoldSettlement() {
               </span>
             </div>
             )}
-
-          </div>
-          <div className="gs-tools gs-sheetactions">
-            {/* 파티원도 봅니다 (2026-09-06) — 기록은 이미 판과 함께 넘어오고, 단가 변경(`단가 3만 → 5만`)도 한 줄로 남아 있어
-                단가 × 횟수와 금액이 다를 때 왜 그런지 여기서 읽힙니다. 취소는 방장만 */}
-            {!simple && (
-              <span className="gs-tip">
-                <button
-                  key={toast ? toast.t : 0}
-                  className={
-                    "gs-btn gs-btn-ghost gs-logbtn" +
-                    (showLog ? " gs-logbtn-on" : "") +
-                    (toast && toast.log ? " gs-logbtn-blink" : "")
-                  }
-                  onClick={() => openLog(null)}
-                  aria-haspopup="dialog"
-                >
-                  기록
-                  {log.length > 0 && <em>{log.length}</em>}
-                </button>
-                <span className="gs-tip-body" role="tooltip">
-                  모든 입력과 수정을 <b>시각과 함께</b> 기록해요. 어느 줄이든 취소할 수 있어요.
-                </span>
-              </span>
-            )}
-            {!simple && !readOnly && roundLive && (
-              <span className="gs-tip">
-                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
-                      <path d="M6.6 6.2l3.4 3.4" />
-                      <path d="M7 13.6h7" />
-                    </g>
-                  </svg>
-                  비우기
-                </button>
-                <span className="gs-tip-body gs-tip-r" role="tooltip">
-                  <b>숫자만</b> 비워요. 이름과 자리는 그대로예요.
-                </span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* 내용 상자 — 정산 장부·보낼 우편과 같은 뼈대입니다.
-            모드와 표 도구는 연결된 본문 안의 두 줄에 둡니다 */}
-        <div className={"gs-card gs-sheetbox" + (placeOn ? " gs-placing" : "") + (placeOn && justCame ? " gs-justcame" : "")} ref={sheetBoxRef}>
-
-        {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다.
-            방장이 메모장으로 바꾸면 자수 탭이 없어지므로(보통 항목이 없습니다) 뒷말도 같이
-            내려놓고, 읽기 전용 표시만 남깁니다 (§3.4) */}
-        {/* 파티원 (2026-09-17) — 누를 수 없을 때만 한 줄: 메모장 판(항목 없음) · 방장 부재 · 줄 배정 전 */}
-        {(guestPlaying || guestPending) && (simple || guestPending || !scribeOn || !you.rowId) && (
-          <div className="gs-slip gs-slip-back" role="status">
-            <span className="gs-slip-msg">
-              {simple ? (
-                /* 메모장 판에는 누를 칸이 없다 — 줄이 있든 없든 읽기 전용이다 */
-                <>
-                  <b>읽기 전용</b>이에요
-                </>
-              ) : guestPending || !you.rowId ? (
-                <>
-                  <b>자리를 기다리는 중이에요.</b> 방장이 줄에 배치하면 내 칸을 누를 수 있어요.
-                </>
-              ) : (
-                <>
-                  <b>방장이 자리를 비웠어요.</b> 돌아오면 다시 누를 수 있어요.
-                </>
-              )}
-            </span>
-          </div>
-        )}
-
-        {privWarn && (
-          <div className="gs-slip" role="status">
-            <span className="gs-slip-msg">
-              이 창은 기록을 못 지켜요 — 시크릿 창이거나 저장 공간이 부족해요.
-              <b> 창을 닫으면 장부가 사라져요.</b>
-            </span>
-            <button
-              className="gs-x gs-slip-x"
-              onClick={() => setPrivWarn(false)}
-              aria-label="알림 닫기"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        {/* 사고 직후의 안내 쪽지 — 버튼 줄을 밀지 않도록 헤더 아래 한 줄로 붙습니다.
-            표를 고치기 시작하면 조용히 사라집니다. */}
-        {undoSnap && (
-          <div className="gs-slip" role="status">
-            <span className="gs-slip-msg">{undoSnap.msg || `${undoSnap.label} 했어요`}</span>
-            <button className="gs-btn gs-btn-sm gs-undo" onClick={restoreSnap}>
-              ↩ 되돌리기
-            </button>
-            {/* 되돌릴 생각이 없으면 바로 닫습니다 — 표를 고칠 때까지 기다릴 필요 없이 */}
-            <button
-              className="gs-x gs-slip-x"
-              onClick={() => setUndoSnap(null)}
-              aria-label="알림 닫기"
-            >
-              ×
-            </button>
-          </div>
-        )}
-        {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
-        {/* 입력 단위 (§3.12.7) — 메모장 모드에는 표 바가 없어 표 위에 홀로 선다. 카운터 모드는 표 바 안 */}
-        {simple && <p className="gs-headnote gs-memonote">메모장에 적은 내용이 오른쪽 표에 바로 들어가요</p>}
-        {simple && unitSeg(true)}
-        {/* 누르는 것(복사)은 왼쪽, 읽는 것(조작법)은 오른쪽 — 손이 가는 쪽에 버튼을 둡니다 */}
-        {!simple && (
-          <div className="gs-tablebar">
-            {/* 표 바 (2026-09-20 확정, 목업 5판) — 왼쪽은 사람, 오른쪽은 표 도구 한 줄([항목 관리] · 입력 단위) + 그 아래 마우스 안내.
-                늘 두 줄 높이라 [파티원]이 커져도 표가 안 밀리고, 도구가 오른쪽에 붙어 있어 누가 들어와도 도구 단추가 옆으로 안 밀린다.
-                (폐기 2026-09-16~17) 조작 전부 왼쪽 한 줄 + 오른쪽 안내 — 들어온 사람의 얼굴 상자가 나올 때마다 [입력 단위]가 옆으로 밀렸다 */}
-            <span className="gs-tablebar-l">
-              {/* [파티원] — 초대와 배치의 문 하나. 평소에는 작은 단추, 누가 들어오면 도구 줄 높이만큼 커지며 누가 왔는지·할 일을 말한다.
-                  커진 뒤에도 왼쪽 칸은 그대로 [파티원] — 누르면 같은 작은 창(초대 메시지 복사 · 파티원 창 열기…).
-                  (폐기) 머리의 [초대] · 표 위 [자리 배치 N] + 얼굴 상자 */}
-              {!readOnly && (
-                <span className={"gs-pty" + (placeOn ? " gs-pty-open" : "")} role="group" aria-label="파티원">
-                  <span className={"gs-seatpopwrap" + (seatPop === "party" ? " open" : "")} ref={(el) => (seatPopAnchors.current.party = el)}>
-                    <button
-                      type="button"
-                      className="gs-btn gs-btn-sm gs-btn-ghost gs-ptybtn"
-                      onClick={() => setSeatPop(seatPop === "party" ? null : "party")}
-                      aria-haspopup="dialog"
-                      aria-expanded={seatPop === "party"}
-                    >
-                      {/* 두 줄 (2026-09-20 사용자) — 도구 줄이 두 줄 높이라 한 줄짜리 단추는 아래가 비어 보였다. 커진 뒤의 왼쪽 칸도 같은 두 줄이다 */}
-                      <span className="gs-ptylab">
-                        <span className="gs-ptylab-1">
-                          {PEOPLE_ICON}
-                          <span>{partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}</span>
-                        </span>
-                        <span className="gs-ptylab-2">
-                          {partyCount > 0 ? partyCount + "명 · " + partyOn + "명 연결됨" : "초대하면 파티원이 직접 자수해요"}
-                        </span>
-                      </span>
-                    </button>
-                    {seatPop === "party" && (
-                      <SeatPop
-                        party
-                        bar
-                        anchor={seatPopAnchors.current.party}
-                        label={partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}
-                        linked={!!(auth && auth.dc)}
-                        tray={[]}
-                        copied={flash === "inv"}
-                        inviteLive={inviteLive}
-                        inviteSoon={inviteSoon}
-                        inviteExpiresAt={relay.invite?.exp || 0}
-                        onReInvite={askReInvite}
-                        onDiscord={() => startDiscord()}
-                        onCopyInvite={copyInvite}
-                        onOpenModal={() => {
-                          setSeatPop(null);
-                          setSeatOpen(true);
-                        }}
-                        onClose={() => setSeatPop(null)}
-                      />
-                    )}
-                  </span>
-                  {placeOn && (
-                    <span className="gs-pty-body" role="status">
-                      <button
-                        type="button"
-                        className="gs-pty-face gs-pty-cur"
-                        onPointerDown={(e) => startFaceDrag(e, curWait)}
-                        aria-label={(curWait.nick || "") + " — 끌어서 줄에 놓을 수 있어요"}
-                        title={(curWait.nick || "") + (curWait.dcu ? " " + curWait.dcu : "")}
-                      >
-                        {waitFace(curWait, 40)}
-                      </button>
-                      <span className="gs-pty-text">
-                        <span className="gs-pty-l1">
-                          <b>{curWait.nick || curWait.acct}</b>
-                          {waitNow.length === 1 ? " 님이 들어왔어요" : " 님 외 " + (waitNow.length - 1) + "명이 들어와 있어요"}
-                        </span>
-                        <span className="gs-pty-l2">
-                          {!openRows.length
-                            ? "빈 줄이 없어요. 바꿀 사람의 사진을 눌러요"
-                            : waitNow.length === 1
-                            ? "금색으로 켜진 자리를 눌러 줄에 배치해요"
-                            : "켜진 자리를 누르면 " + (curWait.nick || curWait.acct) + " 님부터 배치해요"}
-                        </span>
-                      </span>
-                      {waitNow.length > 1 && (
-                        <span className="gs-pty-rest">
-                          {waitNow
-                            .filter((p) => p.acct !== curWait.acct)
-                            .slice(0, 3)
-                            .map((p) => (
-                              <button
-                                key={p.acct}
-                                type="button"
-                                className="gs-pty-face gs-pty-small"
-                                onPointerDown={(e) => startFaceDrag(e, p, () => setPlaceCur(p.acct))}
-                                onClick={(e) => {
-                                  if (e.detail === 0) setPlaceCur(p.acct); // 키보드로 누른 경우 — 마우스는 위의 끌기 처리가 받는다
-                                }}
-                                aria-label={(p.nick || "") + " 님부터 배치"}
-                                title={(p.nick || "") + (p.dcu ? " " + p.dcu : "")}
-                              >
-                                {waitFace(p, 26)}
-                              </button>
-                            ))}
-                          {waitNow.length > 4 && <span className="gs-pty-more">+{waitNow.length - 4}</span>}
-                        </span>
-                      )}
-                      {canFillAll && (
-                        <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-pty-act" onClick={quickFill}>
-                          빈 줄에 차례로
-                        </button>
-                      )}
-                      {!openRows.length && (
-                        <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-pty-act" onClick={() => quickPlace(curWait.acct, "new")}>
-                          줄 추가해서 배치
-                        </button>
-                      )}
-                      <button type="button" className="gs-pty-textbtn" onClick={() => askReject(curWait)}>
-                        거절
-                      </button>
-                    </span>
-                  )}
-                </span>
-              )}
-            </span>
-            <span className="gs-tablebar-end">
-              {!readOnly && (
+            {/* 표 도구는 모드 뒤, 디바이더 하나 건너 (2026-09-24 사용자 확정: 결정표 2) — 왼쪽은 "표가 어떻게 보이나"(모드 · 항목 관리 · 입력 단위),
+                오른쪽은 "무엇을 하나"(파티원 · 기록 · 비우기). GitHub·Notion·Airtable 의 배치와 같다.
+                (폐기 2026-09-20) 표 상자 안의 두 줄짜리 표 바 — 도구가 세 줄에 걸쳐 박스 안에 있어서 표 머리가 231px 에서 시작했다 */}
+            {!simple && !readOnly && <i className="gs-toolsep" aria-hidden="true" />}
+            {!simple && !readOnly && (
                 <span className="gs-tabletools">
                   {cardsMode && !readOnly && (
                     <span className="gs-itemswrap">
@@ -10196,6 +9972,169 @@ export default function GoldSettlement() {
 
                 </span>
               )}
+          </div>
+          <div className="gs-tools gs-sheetactions">
+            {/* [파티원] — 초대와 배치의 문. 오른쪽 무리의 첫 자리 (2026-09-24 사용자 확정). 초대·공유는 어느 앱이든 오른쪽 끝 무리다 */}
+            {!simple && !readOnly && (
+                <span className="gs-pty" role="group" aria-label="파티원">
+                  <span className={"gs-seatpopwrap" + (seatPop === "party" ? " open" : "")} ref={(el) => (seatPopAnchors.current.party = el)}>
+                    <button
+                      type="button"
+                      className="gs-btn gs-btn-sm gs-btn-ghost gs-ptybtn"
+                      onClick={() => setSeatPop(seatPop === "party" ? null : "party")}
+                      aria-haspopup="dialog"
+                      aria-expanded={seatPop === "party"}
+                    >
+                      {/* 한 줄 (2026-09-24 사용자 확정: 결정표 3) — 도구 줄이 한 줄이 되어 단추도 34px 한 줄.
+                          부제("초대하면 파티원이 직접 자수해요" / "n명 · n명 연결됨")는 작은 창 첫 줄이 말한다.
+                          (폐기 2026-09-20) 두 줄 — 도구 줄이 두 줄 높이라 한 줄짜리 단추는 아래가 비어 보였다 */}
+                      <span className="gs-ptylab">
+                        <span className="gs-ptylab-1">
+                          {PEOPLE_ICON}
+                          <span>{partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}</span>
+                        </span>
+                      </span>
+                    </button>
+                    {seatPop === "party" && (
+                      <SeatPop
+                        party
+                        bar
+                        anchor={seatPopAnchors.current.party}
+                        label={partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}
+                        sub={partyCount > 0 ? partyCount + "명 · " + partyOn + "명 연결됨" : "초대하면 파티원이 직접 자수해요"}
+                        linked={!!(auth && auth.dc)}
+                        tray={[]}
+                        copied={flash === "inv"}
+                        inviteLive={inviteLive}
+                        inviteSoon={inviteSoon}
+                        inviteExpiresAt={relay.invite?.exp || 0}
+                        onReInvite={askReInvite}
+                        onDiscord={() => startDiscord()}
+                        onCopyInvite={copyInvite}
+                        onOpenModal={() => {
+                          setSeatPop(null);
+                          setSeatOpen(true);
+                        }}
+                        onClose={() => setSeatPop(null)}
+                      />
+                    )}
+                  </span>
+                </span>
+            )}
+            {!simple && !readOnly && <i className="gs-toolsep" aria-hidden="true" />}
+            {/* 파티원도 봅니다 (2026-09-06) — 기록은 이미 판과 함께 넘어오고, 단가 변경(`단가 3만 → 5만`)도 한 줄로 남아 있어
+                단가 × 횟수와 금액이 다를 때 왜 그런지 여기서 읽힙니다. 취소는 방장만 */}
+            {!simple && (
+              <span className="gs-tip">
+                <button
+                  key={toast ? toast.t : 0}
+                  className={
+                    "gs-btn gs-btn-ghost gs-logbtn" +
+                    (showLog ? " gs-logbtn-on" : "") +
+                    (toast && toast.log ? " gs-logbtn-blink" : "")
+                  }
+                  onClick={() => openLog(null)}
+                  aria-haspopup="dialog"
+                >
+                  {/* 아이콘 (2026-09-24 사용자 확정: 결정표 4) — [파티원]·[비우기]처럼 아이콘 + 글 */}
+                  {LOG_ICON}
+                  기록
+                  {log.length > 0 && <em>{log.length}</em>}
+                </button>
+                <span className="gs-tip-body" role="tooltip">
+                  모든 입력과 수정을 <b>시각과 함께</b> 기록해요. 어느 줄이든 취소할 수 있어요.
+                </span>
+              </span>
+            )}
+            {!simple && !readOnly && roundLive && (
+              <span className="gs-tip">
+                <button className="gs-btn gs-btn-sm gs-btn-ghost gs-wipebtn" onClick={askWipeCounts}>
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9.6 2.4l4 4-6.4 6.4H4.6L2.4 10.6l7.2-8.2z" />
+                      <path d="M6.6 6.2l3.4 3.4" />
+                      <path d="M7 13.6h7" />
+                    </g>
+                  </svg>
+                  비우기
+                </button>
+                <span className="gs-tip-body gs-tip-r" role="tooltip">
+                  <b>숫자만</b> 비워요. 이름과 자리는 그대로예요.
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+        {/* 도착 띠 (2026-09-24 사용자 확정: 결정표 6) — 들어온 사람은 도구가 아니라 사건이라 도구 줄과 표 사이에 제 띠로 선다.
+            "항목을 지웠어요 · [되돌리기]" 띠와 같은 자리·같은 결의 금색판. 표가 그만큼 내려가는 건 허용(사용자).
+            (폐기) [파티원] 단추가 옆으로 커지던 상자 — 한 줄 도구 줄에는 자리가 없다: 왼쪽 500 + 상자 424~569 + 기록·비우기 160 > 1080 */}
+        {!simple && !readOnly && placeOn && (
+          <div className="gs-arrive">
+                    <span className="gs-pty-body" role="status">
+                      <button
+                        type="button"
+                        className="gs-pty-face gs-pty-cur"
+                        onPointerDown={(e) => startFaceDrag(e, curWait)}
+                        aria-label={(curWait.nick || "") + " — 끌어서 줄에 놓을 수 있어요"}
+                        title={(curWait.nick || "") + (curWait.dcu ? " " + curWait.dcu : "")}
+                      >
+                        {waitFace(curWait, 40)}
+                      </button>
+                      <span className="gs-pty-text">
+                        <span className="gs-pty-l1">
+                          <b>{curWait.nick || curWait.acct}</b>
+                          {waitNow.length === 1 ? " 님이 들어왔어요" : " 님 외 " + (waitNow.length - 1) + "명이 들어와 있어요"}
+                        </span>
+                        <span className="gs-pty-l2">
+                          {!openRows.length
+                            ? "빈 줄이 없어요. 바꿀 사람의 사진을 눌러요"
+                            : waitNow.length === 1
+                            ? "금색으로 켜진 자리를 눌러 줄에 배치해요"
+                            : "켜진 자리를 누르면 " + (curWait.nick || curWait.acct) + " 님부터 배치해요"}
+                        </span>
+                      </span>
+                      {waitNow.length > 1 && (
+                        <span className="gs-pty-rest">
+                          {waitNow
+                            .filter((p) => p.acct !== curWait.acct)
+                            .slice(0, 3)
+                            .map((p) => (
+                              <button
+                                key={p.acct}
+                                type="button"
+                                className="gs-pty-face gs-pty-small"
+                                onPointerDown={(e) => startFaceDrag(e, p, () => setPlaceCur(p.acct))}
+                                onClick={(e) => {
+                                  if (e.detail === 0) setPlaceCur(p.acct); // 키보드로 누른 경우 — 마우스는 위의 끌기 처리가 받는다
+                                }}
+                                aria-label={(p.nick || "") + " 님부터 배치"}
+                                title={(p.nick || "") + (p.dcu ? " " + p.dcu : "")}
+                              >
+                                {waitFace(p, 26)}
+                              </button>
+                            ))}
+                          {waitNow.length > 4 && <span className="gs-pty-more">+{waitNow.length - 4}</span>}
+                        </span>
+                      )}
+                      {canFillAll && (
+                        <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-pty-act" onClick={quickFill}>
+                          빈 줄에 차례로
+                        </button>
+                      )}
+                      {!openRows.length && (
+                        <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-pty-act" onClick={() => quickPlace(curWait.acct, "new")}>
+                          줄 추가해서 배치
+                        </button>
+                      )}
+                      <button type="button" className="gs-pty-textbtn" onClick={() => askReject(curWait)}>
+                        거절
+                      </button>
+                    </span>
+          </div>
+        )}
+        {/* 마우스 안내 — 상자 바로 위 오른쪽 끝 한 줄 (2026-09-24 사용자 확정: 결정표 5). 카운터·카드 두 모드 같은 자리, 파티원 문구도 그대로 든다 */}
+        {!simple && (
+          <div className="gs-cellnote-row">
               {readOnly ? (
                 /* 파티원 — 누른 건 방장 벌금판에 올라가고, 서버가 30초 안의 되돌리기만 받는다 (§3.6) */
                 <p className="gs-cellnote">
@@ -10208,9 +10147,76 @@ export default function GoldSettlement() {
                   우클릭하면 1회 빠져요.
                 </p>
               )}
+          </div>
+        )}
+        {/* 내용 상자 — 정산 장부와 같은 규칙: 박스는 표만 감싼다 (2026-09-24 사용자 확정: 결정표 2).
+            카드 모드는 카드가 제 가장자리를 가지니 박스를 두르지 않는다 (결정표 13) */}
+        <div className={"gs-card gs-sheetbox" + (((cardsMode && !readOnly) || memberCards) ? " gs-sheetbox-cards" : "") + (placeOn ? " gs-placing" : "") + (placeOn && justCame ? " gs-justcame" : "")} ref={sheetBoxRef}>
+
+        {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다.
+            방장이 메모장으로 바꾸면 자수 탭이 없어지므로(보통 항목이 없습니다) 뒷말도 같이
+            내려놓고, 읽기 전용 표시만 남깁니다 (§3.4) */}
+        {/* 파티원 (2026-09-17) — 누를 수 없을 때만 한 줄: 메모장 판(항목 없음) · 방장 부재 · 줄 배정 전 */}
+        {(guestPlaying || guestPending) && (simple || guestPending || !scribeOn || !you.rowId) && (
+          <div className="gs-slip gs-slip-back" role="status">
+            <span className="gs-slip-msg">
+              {simple ? (
+                /* 메모장 판에는 누를 칸이 없다 — 줄이 있든 없든 읽기 전용이다 */
+                <>
+                  <b>읽기 전용</b>이에요
+                </>
+              ) : guestPending || !you.rowId ? (
+                <>
+                  <b>자리를 기다리는 중이에요.</b> 방장이 줄에 배치하면 내 칸을 누를 수 있어요.
+                </>
+              ) : (
+                <>
+                  <b>방장이 자리를 비웠어요.</b> 돌아오면 다시 누를 수 있어요.
+                </>
+              )}
             </span>
           </div>
         )}
+
+        {privWarn && (
+          <div className="gs-slip" role="status">
+            <span className="gs-slip-msg">
+              이 창은 기록을 못 지켜요 — 시크릿 창이거나 저장 공간이 부족해요.
+              <b> 창을 닫으면 장부가 사라져요.</b>
+            </span>
+            <button
+              className="gs-x gs-slip-x"
+              onClick={() => setPrivWarn(false)}
+              aria-label="알림 닫기"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* 사고 직후의 안내 쪽지 — 버튼 줄을 밀지 않도록 헤더 아래 한 줄로 붙습니다.
+            표를 고치기 시작하면 조용히 사라집니다. */}
+        {undoSnap && (
+          <div className="gs-slip" role="status">
+            <span className="gs-slip-msg">{undoSnap.msg || `${undoSnap.label} 했어요`}</span>
+            <button className="gs-btn gs-btn-sm gs-undo" onClick={restoreSnap}>
+              ↩ 되돌리기
+            </button>
+            {/* 되돌릴 생각이 없으면 바로 닫습니다 — 표를 고칠 때까지 기다릴 필요 없이 */}
+            <button
+              className="gs-x gs-slip-x"
+              onClick={() => setUndoSnap(null)}
+              aria-label="알림 닫기"
+            >
+              ×
+            </button>
+          </div>
+        )}
+        {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
+        {/* 입력 단위 (§3.12.7) — 메모장 모드에는 표 바가 없어 표 위에 홀로 선다. 카운터 모드는 표 바 안 */}
+        {simple && <p className="gs-headnote gs-memonote">메모장에 적은 내용이 오른쪽 표에 바로 들어가요</p>}
+        {simple && unitSeg(true)}
+        {/* 누르는 것(복사)은 왼쪽, 읽는 것(조작법)은 오른쪽 — 손이 가는 쪽에 버튼을 둡니다 */}
 
         {/* 사용법은 카드 안에서 펼치지 않고 팝업으로 띄웁니다 — 탭 화면에서 표가 밀리지 않게 */}
 
@@ -14009,7 +14015,7 @@ function PlacerAva({ p, size }) {
   );
 }
 /* 빈 초상화 팝오버 (2026-09-18) — 화면에 고정 좌표로 띄운다(표는 가로 스크롤 상자 안이라 absolute 면 잘린다). 아래가 모자라면 위로 */
-function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWho, inviteLive, inviteSoon, inviteExpiresAt, onReInvite, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
+function SeatPop({ anchor, label, sub, linked, tray, copied, who, party, bar, placeWho, inviteLive, inviteSoon, inviteExpiresAt, onReInvite, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -14040,6 +14046,8 @@ function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWh
     <div ref={ref} className="gs-seatpop" role="dialog" aria-label={label} style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden", left: 0, top: 0 }}>
       <div className="gs-seatpop-h">
         <b>{label}</b>
+        {/* [파티원] 단추가 두 줄이던 때의 부제 (2026-09-24) — 단추가 한 줄이 되면서 여기로 */}
+        {sub && <span className="gs-seatpop-tag">{sub}</span>}
         {!who && !party && <span className="gs-seatpop-tag">비어 있음</span>}
       </div>
       {who ? (
@@ -16658,6 +16666,29 @@ const CSS = `
 .gs-sheethead .gs-btn{height:34px; padding-top:0; padding-bottom:0; display:inline-flex; align-items:center}
 .gs-surface .gs-tablebar{margin-bottom:12px}
 .gs-memonote{margin:0 0 10px}
+/* 벌금표도 장부와 같은 규칙 (2026-09-24 사용자 확정: 결정표 2·13) — 도구 한 줄은 박스 밖, 박스는 표만.
+   표 머리가 231 → 약 160 으로 올라온다. 카드 모드는 카드가 제 가장자리를 가지니 박스를 두르지 않는다 */
+.gs-tabbed .gs-sheetsec{background:transparent; border:0; border-radius:0; padding:0; box-shadow:none}
+.gs-surface.gs-sheetsec > .gs-sheetbox{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; padding:0; overflow:hidden}
+.gs-surface.gs-sheetsec > .gs-sheetbox.gs-sheetbox-cards{background:transparent; border:0; border-radius:0; overflow:visible}
+/* 도구 한 줄 — 왼쪽 무리는 10px, (?)는 모드 세그에 붙고(5px) 디바이더 하나 건너 표 도구 */
+.gs-sheethead .gs-sheetmodes{gap:10px}
+.gs-sheethead .gs-modebar > .gs-tip{margin-left:-4px}
+.gs-toolsep{width:1px; height:22px; background:rgba(var(--ink-rgb),.22); flex:none}
+.gs-sheethead .gs-tabletools{display:flex; align-items:center; gap:14px}
+.gs-sheethead .gs-ptybtn{border-color:rgba(var(--gold-rgb),.8); color:var(--gold)}
+.gs-sheethead .gs-ptylab{flex-direction:row}
+.gs-sheethead .gs-logbtn{gap:7px}
+.gs-sheethead .gs-logbtn > svg{width:15px; height:15px; opacity:.85; flex:none}
+/* 마우스 안내 — 상자 바로 위 오른쪽 끝 */
+.gs-sheetsec > .gs-cellnote-row{display:flex; justify-content:flex-end; margin:-4px 2px 8px}
+.gs-sheetsec > .gs-cellnote-row .gs-cellnote{margin:0; white-space:nowrap}
+/* 도착 띠 — 바탕은 불투명(따라올 때 표가 비치면 안 된다): 크라프트 위에 옅은 금색 */
+.gs-arrive{display:flex; align-items:center; height:64px; margin:0 0 12px; padding:0 14px 0 12px;
+  border:1px solid rgba(var(--gold-rgb),.8); border-radius:2px;
+  background:linear-gradient(rgba(var(--gold-rgb),.09),rgba(var(--gold-rgb),.09)),var(--kraft)}
+.gs-arrive .gs-pty-body{padding:0; flex:1; min-width:0}
+.gs-arrive .gs-pty-act{height:28px; padding-left:10px; padding-right:10px; font-size:12.5px; flex:none; white-space:nowrap}
 .gs-surface.gs-sheetsec > .gs-sheetbox{animation:gs-sheet-in .28s cubic-bezier(.2,.7,.3,1)}
 @keyframes gs-sheet-in{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
 @media(prefers-reduced-motion:reduce){.gs-surface.gs-sheetsec > .gs-sheetbox{animation:none}.gs-tab{transition:none}}
@@ -19554,7 +19585,8 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-pc-out{display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border:0; border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer}
 .gs-pc-out:hover{background:rgba(var(--ink-rgb),.06)}
 .gs-pc-out svg{color:var(--ink-2)}
-/* ── 표 바 (2026-09-20 확정) — 왼쪽은 사람([파티원]), 오른쪽은 표 도구 한 줄 + 그 아래 마우스 안내. 늘 두 줄 높이 ── */
+/* ── (폐기 2026-09-24 사용자 확정) 표 바 .gs-tablebar* · .gs-pty-open · gs-pty-grow — 도구 줄이 한 줄이 되고 들어온 사람은 도착 띠(.gs-arrive)로 갔다.
+   아래 규칙들은 이제 맞는 마크업이 없다. 이웃 규칙(.gs-pty-body·-face·-text·-rest·-textbtn)은 도착 띠가 그대로 쓴다 ── */
 .gs-tablebar{align-items:stretch}
 /* 왼쪽은 stretch — [파티원]이 늘 줄 높이를 쓴다. 오른쪽 무리는 간격을 벌린다 (2026-09-20 사용자: "오른쪽이 지나치게 빽빽하다") */
 .gs-tablebar-l{flex-wrap:nowrap; min-width:0; align-items:stretch}
