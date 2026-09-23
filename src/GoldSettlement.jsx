@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, Fragment } from "react";
+import { createPortal } from "react-dom";
 
 /* ==================================================================
    벌금 정산 · 최소 송금 계산기
@@ -12085,6 +12086,9 @@ export default function GoldSettlement() {
           onClose={() => setShare(null)}
         />
       )}
+      {/* 층 (2026-09-24) — 표 안에서 태어나는 작은 창(.gs-seatpop)이 포털로 오는 자리.
+          sticky 이름 칸(z 2)의 층에 갇히지 않고 루트 층에서 z 60 으로 선다. .gs 안이라 색 변수·글꼴은 그대로 */}
+      <div className="gs-layer" />
     </div>
   );
 }
@@ -14032,7 +14036,7 @@ function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWh
   }, [onClose]);
   /* 작은 창의 틀 (2026-09-19 확정) — 제목 줄 · 본문 · 단추는 글 아래 오른쪽(.gs-pop-acts) · 맨 아래 점선 위 금색 링크.
      (2026-09-20) [파티원] 단추의 작은 창(party)도 이 틀 — 초대 안내와 [파티원 창 열기…] */
-  return (
+  const node = (
     <div ref={ref} className="gs-seatpop" role="dialog" aria-label={label} style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden", left: 0, top: 0 }}>
       <div className="gs-seatpop-h">
         <b>{label}</b>
@@ -14129,6 +14133,11 @@ function SeatPop({ anchor, label, linked, tray, copied, who, party, bar, placeWh
       </button>
     </div>
   );
+  /* 층으로 포털 (2026-09-24, 버그) — 줄의 빈 사진 자리에서 열면 이 창이 sticky 이름 칸(z 2) 안에서 태어나
+     그 칸의 층에 갇혔다. position:fixed·z 60 이어도 소용없이 아래 줄들의 이름 칸과 호버 말풍선(z 6)이 위에 그려졌다.
+     좌표는 이미 뷰포트 기준(fixed)이라 옮겨도 그대로. 바깥 클릭 판정은 .gs-seatpop 셀렉터라 그대로 통한다 */
+  const host = typeof document !== "undefined" ? document.querySelector(".gs-layer") : null;
+  return host ? createPortal(node, host) : node;
 }
 function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, onCopyInvite, onSave, onCancel }) {
   const [D, setD] = useState(() => ({
@@ -19509,6 +19518,8 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* 작은 창의 틀 (2026-09-19 확정) — 잉크 1px 테두리 · 본문 12.5px 보통 굵기 · 제목만 명조 굵게 · 단추는 글 아래 오른쪽 · 맨 아래 점선 위 금색 링크.
    초상화 창·[파티원] 작은 창·[항목 관리]·[기타]가 같은 틀. (버그) 초상화 창은 표의 이름 칸(th) 안이라 굵은 글씨를 물려받았다 — font-weight 를 못박는다 */
 .gs-pop-acts{display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:12px}
+/* 작은 창은 .gs-layer(루트 끝의 층)로 포털된다 (2026-09-24) — 표의 sticky 칸 층에 갇히지 않게 */
+.gs-layer{display:contents}
 .gs-seatpop{position:fixed; z-index:60; width:340px; padding:14px 16px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px; font-weight:400; line-height:1.7; color:var(--ink-body);
   box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); font-size:12.5px; text-align:left; cursor:default; letter-spacing:0}
 .gs-seatpop-h{display:flex; align-items:baseline; gap:8px; padding-bottom:10px; border-bottom:1px dotted rgba(var(--ink-rgb),.3)}

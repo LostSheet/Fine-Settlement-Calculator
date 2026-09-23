@@ -21,6 +21,11 @@ const page = () => {
       /^import\s+\{([^}]*)\}\s+from\s+"react";?\s*/m,
       (_m, names) => `const {${names.trim()}} = React;\n`
     )
+    // react-dom 도 같은 식 (createPortal)
+    .replace(
+      /^import\s+\{([^}]*)\}\s+from\s+"react-dom";?\s*/m,
+      (_m, names) => `const {${names.trim()}} = ReactDOM;\n`
+    )
     .replace(/^export default function (\w+)/m, "function $1");
 
   return `<!doctype html>
