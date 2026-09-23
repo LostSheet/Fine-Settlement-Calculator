@@ -234,6 +234,35 @@ export const PAGE_HTML = `<!doctype html>
   html[data-face="W"] .ov-fx{width:24vw}
   html[data-face="W"] .ov-face{width:100%; height:auto; aspect-ratio:1}
   html[data-face="W"] .ov-fx b,html[data-face="W"] .ov-fx span{padding-left:2vw; padding-right:2vw}
+  /* A · 왼쪽 원안 — 사진이 두 칸 높이(이름 12.24 + 금색 10.69 ≈ 22.9vw), 크림 띠 대신. 이름·꼬리표는 기존 카드 그대로 */
+  html[data-face="A"] .ov-fx::before{display:none}
+  html[data-face="A"] .ov-fx-body{display:grid; grid-template-columns:auto auto}
+  html[data-face="A"] .ov-face{grid-row:1 / 3; grid-column:1; width:22.9vw; height:auto; min-height:22.9vw; align-self:stretch}
+  html[data-face="A"] .ov-fx b{grid-column:2; font-size:6.4vw; padding:2.6vw 5vw}
+  html[data-face="A"] .ov-fx b small{font-size:.5em; display:inline}
+  html[data-face="A"] .ov-fx b .ov-fx-nm.wrap + small{display:block; margin:.35em 0 0}
+  html[data-face="A"] .ov-fx span{grid-column:2}
+  /* K · 왼쪽 조정, 한 줄 명패 — 사진 | 이름·항목 두 줄 | 금액. 셋이 같은 높이(14vw)의 직각 칸.
+     금색 칸 앞 크림 띠(.45vw)는 기존 카드의 이름·금액 사이 띠를 세로로 세운 것. 금액은 옆으로 펼쳐진다 */
+  html[data-face="K"] .ov-fx::before{display:none}
+  html[data-face="K"] .ov-fx-body{display:flex; align-items:stretch}
+  html[data-face="K"] .ov-face{width:12vw; height:12vw; flex:none}
+  html[data-face="K"] .ov-fx b{display:flex; flex-direction:column; justify-content:center; align-items:flex-start; text-align:left;
+    font-size:4.4vw; padding:0 2.8vw 0 2.6vw; min-width:0}
+  html[data-face="K"] .ov-fx b small{display:block; font-size:.56em; margin:.45em 0 0; line-height:1}
+  html[data-face="K"] .ov-fx-nm{white-space:nowrap}
+  html[data-face="K"] .ov-fx span{display:flex; align-items:center; font-size:6.2vw; padding:0 2.8vw; border-top:0;
+    border-left:.45vw solid rgba(245,240,230,.75); transform-origin:0 50%; animation-name:ov-fx-goldx}
+  html[data-face="K"] .ov-fx-body.rise span{animation-name:ov-fx-goldx}
+  @keyframes ov-fx-goldx{from{transform:scaleX(0)} to{transform:scaleX(1)}}
+  /* P · 위 조정 — 사진 4:3(폭 26vw, 높이 19.5vw)으로 낮추고, 이름 띠가 사진 아랫단에 겹친다. 아래엔 금색 칸만 */
+  html[data-face="P"] .ov-fx{width:26vw}
+  html[data-face="P"] .ov-fx-body{display:grid}
+  html[data-face="P"] .ov-face{grid-area:1 / 1; width:100%; height:19.5vw}
+  html[data-face="P"] .ov-fx b{grid-area:1 / 1; align-self:end; position:relative; z-index:1; font-size:4.4vw; padding:1.3vw 2vw 1.4vw;
+    background:rgba(23,19,14,.88)}
+  html[data-face="P"] .ov-fx b small{display:block; font-size:.58em; margin:.35em 0 0; line-height:1}
+  html[data-face="P"] .ov-fx span{grid-area:2 / 1; padding-left:2vw; padding-right:2vw}
   /* 항목 꼬리표 자리 (실험 ?tag=) — line: 이름 아래 한 줄, 이름이 칸 폭을 다 쓴다. photo: 사진 왼쪽 아래 딱지 */
   html[data-face][data-tag="line"] .ov-fx b small{display:block; margin:.35em 0 0; line-height:1}
   html[data-face] .ov-fx-nm{font-style:normal}
@@ -756,9 +785,10 @@ export const PAGE_HTML = `<!doctype html>
      (폐기 2026-09-06) 주소 카드 맨 위의 iframe 미리보기 — 스크롤을 잡아먹고 주소가 안 보였다. 이번엔 각 설정 옆 작은 칸이다 */
   var isPv = isDemo && q.get("pv") === "1";
   /* 클릭 알림 초상화 — 실험 스위치 (2026-09-24, 룩 결정 전). ?face=L|C|W 일 때만 */
-  var FACE = /^(L|C|W)$/.test(q.get("face") || "") ? q.get("face") : "";
+  var FACE = /^(L|C|W|A|K|P)$/.test(q.get("face") || "") ? q.get("face") : "";
   if (FACE) document.documentElement.dataset.face = FACE;
-  var TAG = FACE && /^(line|photo)$/.test(q.get("tag") || "") ? q.get("tag") : "inline";
+  var TAG = FACE === "W" ? (/^(line|photo)$/.test(q.get("tag") || "") ? q.get("tag") : "inline")
+    : FACE === "A" ? "inline" : "line";
   if (FACE) document.documentElement.dataset.tag = TAG;
   var SIL_SVG = "<svg viewBox='0 0 20 20' aria-hidden='true'><g fill='currentColor'><circle cx='10' cy='6.4' r='3.4'/><path d='M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z'/></g></svg>";
   /* 소스 나누기 — board 는 현황판만, spin 은 룰렛만 그립니다. 없으면 둘 다.
@@ -2225,7 +2255,7 @@ export const PAGE_HTML = `<!doctype html>
     var k = (room / need) * 0.97;
     if (k >= 0.7) { b.style.fontSize = (base * k).toFixed(2) + "px"; return; }
     b.style.fontSize = (base * 0.7).toFixed(2) + "px";
-    if (TAG !== "inline") {
+    {
       nm.className = "ov-fx-nm wrap";
       /* 반씩 — 70% 크기의 글자 폭(need × .7)의 절반에 한 글자 남짓 여유 */
       nm.style.maxWidth = Math.min(room, need * 0.7 * 0.5 + base * 0.7 * 1.1).toFixed(1) + "px";
