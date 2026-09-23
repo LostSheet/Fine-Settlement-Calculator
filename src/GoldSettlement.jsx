@@ -8445,6 +8445,37 @@ export default function GoldSettlement() {
   const blankRow = (x) => (!(x.name || "").trim() || isFillName(x.name)) && noFine(x);
   const openRows = rows.filter((x) => !seatAcctOf(x.id));
   const canFillAll = placeOn && waitNow.length >= 2 && openRows.length > 0 && openRows.every(blankRow);
+  /* 도착 띠가 따라오는 동안 (2026-09-24 사용자 확정: 결정표 8) — 띠 바로 위의 0px 표지(.gs-arrive-pin)가 화면 위로 나가면 붙은 것.
+     붙으면 그림자 + 띠 끝에 [파티원] 문(도구 줄의 단추는 화면 밖이라). 작은 창은 어느 문에서 열었는지에 따라 그 문에 걸린다 */
+  const [partyPopAt, setPartyPopAt] = useState("bar");
+  const [arriveStuck, setArriveStuck] = useState(false);
+  const arrivePinRef = useRef(null);
+  const arriveRef = useRef(null);
+  useEffect(() => {
+    const pin = arrivePinRef.current;
+    if (!placeOn || !pin || typeof IntersectionObserver !== "function") {
+      setArriveStuck(false);
+      return;
+    }
+    const io = new IntersectionObserver(([en]) => setArriveStuck(!en.isIntersecting && en.boundingClientRect.top < 0), { threshold: 0 });
+    io.observe(pin);
+    return () => io.disconnect();
+  }, [placeOn]);
+  /* 꼬리 (결정표 9) — 띠의 윗변에서 도구 줄 [파티원] 단추 한가운데를 가리킨다. 단추는 그대로 단추라야 해서(탭으로 이으면 이름표가 된다)
+     이어 붙이지 않고 말풍선 꼬리로 "어디서 나온 띠인가"만 말한다. 렌더마다 재는 건 rect 둘이라 값이 싸다 */
+  useLayoutEffect(() => {
+    const band = arriveRef.current;
+    const btn = seatPopAnchors.current.party;
+    if (!band || !btn) return;
+    const place = () => {
+      const a = btn.getBoundingClientRect();
+      const b = band.getBoundingClientRect();
+      band.style.setProperty("--tail-x", Math.round(a.left + a.width / 2 - b.left) + "px");
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  });
   const waitFace = (p, size) =>
     p.ava && (p.ava.id || p.ava.p) ? (
       <DcAva dc={avaDc(p.ava)} size={size} />
@@ -9981,7 +10012,10 @@ export default function GoldSettlement() {
                     <button
                       type="button"
                       className="gs-btn gs-btn-sm gs-btn-ghost gs-ptybtn"
-                      onClick={() => setSeatPop(seatPop === "party" ? null : "party")}
+                      onClick={() => {
+                        setPartyPopAt("bar");
+                        setSeatPop(seatPop === "party" ? null : "party");
+                      }}
                       aria-haspopup="dialog"
                       aria-expanded={seatPop === "party"}
                     >
@@ -9999,7 +10033,7 @@ export default function GoldSettlement() {
                       <SeatPop
                         party
                         bar
-                        anchor={seatPopAnchors.current.party}
+                        anchor={partyPopAt === "band" && seatPopAnchors.current.door ? seatPopAnchors.current.door : seatPopAnchors.current.party}
                         label={partyCount > 0 || waitBelow.length > 0 ? "파티원" : "파티원 초대"}
                         sub={partyCount > 0 ? partyCount + "명 · " + partyOn + "명 연결됨" : "초대하면 파티원이 직접 자수해요"}
                         linked={!!(auth && auth.dc)}
@@ -10069,7 +10103,10 @@ export default function GoldSettlement() {
             "항목을 지웠어요 · [되돌리기]" 띠와 같은 자리·같은 결의 금색판. 표가 그만큼 내려가는 건 허용(사용자).
             (폐기) [파티원] 단추가 옆으로 커지던 상자 — 한 줄 도구 줄에는 자리가 없다: 왼쪽 500 + 상자 424~569 + 기록·비우기 160 > 1080 */}
         {!simple && !readOnly && placeOn && (
-          <div className="gs-arrive">
+          <>
+            <i className="gs-arrive-pin" ref={arrivePinRef} aria-hidden="true" />
+            <div className={"gs-arrive" + (arriveStuck ? " gs-arrive-stuck" : "")} ref={arriveRef}>
+              <i className="gs-arrive-tail" aria-hidden="true" />
                     <span className="gs-pty-body" role="status">
                       <button
                         type="button"
@@ -10081,20 +10118,26 @@ export default function GoldSettlement() {
                         {waitFace(curWait, 40)}
                       </button>
                       <span className="gs-pty-text">
+                        {/* 첫 줄은 차례인 사람만 (2026-09-24 사용자 확정: 결정표 7) — 기다리는 사람은 옆의 대기 줄이 말한다.
+                            (폐기) "○○ 님 외 n명이 들어와 있어요" / "켜진 자리를 누르면 ○○ 님부터 배치해요" — 차례와 대기가 한 문장에 섞였다 */}
                         <span className="gs-pty-l1">
                           <b>{curWait.nick || curWait.acct}</b>
-                          {waitNow.length === 1 ? " 님이 들어왔어요" : " 님 외 " + (waitNow.length - 1) + "명이 들어와 있어요"}
+                          {waitNow.length === 1 ? " 님이 들어왔어요" : " 님을 배치할 차례예요"}
                         </span>
                         <span className="gs-pty-l2">
-                          {!openRows.length
-                            ? "빈 줄이 없어요. 바꿀 사람의 사진을 눌러요"
-                            : waitNow.length === 1
-                            ? "금색으로 켜진 자리를 눌러 줄에 배치해요"
-                            : "켜진 자리를 누르면 " + (curWait.nick || curWait.acct) + " 님부터 배치해요"}
+                          {!openRows.length ? "빈 줄이 없어요. 바꿀 사람의 사진을 눌러요" : "금색으로 켜진 자리를 눌러 줄에 배치해요"}
                         </span>
                       </span>
+                      {/* [거절]은 차례인 사람 바로 옆 (결정표 7) — 띠 오른쪽 끝에 두면 대기 줄 너머에 서서 '전부 거절'로 읽힌다. 거절은 이 한 사람에게만 걸린다 */}
+                      <button type="button" className="gs-pty-textbtn" onClick={() => askReject(curWait)}>
+                        거절
+                      </button>
+                      {/* 대기 줄 (2026-09-24 사용자 확정: 결정표 7) — "대기 중" 뒤에 사진 + 이름 칩. 사진만으로는 누군지 모른다(디스코드 사진은 제각각).
+                          셋까지 보이고 나머지는 +N. 칩을 끌어 놓거나 누르면 그 사람이 앞으로 온다(지금 동작 그대로).
+                          (폐기) 사진만 26px 로 늘어놓던 .gs-pty-rest */}
                       {waitNow.length > 1 && (
-                        <span className="gs-pty-rest">
+                        <span className="gs-pty-queue">
+                          <span className="gs-pty-qlab">대기 중</span>
                           {waitNow
                             .filter((p) => p.acct !== curWait.acct)
                             .slice(0, 3)
@@ -10102,7 +10145,7 @@ export default function GoldSettlement() {
                               <button
                                 key={p.acct}
                                 type="button"
-                                className="gs-pty-face gs-pty-small"
+                                className="gs-pty-chip"
                                 onPointerDown={(e) => startFaceDrag(e, p, () => setPlaceCur(p.acct))}
                                 onClick={(e) => {
                                   if (e.detail === 0) setPlaceCur(p.acct); // 키보드로 누른 경우 — 마우스는 위의 끌기 처리가 받는다
@@ -10110,12 +10153,14 @@ export default function GoldSettlement() {
                                 aria-label={(p.nick || "") + " 님부터 배치"}
                                 title={(p.nick || "") + (p.dcu ? " " + p.dcu : "")}
                               >
-                                {waitFace(p, 26)}
+                                <span className="gs-pty-face">{waitFace(p, 22)}</span>
+                                <span className="gs-pty-chipname">{p.nick || p.acct}</span>
                               </button>
                             ))}
                           {waitNow.length > 4 && <span className="gs-pty-more">+{waitNow.length - 4}</span>}
                         </span>
                       )}
+                      <span className="gs-pty-sp" aria-hidden="true" />
                       {canFillAll && (
                         <button type="button" className="gs-btn gs-btn-sm gs-lbstart gs-pty-act" onClick={quickFill}>
                           빈 줄에 차례로
@@ -10126,11 +10171,25 @@ export default function GoldSettlement() {
                           줄 추가해서 배치
                         </button>
                       )}
-                      <button type="button" className="gs-pty-textbtn" onClick={() => askReject(curWait)}>
-                        거절
-                      </button>
+                      {/* 붙어 있는 동안의 문 (결정표 8) — 도구 줄의 [파티원]이 화면 밖이라 띠 끝에 같은 문을 세운다. 작은 창은 이 문에 걸린다 */}
+                      <span className="gs-seatpopwrap gs-arrive-doorwrap" ref={(el) => (seatPopAnchors.current.door = el)}>
+                        <button
+                          type="button"
+                          className="gs-btn gs-btn-sm gs-btn-ghost gs-arrive-door"
+                          onClick={() => {
+                            setPartyPopAt("band");
+                            setSeatPop(seatPop === "party" ? null : "party");
+                          }}
+                          aria-haspopup="dialog"
+                          aria-expanded={seatPop === "party" && partyPopAt === "band"}
+                        >
+                          {PEOPLE_ICON}
+                          파티원
+                        </button>
+                      </span>
                     </span>
-          </div>
+            </div>
+          </>
         )}
         {/* 마우스 안내 — 상자 바로 위 오른쪽 끝 한 줄 (2026-09-24 사용자 확정: 결정표 5). 카운터·카드 두 모드 같은 자리, 파티원 문구도 그대로 든다 */}
         {!simple && (
@@ -16684,10 +16743,32 @@ const CSS = `
 .gs-sheetsec > .gs-cellnote-row{display:flex; justify-content:flex-end; margin:-4px 2px 8px}
 .gs-sheetsec > .gs-cellnote-row .gs-cellnote{margin:0; white-space:nowrap}
 /* 도착 띠 — 바탕은 불투명(따라올 때 표가 비치면 안 된다): 크라프트 위에 옅은 금색 */
-.gs-arrive{display:flex; align-items:center; height:64px; margin:0 0 12px; padding:0 14px 0 12px;
-  border:1px solid rgba(var(--gold-rgb),.8); border-radius:2px;
-  background:linear-gradient(rgba(var(--gold-rgb),.09),rgba(var(--gold-rgb),.09)),var(--kraft)}
+.gs-arrive{--arrive-bg:linear-gradient(rgba(var(--gold-rgb),.09),rgba(var(--gold-rgb),.09)),var(--kraft);
+  display:flex; align-items:center; height:64px; margin:0 0 12px; padding:0 14px 0 12px;
+  border:1px solid rgba(var(--gold-rgb),.8); border-radius:2px; background:var(--arrive-bg);
+  position:sticky; top:0; z-index:7} /* 따라온다 (결정표 8). sticky 이름 칸(2)·호버 말풍선(6) 위, 작은 창(60) 아래 */
 .gs-arrive .gs-pty-body{padding:0; flex:1; min-width:0}
+.gs-arrive-pin{display:block; height:0}
+/* 꼬리 (결정표 9) — 띠와 같은 바탕·같은 금색 선을 가진 12px 마름모가 윗변에 걸쳐 [파티원] 단추 한가운데(--tail-x, JS 가 잰다)를 가리킨다 */
+.gs-arrive-tail{position:absolute; top:-7px; left:calc(var(--tail-x, 50%) - 6px); width:12px; height:12px; transform:rotate(45deg);
+  background:var(--arrive-bg); border-left:1px solid rgba(var(--gold-rgb),.8); border-top:1px solid rgba(var(--gold-rgb),.8); pointer-events:none}
+/* 붙었을 때 — 그림자로 표 위에 떠 있음을 말하고, 꼬리는 접고, 띠 끝에 [파티원] 문 */
+.gs-arrive-stuck{box-shadow:0 8px 18px rgba(var(--shadow-rgb),.35)}
+.gs-arrive-stuck .gs-arrive-tail{display:none}
+.gs-arrive .gs-arrive-doorwrap{display:none; margin-left:10px} /* .gs-seatpopwrap{display:inline-flex} 보다 뒤에 오는 규칙이라 특이성으로 이긴다 */
+.gs-arrive.gs-arrive-stuck .gs-arrive-doorwrap{display:inline-flex}
+.gs-arrive-door{height:28px; padding:0 10px; gap:6px; display:inline-flex; align-items:center; font-size:12.5px;
+  border-color:rgba(var(--gold-rgb),.8); color:var(--gold)}
+/* 대기 줄 — "대기 중" + 사진·이름 칩. 칩은 끌 수 있다(사진과 같은 규칙) */
+.gs-pty-sp{flex:1}
+.gs-pty-queue{display:inline-flex; align-items:center; gap:6px; padding-left:14px; margin-left:4px;
+  border-left:1px solid rgba(var(--ink-rgb),.22); min-width:0; overflow:hidden}
+.gs-pty-qlab{font-size:11.5px; color:var(--ink-2); margin-right:4px; flex:none}
+.gs-pty-chip{display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 9px 0 3px; flex:none;
+  border:1px solid rgba(var(--ink-rgb),.2); border-radius:2px; background:rgba(var(--lift-rgb),.12);
+  font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:13px; color:var(--ink-body); cursor:grab; touch-action:none}
+.gs-pty-chip:hover,.gs-pty-chip:focus-visible{border-color:var(--gold)}
+.gs-pty-chip .gs-pty-face{width:22px; height:22px; cursor:inherit}
 .gs-arrive .gs-pty-act{height:28px; padding-left:10px; padding-right:10px; font-size:12.5px; flex:none; white-space:nowrap}
 .gs-surface.gs-sheetsec > .gs-sheetbox{animation:gs-sheet-in .28s cubic-bezier(.2,.7,.3,1)}
 @keyframes gs-sheet-in{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
