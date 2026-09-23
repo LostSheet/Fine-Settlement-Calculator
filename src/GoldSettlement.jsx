@@ -11417,6 +11417,14 @@ export default function GoldSettlement() {
               (폐기) 왼쪽의 복사 단추 — "누르는 것은 왼쪽" 규칙이었는데, 이제 세 탭 모두 왼쪽은 설정·오른쪽은 하는 일이다 */}
           <div className="gs-headleft" />
           <div className="gs-tools">
+            {/* 수수료는 정산 장부와 같은 자리 — 오른쪽 끝 (2026-09-24 사용자: 탭을 옮겨도 수수료가 안 움직여야 한다).
+                [Discord 공유용 복사]는 그 왼쪽, 디바이더 하나 건너. (폐기, 같은 날) 복사 단추가 오른쪽 끝 — 수수료가 왼쪽으로 밀렸다 */}
+            {r && r.transfers.length > 0 && (
+              <button className="gs-btn" onClick={openMail}>
+                Discord 공유용 복사
+              </button>
+            )}
+            {r && r.transfers.length > 0 && <i className="gs-toolsep" aria-hidden="true" />}
             {/* (감춤 2026-09-21 사용자) 정산 방식 고르기 — 벌금통 고정 */}
             <label className="gs-fee">
               <span>수수료</span>
@@ -11429,12 +11437,6 @@ export default function GoldSettlement() {
               />
               <span>%</span>
             </label>
-            {r && r.transfers.length > 0 && <i className="gs-toolsep" aria-hidden="true" />}
-            {r && r.transfers.length > 0 && (
-              <button className="gs-btn" onClick={openMail}>
-                Discord 공유용 복사
-              </button>
-            )}
           </div>
         </div>
 
