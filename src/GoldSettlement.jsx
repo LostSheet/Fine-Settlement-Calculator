@@ -1438,6 +1438,14 @@ const maskUrl = (u) => {
    `<>` 로 감싸 미리보기 카드도 억제합니다. 이모지를 넣으면 안 풀립니다(사용자 실측) — 앞머리에 기호를 붙이지 않습니다.
    (폐기 2026-09-08 낮) 맨 주소 세 줄 — 채팅창에 주소가 그대로 보여 시청자가 읽고 들어올 수 있었다.
    (폐기, 같은 날) `🔔 …` 로 시작하던 마스크드 링크 — 이모지 때문에 디스코드가 안 풀었다. 문구는 초안 */
+/* 초대 링크 남은 시간 (2026-09-24 사용자 확정: 결정표 11) — 5분 이상은 분으로 올림("27분 남음"), 5분 미만은 초 단위("4:59 남음"), 지나면 "만료됐어요".
+   링크가 30분짜리 1회 발급이 되면서(상시 존재 아님) 만료 시각보다 남은 시간이 필요해졌다 */
+const inviteLeftLabel = (leftMs) => {
+  if (leftMs <= 0) return "만료됐어요";
+  if (leftMs >= 5 * 60 * 1000) return Math.ceil(leftMs / 60000) + "분 남음";
+  const s = Math.ceil(leftMs / 1000);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + " 남음";
+};
 const inviteExpiryLabel = (exp) => new Intl.DateTimeFormat("ko-KR", {
   month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit",
 }).format(new Date(exp));
@@ -14077,6 +14085,17 @@ function PlacerAva({ p, size }) {
 function SeatPop({ anchor, label, sub, linked, tray, copied, who, party, bar, placeWho, inviteLive, inviteSoon, inviteExpiresAt, onReInvite, onPick, onUnseat, onReplace, onDiscord, onCopyInvite, onOpenModal, onClose }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
+  /* 초대 시계 (결정표 11) — 이 창이 열려 있는 동안만 1초마다 돈다. 부모의 nowTick 은 경계(5분 전·만료)에서만 갱신되므로 그대로 두고,
+     여기서만 센다 — 앱 전체(표 수백 칸)를 1초마다 다시 그리지 않으려고 */
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!(inviteExpiresAt > 0)) return;
+    setClock(Date.now());
+    const t = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [inviteExpiresAt]);
+  const inviteLeft = inviteExpiresAt > 0 ? inviteExpiresAt - clock : 0;
+  const soonNow = inviteExpiresAt > 0 && inviteLeft > 0 && inviteLeft <= 5 * 60 * 1000;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!anchor || !el) return;
@@ -14161,12 +14180,15 @@ function SeatPop({ anchor, label, sub, linked, tray, copied, who, party, bar, pl
               <span>들어온 사람은 여기에 모이고, 누르면 이 줄에 배치해요.</span>
             )}
           </p>
-          {/* 남은 시간 대신 발급할 때 정한 만료 시각을 한 번 표시합니다. */}
+          {/* 남은 시간 (2026-09-24 사용자 확정: 결정표 11) — 5분 이상 "n분 남음", 5분 미만 "m:ss 남음". 만료 시각은 title 로만.
+              (폐기) "HH:MM 만료" 한 번 표시 — 링크가 상시 존재하던 때의 규칙 */}
           {inviteExpiresAt > 0 && (
             <p className="gs-seatpop-note gs-invleft">
               <span className="gs-inv-timing">
-                <time dateTime={new Date(inviteExpiresAt).toISOString()}>{inviteExpiryLabel(inviteExpiresAt)} 만료</time>
-                {inviteSoon && <span className="gs-inv-soon" role="status">마감 임박</span>}
+                <time dateTime={new Date(inviteExpiresAt).toISOString()} title={inviteExpiryLabel(inviteExpiresAt) + " 만료"}>
+                  초대 링크 {inviteLeftLabel(inviteLeft)}
+                </time>
+                {soonNow && <span className="gs-inv-soon" role="status">마감 임박</span>}
               </span>
               {onReInvite && (
                 <button type="button" className="gs-seatpop-relink" onClick={onReInvite}>
