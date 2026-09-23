@@ -9368,7 +9368,8 @@ export default function GoldSettlement() {
         )}
         {/* 빵부스러기 (§3.0, 2026-09-05) — 판에서 로비로 가는 문이 브랜드 글자뿐이라 안 보였다.
             기록 보는 중엔 띠의 버튼이 문이라 안 세운다. 오른쪽은 파티원의 나가기(옛 파티 서랍에서 이사) */}
-        <div className="gs-mastrow">
+        {/* 참여 중 칩이 있는 줄 (2026-09-24 사용자 확정: 결정표 1) — 칩은 왼쪽 위 모서리에 절대 배치, 탭은 14px 내려 칩 아래로 */}
+        <div className={"gs-mastrow" + (boardLabel && !inviteGate && !genView ? " gs-mastrow-away" : "")}>
           {/* 탭 줄 왼쪽에는 [전부 비우기] 하나만 남습니다 (§3.4) — 판을 닫는 동사는
               우상단 모서리로 갔고, [처음부터]는 폐지했습니다(문이 둘이면 하나는 못 찾습니다).
               [파티 모드 시작하기]는 머리줄 파티 칩이 됐습니다(문과 상태가 한 자리). */}
@@ -17860,9 +17861,15 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-sysbar-sep{width:1px; height:18px; background:rgba(var(--ink-rgb),.18); flex:none}
 /* ── §3.12.7 판 라벨 · 초대 쪽지 · 계정 칩 · 둥근 네모 초상화 · 대기 줄 · 입력 단위 ──
    규칙 하나: 알약과 금색을 걷고, 직각에 2px, 잉크 선, 종이 바탕. 앱의 상태 칩·표가 이미 이 규칙이다 */
+/* 자리 (2026-09-24 사용자 확정: 결정표 1) — 왼쪽 위 모서리, 컨트롤과 같은 단(위에서 8px). 줄의 왼쪽 끝에 절대 배치하고
+   탭 줄을 14px 내린다(.gs-mastrow-away). 칩 9~41, 탭 49~89, 머리 밑선 90 — 탭과 8px 뜬다.
+   (폐기 2026-09-22) 탭 오른쪽 옆 — 탭이 밑줄로 바뀌자 그 줄에서 상자를 가진 건 칩뿐이라 켜진 네 번째 탭으로 읽혔고, 바닥도 6px 떠 있었다.
+   (폐기 2026-09-22) 컨트롤 줄 왼쪽 끝 — 머리 높이는 안 내지만 좌상단이 계속 빈다. "참여 중"은 컨트롤이 아니라 문맥이다 */
 .gs-boardlabel{display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px;
   border:1px solid var(--blue); border-radius:2px; background:rgba(var(--blue-rgb),.08);
-  font-size:12.5px; letter-spacing:.03em; color:var(--blue); white-space:nowrap; margin-bottom:6px}
+  font-size:12.5px; letter-spacing:.03em; color:var(--blue); white-space:nowrap;
+  position:absolute; left:0; top:-12px; margin:0}
+.gs-mastrow-away .gs-mastleft{margin-top:28px}
 /* 남의 판 라벨의 실시간 점 (A1) — 붙어 있으면 초록, 끊기면 회색 */
 .gs-boardlabel-dot{width:7px; height:7px; border-radius:50%; background:rgba(var(--ink-rgb),.3); flex:none}
 .gs-boardlabel-dot.on{background:#6fbf73; box-shadow:0 0 0 2px rgba(111,191,115,.25)}
