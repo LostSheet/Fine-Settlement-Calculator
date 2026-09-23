@@ -218,6 +218,22 @@ export const PAGE_HTML = `<!doctype html>
      금색 #e8c66a 위에서는 3.2 였다. #1a4f80 은 5.1, #8f331f 는 4.8 (표의 #6fb4ff 는 1.3 이라 못 쓴다) */
   .ov-fx em{font-style:normal; font-weight:800}
   .ov-fx.up em{color:#1a4f80}
+  /* 초상화 (실험, ?face=) — 직각, 틈 없음. 이름은 사진과 겹치는 정보라 한 단 줄인다 */
+  .ov-face{display:none}
+  html[data-face] .ov-face{display:grid; place-items:center; overflow:hidden; background:#2a241c; width:16vw; height:16vw;
+    animation:ov-fx-name .32s cubic-bezier(.22,1.2,.36,1) both}
+  html[data-face] .ov-face img{width:100%; height:100%; object-fit:cover; display:block}
+  html[data-face] .ov-face.sil{color:rgba(236,228,214,.42)}
+  html[data-face] .ov-face.sil svg{width:62%; height:62%}
+  html[data-face] .ov-fx b{font-size:4.6vw; padding:1.7vw 4vw; animation-delay:.06s}
+  html[data-face] .ov-fx b small{font-size:.6em}
+  html[data-face] .ov-fx span{animation-delay:.16s}
+  html[data-face] .ov-fx-body.rise .ov-face{animation:ov-fx-rise .14s ease-out both}
+  html[data-face="C"] .ov-face{margin:0 auto}
+  html[data-face="C"] .ov-fx::before{top:16vw}
+  html[data-face="W"] .ov-fx{width:24vw}
+  html[data-face="W"] .ov-face{width:100%; height:auto; aspect-ratio:1}
+  html[data-face="W"] .ov-fx b,html[data-face="W"] .ov-fx span{padding-left:2vw; padding-right:2vw}
   .ov-fx.dn em{color:#8f331f}
   /* 마지막 카드는 온 방향의 반대로 — 살짝 내려가며 0.16초 (2026-09-08). 뚝 꺼지지 않게 (2026-09-07) */
   .ov-fx.out{animation:ov-fx-out .16s ease-in forwards}
@@ -249,7 +265,7 @@ export const PAGE_HTML = `<!doctype html>
     75%{transform:translateY(-33.333%)} 100%{transform:translateY(0)}}
   @media (prefers-reduced-motion:reduce){
     .ov-mvreel.up,.ov-mvreel.dn{animation-duration:1ms}
-    .ov-fx,.ov-fx b,.ov-fx span,.ov-fx.out,.ov-fx.bump,
+    .ov-fx,.ov-fx b,.ov-fx span,.ov-fx.out,.ov-fx.bump,html[data-face] .ov-face,
     .ov-fx-body.rise,.ov-fx-body.rise b,.ov-fx-body.rise span{animation:none}
     .ov-fx-body.fade{display:none}
   }
@@ -730,6 +746,10 @@ export const PAGE_HTML = `<!doctype html>
      미리보기가 곧 진짜 오버레이라, 오버레이를 고치면 미리보기가 저절로 따라옵니다. 예시 방 + pv=1 일 때만 켜집니다.
      (폐기 2026-09-06) 주소 카드 맨 위의 iframe 미리보기 — 스크롤을 잡아먹고 주소가 안 보였다. 이번엔 각 설정 옆 작은 칸이다 */
   var isPv = isDemo && q.get("pv") === "1";
+  /* 클릭 알림 초상화 — 실험 스위치 (2026-09-24, 룩 결정 전). ?face=L|C|W 일 때만 */
+  var FACE = /^(L|C|W)$/.test(q.get("face") || "") ? q.get("face") : "";
+  if (FACE) document.documentElement.dataset.face = FACE;
+  var SIL_SVG = "<svg viewBox='0 0 20 20' aria-hidden='true'><g fill='currentColor'><circle cx='10' cy='6.4' r='3.4'/><path d='M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z'/></g></svg>";
   /* 소스 나누기 — board 는 현황판만, spin 은 룰렛만 그립니다. 없으면 둘 다.
      파일은 하나고 분기만 다릅니다 — 소스마다 딴 페이지를 만들 이유가 없어요. */
   var TYPE = q.get("type") === "board" ? "board" : q.get("type") === "spin" ? "spin" : "all";
@@ -2160,7 +2180,10 @@ export const PAGE_HTML = `<!doctype html>
   var fxCls = function (e) { return (e.g > 0 ? "up" : "dn") + (e.k === "roul" ? " roul" : ""); };
   var fxBodyHtml = function (e, extra) {
     var up = e.g > 0;
-    return '<div class="ov-fx-body' + (extra ? " " + extra : "") + '">' +
+    var face = !FACE || e.k === "clear" ? "" : e.f
+      ? '<i class="ov-face"><img src="' + e.f + '" alt=""></i>'
+      : '<i class="ov-face sil">' + SIL_SVG + "</i>";
+    return '<div class="ov-fx-body' + (extra ? " " + extra : "") + '">' + face +
       /* 이름 칸: 이름 + 항목 꼬리표. 금색 칸: 금액만 (2026-09-08 사용자 확정 ㉢ 값이 주인공).
          정정은 꼬리표 앞에 붙습니다. (폐기) 금색 칸에 "항목 +금액" 한 줄 — 문장처럼 읽혔다 */
       "<b>" + esc(e.n) + "<small>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + "</small></b>" +
@@ -2673,6 +2696,14 @@ export const PAGE_HTML = `<!doctype html>
      "내 방송도 저렇겠구나" 할 수 없었습니다. 명단과 금액은 그대로 SAMPLE 을 씁니다 */
   var startDemo = function () {
     var COLS = [{ id: "c1", t: "잡힘" }, { id: "c2", t: "죽음" }];
+    /* 예시 사진 (실험) — 디스코드 프로필처럼 그린 그림 넷. 나머지 넷은 사진 없는 사람(상체 모양) */
+    var avaSvg = function (bg, shirt, hair) {
+      return "data:image/svg+xml," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' fill='" + bg +
+        "'/><circle cx='32' cy='27' r='13' fill='#ffd9b8'/><path d='M19 24c1-9 7-13 13-13s12 4 13 13c-3-3-7-5-13-5s-10 2-13 5z' fill='" + hair +
+        "'/><circle cx='27' cy='28' r='1.8' fill='#2a1f18'/><circle cx='37' cy='28' r='1.8' fill='#2a1f18'/><path d='M28 34q4 3 8 0' stroke='#2a1f18' stroke-width='1.6' fill='none' stroke-linecap='round'/><path d='M12 64c2-12 10-18 20-18s18 6 20 18z' fill='" + shirt + "'/></svg>");
+    };
+    var DEMO_FACE = { r0: avaSvg("#6a8fd4", "#f2c14e", "#3b2a1e"), r2: avaSvg("#c46a6a", "#2e5f8a", "#1d1a16"),
+                      r4: avaSvg("#5aa07a", "#e9e2d0", "#8a5a2b"), r6: avaSvg("#9a7ac4", "#3a3a3a", "#e6c86a") };
     var PRICE = [30000, 50000];
     var rows, feed, seq, lobbyOn;
     /* 미리보기 — 앱이 보낸 내 항목 이름. 없으면 위의 예시 열 */
@@ -2737,7 +2768,7 @@ export const PAGE_HTML = `<!doctype html>
       var price = PRICE[ci] || 30000;
       r.c[ci] = (r.c[ci] || 0) + 1;
       r.g += price;
-      feed.push({ i: "f" + ++seq, k: "add", n: r.n, t: cs[ci] ? cs[ci].t : "항목", g: price });
+      feed.push({ i: "f" + ++seq, k: "add", n: r.n, t: cs[ci] ? cs[ci].t : "항목", g: price, f: DEMO_FACE[r.k] || null });
       push();
     };
 
