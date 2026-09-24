@@ -98,8 +98,6 @@ export const PAGE_HTML = `<!doctype html>
     transform:translateY(-50%); white-space:nowrap;
     font-size:3.4vw; font-weight:600; color:var(--gold);
     padding:.1vw .8vw; background:rgba(20,17,14,.72)} /* 각진 칩 (2026-09-08) — 판 위에 직접 얹히는 조각이라 막대와 같은 결로 */
-  /* 밝은 판·진한 글자 테마에서는 칩도 밝게 */
-  html[data-t="light"] .ov-delta, html[data-t="cleardark"] .ov-delta{background:rgba(248,244,236,.85)}
   .ov-delta.plus{color:#6fb4ff} /* 뜻색 한 벌 (2026-09-08) — 순액과 같은 파랑·산호 */
   /* 비어 있을 때는 칩 배경만 남지 않도록 아예 감춥니다 */
   .ov-delta:empty{display:none}
@@ -503,37 +501,6 @@ export const PAGE_HTML = `<!doctype html>
   .ov-move.down{color:#ff7d6b}
   @keyframes ov-hold{0%,82%{opacity:1} 100%{opacity:0}}
 
-  /* 투명 테마 — 글자 외곽을 여러 겹 눌러 게임 화면 위에서도 버팁니다 */
-  html[data-t="clear"] .ov{text-shadow:
-    0 0 12px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,1),
-    0 2px 4px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,1)}
-  html[data-t="cleardark"] .ov{--ink:#171310; --gold:#6d5210;
-    text-shadow:
-    0 0 12px rgba(255,255,255,.95), 0 0 5px rgba(255,255,255,1),
-    0 2px 4px rgba(255,255,255,.95), 0 0 1px rgba(255,255,255,1)}
-  html[data-t="dark"] .ov{background:rgba(20,17,14,var(--bg,.82));
-    border-radius:max(12px, 1.4vw)}
-  html[data-t="light"] .ov{--ink:#221c14; --gold:#8a6415;
-    background:rgba(248,244,236,var(--bg,.88)); border-radius:max(12px, 1.4vw)}
-  /* 밝은 판의 청·적·녹 (2026-09-07 사용자 지적) — 어두운 판 것을 그대로 쓰던 색들은 크림색 바탕에서
-     떠 버려 안 읽혔습니다. 개인 합계의 황색(--gold #8a6415)과 같은 무게로 낮춥니다 —
-     셋 다 이 바탕에서 명도대비 4.8~4.9 로, 황색의 4.7 과 한 가족입니다 */
-  html[data-t="light"]{--up:#2f7a4d; --dn:#b8462f; --net-up:#2c6ea4}
-  html[data-t="light"] .ov-net.plus, html[data-t="light"] .ov-gold.as-net.plus{color:var(--net-up)}
-  html[data-t="light"] .ov-net.minus, html[data-t="light"] .ov-gold.as-net.minus{color:var(--dn)}
-  html[data-t="light"] .ov-delta.plus, html[data-t="light"] .ov-move.up,
-  html[data-t="light"] .ov-mvreel.up > i.d{color:var(--up)}
-  html[data-t="light"] .ov-delta.minus, html[data-t="light"] .ov-move.down,
-  html[data-t="light"] .ov-mvreel.dn > i.d{color:var(--dn)}
-  /* 줄 사이 실선은 판 테마의 기본입니다 (2026-09-07 사용자 확정) — 예전엔 테두리 테마에만 있었습니다.
-     어두운 판엔 밝은 선, 밝은 판엔 어두운 선. 판 없는 테마엔 그을 판이 없어 안 그립니다 */
-  html[data-t="dark"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(245,240,230,.1)}
-  html[data-t="light"] .ov-row + .ov-row{border-top:max(1px, .1vw) solid rgba(34,28,20,.12)}
-  /* 헤어라인 (2026-09-06 사용자 확정) — 이제 판을 두르는 바깥 선만 맡습니다.
-     그 이상은 없습니다(사용자: 과한 건 별로) */
-  html[data-line="1"][data-t="dark"] .ov{border:max(1px, .14vw) solid rgba(232,198,106,.55)}
-  html[data-line="1"][data-t="light"] .ov{border:max(1px, .14vw) solid rgba(34,28,20,.5)}
-
   /* ---- 기본 테마 = 막대 줄 (2026-09-08 사용자 확정) ----
      판을 버리고 줄마다 각진 막대를 세웁니다. 막대 사이로 게임 화면이 비쳐서
      불투명한데도 판보다 덜 가립니다. 머리는 두 조각 — 제목 블록과 금색 지표 블록.
@@ -677,32 +644,8 @@ export const PAGE_HTML = `<!doctype html>
   html[data-t="bars"] .ov-lobby-note{background:rgba(23,19,14,var(--bg,.9));
     margin-top:1.02vw; padding:.85vw 1.6vw; opacity:1; color:rgba(245,240,230,.78)}
 
-  /* ---- 밝은 판에서는 카드와 룰렛도 밝게 (2026-09-08 사용자 확정) ----
-     형태(각진 블록)는 테마와 무관하게 한 벌이고, 뒤집는 것은 색뿐입니다.
-     금색 값 블록은 양쪽에서 그대로 둡니다 — 채운 강조색이라 어느 바탕에서나 섭니다.
-     기본·어두운 판·그 밖의 테마는 아래를 안 타서 어두운 카드 그대로입니다 */
-  html[data-t="light"] .ov-fx b{background:#f8f4ec; color:#221c14}
-  html[data-t="light"] .ov-fx span{border-top-color:rgba(34,28,20,.5)}
-  html[data-t="light"] .ov-sp{background:#f8f4ec; border-color:rgba(34,28,20,.5)}
-  html[data-t="light"] .ov-sp-who{color:#221c14}
-  html[data-t="light"] .ov-sp-item,
-  html[data-t="light"] .ov-sp-delta{color:#6b6154}
-  html[data-t="light"] .ov-sp-delta b{color:#221c14}
-  html[data-t="light"] .ov-sp-out{color:#8a6415}
-  html[data-t="light"] .ov-sp-out em{color:#6b6154}
-  html[data-t="light"] .ov-stage-out .ov-sp-out{color:#221c14;
-    text-shadow:0 calc(var(--u)*.5) calc(var(--u)*2) rgba(255,255,255,.75)}
-  html[data-t="light"] .ov-sp-gone{background:rgba(248,244,236,.92);
-    border-color:rgba(34,28,20,.4); color:#8a6415}
-  html[data-t="light"] .ov-tchip{background:#e9e2d4; border-color:rgba(34,28,20,.35); color:#221c14}
-  html[data-t="light"] .ov-tchip.pass{color:#b8462f; border-color:#b8462f}
-  html[data-t="light"] .ov-tchip.mult{color:#8a6415; border-color:#b97f37}
-  html[data-t="light"] .ov-tslot{border-color:rgba(34,28,20,.3)}
-  html[data-t="light"] .ov-tslot.next{border-color:rgba(34,28,20,.7)}
-  html[data-t="light"] .ov-reel{background:#efe8da; border-color:rgba(34,28,20,.4)}
-  html[data-t="light"] .ov-reel-n.big{color:#221c14; text-shadow:none}
-  html[data-t="light"] .ov-reel-n.side{color:#221c14}
-  html[data-t="light"] .ov-reel-line{border-color:rgba(34,28,20,.35)}
+  /* (폐기 2026-09-24 사용자 확정: 투명도만 남긴다) 어두운 판 · 밝은 판 · 판 없이 두 가지 — 테마 CSS 전부.
+     밝은 판의 카드·룰렛 뒤집기, 판 테마의 줄 사이 실선과 헤어라인 테두리도 같이 갔습니다 */
 
   /* 미리보기 창에서만 — 투명한 자리를 체커보드로 표시합니다.
      중간 회색이라 밝은 글자·진한 글자 테마를 둘 다 판단할 수 있습니다. */
@@ -822,12 +765,16 @@ export const PAGE_HTML = `<!doctype html>
   /* fit=1 이면 미리보기 창입니다. 진짜 OBS 안에서는 절대 켜지지 않게 한 번 더 막습니다 */
   var isPreview = q.get("fit") === "1" && !window.obsstudio;
   if (isPreview) root.dataset.preview = "1";
-  /* 기본은 어디서든 읽히는 막대 줄(bars). 주소에 직접 적은 테마가 있으면 그쪽이 우선 */
+  /* 테마는 막대 줄(bars) 하나입니다 (2026-09-24 사용자 확정: 투명도만 남긴다).
+     테마를 고르는 길(주소 t= · 계정 외형 t)은 그대로 두고, 목록에 없는 이름은 막대로 읽습니다 —
+     예전 어두운 판·밝은 판·판 없는 테마를 적어 둔 OBS 소스도 막대로 나옵니다 */
+  var THEMES = ["bars"];
+  var themeOf = function (t) { return THEMES.indexOf(t) >= 0 ? t : "bars"; };
   var urlTheme = q.get("t");
   var urlBg = q.get("bg");
   var urlS = q.get("s");
   var urlLine = q.get("line"); // 헤어라인 (2026-09-06) — 주소에 적으면 그쪽이 우선
-  root.dataset.t = urlTheme || "bars";
+  root.dataset.t = themeOf(urlTheme);
   if (urlLine != null) root.dataset.line = urlLine === "1" ? "1" : "0";
   var bg = parseInt(urlBg, 10);
   if (!isNaN(bg)) root.style.setProperty("--bg", Math.min(100, Math.max(0, bg)) / 100);
@@ -851,7 +798,7 @@ export const PAGE_HTML = `<!doctype html>
     if (!lk || typeof lk !== "object") return;
     if (fromAcct) acctLook = lk;
     else if (acctLook) return;
-    if (!urlTheme) root.dataset.t = typeof lk.t === "string" ? lk.t : "bars";
+    if (!urlTheme) root.dataset.t = themeOf(lk.t);
     if (urlLine == null) root.dataset.line = lk.line ? "1" : "0";
     if (urlBg == null && lk.bg != null)
       root.style.setProperty("--bg", Math.min(100, Math.max(0, lk.bg)) / 100);

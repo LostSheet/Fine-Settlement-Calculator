@@ -1034,7 +1034,7 @@ function loadRelay() {
       ovsrc: v.ovsrc === "split" ? "split" : undefined,
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
-          ? { t: v.look.t, alpha: [0, 10, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25, line: v.look.line ? 1 : undefined }
+          ? { t: lookT(v.look.t), alpha: [0, 10, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25, line: v.look.line ? 1 : undefined }
           : { t: "bars", alpha: 10 },
       lookMig: v.lookMig ? 1 : undefined,
       lookMig2: v.lookMig2 ? 1 : undefined, // 2026-09-07 외형 기본값 강제 적용 표시
@@ -5317,10 +5317,8 @@ export default function GoldSettlement() {
 
   const lookOut = () => {
     const lk = relay.look || { t: "bars", alpha: 10 };
-    /* line(헤어라인)은 판 테마에만 실립니다 — 서버는 해석 없이 그대로 나릅니다 */
-    const base = isPanelLook(lk)
-      ? { t: lk.t, bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) }
-      : { t: lk.t };
+    /* 서버는 해석 없이 그대로 나릅니다. line(헤어라인)은 판 테마의 것이라 지금은 그릴 곳이 없습니다 */
+    const base = { t: lookT(lk.t), bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) };
     /* 룰렛 말고는 전부 계정 것입니다 (2026-09-07 사용자 확정) — 슬라이드·알림·끈 항목·합계·순액도
        내 주소의 설정이라 여기 같이 싣습니다. 판(state)의 같은 값은 이걸 저장하지 않은 계정의
        기본값으로만 남습니다. 룰렛(원판·테마·감속)은 여기 없습니다 — 판이 정합니다 */
@@ -13489,7 +13487,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
   );
 }
 
-/* 외형 — 오버레이 테마·방송 열·벌금 알림·룰렛 외형.
+/* 외형 — 배경 투명도·방송 열·벌금 알림·룰렛 외형.
    창을 따로 두면 "주소는 여기, 생김새는 저기"로 갈려서 한 번에 못 끝냅니다.
    그래서 껍데기 없이 몸통만 내주고, 오버레이 공유 설정 창이 이걸 안에 답니다. */
 function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey }) {
@@ -13504,14 +13502,9 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
       <h3 className="gs-obs-sub">오버레이 외형 설정</h3>
       <div className="gs-obs-look gs-obs-look-first">
         <div className="gs-obs-lookhead">
-          <h4>오버레이 테마</h4>
+          <h4 className="gs-obs-h">배경 투명도</h4>
+          <LookAlpha look={relay.look} onPick={pickLook} />
         </div>
-        {/* 기본이 막대로 바뀌면서 판의 가로세로 비가 달라집니다 — 슬라이드 모드를 켤 때와 같은
-            종류의 안내입니다(그쪽 문구를 따랐습니다). 문구는 초안 */}
-        <p className="gs-obs-looknote">
-          기본은 판 없이 줄마다 막대예요 — 막대 사이로 게임 화면이 비쳐요. 판 모양이 바뀌니 OBS에서 소스 크기를 한 번 다시 맞춰 주세요.
-        </p>
-        <LookPicker look={relay.look} onPick={pickLook} />
       </div>
       <div className="gs-obs-sec">
         {/* 항목 표시 방식 (2026-09-06 사용자 확정) — 슬라이드가 기본. 슬라이드는 항목 열과 순액을 늘어놓지 않고
@@ -16259,66 +16252,31 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
   );
 }
 
-/* 검증된 오버레이 조합 — 칩의 사선 배경(밝은/어두운 화면 반반) 위에 실제 모습을 미리 보여줍니다 */
-/* 표면에 셋 — 기본 · 어두운 판 · 밝은 판 (2026-09-08 사용자 확정). 판 없는 두 테마는 접힙니다.
-   '기본'은 판을 버리고 줄마다 각진 막대를 세우는 형태입니다(막대 사이로 화면이 비칩니다).
-   판의 진하기는 아래 투명도가 맡으므로 '판'과 '판·반투명'을 따로 두지 않습니다.
-   (폐기 2026-09-08) 어두운 판 · 테두리 / 밝은 판 · 테두리 — 헤어라인은 두를 판이 있어야
-   뜻이 있는데, 기본이 막대가 되면서 표면에서 밀렸습니다. 판 테마의 `line` 자체는 남아 있습니다 */
-const LOOK_PRESETS = [
-  { id: "bars", name: "기본", look: { t: "bars", alpha: 10 } },
-  { id: "goat", name: "어두운 판", look: { t: "dark", alpha: 25 } },
-  { id: "light25", name: "밝은 판", look: { t: "light", alpha: 25 } },
-  /* (폐기 2026-09-08 사용자 확정) 판 없이 · 밝은 글자 / 판 없이 · 진한 글자 — 테마는 셋으로.
-     page.js 의 clear·cleardark 규칙은 남겨 둡니다: 주소에 t=clear 를 적어 둔 소스가 살아 있고,
-     그 파라미터는 계정 외형보다 우선이라 지우면 그 소스가 조용히 다른 그림이 됩니다 */
-];
-/* 투명도를 조절할 수 있는 테마 — 바탕이 있는 것들입니다. 막대 테마는 막대마다 바탕이 있어 같이 듭니다 */
-const isPanelLook = (lk) => !!lk && (lk.t === "dark" || lk.t === "light" || lk.t === "bars");
+/* 오버레이 테마는 기본(막대 줄) 하나입니다 (2026-09-24 사용자 확정: 투명도만 남긴다).
+   고르는 칸은 없앴지만 테마를 싣는 길(외형의 t → 서버 → 오버레이 data-t)은 남겨 둡니다 — 테마를 다시 들이면
+   여기 이름을 보태고 page.js 의 THEMES 에도 보탭니다. 목록에 없는 이름(예전 어두운 판·밝은 판)은 기본으로 읽습니다.
+   (폐기 2026-09-24) 기본 · 어두운 판 · 밝은 판 테마 칩과 사선 견본 */
+const LOOK_THEMES = ["bars"];
+function lookT(t) {
+  return LOOK_THEMES.includes(t) ? t : "bars";
+}
 /* 서버가 읽는 키는 t·bg·s 셋뿐입니다 — 앱이 쓰는 alpha(판 투명도)와 bg 는 서로 뒤집힌 값입니다 */
 const lookIn = (srv) => {
   const a = srv && srv.bg != null ? 100 - Math.round(srv.bg) : 25;
-  return { t: srv.t, alpha: [0, 10, 25, 50, 75, 100].includes(a) ? a : 25, line: srv.line ? 1 : undefined };
+  return { t: lookT(srv.t), alpha: [0, 10, 25, 50, 75, 100].includes(a) ? a : 25, line: srv.line ? 1 : undefined };
 };
-const sameLook = (a, b) =>
-  !!a && !!b && a.t === b.t && !!a.line === !!b.line && (!isPanelLook(a) || (a.alpha ?? 25) === (b.alpha ?? 25));
+const sameLook = (a, b) => !!a && !!b && a.t === b.t && !!a.line === !!b.line && (a.alpha ?? 25) === (b.alpha ?? 25);
 
-/* 테마 셋 · 투명도는 접지 않습니다 (2026-09-08 사용자 확정).
-   접을 것이 없어져서 '다른 테마와 투명도' 단추도 같이 없앴습니다 — 셋 다 바탕이 있는 테마라
-   투명도는 늘 조절됩니다. (폐기) 앞의 셋만 펼치고 나머지는 접기 · 판 없는 테마에서 잠기던 슬라이더 */
-function LookPicker({ look, onPick }) {
+/* 배경 투명도 — 막대마다 깔린 바탕의 진하기 (0 = 불투명). 10 은 기본값 90% 자리입니다 (2026-09-08) */
+function LookAlpha({ look, onPick }) {
   return (
-    <>
-      <div className="gs-lookgrid" role="group" aria-label="오버레이 테마">
-        {LOOK_PRESETS.map((pr) => (
-          <button
-            key={pr.id}
-            className={"gs-lookchip" + (sameLook(look, pr.look) ? " on" : "")}
-            onClick={() => onPick({ ...pr.look })}
-          >
-            <span className={"gs-lookswatch sw-" + pr.id} aria-hidden="true">
-              <b>가나 12만</b>
-            </span>
-            {pr.name}
-          </button>
-        ))}
-      </div>
-      <div className="gs-lookalpha">
-        <span className="gs-caplab">배경 투명도</span>
-        <div className="gs-seg gs-seg-sm" role="group" aria-label="배경 투명도">
-          {/* 10 은 기본(막대) 테마의 기본값 90% 자리입니다 (2026-09-08) — 판 테마에서도 씁니다 */}
-          {[0, 10, 25, 50, 75, 100].map((a) => (
-            <button
-              key={a}
-              className={(look.alpha ?? 25) === a ? "on" : ""}
-              onClick={() => onPick({ ...look, alpha: a })}
-            >
-              {a}
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
+    <div className="gs-seg gs-seg-sm gs-lookalpha" role="group" aria-label="배경 투명도">
+      {[0, 10, 25, 50, 75, 100].map((a) => (
+        <button key={a} className={(look.alpha ?? 25) === a ? "on" : ""} onClick={() => onPick({ ...look, alpha: a })}>
+          {a}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -17620,7 +17578,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   color:var(--ink-2); font-family:var(--mono)}
 .gs-coach-btns{display:flex; align-items:center; gap:14px}
 .gs-coach-btns .gs-coach-step:first-child{margin-left:auto}
-/* 오버레이 테마 — 사선 배경(밝은/어두운 화면 반반) 위에 실제 조합을 미리 보여줍니다 */
 .gs-obs-ro{margin-top:12px; font-size:12.5px; color:var(--ink-2)}
 .gs-obs-ro b{color:var(--ink)}
 /* 물음은 경고가 아닙니다 — 빨강은 되돌릴 수 없는 것에만 씁니다 */
@@ -17637,27 +17594,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-lookhead .gs-btn,.gs-obs-lookhead .gs-rc-look{margin-left:auto}
 /* 제목 줄에 들어간 켬·끔은 라벨 자리를 안 씁니다 */
 .gs-obs-lookhead .gs-rc-look > span{min-width:0}
-.gs-obs-looknote{font-size:12px; color:var(--ink-2); margin:0 0 10px; line-height:1.65}
-.gs-lookgrid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px}
-.gs-lookchip{display:flex; flex-direction:column; gap:6px; font:inherit; font-size:11.5px;
-  color:var(--ink-2); background:transparent; border:1px solid rgba(var(--ink-rgb),.25);
-  border-radius:2px; padding:7px; cursor:pointer; text-align:center}
-.gs-lookchip:hover{border-color:rgba(var(--ink-rgb),.55)}
-.gs-lookchip.on{border-color:var(--gold); color:var(--ink)}
-.gs-lookswatch{display:flex; align-items:center; justify-content:center; height:36px;
-  border-radius:4px; overflow:hidden;
-  background:linear-gradient(105deg, #b9c3a8 0 50%, #202b1c 50% 100%)}
-.gs-lookswatch b{font-weight:600; font-size:11px; letter-spacing:.04em; padding:3px 10px;
-  border-radius:6px; white-space:nowrap}
-.sw-dark0 b{background:rgba(20,17,14,1); color:#f5f0e6}
-/* 기본(막대) — 각진 막대에 오른쪽 금색 블록. 각짐과 금색 블록이 이 테마를 가르는 두 가지입니다.
-   box-shadow 로 블록을 붙이면 칩 글자를 건드리지 않고도 형태가 보입니다 (2026-09-08) */
-.sw-bars b{background:rgba(20,17,14,.9); color:#f5f0e6; border-radius:0;
-  box-shadow:3px 0 0 0 rgba(245,240,230,.75), 8px 0 0 0 #e8c66a}
-.sw-goat b{background:rgba(20,17,14,.75); color:#f5f0e6}
-.sw-light25 b{background:rgba(248,244,236,.75); color:#221c14}
-.sw-light0 b{background:rgba(248,244,236,1); color:#221c14}
-.gs-lookalpha{display:flex; align-items:center; gap:10px; margin-top:10px}
+/* (폐기 2026-09-24) 오버레이 테마 칩 · 사선 견본 · 막대 안내 글 — 테마가 기본 하나가 되면서 */
+.gs-obs-lookhead .gs-lookalpha{margin-left:auto}
 .gs-ro-look{flex:none}
 /* 예시 줄 — 이름만 채우는 프리셋과 달리 표 전체 예시라는 구분선 */
 .gs-crewdemo{border-top:1px dotted rgba(var(--ink-rgb),.3); margin-top:2px; padding-top:2px}
