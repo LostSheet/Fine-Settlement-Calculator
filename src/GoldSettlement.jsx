@@ -5398,24 +5398,33 @@ export default function GoldSettlement() {
       const o = log.find((x) => x.id === id);
       return !!o && (o.kind === "press" || o.kind === "confess");
     };
+    /* 초상화 (2026-09-24 사용자 확정) — 카드에 그 줄 사람의 사진. 명단의 초상화 묶음(members[].ava)이나 방장 본인 것에서 주소를 만듭니다.
+       계정이 안 붙은 줄은 없음 — 오버레이가 상체 모양을 그립니다. 주소는 이미 공개된 것(디스코드 CDN · /api/pic)이라 방송 화면에 실어도 새는 것이 없습니다 */
+    const faceOf = (rowId) => {
+      const s = rowId ? seatsRef.current.find((k) => k.id === rowId) : null;
+      if (!s || !s.acct) return undefined;
+      const me = authRef.current;
+      const ava = me && s.acct === me.id ? myAvaWire(me) : ((members || []).find((q) => q.acct === s.acct) || {}).ava;
+      return (ava && dcAvatarUrl(avaDc(ava), 128)) || undefined;
+    };
     const out = [];
     for (let i = log.length - 1; i >= 0 && out.length < FX_CAP; i--) {
       const e = log[i];
       /* 자수도 누름과 같은 카드로 나갑니다 — 방송에서 "누가 무엇에"는 같은 이야기입니다 */
       if ((e.kind === "press" || e.kind === "confess") && e.n)
-        out.push({ i: e.id, k: e.n > 0 ? "add" : "sub", n: e.name, t: e.item, g: e.delta });
+        out.push({ i: e.id, k: e.n > 0 ? "add" : "sub", n: e.name, t: e.item, g: e.delta, f: faceOf(e.rowId) });
       /* 룰렛 결과 — 판이 바뀌는 것을 한 건으로 떼어 내는 카드입니다.
          이게 없으면 룰렛이 닫히는 순간 밀려 있던 변화가 한꺼번에 반영돼서,
          방금 본 판의 줄이 다른 줄과 같이 뛰어 어느 게 그 결과인지 못 가립니다. */
       else if (e.kind === "roulette" && e.delta)
-        out.push({ i: e.id, k: "roul", n: e.name, t: e.item, g: e.delta });
+        out.push({ i: e.id, k: "roul", n: e.name, t: e.item, g: e.delta, f: faceOf(e.rowId) });
       /* 비움도 카드로 나갑니다 — 숫자가 통째로 0이 되는 것을 파티원이 못 보고 지나치면
          자기 자수가 사라진 줄 압니다 (§3.4) */
       else if (e.kind === "clear")
         out.push({ i: e.id, k: "clear", n: e.name || "전체", t: e.item ? "비움 " + e.item : "비움", g: e.delta });
       /* 취소는 원래 카드가 눌림이었을 때만 — 안 보여 준 것을 되돌리는 카드는 뜻이 없습니다 */
       else if (e.kind === "cancel" && e.refId && isPress(e.refId))
-        out.push({ i: e.id, k: "cancel", ref: e.refId, n: e.name, t: e.item, g: e.delta });
+        out.push({ i: e.id, k: "cancel", ref: e.refId, n: e.name, t: e.item, g: e.delta, f: faceOf(e.rowId) });
     }
     return out.reverse();
   };

@@ -216,60 +216,32 @@ export const PAGE_HTML = `<!doctype html>
      금색 #e8c66a 위에서는 3.2 였다. #1a4f80 은 5.1, #8f331f 는 4.8 (표의 #6fb4ff 는 1.3 이라 못 쓴다) */
   .ov-fx em{font-style:normal; font-weight:800}
   .ov-fx.up em{color:#1a4f80}
-  /* 초상화 (실험, ?face=) — 직각, 틈 없음. 이름은 사진과 겹치는 정보라 한 단 줄인다 */
-  .ov-face{display:none}
-  html[data-face] .ov-face{display:grid; place-items:center; overflow:hidden; background:#2a241c; width:16vw; height:16vw;
+  /* 초상화 (2026-09-24 사용자 확정 — 왼쪽 원안 A) — 사진이 이름 칸·금색 칸 두 칸 높이(≈22.9vw)로 왼쪽에 서고 크림 띠를 대신합니다.
+     직각, 틈 없음. 사진이 없는 사람은 상체 모양(사용자: 이미지가 없어도 초상화가 뜨게). 이름·꼬리표·금액 칸은 기존 카드 그대로.
+     (폐기 2026-09-24, 실험 ?face=) L·C 사진을 이름 칸 안에 / W·P 사진을 위에 / K 한 줄 명패 / ?tag= 꼬리표 자리 */
+  .ov-face{display:grid; place-items:center; position:relative; overflow:hidden; background:#2a241c;
+    grid-row:1 / 3; grid-column:1; width:22.9vw; height:auto; min-height:22.9vw; align-self:stretch;
     animation:ov-fx-name .32s cubic-bezier(.22,1.2,.36,1) both}
-  html[data-face] .ov-face img{width:100%; height:100%; object-fit:cover; display:block}
-  html[data-face] .ov-face.sil{color:rgba(236,228,214,.42)}
-  html[data-face] .ov-face.sil svg{width:62%; height:62%}
-  html[data-face] .ov-fx b{font-size:4.6vw; padding:1.7vw 4vw; animation-delay:.06s}
-  html[data-face] .ov-fx b small{font-size:.6em}
-  html[data-face] .ov-fx span{animation-delay:.16s}
-  html[data-face] .ov-fx-body.rise .ov-face{animation:ov-fx-rise .14s ease-out both}
-  html[data-face="C"] .ov-face{margin:0 auto}
-  html[data-face="C"] .ov-fx::before{top:16vw}
-  html[data-face="W"] .ov-fx{width:24vw}
-  html[data-face="W"] .ov-face{width:100%; height:auto; aspect-ratio:1}
-  html[data-face="W"] .ov-fx b,html[data-face="W"] .ov-fx span{padding-left:2vw; padding-right:2vw}
-  /* A · 왼쪽 원안 — 사진이 두 칸 높이(이름 12.24 + 금색 10.69 ≈ 22.9vw), 크림 띠 대신. 이름·꼬리표는 기존 카드 그대로 */
-  html[data-face="A"] .ov-fx::before{display:none}
-  html[data-face="A"] .ov-fx-body{display:grid; grid-template-columns:auto auto}
-  html[data-face="A"] .ov-face{grid-row:1 / 3; grid-column:1; width:22.9vw; height:auto; min-height:22.9vw; align-self:stretch}
-  html[data-face="A"] .ov-fx b{grid-column:2; font-size:6.4vw; padding:2.6vw 5vw}
-  html[data-face="A"] .ov-fx b small{font-size:.5em; display:inline}
-  html[data-face="A"] .ov-fx b .ov-fx-nm.wrap + small{display:block; margin:.35em 0 0}
-  html[data-face="A"] .ov-fx span{grid-column:2}
-  /* K · 왼쪽 조정, 한 줄 명패 — 사진 | 이름·항목 두 줄 | 금액. 셋이 같은 높이(14vw)의 직각 칸.
-     금색 칸 앞 크림 띠(.45vw)는 기존 카드의 이름·금액 사이 띠를 세로로 세운 것. 금액은 옆으로 펼쳐진다 */
-  html[data-face="K"] .ov-fx::before{display:none}
-  html[data-face="K"] .ov-fx-body{display:flex; align-items:stretch}
-  html[data-face="K"] .ov-face{width:12vw; height:12vw; flex:none}
-  html[data-face="K"] .ov-fx b{display:flex; flex-direction:column; justify-content:center; align-items:flex-start; text-align:left;
-    font-size:4.4vw; padding:0 2.8vw 0 2.6vw; min-width:0}
-  html[data-face="K"] .ov-fx b small{display:block; font-size:.56em; margin:.45em 0 0; line-height:1}
-  html[data-face="K"] .ov-fx-nm{white-space:nowrap}
-  html[data-face="K"] .ov-fx span{display:flex; align-items:center; font-size:6.2vw; padding:0 2.8vw; border-top:0;
-    border-left:.45vw solid rgba(245,240,230,.75); transform-origin:0 50%; animation-name:ov-fx-goldx}
-  html[data-face="K"] .ov-fx-body.rise span{animation-name:ov-fx-goldx}
-  @keyframes ov-fx-goldx{from{transform:scaleX(0)} to{transform:scaleX(1)}}
-  /* P · 위 조정 — 사진 4:3(폭 26vw, 높이 19.5vw)으로 낮추고, 이름 띠가 사진 아랫단에 겹친다. 아래엔 금색 칸만 */
-  html[data-face="P"] .ov-fx{width:26vw}
-  html[data-face="P"] .ov-fx-body{display:grid}
-  html[data-face="P"] .ov-face{grid-area:1 / 1; width:100%; height:19.5vw}
-  html[data-face="P"] .ov-fx b{grid-area:1 / 1; align-self:end; position:relative; z-index:1; font-size:4.4vw; padding:1.3vw 2vw 1.4vw;
-    background:rgba(23,19,14,.88)}
-  html[data-face="P"] .ov-fx b small{display:block; font-size:.58em; margin:.35em 0 0; line-height:1}
-  html[data-face="P"] .ov-fx span{grid-area:2 / 1; padding-left:2vw; padding-right:2vw}
-  /* 항목 꼬리표 자리 (실험 ?tag=) — line: 이름 아래 한 줄, 이름이 칸 폭을 다 쓴다. photo: 사진 왼쪽 아래 딱지 */
-  html[data-face][data-tag="line"] .ov-fx b small{display:block; margin:.35em 0 0; line-height:1}
-  html[data-face] .ov-fx-nm{font-style:normal}
-  /* 70% 로도 넘치는 긴 이름은 두 줄로 — 셋째 줄부터는 말줄임 */
-  html[data-face] .ov-fx-nm.wrap{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; margin:0 auto;
+  .ov-face img{width:100%; height:100%; object-fit:cover; display:block}
+  .ov-face.sil{color:rgba(236,228,214,.42)}
+  .ov-face svg{width:62%; height:62%}
+  .ov-face:not(.sil) svg{display:none}
+  .ov-fx::before{display:none}
+  .ov-fx-body{display:grid; grid-template-columns:auto auto}
+  /* 이름 칸 — 이름은 칸 한가운데, 꼬리표는 그 오른쪽에 매달립니다 (사용자: 가운데 정렬이 잘 되어야).
+     세 칸 격자 [빈칸 | 이름 | 꼬리표]의 양 끝이 같은 폭(1fr)이라, 꼬리표가 있어도 이름이 금색 칸 위 한가운데에 섭니다 */
+  .ov-fx b{grid-column:2; display:grid; grid-template-columns:1fr auto 1fr; align-items:baseline; column-gap:.55em;
+    min-width:22.9vw; font-size:6.4vw; padding:2.6vw 3.4vw; animation-delay:.06s}
+  .ov-fx b .ov-fx-nm{grid-column:2; font-style:normal}
+  .ov-fx b small{grid-column:3; justify-self:start; font-size:.5em; margin-left:0}
+  /* 좁으면 꼬리표가 이름 아래로(tagdown). 그래도 넘치는 긴 이름은 두 줄로(wrap) — 셋째 줄부터는 말줄임 */
+  .ov-fx b.tagdown{grid-template-columns:1fr}
+  .ov-fx b.tagdown .ov-fx-nm,.ov-fx b.tagdown small{grid-column:1; justify-self:center}
+  .ov-fx b.tagdown small{margin:.35em 0 0}
+  .ov-fx b .ov-fx-nm.wrap{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
     white-space:normal; word-break:break-all; line-height:1.12}
-  html[data-face] .ov-face{position:relative}
-  html[data-face] .ov-face-tag{position:absolute; left:0; bottom:0; font-style:normal; font-weight:700; font-size:2.6vw; line-height:1;
-    padding:.5vw .9vw; background:rgba(23,19,14,.82); color:#ece4d6; letter-spacing:.02em}
+  .ov-fx span{grid-column:2; animation-delay:.16s}
+  .ov-fx-body.rise .ov-face{animation:ov-fx-rise .14s ease-out both}
   .ov-fx.dn em{color:#8f331f}
   /* 마지막 카드는 온 방향의 반대로 — 살짝 내려가며 0.16초 (2026-09-08). 뚝 꺼지지 않게 (2026-09-07) */
   .ov-fx.out{animation:ov-fx-out .16s ease-in forwards}
@@ -301,7 +273,7 @@ export const PAGE_HTML = `<!doctype html>
     75%{transform:translateY(-33.333%)} 100%{transform:translateY(0)}}
   @media (prefers-reduced-motion:reduce){
     .ov-mvreel.up,.ov-mvreel.dn{animation-duration:1ms}
-    .ov-fx,.ov-fx b,.ov-fx span,.ov-fx.out,.ov-fx.bump,html[data-face] .ov-face,
+    .ov-fx,.ov-fx b,.ov-fx span,.ov-fx.out,.ov-fx.bump,.ov-face,
     .ov-fx-body.rise,.ov-fx-body.rise b,.ov-fx-body.rise span{animation:none}
     .ov-fx-body.fade{display:none}
   }
@@ -727,12 +699,7 @@ export const PAGE_HTML = `<!doctype html>
      미리보기가 곧 진짜 오버레이라, 오버레이를 고치면 미리보기가 저절로 따라옵니다. 예시 방 + pv=1 일 때만 켜집니다.
      (폐기 2026-09-06) 주소 카드 맨 위의 iframe 미리보기 — 스크롤을 잡아먹고 주소가 안 보였다. 이번엔 각 설정 옆 작은 칸이다 */
   var isPv = isDemo && q.get("pv") === "1";
-  /* 클릭 알림 초상화 — 실험 스위치 (2026-09-24, 룩 결정 전). ?face=L|C|W 일 때만 */
-  var FACE = /^(L|C|W|A|K|P)$/.test(q.get("face") || "") ? q.get("face") : "";
-  if (FACE) document.documentElement.dataset.face = FACE;
-  var TAG = FACE === "W" ? (/^(line|photo)$/.test(q.get("tag") || "") ? q.get("tag") : "inline")
-    : FACE === "A" ? "inline" : "line";
-  if (FACE) document.documentElement.dataset.tag = TAG;
+  /* 클릭 알림 초상화 — 사진이 없는 사람의 상체 모양 (2026-09-24 사용자 확정). 사진 주소(f)는 앱이 카드 사건에 실어 보냅니다 */
   var SIL_SVG = "<svg viewBox='0 0 20 20' aria-hidden='true'><g fill='currentColor'><circle cx='10' cy='6.4' r='3.4'/><path d='M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z'/></g></svg>";
   /* 소스 나누기 — board 는 현황판만, spin 은 룰렛만 그립니다. 없으면 둘 다.
      파일은 하나고 분기만 다릅니다 — 소스마다 딴 페이지를 만들 이유가 없어요. */
@@ -880,10 +847,6 @@ export const PAGE_HTML = `<!doctype html>
   /* 예시 명단 — 예시 방(CAFE22)과 미리보기의 예시 판이 같이 씁니다 */
   var SAMPLE = [["주키니", 450000], ["팔복", 340000], ["읍지", 320000], ["이다", 180000],
                 ["포셔", 170000], ["히휴", 110000], ["눈가루", 90000], ["티모", 60000]];
-  /* 실험 ?nm=long — 이름 길이를 섞는다(2~8자, 영문 섞임). 말줄임을 보려고 */
-  if (isDemo && q.get("nm") === "long")
-    SAMPLE = [["지나가던LCK팬", 450000], ["팔복", 340000], ["주키니야채", 320000], ["하늘을나는돼지", 180000],
-              ["눈가루", 170000], ["Zuccini", 110000], ["포셔포셔", 90000], ["티모", 60000]];
   var board = null;   // [{n,g,c}] — 앱이 계산해서 보내줍니다
   var cols = [];      // [{t,r}] — 항목 열 머리
   /* 슬라이드 모드 — 기본 켬(ovSlide === false 만 끔; 기존 사용자도 켜진 채 시작, 2026-09-06 사용자 확정).
@@ -2172,41 +2135,50 @@ export const PAGE_HTML = `<!doctype html>
   var fxCls = function (e) { return (e.g > 0 ? "up" : "dn") + (e.k === "roul" ? " roul" : ""); };
   var fxBodyHtml = function (e, extra) {
     var up = e.g > 0;
-    var tagText = (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + (e.t || "");
-    var chip = TAG === "photo" && tagText ? '<em class="ov-face-tag">' + esc(tagText) + "</em>" : "";
-    var face = !FACE || e.k === "clear" ? "" : e.f
-      ? '<i class="ov-face"><img src="' + e.f + '" alt="">' + chip + "</i>"
-      : '<i class="ov-face sil">' + SIL_SVG + chip + "</i>";
-    var inTag = !(FACE && TAG === "photo" && e.k !== "clear");
+    /* 초상화 — 사진(f)이 있으면 사진, 없으면 상체 모양. 상체 모양은 늘 넣어 두고 사진이 못 오면(guardFace) 그걸로 돌아갑니다.
+       비움 카드는 사람 이야기가 아니라 사진이 없습니다 */
+    var face = e.k === "clear" ? "" :
+      '<i class="ov-face' + (e.f ? "" : " sil") + '">' + (e.f ? '<img src="' + esc(e.f) + '" alt="">' : "") + SIL_SVG + "</i>";
     return '<div class="ov-fx-body' + (extra ? " " + extra : "") + '">' + face +
       /* 이름 칸: 이름 + 항목 꼬리표. 금색 칸: 금액만 (2026-09-08 사용자 확정 ㉢ 값이 주인공).
          정정은 꼬리표 앞에 붙습니다. (폐기) 금색 칸에 "항목 +금액" 한 줄 — 문장처럼 읽혔다 */
-      "<b>" + (FACE ? '<i class="ov-fx-nm">' + esc(e.n) + "</i>" : esc(e.n)) + (inTag ? "<small>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + "</small>" : "") + "</b>" +
+      '<b><i class="ov-fx-nm">' + esc(e.n) + "</i><small>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + "</small></b>" +
       "<span><em>" + (up ? "+" : "−") + manShort(Math.abs(e.g)) + "</em></span></div>";
   };
-  /* 이름이 칸보다 길면 글자를 줄인다 (실험 ?face=, 2026-09-24) — 최소 70%, 그래도 넘치면 그때 말줄임.
+  /* 사진이 못 왔을 때 — 상체 모양으로 (디스코드 CDN 이 막힌 방송 프로그램, 지운 사진) */
+  var guardFace = function (root) {
+    var im = root && root.querySelector(".ov-face img");
+    if (!im) return;
+    im.onerror = function () { var f = im.parentNode; if (f) { f.className = "ov-face sil"; im.remove(); } };
+  };
+  /* 이름이 칸보다 길면 글자를 줄인다 (2026-09-24) — 최소 70%, 그래도 넘치면 그때 두 줄.
      줄이는 건 이름 글자만이고 꼬리표는 이름에 딸린 크기(em)라 같이 줄어든다 */
   var fitFxName = function (root) {
-    if (!FACE || !root) return;
+    if (!root) return;
     var b = root.querySelector(".ov-fx-body b"), nm = root.querySelector(".ov-fx-nm");
     if (!b || !nm) return;
     b.style.fontSize = "";
+    b.classList.remove("tagdown");
     nm.className = "ov-fx-nm";
     nm.style.maxWidth = "";
     var cs = getComputedStyle(b);
     var base = parseFloat(cs.fontSize);
-    /* 여백 뺀 칸 폭과 이름 글자 폭(offsetWidth 는 transform 에 안 흔들린다). 꼬리표가 이름 옆이면 그 폭까지 */
-    var room = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    var need = TAG === "inline" ? b.scrollWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) : nm.offsetWidth;
+    var pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    /* 여백 뺀 칸 폭과 내용 폭(이름 + 양옆 꼬리표 칸). scrollWidth 는 격자가 칸을 넘칠 때만 clientWidth 보다 큽니다 */
+    var room = b.clientWidth - pad;
+    var need = b.scrollWidth - pad;
     if (!room || need <= room) return;
     var k = (room / need) * 0.97;
     if (k >= 0.7) { b.style.fontSize = (base * k).toFixed(2) + "px"; return; }
+    /* 꼬리표를 이름 아래로 내리고 이름만 한 줄에 — 55% 까지는 한 줄 (세로 소스에서 세 글자 이름이 두 줄로 꺾이지 않게) */
+    var nameW = nm.offsetWidth;
+    b.classList.add("tagdown");
+    var k1 = (room / nameW) * 0.97;
+    if (k1 >= 0.55) { b.style.fontSize = (base * Math.min(0.7, k1)).toFixed(2) + "px"; return; }
+    /* 그래도 안 들어가는 긴 이름은 70% 로 두 줄 — 반씩: 70% 글자 폭의 절반에 한 글자 남짓 여유 */
     b.style.fontSize = (base * 0.7).toFixed(2) + "px";
-    {
-      nm.className = "ov-fx-nm wrap";
-      /* 반씩 — 70% 크기의 글자 폭(need × .7)의 절반에 한 글자 남짓 여유 */
-      nm.style.maxWidth = Math.min(room, need * 0.7 * 0.5 + base * 0.7 * 1.1).toFixed(1) + "px";
-    }
+    nm.className = "ov-fx-nm wrap";
+    nm.style.maxWidth = Math.min(room, nameW * 0.7 * 0.5 + base * 0.7 * 1.1).toFixed(1) + "px";
   };
   var fxCardHtml = function (e) { return '<div class="ov-fx ' + fxCls(e) + '">' + fxBodyHtml(e, "") + "</div>"; };
 
@@ -2238,10 +2210,11 @@ export const PAGE_HTML = `<!doctype html>
           cur.className = "ov-fx " + fxCls(e);
           cur.innerHTML = fxBodyHtml(e, "rise");
           fitFxName(cur);
+          guardFace(cur);
           void cur.offsetWidth; // 부풀림 애니메이션을 처음부터 다시
           cur.classList.add("bump");
         }, 70);
-      } else { host.innerHTML = fxCardHtml(e); fitFxName(host); }
+      } else { host.innerHTML = fxCardHtml(e); fitFxName(host); guardFace(host); }
     }
     clearTimeout(fxTimer);
     fxTimer = setTimeout(function () {
@@ -2716,7 +2689,7 @@ export const PAGE_HTML = `<!doctype html>
      "내 방송도 저렇겠구나" 할 수 없었습니다. 명단과 금액은 그대로 SAMPLE 을 씁니다 */
   var startDemo = function () {
     var COLS = [{ id: "c1", t: "잡힘" }, { id: "c2", t: "죽음" }];
-    /* 예시 사진 (실험) — 디스코드 프로필처럼 그린 그림 넷. 나머지 넷은 사진 없는 사람(상체 모양) */
+    /* 예시 사진 — 디스코드 프로필처럼 그린 그림 넷. 나머지 넷은 사진 없는 사람(상체 모양) */
     var avaSvg = function (bg, shirt, hair) {
       return "data:image/svg+xml," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' fill='" + bg +
         "'/><circle cx='32' cy='27' r='13' fill='#ffd9b8'/><path d='M19 24c1-9 7-13 13-13s12 4 13 13c-3-3-7-5-13-5s-10 2-13 5z' fill='" + hair +
