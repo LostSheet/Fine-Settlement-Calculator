@@ -11996,6 +11996,7 @@ export default function GoldSettlement() {
         <ObsShare
           relay={relay}
           putRelay={putRelay}
+          pvLook={lookOut()}
           /* 예시 앱은 주소를 받기 전엔 계정 없는 사람의 창을 보여 줍니다 — [내 방송용 주소 받기]가 튜토리얼의 표적 (6장·파티원 5걸음) */
           auth={DEMO && !(auth && auth.obsToken) ? null : auth}
           onOpenAuth={(tab, wantAddr) => {
@@ -12917,221 +12918,69 @@ function Eye({ on }) {
    순위·이름에는 눈이 없습니다 — 판을 판으로 만드는 뼈대라 끄면 남는 게 없습니다.
    항목 열은 예전에 한 덩어리로만 껐는데, 어느 항목을 방송에 띄울지는 서기가 정하는 게
    맞다고 보고 열마다 풀었습니다. */
-function OvColsPreview({ cols, isOff, sumOn, netOn, slide, onItem, onKey }) {
-  const [hint, setHint] = useState(null);
-  /* 예시 숫자 — 실제 횟수가 아니라 "이 열이 이렇게 보인다"를 위한 자리표시입니다 */
-  const EX = [
-    { r: 1, n: "테스1", g: "13만", d: "−6.4만", neg: 1, c: [2, 1, 3], m: "▲1" },
-    { r: 2, n: "테스2", g: "9만", d: "−2.4만", neg: 1, c: [1, 1, 1], m: "" },
-    { r: 3, n: "테스3", g: "3만", d: "+3.6만", neg: 0, c: [0, 0, 1], m: "▼1" },
+/* 방송 화면에 넣을 열 — 눈 단추 (2026-09-24). 미리보기가 진짜 오버레이(iframe)가 되면서 눈은 그림 밖 제 줄로 나왔습니다.
+   슬라이드 모드에서 합계는 늘 도는 자리라 눈이 없습니다 (2026-09-06 사용자 확정) */
+function OvEyes({ cols, isOff, sumOn, netOn, slide, onItem, onKey }) {
+  const items = [
+    ...cols.map((c) => ({ k: "i" + c.id, label: (c.name || "").trim() || "항목", on: !isOff(c.id), why: "이 항목을 몇 번 했는지", hit: () => onItem(c.id) })),
+    ...(slide ? [] : [{ k: "sum", label: "합계", on: sumOn, why: "그 사람이 낸 벌금 총액", hit: () => onKey("sum") }]),
+    { k: "net", label: "순액", on: netOn, why: "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)", hit: () => onKey("net") },
   ];
-  const zones = [
-    ...cols.map((c, i) => ({
-      k: "i" + c.id,
-      label: (c.name || "").trim() || "항목",
-      on: !isOff(c.id),
-      why: "이 항목을 몇 번 했는지",
-      hit: () => onItem(c.id),
-      val: (ri) => EX[ri].c[i % 3], // 0회도 0으로 — 흐리게만 (2026-09-06 사용자: 비워 두지 않는다)
-      cls: "gs-ovp-c",
-    })),
-    {
-      k: "sum",
-      label: "합계",
-      head: "25만",
-      on: sumOn,
-      why: "그 사람이 낸 벌금 총액",
-      hit: () => onKey("sum"),
-      val: (ri) => EX[ri].g,
-      cls: "gs-ovp-g",
-    },
-    {
-      k: "net",
-      label: "순액",
-      on: netOn,
-      why: "받을 몫에서 낸 벌금을 뺀 값 (파랑은 받고, 빨강은 내요)",
-      hit: () => onKey("net"),
-      val: (ri) => EX[ri].d,
-      cls: "gs-ovp-d",
-    },
-  ];
-  /* 격자 자리는 전부 못 박습니다 — 덮개(zone)가 표 위에 겹치는 격자라
-     자동 배치에 맡기면 덮개가 칸을 밀어냅니다 */
-  const at = (c, r, ce, re) => ({
-    gridColumn: ce ? c + "/" + ce : String(c),
-    gridRow: re ? r + "/" + re : String(r),
-  });
-  /* 슬라이드 모드 미리보기 (2026-09-06 사용자 확정) — 합계 자리에서 항목·순액이 번갈아 나오는 것을 2초 간격으로 돌려 보여 줍니다.
-     끈 항목은 돌지 않아서, 눈을 끄면 그 자리가 빠지는 게 바로 보입니다. 합계는 늘 도는 자리라 눈이 없습니다 */
-  const cyc = slide ? zones.filter((z) => z.k === "sum" || z.on) : [];
-  const [ph, setPh] = useState(0);
-  useEffect(() => {
-    if (!slide || cyc.length < 2) return;
-    const t = setInterval(() => setPh((p) => p + 1), 2000);
-    return () => clearInterval(t);
-  }, [slide, cyc.length]);
-  if (slide) {
-    const cur = cyc[ph % Math.max(1, cyc.length)] || zones.find((z) => z.k === "sum");
-    const toggles = zones.filter((z) => z.k !== "sum");
-    return (
-      <div className="gs-ovprev gs-ovprev-slide" aria-label="방송 화면 예시">
-        <div
-          className="gs-ovp gs-ovp-slide"
-          style={{ gridTemplateColumns: "16px 20px minmax(52px,1fr) minmax(76px,auto)", gridTemplateRows: "repeat(6, auto)" }}
-        >
-          <span className="gs-ovp-band gs-ovp-always" style={at(1, 1, 4)}>
-            항상 나와요
-          </span>
-          <span className="gs-ovp-band gs-ovp-cyc" style={at(4, 1)}>
-            {toggles.map((z) => (
-              <button
-                key={z.k}
-                className={"gs-ovp-eye gs-ovp-eyel" + (z.on ? "" : " off")}
-                onClick={z.hit}
-                aria-pressed={z.on}
-                title={z.why}
-                aria-label={z.label + (z.on ? " 빼기" : " 넣기")}
-              >
-                <Eye on={z.on} />
-                <span>{z.label}</span>
-              </button>
-            ))}
-          </span>
-          <span className="gs-ovp-cell gs-ovp-title" style={at(1, 2, 4)}>
-            벌금 순위
-          </span>
-          <span key={"h" + ph} className={"gs-ovp-cell gs-ovp-h gs-ovp-sl" + (cur.k === "sum" ? " gs-ovp-g" : "")} style={at(4, 2)}>
-            {cur.head || cur.label}
-          </span>
-          <span className="gs-ovp-rule" style={at(1, 3, 5)} />
-          {EX.map((x, ri) => {
-            const v = cur.val(ri);
-            return (
-              <Fragment key={x.r}>
-                <span className={"gs-ovp-cell gs-ovp-rank" + (ri === 0 ? " top" : "")} style={at(1, 4 + ri)}>
-                  {x.r}
-                </span>
-                <span className={"gs-ovp-cell gs-ovp-mv" + (x.m[0] === "▲" ? " up" : x.m ? " down" : "")} style={at(2, 4 + ri)}>
-                  {x.m}
-                </span>
-                <span className={"gs-ovp-cell gs-ovp-nm" + (ri === 0 ? " top" : "")} style={at(3, 4 + ri)}>
-                  {x.n}
-                </span>
-                <span
-                  key={"v" + ph}
-                  className={"gs-ovp-cell gs-ovp-sl " + cur.cls + (v ? "" : " gs-ovp-z") + (cur.k === "net" ? (x.neg ? " neg" : " pos") : "")}
-                  style={at(4, 4 + ri)}
-                >
-                  {v}
-                </span>
-              </Fragment>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
   return (
-    <div className="gs-ovprev" aria-label="방송 화면 예시">
-      <div
-        className="gs-ovp"
-        style={{
-          gridTemplateColumns:
-            "16px 20px minmax(52px,1fr) repeat(" + zones.length + ", minmax(40px,auto))",
-          gridTemplateRows: "repeat(6, auto)",
-        }}
-      >
-        <span className="gs-ovp-band gs-ovp-always" style={at(1, 1, 4)}>
-          항상 나와요
-        </span>
-        {zones.map((z, i) => (
-          <span className="gs-ovp-band" key={z.k} style={at(4 + i, 1)}>
-            <button
-              className={"gs-ovp-eye" + (z.on ? "" : " off")}
-              onClick={z.hit}
-              onMouseEnter={() => setHint(z)}
-              onMouseLeave={() => setHint(null)}
-              onFocus={() => setHint(z)}
-              onBlur={() => setHint(null)}
-              aria-pressed={z.on}
-              title={z.label}
-              aria-label={z.label + (z.on ? " 숨기기" : " 보이기")}
-            >
-              <Eye on={z.on} />
-            </button>
-          </span>
-        ))}
+    <div className="gs-oveyes" role="group" aria-label="방송 화면에 넣을 열">
+      {items.map((z) => (
+        <button
+          key={z.k}
+          className={"gs-oveye" + (z.on ? "" : " off")}
+          onClick={z.hit}
+          aria-pressed={z.on}
+          title={z.why}
+          aria-label={z.label + (z.on ? " 빼기" : " 넣기")}
+        >
+          <Eye on={z.on} />
+          <span>{z.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
-        {/* 제목은 이름 열이 아니라 판 왼쪽 끝에서 — 방송 화면과 같은 자리입니다 */}
-        <span className="gs-ovp-cell gs-ovp-title" style={at(1, 2, 4)}>
-          벌금 순위
-        </span>
-        {zones.map((z, i) => (
-          <span
-            key={z.k}
-            className={"gs-ovp-cell gs-ovp-h " + z.cls + (z.on ? "" : " gs-ovp-dim")}
-            style={at(4 + i, 2)}
-          >
-            {z.head || z.label}
-          </span>
-        ))}
-        <span className="gs-ovp-rule" style={at(1, 3, zones.length + 4)} />
-
-        {EX.map((x, ri) => (
-          <Fragment key={x.r}>
-            <span
-              className={"gs-ovp-cell gs-ovp-rank" + (ri === 0 ? " top" : "")}
-              style={at(1, 4 + ri)}
-            >
-              {x.r}
-            </span>
-            {/* 순위 변동 — 방송에서는 순위가 바뀐 뒤 잠깐 떴다 사라집니다.
-                늘 자리를 차지하는 열이라 예시에도 그대로 둡니다 */}
-            <span
-              className={"gs-ovp-cell gs-ovp-mv" + (x.m[0] === "▲" ? " up" : x.m ? " down" : "")}
-              style={at(2, 4 + ri)}
-            >
-              {x.m}
-            </span>
-            <span
-              className={"gs-ovp-cell gs-ovp-nm" + (ri === 0 ? " top" : "")}
-              style={at(3, 4 + ri)}
-            >
-              {x.n}
-            </span>
-            {zones.map((z, i) => {
-              const v = z.val(ri);
-              return (
-                <span
-                  key={z.k}
-                  className={
-                    "gs-ovp-cell " +
-                    z.cls +
-                    (v ? "" : " gs-ovp-z") +
-                    (z.k === "net" ? (x.neg ? " neg" : " pos") : "") +
-                    (z.on ? "" : " gs-ovp-dim")
-                  }
-                  style={at(4 + i, 4 + ri)}
-                >
-                  {v}
-                </span>
-              );
-            })}
-          </Fragment>
-        ))}
-
-        {zones.map((z, i) => (
-          <span
-            key={z.k}
-            className={
-              "gs-ovp-zone" +
-              (z.on ? "" : " gs-ovp-dead") +
-              (hint && hint.k === z.k && z.on ? " gs-ovp-hi" : "")
-            }
-            style={at(4 + i, 2, null, 7)}
-          />
-        ))}
-      </div>
+/* 방송 화면 미리보기 = 진짜 오버레이 (2026-09-24 사용자 확정 "제안대로") — 예시 방을 pv 모드(fit=1&pv=1)로 띄우고,
+   준비 신호(pv-ready)가 오면 지금 설정을 보내고 그 뒤엔 설정이 바뀔 때마다 보냅니다. 오버레이를 고치면 미리보기가
+   저절로 따라오고, 설정마다 그림을 따로 손볼 일이 없습니다. 보내는 것은 계정 외형과 같은 꾸러미(lookOut)와 내 항목 이름.
+   (폐기) 손으로 그린 축소판 OvColsPreview — 오버레이와 따로 놀아 고칠 때마다 두 벌이었다 */
+function OvLive({ look, cols }) {
+  const ref = useRef(null);
+  const ready = useRef(false);
+  const cur = useRef(null);
+  cur.current = { look, cols: cols.map((c) => ({ id: c.id, t: (c.name || "").trim() || "항목", r: isRoulette(c) ? 1 : 0 })) };
+  const origin = useMemo(() => {
+    try {
+      return new URL(RELAY_BASE).origin;
+    } catch (e) {
+      return "*";
+    }
+  }, []);
+  const send = () => {
+    const w = ref.current && ref.current.contentWindow;
+    if (!w || !ready.current) return;
+    w.postMessage({ gs: "pv", look: cur.current.look, cols: cur.current.cols }, origin);
+  };
+  useEffect(() => {
+    const on = (e) => {
+      if (!e.data || e.data.gs !== "pv-ready" || !ref.current || e.source !== ref.current.contentWindow) return;
+      ready.current = true;
+      send();
+    };
+    window.addEventListener("message", on);
+    return () => window.removeEventListener("message", on);
+  }, []);
+  useEffect(() => {
+    send();
+  }, [JSON.stringify(cur.current)]);
+  return (
+    <div className="gs-ovlive">
+      <iframe ref={ref} className="gs-ovlive-frame" src={RELAY_BASE + "/r/" + DEMO_ROOM + "?mode=overlay&fit=1&pv=1"} title="방송 화면 미리보기" />
     </div>
   );
 }
@@ -13672,7 +13521,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
 /* 외형 — 배경 투명도·방송 열·벌금 알림·룰렛 외형.
    창을 따로 두면 "주소는 여기, 생김새는 저기"로 갈려서 한 번에 못 끝냅니다.
    그래서 껍데기 없이 몸통만 내주고, 오버레이 공유 설정 창이 이걸 안에 답니다. */
-function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey }) {
+function LookBody({ relay, putRelay, ovCols, pvLook, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey }) {
   /* [테마 미리보기] 버튼은 폐지 (2026-09-05) — 카드 머리의 [오버레이 미리보기]가
      같은 일을 하고, 미리보기 문이 둘이면 뭐가 다른지부터 묻게 됩니다 */
   const pickLook = (lk) => putRelay({ ...relay, look: lk });
@@ -13705,15 +13554,9 @@ function LookBody({ relay, putRelay, ovCols, isOff, sumOn, netOn, slideOn, onOvS
             </div>
           </div>
         </div>
-        <OvColsPreview
-          cols={ovCols}
-          isOff={isOff}
-          sumOn={sumOn}
-          netOn={netOn}
-          slide={slideOn}
-          onItem={onOvItem}
-          onKey={onOvKey}
-        />
+        {/* 미리보기는 진짜 오버레이 (2026-09-24 사용자 확정) — 예시 방을 pv 모드로 띄우고 지금 설정을 보냅니다. 눈 단추는 그림 밖 제 줄 */}
+        <OvEyes cols={ovCols} isOff={isOff} sumOn={sumOn} netOn={netOn} slide={slideOn} onItem={onOvItem} onKey={onOvKey} />
+        <OvLive look={pvLook} cols={ovCols} />
         {slideOn && (
           <p className="gs-unitnote gs-obs-note">
             합계 8초, 항목과 순액 4초씩 번갈아 나와요. 판이 좁아지니 OBS에서 소스 크기를 한 번 다시 맞춰 주세요.
@@ -15019,7 +14862,7 @@ function IconHistory() {
 /* 오버레이 공유 설정 — 방송에 나가는 것은 한 창에서 끝냅니다.
    로그인이 없으면 주소부터 주고(§5.2), 그다음이 내 방송용 주소·초대·명단, 마지막이 생김새입니다.
    guest 는 파티원이 연 창입니다 — 자기 주소·소스 나누기·외형만 남기고 방장 것은 뺍니다. */
-function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDiscordIssue, castWho, fresh, guest, onAskReissue, onDiscard, castState, onNick, onLogout, onUpgrade, ovCols, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey, onClose, inviteRow }) {
+function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDiscordIssue, castWho, fresh, guest, onAskReissue, onDiscard, castState, onNick, onLogout, onUpgrade, ovCols, pvLook, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey, onClose, inviteRow }) {
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -15329,6 +15172,7 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDis
             relay={relay}
             putRelay={putRelay}
             ovCols={ovCols}
+            pvLook={pvLook}
             isOff={isOff}
             sumOn={sumOn}
             netOn={netOn}
@@ -18660,68 +18504,18 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-pickself:hover{background:rgba(var(--ink-rgb),.08)}
 
 
-/* 방송 화면 예시 — 실제 오버레이의 비율을 줄여 옮겼습니다 */
-/* 방송 화면 예시 — 이 표가 곧 스위치입니다. 방송에 나가는 판이라 앱 테마와 무관하게
-   늘 어두운 판으로 그립니다(테마를 따라가면 "이게 방송 화면"이라는 게 안 읽힙니다). */
-.gs-ovprev{margin-top:12px; padding:9px 11px 11px; border-radius:6px; background:#241f1b;
-  color:#f5f0e6; overflow-x:auto}
-.gs-ovp{display:grid; align-items:center; position:relative; min-width:min(100%,300px)}
-.gs-ovp-cell{padding:3px; font-size:15px; white-space:nowrap; text-align:center;
-  font-variant-numeric:tabular-nums; position:relative; z-index:1}
-.gs-ovp-rank{font-size:11px; opacity:.68}
-/* 1위는 금색 순위에 굵은 이름 — 방송 판의 초점을 그대로 옮겨 왔습니다 */
-.gs-ovp-rank.top{color:#e8c66a; opacity:1; font-weight:700}
-.gs-ovp-nm.top{font-weight:700}
-.gs-ovp-mv{font-size:9px; font-weight:700}
-.gs-ovp-mv.up{color:#8fd89b}
-.gs-ovp-mv.down{color:#e59a90}
-/* 이름은 왼쪽 정렬 — 방송 판이 그렇습니다(벌금표와 반대라 헷갈리지 않게 여기서 맞춥니다) */
-.gs-ovp-nm{text-align:left; padding-right:7px; overflow:hidden; text-overflow:ellipsis}
-/* 제목도 방송 판과 같이 판 왼쪽 끝에서 시작합니다 */
-.gs-ovp-title{text-align:left; font-size:13.5px; font-weight:700; padding-bottom:5px}
-.gs-ovp-g{text-align:right; color:#e8c66a}
-.gs-ovp-d{text-align:right; font-size:12px; font-weight:700}
-.gs-ovp-d.pos{color:#6fb4ff}
-.gs-ovp-d.neg{color:#ff7d6b}
-.gs-ovp-h{font-size:10px; opacity:.55; padding-bottom:5px; letter-spacing:.02em;
-  overflow:hidden; text-overflow:ellipsis}
-.gs-ovp-h.gs-ovp-g{font-size:11.5px; opacity:.85}
-.gs-ovp-h.gs-ovp-d{color:inherit; font-weight:400}
-.gs-ovp-rule{height:1px; background:rgba(255,255,255,.14); margin-bottom:3px}
-.gs-ovp-z{opacity:.18}
-/* 슬라이드 모드 미리보기 (2026-09-06) — 눈은 값 칸 위에 이름과 함께 한 줄, 값은 오른쪽에서 들어옵니다 */
-/* 슬라이드 미리보기는 가로로 안 굴립니다 — 값이 오른쪽에서 들어올 때 몇 px 넘쳐 스크롤바가 번쩍였다 (2026-09-06 사용자: 정신 사납다) */
-.gs-ovprev-slide{overflow-x:hidden}
-.gs-ovp-cyc{justify-content:flex-end; gap:5px; flex-wrap:wrap}
-.gs-ovp-eyel{gap:4px; padding:2px 7px 2px 5px; line-height:1; font-size:10px}
-.gs-ovp-eyel span{line-height:1}
-.gs-ovp-slide .gs-ovp-c{text-align:right}
-.gs-ovp-sl{animation:gs-ovp-sl .26s cubic-bezier(.2,.6,.3,1) both}
-@keyframes gs-ovp-sl{from{transform:translateX(14px); opacity:0} to{transform:translateX(0); opacity:1}}
+/* 방송 화면 미리보기 (2026-09-24) — 진짜 오버레이(예시 방, pv 모드)를 iframe 으로. 16:9 한 장, 투명한 자리는 오버레이가 체커보드로 보여 줍니다.
+   (폐기) 손으로 그린 축소판(.gs-ovprev·.gs-ovp-*) — 늘 어두운 판으로 그리던 표와 그 위에 얹던 눈·빗금 */
+.gs-ovlive{margin-top:10px; border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px; overflow:hidden; background:#241f1b}
+.gs-ovlive-frame{display:block; width:100%; aspect-ratio:16 / 9; border:0}
+/* 넣을 열의 눈 단추 — 그림 밖, 종이 위의 칩. 꺼진 열은 옅게 + 취소선 */
+.gs-oveyes{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px}
+.gs-oveye{display:inline-flex; align-items:center; gap:5px; font:inherit; font-size:11.5px; line-height:1; padding:4px 9px 4px 7px;
+  border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; background:transparent; color:var(--ink); cursor:pointer}
+.gs-oveye:hover{border-color:rgba(var(--ink-rgb),.6)}
+.gs-oveye.off{color:var(--ink-2); border-color:rgba(var(--ink-rgb),.14)}
+.gs-oveye.off span{text-decoration:line-through; text-decoration-color:rgba(var(--ink-rgb),.45)}
 .gs-obs-note{margin:8px 0 0}
-.gs-ovp-dim{opacity:.3}
-/* 눈이 앉는 띠 — 열마다 하나씩, 못 끄는 자리에는 이유를 적어 둡니다 */
-.gs-ovp-band{display:flex; align-items:center; justify-content:center; padding:1px 0 7px;
-  position:relative; z-index:3; font-size:9.5px; letter-spacing:.02em; white-space:nowrap}
-.gs-ovp-always{opacity:.32}
-.gs-ovp-eye{display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
-  background:transparent; color:#f5f0e6; padding:3px 5px; border-radius:99px; line-height:0;
-  border:1px solid rgba(255,255,255,.24); transition:background .14s, border-color .14s, color .14s}
-.gs-ovp-eye:hover{background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.55)}
-.gs-ovp-eye.off{color:rgba(245,240,230,.4); border-color:rgba(255,255,255,.12)}
-.gs-ovp-eye.off:hover{color:#f5f0e6}
-/* 꺼진 열에 덮는 빗금 — 숫자가 비쳐 보여서 무엇이 빠지는지 계속 읽힙니다.
-   눈에 올리기만 해도 그 열이 금색으로 밝아져, 누르기 전에 범위를 확인할 수 있어요. */
-.gs-ovp-zone{pointer-events:none; z-index:2; border-radius:3px; align-self:stretch;
-  opacity:0; transition:opacity .15s}
-.gs-ovp-hi{opacity:1; background:rgba(232,198,106,.11);
-  box-shadow:inset 0 0 0 1px rgba(232,198,106,.45)}
-.gs-ovp-dead{opacity:1; box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);
-  background:repeating-linear-gradient(-45deg,
-    rgba(255,255,255,.17) 0 3.5px, transparent 3.5px 8px)}
-.gs-ovp-cap{font-size:11.5px; color:var(--ink-2); margin:10px 0 0; min-height:2.6em;
-  line-height:1.65}
-.gs-ovp-cap b{color:var(--ink-body)}
 .gs-fx-hint{margin-top:9px}
 /* 클릭 알림 예시 — 방송 판 위에 카드가 얹히는 모습 그대로 */
 .gs-fxprev{position:relative; margin:10px 0 12px; padding:12px 14px; border-radius:6px;
@@ -18740,7 +18534,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-pm-key{display:inline-block; margin-left:7px; font-style:normal; font-size:10px;
   letter-spacing:.04em; padding:1px 5px; border-radius:3px; vertical-align:middle;
   border:1px solid currentColor; opacity:.6}
-@media (prefers-reduced-motion:reduce){ .gs-ovp-zone,.gs-ovp-eye{transition:none} }
 
 /* 알림 한 줄 — 화면 아래에 잠깐 떴다 사라집니다. 누를 것이 없어 조작을 안 막습니다 */
 /* 토스트 안에서 누를 수 있는 말 — 토스트는 클릭을 안 받게 두고(밑의 표를 가리면
