@@ -642,6 +642,15 @@ const ROUL_ICON = (
 /* 설정 톱니 — 룰렛 설정창 여는 단추에 (2026-09-18 사용자: "룰렛" 글자 상자로는 설정인 줄 모른다) */
 /* "초대하면" 두 줄 (2026-09-18~19) — 초대 문턱이 나오는 곳 셋([초대] 창·빈 초상화 팝오버·자리 배치 창)이 같은 것을 쓴다. 곳마다 따로 적었다가 한 곳만 고치고 나머지를 놓쳤다 */
 const INVITE_GATE_H = "초대하려면 Discord 연동이 필요해요";
+/* Discord 연동이 주는 것 · 받는 정보 (2026-09-24 사용자 확정) — 헤더 대화상자·발급 칸·발급 뒤 띠가 같은 문장을 씁니다. 문구는 초안.
+   "무엇을 받나"는 Discord 동의 화면도 말하지만 "왜 하나"는 여기서만 말합니다 */
+const DC_GAINS = [
+  "지금 판을 서버에 백업해요. 다른 컴퓨터에서도 이어서 써요.",
+  "Discord 프로필 사진을 가져와요.",
+  "파티원을 초대해 각자 자수하게 할 수 있어요.",
+  "초대받은 파티에 들어가 자수할 수 있어요.",
+];
+const DC_FINE = "Discord 아이디·이름·프로필 사진만 받아요. 이메일, 서버 목록, 메시지는 받지 않아요.";
 const INVITE_GAIN = (
   <>
     <p className="gs-invnote-p">초대하면</p>
@@ -2987,6 +2996,7 @@ export default function GoldSettlement() {
   const [ownerNick, setOwnerNick] = useState("");
   const [roomOpen, setRoomOpen] = useState(false); // 머리줄 방 표시 칩의 패널 = 파티 서랍
   const [whyOpen, setWhyOpen] = useState(false); // 왜 파티원은 남의 줄을 못 고치나요?
+  const [dcAsk, setDcAsk] = useState(false); // 헤더 [Discord 연동] → 설명 대화상자 (2026-09-24)
   /* 방 패널도 계정 드롭다운과 같은 규칙 — 바깥을 누르면 닫힙니다 */
   useEffect(() => {
     if (!roomOpen) return;
@@ -9722,9 +9732,10 @@ export default function GoldSettlement() {
             </span>
           )}
           {/* 연동 전엔 문 하나 (B1′, 2026-09-16) — 계정이 없든 주소만 받았든 같은 모습.
-              (2026-09-17 사용자) 다른 Discord 단추와 같은 상표색 + 마크. (폐기) 실루엣 얼굴 자리가 붙은 유령 단추 */}
+              (2026-09-17 사용자) 다른 Discord 단추와 같은 상표색 + 마크. (폐기) 실루엣 얼굴 자리가 붙은 유령 단추.
+              누르면 바로 나가지 않고 표준 대화상자가 "왜 하나"를 말한다 (2026-09-24 사용자 확정, 목업 dclink2 ①라) */}
           {(!auth || !auth.dc) && !inviteGate && !readOnly && (
-            <button className="gs-btn gs-dcbtn gs-dcdoor" onClick={() => startDiscord()}>
+            <button className="gs-btn gs-dcbtn gs-dcdoor" onClick={() => setDcAsk(true)}>
               Discord 연동
             </button>
           )}
@@ -12051,6 +12062,32 @@ export default function GoldSettlement() {
           }}
           onClose={() => setAuthOpen(null)}
         />
+      )}
+      {/* Discord 연동 대화상자 (2026-09-24 사용자 확정) — 가운데 창 + 어두운 배경. 여는 단추(헤더 [Discord 연동])와 확인 단추의
+          이름이 다르고 배경이 어두워져 '같은 단추 둘'로 안 읽힌다. (폐기, 목업 dclink ①) 글이 바뀌는 단추 · 창 속으로 내려가는 단추 */}
+      {dcAsk && (
+        <InfoModal title="Discord 연동" onClose={() => setDcAsk(false)}>
+          <ul className="gs-dc-gains">
+            {DC_GAINS.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+          <p className="gs-dc-fine">{DC_FINE}</p>
+          <div className="gs-dialog-btns gs-dc-btns">
+            <button
+              className="gs-btn gs-dcbtn"
+              onClick={() => {
+                setDcAsk(false);
+                startDiscord();
+              }}
+            >
+              Discord로 계속
+            </button>
+            <button className="gs-btn gs-btn-ghost" onClick={() => setDcAsk(false)}>
+              나중에
+            </button>
+          </div>
+        </InfoModal>
       )}
       {whyOpen && (
         <InfoModal title="왜 파티원은 남의 줄을 못 고치나요?" onClose={() => setWhyOpen(false)}>
@@ -15060,30 +15097,24 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDis
             <div className="gs-obs-card">
               <h4 className="gs-key-h">내 방송용 주소</h4>
               <p className="gs-obs-say">OBS 브라우저 소스에 넣는 주소예요.</p>
-              {/* 받는 길 둘을 나란히 (2026-09-19 확정, 목업 3번 '다') — 길마다 밑에 그 길의 결과. 송출 컴퓨터 함정을 글이 아니라 구조로 푼다.
+              {/* 받는 길 둘 — 세로, [발급] 위 · 또는 · [Discord 연동하고 발급] 아래 (2026-09-24 사용자 확정, 목업 dclink2 ②다).
+                  제목과 설명이 한 단추 안에 있는 두 줄 단추라 설명의 소속을 묻지 않고, 폭이 카드를 채운다. 받는 정보 한 줄은 Discord 단추 밑에만.
+                  (폐기 2026-09-19 목업 3번 '다') 나란히 두 칸 + 칸 아래 설명 — 오른쪽이 비고 설명이 본문처럼 읽혔다.
                   (폐기) [발급] 하나 + "브라우저 데이터를 지우면 …" + 네 문장 경고 문단 */}
               <div className="gs-obs-two">
-                <div>
-                  {/* 로그인 없이 [발급] (§3.12.1) — 계정도 이름도 묻지 않습니다 */}
-                  <button className="gs-btn gs-authgo" onClick={() => (onIssue ? onIssue() : onOpenAuth("register", true))}>
-                    발급
-                  </button>
-                  <p className="gs-obs-makenote">
-                    연동 없이 받아요.
-                    <br />
-                    벌금을 기록하는 컴퓨터에서 눌러요.
-                  </p>
+                {/* 로그인 없이 [발급] (§3.12.1) — 계정도 이름도 묻지 않습니다 */}
+                <button className="gs-btn gs-authgo gs-cl" onClick={() => (onIssue ? onIssue() : onOpenAuth("register", true))}>
+                  <b>발급</b>
+                  <span>연동 없이 받아요. 벌금을 기록하는 컴퓨터에서 눌러요.</span>
+                </button>
+                <div className="gs-obs-or" aria-hidden="true">
+                  또는
                 </div>
-                <div>
-                  <button className="gs-btn gs-authgo gs-dcbtn" onClick={() => (onDiscordIssue ? onDiscordIssue() : onOpenAuth("login", true))}>
-                    Discord 연동하고 발급
-                  </button>
-                  <p className="gs-obs-makenote">
-                    어느 컴퓨터에서 받아도 같은 주소예요.
-                    <br />
-                    브라우저 데이터를 지워도 주소가 남아요.
-                  </p>
-                </div>
+                <button className="gs-btn gs-authgo gs-dcbtn gs-cl" onClick={() => (onDiscordIssue ? onDiscordIssue() : onOpenAuth("login", true))}>
+                  <b>Discord 연동하고 발급</b>
+                  <span>어느 컴퓨터에서 받아도 같은 주소예요. 브라우저 데이터를 지워도 주소가 남아요.</span>
+                </button>
+                <p className="gs-obs-fine">{DC_FINE}</p>
               </div>
               {/* (폐기 2026-09-05) "이 브라우저에 저장돼요." — 발급 문이 랜딩(가입 포함)으로
                   가게 되어 게스트 전용 안내는 오안내가 됐습니다. 브라우저 저장 이야기는
@@ -15229,14 +15260,17 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDis
                   {castLine(castState, castWho)}
                 </p>
               )}
-              {/* 주소의 수명 한 문장 (B1′) — 글자 링크가 연동으로 간다 */}
+              {/* 연동 권유 띠 (2026-09-24 사용자 확정, 목업 dclink ③가) — 옅은 Discord 색 띠에 마크 · 이득 한 줄 · 받는 정보 한 줄 · 보통 크기 단추.
+                  (폐기, B1′) 상태 문장과 같은 글씨 한 줄 + 오른쪽 작은 단추 — 읽고 지나갔다 */}
               {auth.anon && (
-                <p className="gs-obs-dcline">
+                <div className="gs-obs-dcline">
+                  <i className="gs-dcmark gs-obs-dcmark" aria-hidden="true" />
                   <span>Discord를 연동하면 어느 컴퓨터에서든 이 주소를 그대로 써요.</span>
-                  <button className="gs-btn gs-btn-sm gs-dcbtn" onClick={onUpgrade}>
+                  <span className="gs-obs-dcsub">{DC_FINE}</span>
+                  <button className="gs-btn gs-dcbtn" onClick={onUpgrade}>
                     Discord 연동
                   </button>
-                </p>
+                </div>
               )}
               {/* 가장 안 눌러야 할 문이라 카드 발치의 조용한 링크입니다 — 언제 쓰는지는
                   누르면 뜨는 확인 창이 말합니다 (§9-4) */}
@@ -17548,7 +17582,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   border-top:1px solid rgba(var(--gold-rgb),.22); font-size:11.5px}
 /* 비로그인 — 외형은 보이되 잠급니다: 주소를 받으면 꾸밀 화면이라는 예고입니다 */
 .gs-obs-locked{opacity:.45; pointer-events:none; user-select:none}
-.gs-obs-makenote{margin:8px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
 /* 두 컴퓨터 함정을 막는 한 줄 (§3.11) — 혜택이 아니라 경고라 금색으로 세웁니다 */
 .gs-obs-warn2{margin:10px 0 0; font-size:12px; line-height:1.75; color:var(--ink-2);
   padding:9px 11px; border-radius:7px; background:rgba(var(--gold-rgb),.07);
@@ -19553,10 +19586,36 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* 2026-09-19 — [초대] 창의 글머리 두 줄, 방송 설정의 한 줄 안내·연동 줄·받는 길 둘 */
 .gs-invnote-list{margin:2px 0 0; padding:0 0 0 16px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
 .gs-obs-say{margin:10px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-.gs-obs-dcline{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:10px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-.gs-obs-dcline span{flex:1 1 220px; min-width:0}
-.gs-obs-two{display:grid; grid-template-columns:1fr 1fr; gap:0 12px; align-items:start}
-.gs-obs-two .gs-authgo{margin-top:12px}
+/* 발급 뒤 연동 권유 띠 (2026-09-24 사용자 확정, 목업 dclink ③가) — 옅은 Discord 색으로 "여기는 다른 이야기".
+   (폐기) 상태 문장과 같은 글씨 한 줄 + 오른쪽 작은 단추 */
+.gs-obs-dcline{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:4px 14px; margin:14px 0 2px; padding:12px 14px;
+  background:rgba(88,101,242,.1); border:1px solid rgba(88,101,242,.45); border-left:3px solid #5865f2; border-radius:2px}
+.gs-obs-dcline .gs-obs-dcmark{display:block; grid-row:1 / 3; width:26px; height:26px; color:#5865f2}
+.gs-obs-dcline > span{grid-column:2; font-size:13px; line-height:1.6; color:var(--ink)}
+.gs-obs-dcline > .gs-obs-dcsub{font-size:11.5px; color:var(--ink-2)}
+.gs-obs-dcline > .gs-btn{grid-column:3; grid-row:1 / 3; height:36px; padding:0 16px; font-size:13px}
+/* 발급 전 — 두 줄 단추 세로 둘 + '또는' (2026-09-24 사용자 확정, 목업 dclink2 ②다). 제목과 설명이 단추 안에 있어 설명의 소속을 묻지 않는다.
+   (폐기 2026-09-19) 나란히 두 칸 + 칸 아래 설명(.gs-obs-makenote) — 오른쪽이 비고 설명이 본문처럼 읽혔다 */
+.gs-obs-two{display:flex; flex-direction:column; align-items:stretch; margin-top:4px}
+.gs-obs-two .gs-authgo{margin-top:6px}
+.gs-cl{display:grid; grid-template-columns:auto 1fr; column-gap:10px; row-gap:2px; align-items:center; text-align:left; padding:12px 16px 13px; line-height:1.5}
+.gs-cl b{grid-column:2; font-size:14px; font-weight:600}
+/* 설명은 단추 글자색을 물려받는다 — 밝은 모드의 [발급]은 진한 바탕이라 잉크색이면 사라진다 */
+.gs-cl span{grid-column:2; font-size:12px; font-weight:400; color:inherit; opacity:.72}
+.gs-cl.gs-dcbtn::before{grid-row:1; align-self:center}
+.gs-cl.gs-dcbtn span{color:rgba(255,255,255,.82); opacity:1}
+.gs-cl:not(.gs-dcbtn){grid-template-columns:1fr}
+.gs-cl:not(.gs-dcbtn) b,.gs-cl:not(.gs-dcbtn) span{grid-column:1}
+.gs-obs-or{display:flex; align-items:center; gap:12px; margin:22px 0 2px; font-size:11.5px; color:var(--ink-2); letter-spacing:.08em}
+.gs-obs-or::before,.gs-obs-or::after{content:""; flex:1; height:1px; background:rgba(var(--ink-rgb),.22)}
+.gs-obs-fine{margin:6px 0 0; font-size:11px; line-height:1.6; color:var(--ink-2)}
+/* Discord 연동 대화상자 (2026-09-24 사용자 확정, 목업 dclink2 ①라) */
+.gs-dc-gains{margin:0; padding:0; list-style:none; font-size:12.5px; line-height:1.85; color:var(--ink-body)}
+.gs-dc-gains li{position:relative; padding-left:14px}
+.gs-dc-gains li::before{content:""; position:absolute; left:2px; top:.78em; width:5px; height:5px; background:#5865f2}
+.gs-dialog p.gs-dc-fine{margin:12px 0 0; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3); font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-dc-btns{margin-top:22px}
+.gs-dc-btns .gs-dcbtn{flex-direction:row; gap:7px}
 .gs-obs-life .gs-swaplink{font-size:12.5px}
 .gs-obs-discard{margin-left:14px}
 /* 연동 전의 문 (B1′) — 유령 단추 + 실루엣 얼굴 자리 */
