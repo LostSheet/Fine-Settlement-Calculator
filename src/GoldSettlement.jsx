@@ -16963,7 +16963,7 @@ const CSS = `
 .gs-corner-col,.gs-corner-row{position:absolute; font-size:10.5px; letter-spacing:.12em;
   color:var(--ink-2)}
 .gs-corner-col{top:3px; right:10px}
-.gs-corner-row{bottom:9px; left:0}
+.gs-corner-row{bottom:9px; left:8px} /* 2026-09-24 사용자 확정: 끌기 손잡이(≡) 왼쪽과 같은 선. (폐기) 0 — 박스가 표만 감싸면서 테두리에 붙었다 */
 .gs-help{list-style:none; margin:0 0 15px; padding:12px 14px; border-left:2px solid var(--kraft-dk);
   background:rgba(var(--kraft-rgb),.22); font-size:12px; line-height:1.7; color:var(--ink-body)}
 .gs-help li + li{margin-top:5px}
@@ -17249,8 +17249,10 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 
 /* 이름 칸은 이름만 — 손잡이는 오른쪽 끝 도구 열에 삽니다 */
 /* 이름 칸 격자 (A′, 2026-09-16) — 손잡이 16 · [초상화 24 + 왕관 18] · 이름(오른쪽 끝). 줄마다 같은 칸이라 이름이 한 세로선에 선다 */
-.gs-grid{--rowpic:56px}
-.gs-grid-narrow{--rowpic:52px}
+/* 표 초상화 44px (2026-09-24 사용자 확정, 목업 portrait) — 행 높이는 셈 칸(56px)이 정하므로 초상화를 줄여도 행은 그대로이고 위아래 6px 숨이 생긴다.
+   40 아래로는 디스코드 사진 속 얼굴이 안 읽힌다. (폐기) 56 — 셈 칸과 같은 높이로 꽉 차 있었다 */
+.gs-grid{--rowpic:44px}
+.gs-grid-narrow{--rowpic:40px}
 .gs-namecell{display:grid; grid-template-columns:16px calc(var(--rowpic) + 2px) 1fr; align-items:center; column-gap:6px; min-width:max-content}
 /* (폐기 2026-09-19 사용자) 여섯 글자 안전구역 min-width. 열은 이름 칸의 글자 폭이 정한다. field-sizing 을 모르는 브라우저만 글자 수로 어림 */
 @supports not (field-sizing: content){
@@ -17275,7 +17277,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowmeta{margin-right:auto; flex:none; display:inline-flex; align-items:center; gap:4px; padding-left:4px}
 /* i 하나 — 사람이 앉은 줄. 호버(title)에 닉 · 아이디. 끊긴 사람은 흐려집니다.
    (2026-09-06) 파란 테두리 → 잉크 톤. 이름 옆의 작은 표시가 표의 팔레트 밖 색을 쓰면 그것만 튄다 */
-.gs-rowi{width:24px; height:24px; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.3); color:var(--ink-2); padding:0; font:inherit;
+.gs-rowi{width:24px; height:24px; border-radius:2px; border:1px solid rgba(var(--ink-rgb),.3); color:var(--ink-2); padding:0; font:inherit;
   background:rgba(var(--ink-rgb),.05); display:inline-grid; place-items:center; cursor:pointer; line-height:0;
   transition:color .15s, border-color .15s}
 .gs-rowi:not([aria-haspopup]){cursor:default}
@@ -17887,12 +17889,13 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer; white-space:nowrap}
 .gs-acctchip:hover{border-color:rgba(var(--ink-rgb),.5)}
 /* 초상화 — 둥근 네모(한 변의 4분의 1), 1px 잉크 선. 디스코드 원본 파일이 정사각형이라 충돌이 없다 */
-.gs-ava{display:inline-block; border-radius:25%; border:1px solid rgba(var(--ink-rgb),.35); box-sizing:border-box;
+/* 초상화 둥글기 2px (2026-09-24 사용자 확정) — 앱의 다른 것들과 같은 직각. (폐기 §3.12.7) 둥근 네모 25% */
+.gs-ava{display:inline-block; border-radius:2px; border:1px solid rgba(var(--ink-rgb),.35); box-sizing:border-box;
   object-fit:cover; background:var(--paper-2); vertical-align:middle; flex:none}
 .gs-ava-txt{background:var(--paper-2)}
-.gs-rowi-ava .gs-ava{width:var(--rowpic); height:var(--rowpic); border-radius:25%}
+.gs-rowi-ava .gs-ava{width:var(--rowpic); height:var(--rowpic); border-radius:2px}
 /* 초상화가 든 자리 단추는 테두리·바탕·여백 없이 초상화 그 자체 (2026-09-16 사용자 지적: 네모 둘레에 여백이 생겼다) */
-.gs-rowi-ava:has(.gs-ava){width:var(--rowpic); height:var(--rowpic); border:0; background:transparent; padding:0; border-radius:25%; box-shadow:none; overflow:hidden}
+.gs-rowi-ava:has(.gs-ava){width:var(--rowpic); height:var(--rowpic); border:0; background:transparent; padding:0; border-radius:2px; box-shadow:none; overflow:hidden}
 .gs-rowi-ava:has(.gs-ava) .gs-ava{border:0}
 .gs-conf-who .gs-ava{align-self:center}
 .gs-waithead{display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--ink-2); letter-spacing:.04em}
@@ -18990,7 +18993,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rd-mine{border-color:var(--gold); box-shadow:inset 0 0 0 1px rgba(var(--gold-rgb),.5)}
 .gs-rd-far{opacity:.5}
 .gs-rd-far .gs-hit{cursor:default}
-.gs-rd-pic{width:76px; height:76px; border-radius:25%; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.35); display:flex; align-items:center; justify-content:center; flex:none}
+.gs-rd-pic{width:76px; height:76px; border-radius:2px; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.35); display:flex; align-items:center; justify-content:center; flex:none}
 .gs-rd-pic .gs-ava{width:100%; height:100%; border:0; border-radius:0; display:block; object-fit:cover}
 .gs-rd-nopic svg{width:46%; height:46%}
 .gs-rd-body{display:flex; flex-direction:column; gap:9px; min-width:0}
@@ -19139,7 +19142,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-lh-norec{padding:16px}
 .gs-lh-getaddr{width:100%; margin-top:2px}
 /* 아바타 한 벌 (2026-09-07 ③) — 글자 원, 계정 색(--h), 방장 금테 */
-.gs-ava{font-style:normal; border-radius:25%; display:inline-grid; place-items:center; flex:none; line-height:1;
+.gs-ava{font-style:normal; border-radius:2px; display:inline-grid; place-items:center; flex:none; line-height:1;
   font-family:'Gowun Batang',serif; font-weight:700; color:#f3ece0; background:hsl(var(--h, 30) 38% 30%); border:1px solid rgba(var(--ink-rgb),.2)}
 .gs-ava-host{border-color:var(--gold); box-shadow:0 0 0 2px rgba(var(--gold-rgb),.18)}
 /* 상체 실루엣 (2026-09-08 사용자 확정 ②) — 속을 채워 작아도 사람으로 읽힙니다. (폐기) 계정 색 글자 원 */
@@ -19637,8 +19640,8 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-pcard{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:248px; padding:20px 16px 14px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px;
   box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); display:flex; flex-direction:column; align-items:center; text-align:center; font-weight:400}
 .gs-pc-avawrap{position:relative; width:76px; height:76px}
-.gs-pc-ava{position:relative; display:block; width:76px; height:76px; padding:0; border:0; border-radius:25%; background:transparent; cursor:pointer; overflow:hidden}
-.gs-pc-ava .gs-ava{display:block; width:76px; height:76px; border:0; border-radius:25%}
+.gs-pc-ava{position:relative; display:block; width:76px; height:76px; padding:0; border:0; border-radius:2px; background:transparent; cursor:pointer; overflow:hidden}
+.gs-pc-ava .gs-ava{display:block; width:76px; height:76px; border:0; border-radius:2px}
 .gs-pc-over{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:rgba(0,0,0,.6); color:#fff; opacity:0; transition:opacity .14s}
 .gs-pc-over i{font-style:normal; font-size:11px}
 .gs-pc-ava:hover .gs-pc-over,.gs-pc-ava:focus-visible .gs-pc-over,.gs-pc-ava.is-drop .gs-pc-over,.gs-pc-ava:disabled .gs-pc-over{opacity:1}
@@ -19684,8 +19687,8 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-pty-l1{font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis}
 .gs-pty-l1 b{font-family:'Gowun Batang',serif; font-weight:700; font-size:15px; display:inline-block; max-width:9em; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom}
 .gs-pty-l2{font-size:12.5px; color:var(--gold); overflow:hidden; text-overflow:ellipsis}
-.gs-pty-face{display:inline-grid; place-items:center; flex:none; padding:0; border:0; border-radius:25%; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.4); cursor:grab; touch-action:none}
-.gs-pty-face .gs-ava{display:block; width:100%; height:100%; border:0; border-radius:25%; pointer-events:none}
+.gs-pty-face{display:inline-grid; place-items:center; flex:none; padding:0; border:0; border-radius:2px; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.4); cursor:grab; touch-action:none}
+.gs-pty-face .gs-ava{display:block; width:100%; height:100%; border:0; border-radius:2px; pointer-events:none}
 .gs-pty-cur{width:40px; height:40px}
 .gs-pty-small{width:26px; height:26px; opacity:.8}
 .gs-pty-small:hover,.gs-pty-small:focus-visible{opacity:1; outline:2px solid var(--gold); outline-offset:1px}
@@ -19736,8 +19739,8 @@ tr[data-drop] .gs-rowi,.gs-rd[data-drop] .gs-rd-pic{outline:2px solid var(--gold
 .gs-seatpop-more:hover{text-decoration:underline}
 /* ── 자리 배치 (2026-09-17) ── */
 /* (폐기 2026-09-20) .gs-seatbtn* · .gs-seatfaces* — 표 위 [자리 배치 N] + 얼굴 상자는 [파티원] 하나로 */
-.gs-seatface{display:inline-grid; place-items:center; flex:none; width:22px; height:22px; border-radius:25%; overflow:hidden; background:rgba(var(--ink-rgb),.08)}
-.gs-seatface .gs-ava{width:22px; height:22px; border:0; border-radius:25%}
+.gs-seatface{display:inline-grid; place-items:center; flex:none; width:22px; height:22px; border-radius:2px; overflow:hidden; background:rgba(var(--ink-rgb),.08)}
+.gs-seatface .gs-ava{width:22px; height:22px; border:0; border-radius:2px}
 .gs-sp-dialog{max-width:800px; padding:18px 20px 16px; overflow:visible; max-height:none}
 .gs-sp-modal{place-items:start center; overflow-y:auto; padding-top:6vh}
 .gs-sp-cols{display:grid; grid-template-columns:minmax(0,1.55fr) minmax(0,1fr); gap:18px; margin-top:14px}
@@ -19780,8 +19783,8 @@ button.gs-sp-del:hover{color:var(--red); background:rgba(var(--ink-rgb),.08)}
 .gs-sp-person.gs-sp-locked{cursor:default}
 .gs-sp-person.gs-sp-locked:hover{border-color:rgba(var(--ink-rgb),.3)}
 .gs-sp-ava{position:relative; display:inline-block; flex:none}
-.gs-sp-ava .gs-ava{width:100%; height:100%; border:0; border-radius:25%; display:block}
-.gs-sp-noava{display:grid; place-items:center; width:100%; height:100%; border-radius:25%; background:rgba(var(--ink-rgb),.08); color:var(--ink-2)}
+.gs-sp-ava .gs-ava{width:100%; height:100%; border:0; border-radius:2px; display:block}
+.gs-sp-noava{display:grid; place-items:center; width:100%; height:100%; border-radius:2px; background:rgba(var(--ink-rgb),.08); color:var(--ink-2)}
 .gs-sp-txt{display:flex; flex-direction:column; min-width:0; flex:1; line-height:1.25}
 .gs-sp-txt b{font-family:'Gowun Batang',serif; font-weight:700; font-size:14px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .gs-sp-txt em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-2)}
