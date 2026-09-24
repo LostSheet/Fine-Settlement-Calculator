@@ -9060,7 +9060,7 @@ export default function GoldSettlement() {
     if (need > room + 1) card.style.minWidth = need + (card.offsetWidth - room) + "px";
   }, [cols, simple, readOnly, tab, view, unit]);
   return (
-    <div ref={rootRef} className={"gs" + (tabbed ? " gs-tabbed" : "") + (!ready && !guestLobby && !showLobby && !inviteGate && !blockedCard ? " gs-connected" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
+    <div ref={rootRef} className={"gs" + (DEMO ? " gs-demo" : "") + (tabbed ? " gs-tabbed" : "") + (!ready && !guestLobby && !showLobby && !inviteGate && !blockedCard ? " gs-connected" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
       {DEMO &&
         (() => {
           /* 진행 표시 (2026-09-06 사용자 확정) — 장 점을 선으로 잇고 지금 장은 크게, 옆에 `3장 파티원 모으기 · 2/4`.
@@ -17221,6 +17221,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* (폐기 2026-09-06 낮) .gs-demo-prev — 8장으로 갈아 끼우던 옛 iframe */
 /* 띠는 스크롤해도 늘 보입니다 — sticky, 걸음 막(48) 위·모달(50) 아래 (2026-09-06 낮 사용자: 상단 N장 인디케이터가 항상 보이게) */
 .gs-demoband{position:sticky; top:0; z-index:49; margin:-20px -20px 0; padding:9px 20px; display:flex; align-items:center; justify-content:center; gap:18px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
+/* 예시 앱의 머리 띠는 진행 띠 바로 아래서 시작한다 (2026-09-24 사용자: 띠와 머리 줄이 겹쳤다) — 평소의 -20px 끌어올림을 예시에서만 끈다 */
+.gs-demo .gs-mastband{margin-top:0}
 .gs-tourdots{display:flex; align-items:center}
 .gs-tourquit{position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:12px; padding:3px 10px} /* 띠 오른쪽 [튜토리얼 나가기] */
 .gs-tourdot{position:relative; width:10px; height:10px; border-radius:50%; border:1.5px solid var(--gold); background:transparent; box-sizing:border-box}
