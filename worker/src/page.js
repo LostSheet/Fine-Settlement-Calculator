@@ -220,27 +220,25 @@ export const PAGE_HTML = `<!doctype html>
      직각, 틈 없음. 사진이 없는 사람은 상체 모양(사용자: 이미지가 없어도 초상화가 뜨게). 이름·꼬리표·금액 칸은 기존 카드 그대로.
      (폐기 2026-09-24, 실험 ?face=) L·C 사진을 이름 칸 안에 / W·P 사진을 위에 / K 한 줄 명패 / ?tag= 꼬리표 자리 */
   .ov-face{display:grid; place-items:center; position:relative; overflow:hidden; background:#2a241c;
-    grid-row:1 / 3; grid-column:1; width:22.9vw; height:auto; min-height:22.9vw; align-self:stretch;
-    animation:ov-fx-name .32s cubic-bezier(.22,1.2,.36,1) both}
+    grid-row:1 / 3; grid-column:1; width:22.9vw; height:auto; align-self:stretch;
+    animation:ov-fx-name .32s cubic-bezier(.22,1.2,.36,1) both} /* 폭은 squareFace 가 칸 높이에 맞춰 정사각으로 — 22.9vw 는 스크립트 전 값 */
   .ov-face img{width:100%; height:100%; object-fit:cover; display:block}
   .ov-face.sil{color:rgba(236,228,214,.42)}
   .ov-face svg{width:62%; height:62%}
   .ov-face:not(.sil) svg{display:none}
   .ov-fx::before{display:none}
   .ov-fx-body{display:grid; grid-template-columns:auto auto}
-  /* 이름 칸 — 이름은 칸 한가운데, 꼬리표는 그 오른쪽에 매달립니다 (사용자: 가운데 정렬이 잘 되어야).
-     세 칸 격자 [빈칸 | 이름 | 꼬리표]의 양 끝이 같은 폭(1fr)이라, 꼬리표가 있어도 이름이 금색 칸 위 한가운데에 섭니다 */
-  .ov-fx b{grid-column:2; display:grid; grid-template-columns:1fr auto 1fr; align-items:baseline; column-gap:.55em;
-    min-width:22.9vw; font-size:6.4vw; padding:2.6vw 3.4vw; animation-delay:.06s}
-  .ov-fx b .ov-fx-nm{grid-column:2; font-style:normal}
-  .ov-fx b small{grid-column:3; justify-self:start; font-size:.5em; margin-left:0}
-  /* 좁으면 꼬리표가 이름 아래로(tagdown). 그래도 넘치는 긴 이름은 두 줄로(wrap) — 셋째 줄부터는 말줄임 */
-  .ov-fx b.tagdown{grid-template-columns:1fr}
-  .ov-fx b.tagdown .ov-fx-nm,.ov-fx b.tagdown small{grid-column:1; justify-self:center}
-  .ov-fx b.tagdown small{margin:.35em 0 0}
+  /* 이름 칸 — 이름 한 줄, 꼬리표 한 줄, 다 가운데 (2026-09-24 사용자 확정, 목업 card2 가: 이름 7.2 · 꼬리표 3.4 · 금액 5.6).
+     이름이 주인공으로 서고 금액은 이름의 78%. 꼬리표가 늘 아래라 이름 맞추기는 이름 폭만 본다.
+     (폐기 같은 날) 꼬리표를 이름 옆에 두고 좁으면 내리던 세 칸 격자 · 이름 6.4 = 금액 6.4 */
+  .ov-fx b{grid-column:2; display:grid; grid-template-columns:1fr; row-gap:.4vw; justify-items:center;
+    min-width:22.9vw; font-size:7.2vw; line-height:1.08; padding:2.2vw 3.4vw; animation-delay:.06s}
+  .ov-fx b .ov-fx-nm{font-style:normal}
+  .ov-fx b small{font-size:.47em; line-height:1.1; margin:0}
+  /* 70% 로도 넘치는 긴 이름은 두 줄로 — 셋째 줄부터는 말줄임 */
   .ov-fx b .ov-fx-nm.wrap{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
     white-space:normal; word-break:break-all; line-height:1.12}
-  .ov-fx span{grid-column:2; animation-delay:.16s}
+  .ov-fx span{grid-column:2; font-size:5.6vw; animation-delay:.16s}
   .ov-fx-body.rise .ov-face{animation:ov-fx-rise .14s ease-out both}
   .ov-fx.dn em{color:#8f331f}
   /* 마지막 카드는 온 방향의 반대로 — 살짝 내려가며 0.16초 (2026-09-08). 뚝 꺼지지 않게 (2026-09-07) */
@@ -2152,33 +2150,39 @@ export const PAGE_HTML = `<!doctype html>
     im.onerror = function () { var f = im.parentNode; if (f) { f.className = "ov-face sil"; im.remove(); } };
   };
   /* 이름이 칸보다 길면 글자를 줄인다 (2026-09-24) — 최소 70%, 그래도 넘치면 그때 두 줄.
-     줄이는 건 이름 글자만이고 꼬리표는 이름에 딸린 크기(em)라 같이 줄어든다 */
-  var fitFxName = function (root) {
-    if (!root) return;
+     줄이는 건 이름 글자만이고 꼬리표는 이름에 딸린 크기(em)라 같이 줄어든다. 꼬리표는 늘 이름 아래라 이름 폭만 본다 */
+  var fitName = function (root) {
     var b = root.querySelector(".ov-fx-body b"), nm = root.querySelector(".ov-fx-nm");
     if (!b || !nm) return;
     b.style.fontSize = "";
-    b.classList.remove("tagdown");
     nm.className = "ov-fx-nm";
     nm.style.maxWidth = "";
     var cs = getComputedStyle(b);
     var base = parseFloat(cs.fontSize);
     var pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-    /* 여백 뺀 칸 폭과 내용 폭(이름 + 양옆 꼬리표 칸). scrollWidth 는 격자가 칸을 넘칠 때만 clientWidth 보다 큽니다 */
+    /* 여백 뺀 칸 폭과 이름 글자 폭 — 카드가 소스의 86% 에 걸려 칸이 줄었을 때만 이름이 칸보다 넓다 */
     var room = b.clientWidth - pad;
-    var need = b.scrollWidth - pad;
+    var need = nm.offsetWidth;
     if (!room || need <= room) return;
     var k = (room / need) * 0.97;
     if (k >= 0.7) { b.style.fontSize = (base * k).toFixed(2) + "px"; return; }
-    /* 꼬리표를 이름 아래로 내리고 이름만 한 줄에 — 55% 까지는 한 줄 (세로 소스에서 세 글자 이름이 두 줄로 꺾이지 않게) */
-    var nameW = nm.offsetWidth;
-    b.classList.add("tagdown");
-    var k1 = (room / nameW) * 0.97;
-    if (k1 >= 0.55) { b.style.fontSize = (base * Math.min(0.7, k1)).toFixed(2) + "px"; return; }
-    /* 그래도 안 들어가는 긴 이름은 70% 로 두 줄 — 반씩: 70% 글자 폭의 절반에 한 글자 남짓 여유 */
+    /* 긴 이름은 70% 로 두 줄 — 반씩: 70% 글자 폭의 절반에 한 글자 남짓 여유 */
     b.style.fontSize = (base * 0.7).toFixed(2) + "px";
     nm.className = "ov-fx-nm wrap";
-    nm.style.maxWidth = Math.min(room, nameW * 0.7 * 0.5 + base * 0.7 * 1.1).toFixed(1) + "px";
+    nm.style.maxWidth = Math.min(room, need * 0.7 * 0.5 + base * 0.7 * 1.1).toFixed(1) + "px";
+  };
+  /* 사진은 정사각 — 이름 칸 + 금색 칸 높이를 재서 폭으로 (CSS 만으로는 격자 열 폭이 줄 높이에 기대는 순환이라 못 푼다).
+     카드는 1.6초짜리라 창 크기가 그사이 바뀌는 일은 안 본다 */
+  var squareFace = function (root) {
+    var f = root.querySelector(".ov-face"), b = root.querySelector(".ov-fx-body b"), s = root.querySelector(".ov-fx-body > span");
+    if (!f || !b || !s) return;
+    var h = b.offsetHeight + s.offsetHeight;
+    if (h > 0) f.style.width = h + "px";
+  };
+  var fitFxName = function (root) {
+    if (!root) return;
+    fitName(root);
+    squareFace(root);
   };
   var fxCardHtml = function (e) { return '<div class="ov-fx ' + fxCls(e) + '">' + fxBodyHtml(e, "") + "</div>"; };
 
