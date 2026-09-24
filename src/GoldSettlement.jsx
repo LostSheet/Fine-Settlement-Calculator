@@ -910,6 +910,8 @@ const RELAY_BASE = (() => {
   return "https://live.lostark-sheet.workers.dev";
 })();
 const RELAY_KEY = "goldSettlement.relay";
+/* 연동이 다른 계정으로 돌아와(병합) 놓은 방 — 부팅이 relay 에서 이 방을 거릅니다. 계정의 방을 이으면 지웁니다 (2026-09-24) */
+const DROP_ROOM_KEY = "goldSettlement.dropRoom";
 const PARTY_REG_KEY = "goldSettlement.parties";
 const partySlotKey = (name) => "goldSettlement.p." + name;
 /* 파티 장부에 들어가는 필드 — 이 목록이 곧 "파티마다 따로"의 정의입니다 */
@@ -984,6 +986,24 @@ function savePartySlot(name, data) {
     else window.localStorage.setItem(partySlotKey(name), JSON.stringify(data));
   } catch (e) {}
 }
+/* 연동할 때 밀어 둔 서버 판 (2026-09-24) — { acct, led, roundId }. 권하는 쪽지가 이걸 읽습니다 */
+const OFFER_KEY = "goldSettlement.srvOffer";
+function loadSrvOffer() {
+  if (typeof window === "undefined" || DEMO) return null;
+  try {
+    const o = JSON.parse(window.localStorage.getItem(OFFER_KEY) || "null");
+    return o && typeof o.acct === "string" && o.led && Array.isArray(o.led.rows) ? o : null;
+  } catch (e) {
+    return null;
+  }
+}
+function saveSrvOffer(o) {
+  if (typeof window === "undefined" || DEMO) return;
+  try {
+    if (o) window.localStorage.setItem(OFFER_KEY, JSON.stringify(o));
+    else window.localStorage.removeItem(OFFER_KEY);
+  } catch (e) {}
+}
 function dropPartySlot(name) {
   if (typeof window === "undefined") return;
   try {
@@ -1045,6 +1065,12 @@ function loadRelay() {
       presetNames: Array.isArray(v.presetNames) ? v.presetNames.filter((x) => typeof x === "string") : undefined,
       resumeFrom: typeof v.resumeFrom === "string" && v.resumeFrom ? v.resumeFrom : undefined,
     };
+    /* 병합으로 놓은 방이면 거릅니다 — 리로드 직전에 옛 페이지가 옛 방을 도로 적을 수 있어서 부팅에서 한 번 더 봅니다 */
+    const dropped = window.localStorage.getItem(DROP_ROOM_KEY);
+    if (dropped && out.room === dropped) {
+      out.room = undefined;
+      out.invite = undefined;
+    }
     /* 기본을 원판으로 바꾸면서, 이미 쓰던 분들도 한 번은 원판으로 옮깁니다.
        그 뒤에 슬롯을 고르면 그대로 남습니다 — 표시를 남겨서 두 번 옮기지 않습니다. */
     if (!out.lookMig) {
@@ -2209,6 +2235,9 @@ export default function GoldSettlement() {
      어느 쪽이든 "닫으면 날아갈 수 있다"는 말은 맞아서 둘 다 담아 적습니다.
      틀려도 손해가 없게, 알리기만 하고 아무것도 막지 않습니다. */
   const [privWarn, setPrivWarn] = useState(false);
+  /* 연동할 때 밀어 둔 서버 판과, 그걸 불러온 직후의 되돌릴 거리 (2026-09-24) */
+  const [srvOffer, setSrvOffer] = useState(() => loadSrvOffer());
+  const [offerBack, setOfferBack] = useState(null);
   useEffect(() => {
     if (readOnly) return;
     let gone = false;
@@ -3671,6 +3700,19 @@ export default function GoldSettlement() {
     authApi
       .discordFinish(code)
       .then((r) => {
+        /* 다른 계정으로 돌아왔으면(이 브라우저의 계정이 이미 있던 Discord 계정으로 이관됨) 잇던 방을 놓습니다 (2026-09-24).
+           계정의 방은 하나라, 그대로 두면 앱은 옛 방에 쓰고 방송용 주소는 계정의 방을 비춰 서로 다른 판이 됩니다.
+           리로드 뒤 askResume 이 계정의 방을 잇고, 이 기기 판을 거기 둡니다(로컬 존중) */
+        /* 저장소의 relay 만 고치면 안 됩니다 — 리로드가 끝나기 전에 옛 페이지가 메모리의 relay(옛 방)를 도로 적습니다
+           (병합으로 옛 세션이 새 계정에 옮겨져, 부팅 중이던 /api/auth/me 가 새 계정의 외형을 싣고 돌아와 putRelay 를 부르는 길 등).
+           놓은 방을 표시해 두고 새 페이지의 부팅(loadRelay)이 거릅니다 */
+        const prev = authRef.current;
+        if (prev && prev.id !== r.id && relayRef.current.room) {
+          try {
+            window.localStorage.setItem(DROP_ROOM_KEY, relayRef.current.room);
+          } catch (e) {}
+          putRelay({ ...relayRef.current, room: undefined, invite: undefined });
+        }
         saveAuth({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: false, dc: r.dc || null, nickSet: !!r.nickSet, pic: r.pic || null, via: "discord" });
         clean();
         window.location.reload();
@@ -4428,11 +4470,71 @@ export default function GoldSettlement() {
       .join("|") +
     "#" +
     (((l && l.log) || []).length + ":" + ((((l && l.log) || []).slice(-1)[0] || {}).id || ""));
+  /* 서버 판을 진행 중인 판으로 앉힙니다 — 연동 직후(askResume)와 [서버에 있던 판 불러오기]가 씁니다 */
+  const seatLive = (led, rid, hostRow) => {
+    savePartySlot(partyReg.active, led);
+    applyLedger(led);
+    /* 서버에서 앉힌 판은 진행 중인 판입니다 — 로비로 강등되면 안 됩니다.
+       방장 줄(서버가 h 로 표시한 줄)에는 내 계정을 바로 잇습니다 — 방장을 앉히는 효과는 인원 수가 바뀔 때만 돌아서,
+       같은 인원의 판으로 갈면 방장 줄이 빈 사진으로 남습니다 */
+    const me = authRef.current;
+    putSeats(
+      seatsFromRows(led.rows).map((s) =>
+        me && hostRow && s.id === hostRow ? { ...s, acct: me.id, mem: me.id, nick: me.nick || "" } : s
+      )
+    );
+    /* 같은 판 열쇠를 이어받습니다 — 끝낼 때 기록이 둘로 안 남게. 판 존재 표시도 켭니다 */
+    setRoundId(rid);
+    setRoundLive(true);
+    boardOnRef.current = true;
+    putRelay({ ...relayRef.current, boardOn: true });
+  };
+  const putOffer = (o) => {
+    saveSrvOffer(o);
+    setSrvOffer(o);
+  };
+  /* [서버에 있던 판 불러오기] — 이 기기 판은 판 기록에 넣고(기록이 있을 때), 되돌릴 거리를 쥐고 있습니다 */
+  const loadOffer = () => {
+    const o = srvOffer;
+    if (!o || readOnly) return;
+    const back = {
+      led: currentLedger(),
+      seats: seatsRef.current,
+      roundId,
+      roundLive,
+      boardOn: boardOnRef.current,
+      names: new Set(partyReg.list.map((x) => x.name)),
+      offer: o,
+    };
+    back.kept = !!closeRound();
+    seatLive(o.led, o.roundId, o.host || null);
+    putOffer(null);
+    setOfferBack(back);
+  };
+  /* 되돌리기 — 불러오기 전의 판으로. 그때 판 기록에 새로 들어간 줄은 도로 뺍니다(판이 다시 살아 있으니) */
+  const undoOffer = () => {
+    const b = offerBack;
+    if (!b) return;
+    const added = partyReg.list.filter((x) => x.gen && !b.names.has(x.name));
+    if (added.length) {
+      added.forEach((x) => dropPartySlot(x.name));
+      putPartyReg({ list: partyReg.list.filter((x) => !added.includes(x)), active: partyReg.active });
+    }
+    savePartySlot(partyReg.active, b.led);
+    applyLedger(b.led);
+    putSeats(b.seats);
+    setRoundId(b.roundId);
+    setRoundLive(b.roundLive);
+    boardOnRef.current = b.boardOn;
+    putRelay({ ...relayRef.current, boardOn: b.boardOn ? true : undefined });
+    setOfferBack(null);
+    putOffer(b.offer);
+  };
   /* 로그인 직후 한 번. 하는 일이 둘입니다 —
      (a) 방 연결은 조건 없이 먼저 붙입니다. 초대·파티 서랍·오버레이가 전부 이 값 하나에
          달려 있어서, 장부를 앉히느냐와 상관없이 방부터 이어야 합니다 (§5.1).
-     (b) 서버에 판이 있고 이 기기의 것과 다르면 — 손 안 댄 판이면 조용히 앉히고,
-         진행 중인 판이 있으면 물어봅니다. 다른 기기에서 로그인하는 길이 이 길입니다 */
+     (b) 서버에 판이 있고 이 기기의 것과 다르면 — 이 기기 판이 비어 있으면 조용히 앉히고,
+         아니면 이 기기 판을 두고 서버 판을 쪽지로 권합니다. 다른 기기에서 로그인하는 길이 이 길입니다 */
   const askResume = async (a) => {
     /* 뷰어는 남의 판을 보는 중입니다 — 여기서 내 방을 열면 방송용 주소가 남의 파티 대신
        내 빈 방을 가리키게 됩니다(서버의 `cur` 이 그때 옮겨갑니다, §4.1) */
@@ -4440,6 +4542,9 @@ export default function GoldSettlement() {
     try {
       const r = await roomApi.myRoom(a.token);
       if (!r || !r.roomId) return;
+      try {
+        window.localStorage.removeItem(DROP_ROOM_KEY);
+      } catch (e) {}
       putRelay({
         ...relayRef.current,
         room: r.roomId,
@@ -4456,29 +4561,19 @@ export default function GoldSettlement() {
       const led = ledgerFromSnapshot(st0);
       if (!led || !led.rows.length) return;
       if (ledgerSig(led) === ledgerSig({ rows, log })) return;
-      const seat = () => {
-        savePartySlot(partyReg.active, led);
-        applyLedger(led);
-        /* 서버에서 앉힌 판은 진행 중인 판입니다 — 로비로 강등되면 안 됩니다 */
-        putSeats(seatsFromRows(led.rows));
-        /* 같은 판 열쇠를 이어받습니다 — 끝낼 때 기록이 둘로 안 남게. 판 존재 표시도 켭니다 */
-        setRoundId(st0.roundId);
-        setRoundLive(true);
-        boardOnRef.current = true;
-        putRelay({ ...relayRef.current, boardOn: true });
-      };
-      /* 복원 기준 (D1′, 2026-09-16 확정): 게스트(연동 전)는 이 브라우저가 진본 — 서버 판을 되살리지 않는다(서버 사본은 방송을 그리는 거울).
-         연동 계정은 서버가 진본 — 조용히 편다. 이 기기에만 있는 변경이 서버보다 새로우면(마지막 기록 시각) 이 기기 것을 두고
-         다음 저장이 서버를 덮는다. 밀려난 판은 판 기록에 남는다. (폐기) "서버에 저장된 판이 있어요" 확인창 */
+      /* 복원 기준 (2026-09-24 사용자 확정, D1′ 를 고침): 게스트(연동 전)는 이 브라우저가 진본 — 서버 판을 되살리지 않는다(서버 사본은 방송을 그리는 거울).
+         연동 계정도 **이 기기의 판이 비어 있지 않으면 이 기기 것**을 두고, 다음 저장이 서버를 덮는다. 서버 판은 쪽지로 한 번 권한다
+         ([서버에 있던 판 불러오기]) — 덮이기 전에 저장소에 따로 둔다. 이 기기 판이 비어 있으면(손 안 댄 예시 포함) 서버 판을 조용히 편다.
+         (폐기 2026-09-24) 마지막 기록 시각이 서버가 더 새것이면 서버 판을 펴고 이 기기 판은 판 기록으로 — 배포 빌드 사용자가 처음 연동할 때
+         이 기기 판이 밀릴 수 있었고, 이름만 적은 판은 기록이 없어 판 기록에도 안 남았다. (폐기) "서버에 저장된 판이 있어요" 확인창 */
       if (!a.dc) return;
       const blank =
         !log.length &&
         rows.every((x) => noFine(x) && (!(x.name || "").trim() || isFillName(x.name)));
-      if (!roundLive && (blank || isPristine(rows))) return seat();
-      const lastOf = (lg) => (lg || []).reduce((m, e) => Math.max(m, e && e.t ? e.t : 0), 0);
-      if (lastOf(log) > lastOf(led.log)) return;
-      closeRound();
-      seat();
+      const hostRow = ((st0.rows2 || []).find((x) => x && x.h) || {}).rowId || null;
+      if (blank || (!log.length && isPristine(rows))) return seatLive(led, st0.roundId, hostRow);
+      setOfferBack(null);
+      putOffer({ acct: a.id, led, roundId: st0.roundId, host: hostRow });
     } catch (e) {
       /* 서버가 없거나 판이 없으면 조용히 지나갑니다 */
     }
@@ -10262,6 +10357,47 @@ export default function GoldSettlement() {
           </div>
         )}
 
+        {/* 연동할 때 밀어 둔 서버 판 (2026-09-24) — 이 기기 판을 이어 쓴다는 알림과 서버 판을 부르는 문. 닫기 전까지 남습니다
+            (다음 저장이 서버 사본을 덮어서, 여기서 안 부르면 다시 부를 곳이 없습니다). 문구는 초안 */}
+        {!readOnly && srvOffer && auth && auth.id === srvOffer.acct && !offerBack && (() => {
+          /* 시각은 마지막 기록 하나 — 이 컴퓨터 판과 어느 쪽이 새것인지 가리는 데 쓰입니다 */
+          const ts = (srvOffer.led.log || []).map((e) => e && e.t).filter(Boolean);
+          const last = ts.length ? new Date(Math.max(...ts)) : null;
+          return (
+            <div className="gs-slip gs-slip-info" role="status">
+              <span className="gs-slip-msg">
+                <span>이 컴퓨터의 판을 이어서 써요.</span>
+                <span>
+                  서버에는 다른 판이 있었어요
+                  {last
+                    ? " · 마지막 기록 " + (last.getMonth() + 1) + "월 " + last.getDate() + "일 " +
+                      String(last.getHours()).padStart(2, "0") + ":" + String(last.getMinutes()).padStart(2, "0")
+                    : ""}
+                </span>
+              </span>
+              <button className="gs-btn gs-btn-sm" onClick={loadOffer}>
+                서버에 있던 판 불러오기
+              </button>
+              <button className="gs-x gs-slip-x" onClick={() => putOffer(null)} aria-label="알림 닫기">
+                ×
+              </button>
+            </div>
+          );
+        })()}
+        {!readOnly && offerBack && (
+          <div className="gs-slip gs-slip-info" role="status">
+            <span className="gs-slip-msg">
+              <span>서버에 있던 판을 불러왔어요.</span>
+              {offerBack.kept && <span>이 컴퓨터에서 쓰던 판은 판 기록에 남겨 두었어요.</span>}
+            </span>
+            <button className="gs-btn gs-btn-sm" onClick={undoOffer}>
+              ↩ 되돌리기
+            </button>
+            <button className="gs-x gs-slip-x" onClick={() => setOfferBack(null)} aria-label="알림 닫기">
+              ×
+            </button>
+          </div>
+        )}
         {/* 사고 직후의 안내 쪽지 — 버튼 줄을 밀지 않도록 헤더 아래 한 줄로 붙습니다.
             표를 고치기 시작하면 조용히 사라집니다. */}
         {undoSnap && (
@@ -17125,6 +17261,12 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-slip .gs-undo{margin-left:auto}
 .gs-slip-x{flex:none; color:var(--red); opacity:.7; font-size:15px}
 .gs-slip-x:hover{opacity:1}
+/* 알림 쪽지 (2026-09-24) — 사고가 아니라 알림이라 금색. 문장마다 한 줄 */
+.gs-slip-info{border-left-color:var(--gold); background:rgba(var(--gold-rgb),.08)}
+.gs-slip-info .gs-slip-msg{color:var(--ink)}
+.gs-slip-info .gs-slip-msg > span{display:block}
+.gs-slip-info .gs-btn{margin-left:auto}
+.gs-slip-info .gs-slip-x{color:var(--ink-2)}
 @media (prefers-reduced-motion:reduce){ .gs-slip{animation:none} }
 /* 파괴적인 묶음과 자주 쓰는 묶음 사이를 벌립니다 */
 .gs-tools .gs-grp-risky{margin-right:12px}
