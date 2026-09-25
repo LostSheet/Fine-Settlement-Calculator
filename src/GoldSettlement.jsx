@@ -688,6 +688,23 @@ const OUT_ICON = (
   </svg>
 );
 /* [파티원] 단추의 사람 여럿 (2026-09-19) */
+/* 연필 — 프로필 카드의 이름에 올리면 (2026-09-25) */
+const PEN_ICON = (
+  <svg className="gs-pc-pen" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11.3 2.7l2 2L5.5 12.5 2.8 13.2l.7-2.7z" />
+      <path d="M9.8 4.2l2 2" />
+    </g>
+  </svg>
+);
+const NK_SIL = (
+  <svg viewBox="0 0 20 20" aria-hidden="true">
+    <g fill="currentColor">
+      <circle cx="10" cy="6.4" r="3.4" />
+      <path d="M2.8 18c.5-4 3.4-6.2 7.2-6.2s6.7 2.2 7.2 6.2z" />
+    </g>
+  </svg>
+);
 const PEOPLE_ICON = (
   <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
     <g fill="currentColor">
@@ -2430,6 +2447,8 @@ export default function GoldSettlement() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpAuto, setHelpAuto] = useState(false); // 파티원 첫 방문에 저절로 열린 것 — 머리말이 다릅니다
   const [nameFocus, setNameFocus] = useState(null); // 커서가 있는 이름 칸의 줄 — Tab 안내 꼬리표 (2026-09-25)
+  const [nickAsk, setNickAsk] = useState(false); // 닉네임 창 — 연동한 계정이 아직 닉네임을 정하지 않았으면 한 번 (2026-09-25)
+  const [nickEdit, setNickEdit] = useState(null); // 프로필 카드에서 이름을 고치는 중 — 입력칸의 글
   const helpWrapRef = useRef(null);
   useEffect(() => {
     if (!helpOpen) return;
@@ -3635,6 +3654,12 @@ export default function GoldSettlement() {
     setAuth(v);
     saveAuth(v);
   };
+  /* 닉네임 창 (2026-09-25 사용자 확정) — 연동한 계정이 아직 닉네임을 정하지 않았으면(nickBy !== "user") 한 번 묻는다. [확인]하면 nickBy 가 "user" 가 되어 다시 안 묻는다.
+     예시 앱은 안 묻는다. 지난 판 보기 화면도 아니다 */
+  useEffect(() => {
+    if (DEMO || !auth || !auth.dc || auth.nickBy === "user" || genView) return;
+    setNickAsk(true);
+  }, [auth && auth.id, auth && auth.dc && auth.dc.id, auth && auth.nickBy]);
   /* 디스코드에서 돌아온 순간 (§3.12.9) — 1회용 코드를 세션으로 바꾸고 주소를 지운 뒤 다시 엽니다.
      부트가 auth 를 보고 화면을 정하므로 리로드가 가장 단순합니다 */
   useEffect(() => {
@@ -3669,7 +3694,7 @@ export default function GoldSettlement() {
           } catch (e) {}
           putRelay({ ...relayRef.current, room: undefined, invite: undefined });
         }
-        saveAuth({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: false, dc: r.dc || null, nickSet: !!r.nickSet, pic: r.pic || null, via: "discord" });
+        saveAuth({ id: r.id, nick: r.nick, token: r.token, obsToken: r.obsToken, anon: false, dc: r.dc || null, nickSet: !!r.nickSet, nickBy: r.nickBy || null, pic: r.pic || null, via: "discord" });
         clean();
         window.location.reload();
       })
@@ -3959,6 +3984,7 @@ export default function GoldSettlement() {
           anon: !!m.anon,
           dc: m.dc || auth.dc || null,
           nickSet: !!m.nickSet,
+          nickBy: m.nickBy || null,
           pic: m.pic || null,
         });
         takeMe(m);
@@ -4378,7 +4404,7 @@ export default function GoldSettlement() {
     if (!others && !always) return disband();
     setAsk({
       title: others ? "파티를 해산할까요?" : "판을 해산할까요?",
-      body: others ? "앉아 있는 파티원이 나가요." : "시작 전 판이 없어져요. 자리와 이름을 지우고 항목과 단가만 남겨요.",
+      body: others ? "줄에 배치된 파티원이 나가요." : "시작 전 판이 없어져요. 자리와 이름을 지우고 항목과 단가만 남겨요.",
       action: "해산",
       tone: "danger",
       onYes: disband,
@@ -4425,9 +4451,23 @@ export default function GoldSettlement() {
   };
   /* 닉네임 변경 — 서버가 방장 앱에 알리고, 방장 앱이 그 줄 이름을 바꿉니다 */
   const changeNick = async (nm) => {
-    if (!auth) return;
-    await authApi.nick(auth.token, nm);
-    putAuth({ ...auth, nick: nm });
+    const a = authRef.current;
+    if (!a) return;
+    await authApi.nick(a.token, nm);
+    putAuth({ ...authRef.current, nick: nm, nickBy: "user" });
+  };
+  /* 닉네임 규칙 — 서버 RE_NICK 과 같다 (2026-09-25: 2~8자) */
+  const nickRule = (s) => /^[가-힣a-zA-Z0-9]{2,8}$/.test(s);
+  const finishNick = async (nm) => {
+    const v = (nm || "").trim();
+    if (!nickRule(v)) return say("닉네임은 한글·영문·숫자 2~8자로 적어요.");
+    try {
+      await changeNick(v);
+      setNickAsk(false);
+      setNickEdit(null);
+    } catch (e) {
+      say("닉네임을 저장하지 못했어요. 잠시 뒤 다시 해 주세요.");
+    }
   };
   /* 판 한 벌을 한 줄로 — 서버 장부와 이 기기의 장부가 같은 것인지만 가릅니다.
      같으면 물을 것도 앉힐 것도 없습니다 (늘 쓰던 기기에서 다시 로그인한 경우) */
@@ -5061,10 +5101,14 @@ export default function GoldSettlement() {
       seatMember(acct, nick, rowId, { local: true });
       sayJoin(nick || acct, rowId);
     },
-    /* 닉(= Discord 표시 이름) 변경 — 명단의 이름만 바꾼다. 표의 줄 이름은 방장이 적은 것이라 안 건드린다 (2026-09-17) */
+    /* 닉네임 변경 (2026-09-25 사용자 확정) — 명단의 이름을 바꾸고, 앱이 적어 둔 줄 이름(named:false 이고 지금 이름이 옛 닉네임 그대로)이면 줄 이름도 따라간다.
+       방장이 적은 이름은 그대로. (폐기 09-17) 명단만 바꾸고 줄은 안 건드리던 것 */
     nick: (acct, nick) => {
+      const old = ((seatsRef.current.find((s) => s.acct === acct) || {}).nick || "").trim();
+      const follow = new Set(seatsRef.current.filter((s) => s.acct === acct && s.named === false).map((s) => s.id));
       setMembers((prev) => prev.map((m) => (m.acct === acct ? { ...m, nick } : m)));
-      putSeats((prev) => prev.map((s) => (s.acct === acct ? { ...s, nick } : s)));
+      putSeats((prev) => prev.map((s) => (s.acct === acct ? { ...s, nick, ...(follow.has(s.id) && (s.name || "").trim() === old ? { name: nick } : {}) } : s)));
+      if (follow.size) setRows((prev) => prev.map((r) => (follow.has(r.id) && (r.name || "").trim() === old ? { ...r, name: nick } : r)));
     },
     join: (m) => {
       if (!m || !m.acct) return refreshMembers();
@@ -8447,7 +8491,7 @@ export default function GoldSettlement() {
       body = (
         <>
           <i className="gs-sdot" aria-hidden="true" />
-          <b>{k.kind === "new" ? "방금 앉았어요" : "앉음"}</b>
+          <b>{k.kind === "new" ? "방금 배치했어요" : "배치됨"}</b>
           {k.host && <span className="gs-lb-tag gs-lb-tag-host">방장</span>}
           {k.mine && <span className="gs-lb-tag">나</span>}
           {k.kind === "new" && (
@@ -9132,6 +9176,7 @@ export default function GoldSettlement() {
           );
         })()}
       <style>{CSS}</style>
+      {nickAsk && !DEMO && auth && <NickDialog auth={auth} member={recMember} ownerNick={ownerNick} onDone={finishNick} />}
 
 
       {/* ── 내가 앉아 있는 방의 판이 다시 열렸어요 — 자기 앱에 돌아와 있는 사람에게
@@ -9589,13 +9634,42 @@ export default function GoldSettlement() {
                       className="gs-pc-badge"
                       disabled={picBusy}
                       onClick={() => (auth.pic ? savePic(null) : startDiscord())}
-                      aria-label={auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}
+                      aria-label={auth.pic ? "Discord 사진으로 되돌리기" : "Discord 사진 다시 불러오기"}
                     >
                       {SYNC_ICON}
-                      <span className="gs-pc-tip">{auth.pic ? "Discord 사진으로 되돌리기" : "Discord에서 이름·사진 다시 불러오기"}</span>
+                      <span className="gs-pc-tip">{auth.pic ? "Discord 사진으로 되돌리기" : "Discord 사진 다시 불러오기"}</span>
                     </button>
                   </div>
-                  <b className="gs-pc-name">{auth.nick}</b>
+                  {/* 이름은 눌러서 고친다 (2026-09-25 사용자 확정, 목업 nick 나) — 올리면 점선 밑줄과 연필, 누르면 그 자리가 입력칸, Enter 저장 · Esc 취소 · 벗어나면 저장 */}
+                  {nickEdit === null ? (
+                    <button type="button" className="gs-pc-name gs-pc-namebtn" onClick={() => setNickEdit(auth.nick || "")} title="닉네임 바꾸기">
+                      <span className="gs-pc-nametext">{auth.nick}</span>
+                      {PEN_ICON}
+                    </button>
+                  ) : (
+                    <input
+                      className="gs-in gs-pc-namein"
+                      value={nickEdit}
+                      maxLength={8}
+                      autoFocus
+                      onChange={(e) => setNickEdit(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          finishNick(nickEdit);
+                        }
+                        if (e.key === "Escape") {
+                          e.stopPropagation();
+                          setNickEdit(null);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (nickEdit !== null && nickEdit.trim() && nickEdit.trim() !== (auth.nick || "")) finishNick(nickEdit);
+                        else setNickEdit(null);
+                      }}
+                      aria-label="닉네임"
+                    />
+                  )}
                   {auth.dc && auth.dc.user && (
                     <span className="gs-pc-dc">
                       <i className="gs-dcmark" aria-hidden="true" />
@@ -16034,6 +16108,91 @@ function LookAlpha({ look, onPick }) {
   );
 }
 
+/* 닉네임 창 (2026-09-25 사용자 확정, 목업 nick2 가) — 연동 직후 한 번. Discord 표시 이름을 미리 채워 [확인] 한 번이면 끝. 취소는 없다(Esc·× 도 확인과 같다).
+   미리보기는 닉네임이 실제로 쓰이는 자리: 파티원(남의 판)이면 방장 벌금표의 줄, 방장이면 초대 메시지. 반쪽짜리 진실(방장이 적어 둔 이름이 먼저)은 밑줄 한 문장이 말한다.
+   (검토 후 폐기) 방송 현황판의 줄 — 같은 조건에 "누가 방송을 켰나"까지 걸리고 오버레이 룩을 앱에 한 벌 더 그려야 했다 */
+function NickDialog({ auth, member, ownerNick, onDone }) {
+  const [v, setV] = useState((auth && auth.nick) || "");
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  }, []);
+  const shown = v.trim() || "(이름 없음)";
+  const host = ownerNick || "방장";
+  const submit = () => onDone(v);
+  return (
+    <InfoModal title="닉네임" onClose={submit}>
+      <p className="gs-nk-lede">{member ? "벌금표에 적힐 이름을 정해요." : "초대 메시지와 파티원 화면에 보일 이름을 정해요."}</p>
+      <div className="gs-nk-row">
+        <label htmlFor="gs-nk-in">닉네임</label>
+        <input
+          id="gs-nk-in"
+          ref={ref}
+          className="gs-in gs-nk-in"
+          value={v}
+          maxLength={8}
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <span className="gs-nk-cnt">{[...v.trim()].length}/8</span>
+      </div>
+      {member ? (
+        <>
+          <p className="gs-nk-cap">{host}의 벌금표 · 빈 줄에 나를 배치하면 이렇게 보여요</p>
+          <div className="gs-nk-table">
+            <div className="gs-nk-r dim">
+              <span className="gs-nk-pic">{NK_SIL}</span>
+              <span className="gs-nk-name">
+                <span className="gs-metag gs-metag-host">방장</span>
+                {host}
+              </span>
+              <span className="gs-nk-cell">＋</span>
+              <span className="gs-nk-cell">＋</span>
+              <span className="gs-nk-sum">0</span>
+            </div>
+            <div className="gs-nk-r">
+              <span className="gs-nk-pic has">
+                <DcAva dc={myAva(auth)} size={44} />
+              </span>
+              <span className="gs-nk-name me">
+                <span className="gs-metag">나</span>
+                {shown}
+              </span>
+              <span className="gs-nk-cell">＋</span>
+              <span className="gs-nk-cell">＋</span>
+              <span className="gs-nk-sum">0</span>
+            </div>
+          </div>
+          <p className="gs-nk-note">방장이 이름을 미리 적어 둔 줄에 나를 배치하면 그 이름이 먼저예요.</p>
+        </>
+      ) : (
+        <>
+          <p className="gs-nk-cap">초대 메시지 · 파티원에게 이렇게 보여요</p>
+          <div className="gs-nk-msg">
+            <b>{shown}의 벌금팟에 초대해요.</b>
+            <span>👉 눌러서 참여하기</span>
+            <span>Discord 연동이 필요해요.</span>
+          </div>
+          <p className="gs-nk-note">벌금표의 내 이름은 표에서 직접 적어요.</p>
+        </>
+      )}
+      <div className="gs-dialog-btns">
+        <button className="gs-btn" onClick={submit}>
+          확인
+        </button>
+      </div>
+    </InfoModal>
+  );
+}
 function InfoModal({ title, onClose, children, wide, headExtra }) {
   useEffect(() => {
     const onKey = (e) => {
@@ -19348,6 +19507,36 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-pc-badge:hover .gs-pc-tip,.gs-pc-badge:focus-visible .gs-pc-tip{opacity:1}
 .gs-pc-name{margin-top:12px; max-width:100%; font-family:'Gowun Batang',serif; font-size:17px; color:var(--ink); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .gs-pc-dc{display:inline-flex; align-items:center; gap:6px; margin-top:3px; font-family:var(--mono); font-size:11.5px; color:var(--ink-2)}
+/* 이름 고치기 (2026-09-25 사용자 확정, 목업 nick 나) — 이름이 단추: 올리면 점선 밑줄과 연필, 누르면 입력칸 */
+.gs-pc-namebtn{display:inline-flex; align-items:center; gap:6px; max-width:100%; border:0; background:transparent; cursor:text; padding:0 0 1px; border-bottom:1px dashed transparent; font:inherit; color:inherit}
+.gs-pc-namebtn .gs-pc-nametext{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.gs-pc-namebtn .gs-pc-pen{flex:none; opacity:0; color:var(--ink-2)}
+.gs-pc-namebtn:hover,.gs-pc-namebtn:focus-visible{border-bottom-color:rgba(var(--ink-rgb),.4); outline:0}
+.gs-pc-namebtn:hover .gs-pc-pen,.gs-pc-namebtn:focus-visible .gs-pc-pen{opacity:.8}
+.gs-pc-namein{margin-top:12px; width:100%; box-sizing:border-box; text-align:center; font-family:'Gowun Batang',serif; font-size:17px; font-weight:700; line-height:1.3; color:var(--ink); border-bottom:1px solid var(--gold); padding:0 0 2px}
+/* 닉네임 창 (2026-09-25, 목업 nick2 가) */
+.gs-nk-lede{margin:0 0 12px; font-size:13px; line-height:1.7; color:var(--ink-body)}
+.gs-nk-row{display:flex; align-items:baseline; gap:12px; padding:6px 0 4px; border-bottom:1px solid rgba(var(--ink-rgb),.35)}
+.gs-nk-row label{flex:none; font-size:11px; letter-spacing:.1em; color:var(--ink-2)}
+.gs-nk-in{flex:1; min-width:0; font-family:'Gowun Batang',serif; font-weight:700; font-size:20px; padding:2px 0}
+.gs-nk-cnt{flex:none; font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--ink-2)}
+.gs-nk-cap{margin:14px 0 6px; font-size:11px; letter-spacing:.08em; color:var(--ink-2)}
+.gs-nk-note{margin:8px 0 0; font-size:11.5px; line-height:1.7; color:var(--ink-2)}
+.gs-nk-table{border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; background:rgba(var(--lift-rgb),.16); padding:2px 10px}
+.gs-nk-r{display:grid; grid-template-columns:44px 1fr 40px 40px 48px; align-items:center; gap:8px; height:52px; border-bottom:1px dotted rgba(var(--ink-rgb),.25)}
+.gs-nk-r:last-child{border-bottom:0}
+.gs-nk-r.dim{opacity:.55}
+.gs-nk-pic{width:44px; height:44px; border-radius:2px; overflow:hidden; background:rgba(var(--ink-rgb),.08); display:grid; place-items:center; color:rgba(var(--ink-rgb),.4); border:1px dashed rgba(var(--ink-rgb),.35); box-sizing:border-box}
+.gs-nk-pic.has{border-style:solid; border-color:rgba(var(--ink-rgb),.35)}
+.gs-nk-pic .gs-ava{display:block; width:100%; height:100%; border:0; border-radius:0}
+.gs-nk-pic svg{width:22px; height:22px}
+.gs-nk-name{font-family:'Gowun Batang',serif; font-weight:700; font-size:18px; color:var(--ink); display:flex; justify-content:flex-end; align-items:center; gap:8px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.gs-nk-name .gs-metag{font-size:10.5px}
+.gs-nk-name.me{color:var(--gold)}
+.gs-nk-cell{height:32px; border:1px dashed rgba(var(--ink-rgb),.3); border-radius:2px; display:grid; place-items:center; color:rgba(var(--ink-rgb),.4); font-size:13px}
+.gs-nk-sum{font-variant-numeric:tabular-nums; text-align:right; color:var(--gold); font-size:15px}
+.gs-nk-msg{display:flex; flex-direction:column; gap:2px; padding:10px 12px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; background:rgba(var(--lift-rgb),.16); font-size:13px; line-height:1.6; color:var(--ink-body)}
+.gs-nk-msg b{color:var(--ink)}
 .gs-dcmark{display:inline-block; width:14px; height:14px; background:#5865f2}
 .gs-pc-foot{align-self:stretch; display:flex; justify-content:center; margin-top:16px; padding-top:8px; border-top:1px dotted rgba(var(--ink-rgb),.3)}
 .gs-pc-out{display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border:0; border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer}

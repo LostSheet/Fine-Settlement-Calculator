@@ -94,7 +94,7 @@ const appOrigin = (req) => {
 };
 
 const RE_ID = /^[a-z0-9]{4,20}$/;
-const RE_NICK = /^[가-힣a-zA-Z0-9]{2,3}$/;
+const RE_NICK = /^[가-힣a-zA-Z0-9]{2,8}$/; // (2026-09-25 사용자 확정) 2~8자 — (폐기) 2~3자 별명 규칙(09-16)
 /* Discord 사용자명은 앞 두 글자만 (2026-09-17). 전문은 계정부 밖으로 안 나간다 */
 const maskUser = (u) => (u && u.dc && u.dc.user ? Array.from(u.dc.user).slice(0, 2).join("") + "••••" : "");
 const RE_PW = /^[0-9a-f]{64}$/; // 클라이언트가 PBKDF2 로 미리 접은 32바이트
@@ -546,7 +546,7 @@ export class Accounts {
         u.dc = dc;
         u.seen = now;
         const was = u.nick;
-        if (dcNick) u.nick = dcNick;
+        if (dcNick && u.nickBy !== "user") u.nick = dcNick; // 본인이 정한 닉네임은 그대로 (2026-09-25) — 사진 갱신의 왕복이 이름을 덮지 않게
         await S.put("u:" + u.id, u);
         if (u.nick !== was) await this.nickToRooms(u);
       } else if (ds.link && (u = await S.get("u:" + ds.link))) {
@@ -555,7 +555,7 @@ export class Accounts {
         u.seen = now;
         delete u.anon;
         const was = u.nick;
-        if (dcNick) u.nick = dcNick;
+        if (dcNick && u.nickBy !== "user") u.nick = dcNick; // 본인이 정한 닉네임은 그대로 (2026-09-25) — 사진 갱신의 왕복이 이름을 덮지 않게
         await S.put("u:" + u.id, u);
         await S.put("d:" + did, u.id);
         if (u.nick !== was) await this.nickToRooms(u);
@@ -583,7 +583,7 @@ export class Accounts {
       if (!u) return json({ error: "not found" }, 404);
       const token = rid(32);
       await S.put("s:" + token, { id: u.id, exp: now + SESSION_MS });
-      return json({ id: u.id, nick: u.nick, token, obsToken: u.obsToken, dc: u.dc || null, nickSet: !!u.nickSet, pic: u.pic || null, cur: u.cur || null });
+      return json({ id: u.id, nick: u.nick, token, obsToken: u.obsToken, dc: u.dc || null, nickSet: !!u.nickSet, nickBy: u.nickBy || null, pic: u.pic || null, cur: u.cur || null });
     }
 
     if (p === "/api/auth/me" && req.method === "GET") {
@@ -600,6 +600,7 @@ export class Accounts {
         anon: !!u.anon,
         dc: u.dc || null,
         nickSet: !!u.nickSet,
+        nickBy: u.nickBy || null,
         pic: u.pic || null,
       };
       if (u.look) out.look = u.look;
@@ -712,12 +713,14 @@ export class Accounts {
       });
     }
     if (p === "/api/auth/nick" && req.method === "POST") {
-      /* (폐기 2026-09-17) 앱의 별명 창이 없어졌다 — 옛 앱을 위해 길만 남긴다. 연동한 계정은 Discord 표시 이름이 이긴다 */
+      /* 닉네임 (2026-09-25 사용자 확정) — 연동 직후 한 번 정하고 프로필 카드에서 고친다. nickBy:"user" 면 연동 왕복이 Discord 이름으로 덮지 않는다.
+         (폐기 2026-09-17~25) 별명 창이 없어 Discord 표시 이름이 이기던 것 */
       const u = await this.session(req, now);
       if (!u) return json({ error: "unauthorized" }, 401);
       const nick = String(b.nick || "").trim();
       if (!RE_NICK.test(nick)) return json({ error: "bad nick" }, 400);
       u.nickSet = true;
+      u.nickBy = "user";
       u.nick = nick;
       await S.put("u:" + u.id, u);
       if (u.cur) {
