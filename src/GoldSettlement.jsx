@@ -2648,6 +2648,7 @@ export default function GoldSettlement() {
     setOpenRow(null);
     // 모드는 '벌금을 어떻게 적을지'라서, 바꾼 결과는 적는 화면에서 보여 줍니다
     setTab("sheet");
+    courseHit("mode:" + next); // 튜토리얼 1장 — 모드 변경 해 보기 (2026-09-25)
     /* 카운터 ↔ 카드 (고침 2026-09-18) — 같은 자료(줄·항목·횟수·기타)라 아무것도 바꾸지 않는다.
        (버그) 카드로 갈 때 아래 "카운터 → 메모장" 갈래로 떨어져 횟수가 메모장 꼴로 굳고, 카드가 전부 0으로 보였다(사용자: fatal).
        카드 → 카운터도 메모장에서 오는 길(fromMemoRows)을 타서 기타가 '합계 수정'으로 바뀌었다 */
@@ -3453,6 +3454,8 @@ export default function GoldSettlement() {
     /* 2장을 떠날 때 — 이름·단가를 안 적고 지나왔으면 암살·10만으로 채웁니다. 5장 채우기 직전에 하면 그 렌더의 타이머 클로저가
        옛 단가(1만)를 써서 실리안의 암살 2회가 2만으로 잡혔습니다(첫 시도의 사고) */
     if (st.enter === "colfix") setCols((prev) => prev.map((c) => (c.id === "ctut" ? { ...c, name: c.name || "암살", price: c.price === "10,000" ? "100,000" : c.price } : c)));
+    /* 새 열을 예시가 적는다 (2026-09-25) — 걸음에 들어서는 순간 암살·10만 */
+    if (st.enter === "colfill") setCols((prev) => prev.map((c) => (c.id === "ctut" ? { ...c, name: "암살", price: "100,000" } : c)));
     /* (폐기 2026-09-06 낮) enter:"handoff" — 걸음에 들어서자마자 파티원 예시를 얹던 것. 지금은 [실리안의 화면 보기]를 눌러야(onNext) */
     /* (폐기 2026-09-24) enter:"wei"(대기 줄) · "soloseed"(혼자 쓰기) */
     if (st.enter === "arrive:ninav") tutArrive("ninav"); // 5장 — 실리안을 놓은 뒤 니나브가 들어온다
@@ -15646,7 +15649,11 @@ const HOST_STEPS = [
   { ch: 0, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
   { ch: 0, sel: ".gs-addcol", text: "암살도 세 볼까요? 항목을 하나 더 만들어요.", wait: "addcol:open" },
   { ch: 0, sel: ".gs-modal .gs-coltype .gs-coltype-pick:first-child", text: "보통 항목을 골라요.", wait: "addcol:done", top: true },
-  { ch: 0, sel: ".gs-grid thead .gs-colh[data-col='ctut']", text: "새 열이 생겼어요. 이름 칸에 암살, 단가 칸에 10을 적고 [다음 장]. 1회 10만이면 10. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음 장" }, // 사용자 지정 문구(2026-09-06 낮) 포함
+  /* 새 열은 예시가 적어 둔다 (2026-09-25 사용자: 적어 보기는 과하다 — 바꿀 수 있다는 것만 알리고 바꾸는 건 저희가). (폐기) 이름·단가를 적게 하던 적기 걸음 */
+  { ch: 0, sel: ".gs-grid thead .gs-colh[data-col='ctut']", text: "새 열이 생겼어요. 암살, 1회 10만으로 적어 뒀어요. 이름과 단가는 여기를 눌러 언제든 고쳐요. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음", lock: true, enter: "colfill" }, // 사용자 지정 문구(2026-09-06 낮) 포함
+  /* 모드 변경도 해 본다 (2026-09-25 사용자 제안) — 카드로 갔다가 카운터로. 뒤 걸음은 카운터 표를 짚는다 */
+  { ch: 0, sel: ".gs-sheetmodes .gs-seg button:nth-child(3)", text: "표는 카드로도 볼 수 있어요. [카드]를 눌러 보세요.", wait: "mode:cards" },
+  { ch: 0, sel: ".gs-sheetmodes .gs-seg button:nth-child(2)", text: "사람 하나가 카드 하나예요. 파티원에겐 이 모습이 기본이에요. [카운터]로 돌아가요.", wait: "mode:items" },
   /* 2장 방송에 띄우기 — 발급까지. colfix 는 1장을 떠난 뒤(이름·단가를 안 적었으면 암살·10만) */
   { ch: 1, sel: ".gs-obsbtn", text: "방송에 띄우려면 여기예요.", wait: "obs", enter: "colfix" },
   { ch: 1, sel: ".gs-modal .gs-obs-two .gs-authgo:not(.gs-dcbtn)", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 연동 없이도 받을 수 있어요.", wait: "obsgot", top: true },
@@ -15905,6 +15912,9 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
   const top = Math.max(10, Math.min(want, window.innerHeight - H - 10));
   /* 자리를 옮겼으면 꼬리는 대상을 안 가리킵니다 — 엉뚱한 데를 찌르느니 뗍니다 */
   const tail = top === want;
+  /* 걸음 종류 (2026-09-25 사용자: 무엇을 해야 하는지 직관적이지 않다 — 목업 coach.html 가) — 눌러 보기(표적을 누르면 넘어감) · 보기([다음]) · 기다리기(더미가 움직이는 동안).
+     적어 보기는 없다 — 적는 건 예시가 대신한다 */
+  const kind = action ? "look" : lock ? "wait" : "do";
   return (
     <div className={"gs-coach" + (block ? " gs-coach-pass" : "") + (overModal ? " gs-coach-top" : "")}
       onMouseDown={(e) => !block && e.target === e.currentTarget && onClose()}
@@ -15916,9 +15926,9 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
           style={{ left: box.x - 6, top: box.y - 6, width: box.w + 12, height: box.h + 12 }}
         />
       )}
-      {/* 하기 걸음(표적을 눌러야 넘어감)만 테두리가 숨 쉽니다 — 보기·기다림 걸음은 가만히 (2026-09-06 낮 사용자 확정: 두 종류가 한눈에 갈리게) */}
+      {/* 눌러 보기만 테두리가 숨 쉽니다 — 보기는 가는 테, 기다리기는 점선 (2026-09-06 낮 사용자: 두 종류가 한눈에 갈리게 · 2026-09-25 셋으로) */}
       <div
-        className={"gs-coach-ring" + (!lock && !action ? " gs-coach-ring-act" : "")}
+        className={"gs-coach-ring" + (kind === "do" ? " gs-coach-ring-act" : kind === "look" ? " gs-coach-ring-look" : " gs-coach-ring-wait")}
         style={{ left: box.x - 5, top: box.y - 5, width: box.w + 10, height: box.h + 10 }}
       />
       <div ref={bubRef} className={"gs-coach-bubble" + (up ? " up" : "")} style={{ left, top }}>
@@ -15932,6 +15942,7 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
         <button className="gs-coach-x" onClick={onClose} aria-label="안내 끄기">
           ✕
         </button>
+        <em className={"gs-coach-kind " + kind}>{kind === "do" ? "눌러 보기" : kind === "look" ? "보기" : "기다리기"}</em>
         <p>{text}</p>
         <div className="gs-coach-btns">
           {action && (
@@ -15939,8 +15950,14 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
               {action}
             </button>
           )}
-          {/* 하기 걸음 — 버튼 자리에 옅은 글씨로 (2026-09-06 낮 사용자 확정) */}
-          {!action && !lock && <em className="gs-coach-hint">직접 눌러 보세요</em>}
+          {/* 눌러 보기 — 버튼 자리에 옅은 글씨로 (2026-09-06 낮 사용자 확정) */}
+          {kind === "do" && <em className="gs-coach-hint">직접 눌러 보세요</em>}
+          {/* 기다리기 — 세 점 */}
+          {kind === "wait" && (
+            <em className="gs-coach-wait">
+              잠깐만요 <i /><i /><i />
+            </em>
+          )}
           {total && (
             <em className="gs-coach-step" aria-hidden="true">
               {step}/{total}
@@ -17262,6 +17279,16 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 하기 걸음만 숨 쉽니다 + 옅은 후광 (2026-09-06 낮; (폐기) 모든 걸음이 숨 쉼) */
 .gs-coach-ring-act{animation:gs-coach-breathe 1.6s ease-in-out infinite; box-shadow:0 0 0 5px rgba(var(--gold-rgb),.16)}
 .gs-coach-hint{font-style:normal; font-size:12px; color:var(--gold); letter-spacing:.02em; padding:6px 0}
+/* 걸음 종류 표지 (2026-09-25, 목업 coach.html 가) — 말풍선 머리, 눌러 보기는 금색 */
+.gs-coach-kind{display:inline-flex; align-items:center; gap:6px; margin:0 0 6px; font-style:normal; font-size:11px; letter-spacing:.08em; font-weight:600; color:var(--ink-2)}
+.gs-coach-kind::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor}
+.gs-coach-kind.do{color:var(--gold)}
+.gs-coach-ring-look{border-width:1.5px; opacity:.75}
+.gs-coach-ring-wait{border-style:dashed; opacity:.7}
+.gs-coach-wait{font-style:normal; font-size:12px; color:var(--ink-2); display:inline-flex; align-items:center; gap:8px; padding:6px 0}
+.gs-coach-wait i{display:inline-block; width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.3; animation:gs-coach-wdot 1.2s infinite}
+.gs-coach-wait i:nth-child(2){animation-delay:.2s} .gs-coach-wait i:nth-child(3){animation-delay:.4s}
+@keyframes gs-coach-wdot{0%,60%,100%{opacity:.3} 30%{opacity:1}}
 @keyframes gs-coach-breathe{0%,100%{opacity:1} 50%{opacity:.45}}
 .gs-coach-bubble{position:fixed; width:300px; background:var(--paper); border:1px solid var(--gold);
   border-radius:2px; padding:13px 15px; box-shadow:0 14px 34px rgba(var(--shadow-rgb),.4)}
