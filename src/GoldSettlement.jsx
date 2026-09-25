@@ -2429,6 +2429,7 @@ export default function GoldSettlement() {
   /* [?] 팝오버 — 튜토리얼 둘 중 고르기 (2026-09-06 사용자 확정: 사용법 모달 폐기) */
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpAuto, setHelpAuto] = useState(false); // 파티원 첫 방문에 저절로 열린 것 — 머리말이 다릅니다
+  const [nameFocus, setNameFocus] = useState(null); // 커서가 있는 이름 칸의 줄 — Tab 안내 꼬리표 (2026-09-25)
   const helpWrapRef = useRef(null);
   useEffect(() => {
     if (!helpOpen) return;
@@ -8740,6 +8741,40 @@ export default function GoldSettlement() {
         if (el.select) el.select();
       }
     });
+  /* 이름 적는 중 Tab 안내 (2026-09-25 사용자 확정, 목업 tabhint 나 — Slack 입력창 밑 힌트와 같은 자리) — 커서가 있는 이름 칸 바로 아래.
+     첫 줄은 Tab 만, 마지막 줄은 Shift+Tab 만, 줄이 하나면 없다. (검토 후 폐기) 표 위 안내 줄 교체(커서와 멀다) · 같은 줄 이름 왼쪽 키캡(자리가 없는 줄이 있다) */
+  const tabHint = (i) => {
+    const next = i < rows.length - 1;
+    const prev = i > 0;
+    if (!next && !prev) return null;
+    return (
+      <span className="gs-tabhint" aria-hidden="true">
+        {next && (
+          <>
+            <kbd>Tab</kbd> 다음 이름
+          </>
+        )}
+        {next && prev && <i>·</i>}
+        {prev && (
+          <>
+            <kbd>Shift</kbd>+<kbd>Tab</kbd> 이전
+          </>
+        )}
+      </span>
+    );
+  };
+  /* 이름 칸의 Tab 은 아래 이름으로 (표는 2026-09-06부터, 카드도 같이 — 2026-09-25) */
+  const nameTab = (e, sel) => {
+    if (e.key !== "Tab") return;
+    const box = e.currentTarget.closest(".gs-sheetbox") || e.currentTarget.closest("table") || document;
+    const all = [...box.querySelectorAll(sel)];
+    const at = all.indexOf(e.currentTarget);
+    const to = all[at + (e.shiftKey ? -1 : 1)];
+    if (!to) return;
+    e.preventDefault();
+    to.focus();
+    to.select();
+  };
   /* 알림 속 [되돌리기]는 늘 '지금'의 표를 보고 되돌려야 한다 — 알림을 띄운 렌더의 rows·seats 는 배치 전 것이다 */
   const undoQuickRef = useRef(null);
   const undoNote = (text, touched, added) => (
@@ -10368,17 +10403,23 @@ export default function GoldSettlement() {
                               placeholder={ANON(i)}
                               size={Math.max(3, [...String(row.name || ANON(i))].length + 1)}
                               onChange={(e) => patchRow(row.id, "name", e.target.value)}
-                              onFocus={(e) => (e.currentTarget.dataset.was = row.name || "")}
+                              onFocus={(e) => {
+                                e.currentTarget.dataset.was = row.name || "";
+                                setNameFocus(row.id);
+                              }}
                               onBlur={(e) => {
+                                setNameFocus(null);
                                 if (!dupName(row.id, row.name)) return;
                                 const back = e.currentTarget.dataset.was || "";
                                 patchRow(row.id, "name", back);
                                 say("'" + (row.name || "").trim() + "'은 이미 있어요. 다른 이름으로 적어 주세요.");
                               }}
                               aria-invalid={dupName(row.id, row.name) || undefined}
+                              onKeyDown={(e) => nameTab(e, "input.gs-rd-name")}
                               aria-label="이름"
                             />
                           )}
+                          {!readOnly && nameFocus === row.id && tabHint(i)}
                           {/* 방장 · 나 (2026-09-17 확정) — 방장 화면은 한 상자, 파티원 화면은 방장 줄 [방장]·내 줄 [나] */}
                           {!readOnly && isHostRow && linked && <span className="gs-metag gs-metag-host">방장 · 나</span>}
                           {readOnly && house && <span className="gs-metag gs-metag-host">방장</span>}
@@ -10889,8 +10930,12 @@ export default function GoldSettlement() {
                                 : patchRow(row.id, "name", e.target.value)
                             }
                             /* 칸을 벗어날 때 판정 — 겹치면 적기 전 이름으로 되돌립니다 */
-                            onFocus={(e) => (e.currentTarget.dataset.was = row.name || "")}
+                            onFocus={(e) => {
+                              e.currentTarget.dataset.was = row.name || "";
+                              setNameFocus(row.id);
+                            }}
                             onBlur={(e) => {
+                              setNameFocus(null);
                               if (!dupName(row.id, row.name)) return;
                               const back = e.currentTarget.dataset.was || "";
                               patchRow(row.id, "name", back);
@@ -10900,19 +10945,11 @@ export default function GoldSettlement() {
                             /* 탭은 아래 이름으로 — 이름은 위에서 아래로 죽 적는 칸이라,
                                기본 탭 순서(옆 칸 → 횟수)를 따라가면 매번 손이 끊깁니다.
                                첫·끝에서는 막지 않아 표 밖으로 빠져나갈 수 있습니다. */
-                            onKeyDown={(e) => {
-                              if (e.key !== "Tab") return;
-                              const all = [...e.currentTarget.closest("table").querySelectorAll(".gs-in-name")];
-                              const at = all.indexOf(e.currentTarget);
-                              const to = all[at + (e.shiftKey ? -1 : 1)];
-                              if (!to) return;
-                              e.preventDefault();
-                              to.focus();
-                              to.select();
-                            }}
+                            onKeyDown={(e) => nameTab(e, "input.gs-in-name")}
                             aria-label="이름"
                           />
                           )}
+                          {nameFocus === row.id && tabHint(i)}
                           </span>
                         </div>
                       </th>
@@ -16987,6 +17024,15 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* (폐기 2026-09-17) 초상화 모서리 집 배지(.gs-house) — 방장으로 안 읽혔다(사용자). 글자 상자로 */
 /* 이름 + [방장 · 나]/[방장]/[나] — 이름 열 오른쪽 끝에 붙는다. 긴 이름은 칸 안에서 줄고 초상화 열을 넘지 않는다 */
 .gs-namewrap{justify-self:end; display:inline-flex; align-items:center} /* min-width:0 을 두면 표가 이 열을 접어 이름이 초상화 위로 넘친다 */
+/* 이름 적는 중 Tab 안내 (2026-09-25 사용자 확정, 목업 tabhint 나) — 커서가 있는 이름 칸 바로 아래 꼬리표. 프로필 카드 말풍선(.gs-pc-tip)과 같은 잉크 바탕, 떠 있어 표가 안 밀린다 */
+.gs-namewrap,.gs-rd-head{position:relative}
+.gs-tabhint{position:absolute; left:0; top:calc(100% + 6px); z-index:30; display:inline-flex; align-items:center; gap:6px; padding:4px 8px;
+  font-family:'IBM Plex Sans KR',sans-serif; font-size:11.5px; font-weight:400; letter-spacing:0; color:var(--paper); background:var(--ink); border-radius:2px;
+  white-space:nowrap; box-shadow:0 6px 16px rgba(var(--shadow-rgb),.35); pointer-events:none}
+.gs-tabhint::before{content:""; position:absolute; left:14px; top:-5px; width:9px; height:9px; transform:rotate(45deg); background:var(--ink)}
+.gs-tabhint i{font-style:normal; opacity:.5}
+.gs-tabhint kbd{display:inline-block; min-width:14px; padding:1px 5px; border:1px solid color-mix(in srgb, currentColor 40%, transparent); border-bottom-width:2px; border-radius:2px;
+  font:500 10.5px/1.3 'IBM Plex Sans KR',sans-serif; color:inherit; background:color-mix(in srgb, currentColor 12%, transparent); vertical-align:1px}
 /* 이름 칸은 줄지 않는다 — 줄면 표가 이 열을 최소로 접어 이름이 잘린다(예전에 안전구역으로 막던 것) */
 .gs-namewrap .gs-in-name,.gs-namewrap .gs-name-ro{flex:none}
 .gs-metag{display:inline-block; flex:none; margin-left:6px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:500; font-size:11px;
