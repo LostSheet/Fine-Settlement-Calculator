@@ -8032,7 +8032,8 @@ export default function GoldSettlement() {
   /* 파티원 첫 방문 — 자수 화면에 처음 왔을 때 1.5초 뒤 [?] 팝오버가 저절로 한 번 열립니다(브라우저당) (2026-09-06 사용자 확정) */
   useEffect(() => {
     /* (고침 2026-09-24) 조건은 "남의 판에 처음 들어왔을 때" — 자수 화면(confess 탭)은 09-17 에 없어졌다 */
-    if (DEMO || !recMember || demoRoom || inviteGate || blockedCard || tutorial || obsOpen) return;
+    /* 닉네임 창이 떠 있으면 기다린다 (2026-09-25) — 처음 온 파티원에게 창 둘이 겹쳐 떴다 */
+    if (DEMO || !recMember || demoRoom || inviteGate || blockedCard || tutorial || obsOpen || nickAsk) return;
     if (coachSeen("askMember")) return;
     const t = setTimeout(() => {
       coachDone("askMember");
@@ -8040,7 +8041,7 @@ export default function GoldSettlement() {
       setHelpOpen(true);
     }, 1500);
     return () => clearTimeout(t);
-  }, [recMember, demoRoom, inviteGate, blockedCard, tutorial, obsOpen]);
+  }, [recMember, demoRoom, inviteGate, blockedCard, tutorial, obsOpen, nickAsk]);
   /* (폐기 2026-09-06 밤) 방장 OBS 코치마크 — 튜토리얼 6장이 대신합니다 */
   /* 판이 없는데 판 화면이면 로비로 — 부팅·옛 주소·끝낸 직후 */
   useEffect(() => {
