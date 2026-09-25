@@ -645,7 +645,7 @@ const INVITE_GATE_H = "초대하려면 Discord 연동이 필요해요";
 /* Discord 연동이 주는 것 · 받는 정보 (2026-09-24 사용자 확정) — 헤더 대화상자·발급 칸·발급 뒤 띠가 같은 문장을 씁니다. 문구는 초안.
    "무엇을 받나"는 Discord 동의 화면도 말하지만 "왜 하나"는 여기서만 말합니다 */
 const DC_GAINS = [
-  "지금 판을 서버에 백업해요. 다른 컴퓨터에서도 이어서 써요.",
+  "벌금표를 클라우드에 백업해요. 다른 기기에서도 이어서 써요.", // 낱말 통일 (2026-09-25): 서버 → 클라우드, 컴퓨터 → 기기
   "Discord 프로필 사진을 가져와요.",
   "파티원을 초대해 각자 자수하게 할 수 있어요.",
   "초대받은 파티에 들어가 자수할 수 있어요.",
@@ -10260,9 +10260,10 @@ export default function GoldSettlement() {
           return (
             <div className="gs-slip gs-slip-info" role="status">
               <span className="gs-slip-msg">
-                <span>이 컴퓨터의 판을 이어서 써요.</span>
+                {/* 낱말 (2026-09-25 사용자): 이쪽은 "이 기기", 저쪽은 "클라우드" — Steam·Windows·게임 저장 충돌 창의 말. (폐기) "이 컴퓨터의 판을 이어서 써요. 서버에는 다른 판이 있었어요" — 주어 없는 써요, 우리 말(서버·판·불러오기), 아직 있는 것을 과거로 */}
+                <span>지금 보는 건 이 기기에 있던 벌금표예요.</span>
                 <span>
-                  서버에는 다른 판이 있었어요
+                  클라우드에 다른 벌금표도 있어요
                   {last
                     ? " · 마지막 기록 " + (last.getMonth() + 1) + "월 " + last.getDate() + "일 " +
                       String(last.getHours()).padStart(2, "0") + ":" + String(last.getMinutes()).padStart(2, "0")
@@ -10270,7 +10271,7 @@ export default function GoldSettlement() {
                 </span>
               </span>
               <button className="gs-btn gs-btn-sm" onClick={loadOffer}>
-                서버에 있던 판 불러오기
+                클라우드 벌금표로 바꾸기
               </button>
               <button className="gs-x gs-slip-x" onClick={() => putOffer(null)} aria-label="알림 닫기">
                 ×
@@ -10281,8 +10282,8 @@ export default function GoldSettlement() {
         {!readOnly && offerBack && (
           <div className="gs-slip gs-slip-info" role="status">
             <span className="gs-slip-msg">
-              <span>서버에 있던 판을 불러왔어요.</span>
-              {offerBack.kept && <span>이 컴퓨터에서 쓰던 판은 판 기록에 남겨 두었어요.</span>}
+              {/* (폐기 2026-09-25) "이 컴퓨터에서 쓰던 판은 판 기록에 남겨 두었어요." — 판 기록을 여는 문이 없어(09-20) 갈 수 없는 곳을 가리켰다. 안전줄은 옆의 [되돌리기] */}
+              <span>클라우드 벌금표로 바꿨어요.</span>
             </span>
             <button className="gs-btn gs-btn-sm" onClick={undoOffer}>
               ↩ 되돌리기
