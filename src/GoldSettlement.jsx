@@ -15841,10 +15841,13 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
         }
       }
       if (!pinned) {
-        const docTop = first.getBoundingClientRect().top + window.scrollY;
+        const r = first.getBoundingClientRect();
+        const docTop = r.top + window.scrollY;
         const band = document.querySelector(".gs-demoband");
         const bandH = band ? band.offsetHeight : 0;
-        const want = docTop < window.innerHeight * 0.5 ? 0 : Math.max(0, Math.round(docTop - bandH - window.innerHeight / 3));
+        /* ③은 표적이 편한 구역(띠 아래 16px ~ 뷰포트 2/3) 밖일 때만 — 이웃 줄을 번갈아 짚는 걸음이 1/3 지점 맞추기로 오르내리지 않게 */
+        const inZone = r.top >= bandH + 16 && r.bottom <= window.innerHeight * 0.66;
+        const want = docTop < window.innerHeight * 0.5 ? 0 : inZone ? window.scrollY : Math.max(0, Math.round(docTop - bandH - window.innerHeight / 3));
         if (Math.abs(want - window.scrollY) > 1) window.scrollTo(0, want);
       }
     }
