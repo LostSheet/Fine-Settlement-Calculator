@@ -2116,7 +2116,8 @@ export const PAGE_HTML = `<!doctype html>
         for (var j = 0; j < fxQ.length; j++) if (fxQ[j].i === e.ref) hit = j;
         if (hit >= 0) { fxQ.splice(hit, 1); continue; }
         /* 이미 뜬 뒤라면 본 사람에게 정정을 알려야 합니다 — 짧게 띄웁니다 */
-        if (!fxShown[e.ref]) continue;
+        /* 그을 줄이 없던 취소(ref 없음, 2026-09-26)는 늘 띄웁니다 — 그 누름 카드는 한참 전에 나갔거나 기록 밖입니다 */
+        if (e.ref && !fxShown[e.ref]) continue;
       }
       /* 룰렛 결과는 방금 본 판의 것이라 줄 맨 앞으로 — 밀린 카드 뒤에 서면
          바퀴가 선 한참 뒤에야 그 결과가 나옵니다 */
@@ -2140,7 +2141,7 @@ export const PAGE_HTML = `<!doctype html>
     return '<div class="ov-fx-body' + (extra ? " " + extra : "") + '">' + face +
       /* 이름 칸: 이름 + 항목 꼬리표. 금색 칸: 금액만 (2026-09-08 사용자 확정 ㉢ 값이 주인공).
          정정은 꼬리표 앞에 붙습니다. (폐기) 금색 칸에 "항목 +금액" 한 줄 — 문장처럼 읽혔다 */
-      '<b><i class="ov-fx-nm">' + esc(e.n) + "</i><small>" + (e.k === "cancel" || e.k === "sub" ? "정정 · " : "") + esc(e.t || "") + "</small></b>" +
+      '<b><i class="ov-fx-nm">' + esc(e.n) + "</i><small>" + (e.k === "cancel" || e.k === "sub" ? "취소 · " : "") + esc(e.t || "") + "</small></b>" +
       "<span><em>" + (up ? "+" : "−") + manShort(Math.abs(e.g)) + "</em></span></div>";
   };
   /* 사진이 못 왔을 때 — 상체 모양으로 (디스코드 CDN 이 막힌 방송 프로그램, 지운 사진) */

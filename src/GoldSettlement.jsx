@@ -1699,12 +1699,14 @@ function slotGold(slot) {
 
 /* 예시 표·기록이 든 파티 이름 — 로비와 파티 메뉴에서 만들 수 있습니다 */
 const EXAMPLE_PARTY = "현자들";
-/* 방금 누른 것 — 묶음 전체에 시계가 하나입니다. 누를 때마다 처음으로 돌아가고,
-   손을 떼고 이만큼 조용하면 카드가 통째로 사라집니다. 한 번 기록하는 묶음(전멸 한 번)은
-   몇 초 간격으로 이어지고 다음 묶음까지는 몇 분이라, 그 사이 어디쯤이면 됩니다. */
-const BURST_MS = 60 * 1000;
-/* 8인 파티가 전멸하면 여덟 줄입니다 — 그게 확인하고 싶은 묶음이라 그보다 적게 자르면 안 됩니다 */
-const BURST_MAX = 8;
+/* 방금 누른 칸의 눈금 (2026-09-26 사용자 확정 — '방금 바뀐' 카드 대신 칸에서). 마감이 아니라 "방금"의 표시입니다:
+   우클릭은 언제든 그 칸의 마지막 누름 취소이고, 눈금 안이면 `취소` 칩 1초, 꺼진 뒤면 파란 표가 남습니다 */
+const PRESS_TICK_MS = 60 * 1000;
+/* 눈금 — 누른 순간부터 줄어들어야 하므로 지난 만큼 음수 지연으로 맞춥니다(새로고침해도 이어집니다) */
+function PressTick({ t }) {
+  const [delay] = useState(() => -(Date.now() - t));
+  return <i className="gs-hit-tick" style={{ animationDuration: PRESS_TICK_MS + "ms", animationDelay: delay + "ms" }} aria-hidden="true" />;
+}
 /* 파티원이 다른 탭에서 이만큼 아무 조작도 안 하면 자수 화면으로 돌아옵니다 */
 const IDLE_BACK_MS = 30 * 1000;
 /* 자수로 바뀐 칸이 번쩍이고 말풍선이 떠 있는 시간 */
@@ -2368,31 +2370,6 @@ export default function GoldSettlement() {
   const [splitMode] = useState("pot");
   const setSplitMode = () => {};
   const [showSplitHelp, setShowSplitHelp] = useState(false);
-  /* 방금 누른 것 — 이번 묶음의 기록 id 들. 새것이 뒤에 붙고, 카드는 아래가 고정이라
-     방금 누른 줄이 늘 같은 자리에 있습니다. 기록에서 다시 읽으므로 취소도 기록과 한 몸입니다. */
-  const [burst, setBurst] = useState([]);
-  const [burstKey, setBurstKey] = useState(0); // 시간 막대를 다시 채우는 열쇠
-  const [burstHold, setBurstHold] = useState(false); // 올려 둔 동안은 시계가 멉니다
-  const [burstNow, setBurstNow] = useState(0); // 초를 세는 눈금. 멈춘 동안은 안 움직입니다
-  /* 카드에 있는 동안 정정된 +줄 (2026-09-24 사용자 확정) — 지우지 않고 긋는다. 우클릭(1회 빼기)이 카드 안의 +줄을 되돌린 것이면
-     그 줄을 긋고 −줄은 카드에 안 넣는다. 카드가 비워질 때 같이 비운다 */
-  const [struck, setStruck] = useState([]);
-  const burstRef = useRef([]);
-  burstRef.current = burst;
-  /* 우클릭·자수 정정이 카드 안의 +줄을 되돌린 것이면 그 줄을 긋는다 — 그었으면 true (−줄은 카드에 안 넣는다) */
-  const strikeIfShown = (lastPress) => {
-    if (!lastPress || !burstRef.current.includes(lastPress.id) || lastPress.cancelled) return false;
-    setStruck((prev) => (prev.includes(lastPress.id) ? prev : [...prev, lastPress.id]));
-    return true;
-  };
-  const notePress = (id) => {
-    setBurst((prev) => {
-      const next = [...prev, id];
-      return next.length > BURST_MAX ? next.slice(next.length - BURST_MAX) : next;
-    });
-    setBurstKey((k) => k + 1);
-  };
-
   /* 튜토리얼 중인지 — 예시 표는 화면에만 얹고 저장하지 않습니다. 저장하면 지난 판에
      남의 예시가 남고, 끝난 뒤 치우는 일이 사용자 몫이 됩니다. 끝나면 아래 장부로 돌아갑니다:
      첫 방문이면 빈 판, 나중에 다시 본 것이면 보던 장부(그래야 남의 장부를 안 덮습니다). */
@@ -2407,26 +2384,6 @@ export default function GoldSettlement() {
   const coachRef = useRef(null);
   coachRef.current = coach;
   if (DEMO) window.__gsDemo = { coach, sel: coach && coach.kind === "party" && TOUR_FLOW[coach.step] ? TOUR_FLOW[coach.step].sel : null }; // 예시 앱 검사용
-
-  /* 튜토리얼 걸음이 이 카드를 가리키는 동안은 시계를 멈춘다 — 60초가 지나 카드가 사라지면 걸음의 표적이 없어진다 (2026-09-24, 예시 앱 안에서만 참) */
-  const coachOnPress = !!(coach && coach.kind === "party" && TOUR_FLOW[coach.step] && TOUR_FLOW[coach.step].sel.startsWith(".gs-press"));
-  useEffect(() => {
-    if (!burst.length || burstHold || coachOnPress) return;
-    const t = setTimeout(() => {
-      setBurst([]);
-      setStruck([]);
-    }, BURST_MS);
-    return () => clearTimeout(t);
-  }, [burst, burstHold, burstKey, coachOnPress]);
-
-  /* 남은 초와 '몇 초 전'을 같은 눈금에서 읽습니다 — 두 시계가 따로 돌면 어긋나 보입니다 */
-  useEffect(() => {
-    if (!burst.length) return;
-    setBurstNow(Date.now());
-    if (burstHold) return;
-    const t = setInterval(() => setBurstNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [burst, burstHold, burstKey]);
 
   /* 코스 진행 — 해당 조작이 실제로 일어났을 때만 다음으로 */
   /* 진짜 버튼을 눌러도 튜토리얼이 넘어갑니다 — 칸 누르기·탭·OBS 버튼이 부릅니다 */
@@ -2464,17 +2421,51 @@ export default function GoldSettlement() {
   /* 기록 — 카운터의 ＋·직접 수정이 델타로 한 줄씩 쌓입니다. 영수증이지 원본이 아니라서
      정산·공유는 이 목록을 보지 않습니다. 취소는 줄을 지우지 않고 반대 기록을 덧붙입니다(역분개). */
   const [log, setLog] = useState(boot.current.log || []);
-  /* 카드에 그릴 줄들. id 만 들고 있다가 기록에서 읽어 오므로, 어디서 취소하든
-     (카드에서든 기록 창에서든) 같은 줄이 같이 사라집니다. */
-  const burstRows = useMemo(() => {
-    if (!burst.length) return [];
-    const by = {};
-    log.forEach((e) => {
-      by[e.id] = e;
-    });
-    /* 취소된 줄도 남긴다 — 1분 안의 정정은 지우지 않고 긋는다 (2026-09-24). (폐기) !e.cancelled 로 걸러 줄을 없애던 것 */
-    return burst.map((id) => by[id]).filter((e) => e);
-  }, [burst, log]);
+  /* 칸마다 마지막에 한 일 (2026-09-26 사용자 확정 — 카드 대신 칸에서). 기록에서 읽으므로 [기록] 창에서
+     취소해도 같은 표가 서고, 새로고침해도 60초 안의 눈금은 그대로입니다.
+     tick: 아직 살아 있는 60초 안의 내 누름(자수는 파티원 것이라 눈금이 없습니다) · chip: 방금 한 취소(1초 칩) ·
+     mark: 맨 끝에 이어진 취소 중 늦은 것(그 누름이 60초 넘어서 지워진 것, 그을 줄이 없던 것)의 수 — 다음에 그 칸을 건드리면 걷힙니다 */
+  const [tickBump, setTickBump] = useState(0);
+  const cellLast = useMemo(() => {
+    const now = Date.now();
+    const byId = {};
+    for (const e of log) byId[e.id] = e;
+    const late = (c) => {
+      const ref = c.refId ? byId[c.refId] : null;
+      return !ref || c.t - ref.t > PRESS_TICK_MS;
+    };
+    const m = {};
+    for (let i = log.length - 1; i >= 0; i--) {
+      const e = log[i];
+      if (!e.colId || !e.rowId) continue;
+      const k = e.rowId + ":" + e.colId;
+      const c = m[k] || (m[k] = { tick: null, chip: null, mark: 0, tail: true, sealed: false });
+      if (c.sealed) continue;
+      if (e.kind === "cancel") {
+        if (c.tail) {
+          if (late(e)) c.mark++;
+          else if (!c.chip && now - e.t < 1500) c.chip = e.id;
+        }
+        continue;
+      }
+      if (e.kind === "press" || e.kind === "confess") {
+        c.tail = false; // 누름·자수(취소 포함)가 나오면 끝에 이어진 취소 세기는 끝
+        if (!c.tick && e.kind === "press" && e.n > 0 && !e.cancelled && now - e.t < PRESS_TICK_MS) c.tick = { id: e.id, t: e.t };
+        continue;
+      }
+      c.tail = false; // 비움·룰렛 — 그보다 앞은 안 봅니다
+      c.sealed = true;
+    }
+    return m;
+  }, [log, tickBump]);
+  /* 눈금이 꺼지는 순간 한 번 다시 그립니다 — 그 뒤의 취소는 파란 표를 남겨야 하므로 */
+  useEffect(() => {
+    let soon = Infinity;
+    for (const k in cellLast) if (cellLast[k].tick) soon = Math.min(soon, cellLast[k].tick.t + PRESS_TICK_MS);
+    if (soon === Infinity) return;
+    const t = setTimeout(() => setTickBump((k) => k + 1), Math.max(50, soon - Date.now() + 80));
+    return () => clearTimeout(t);
+  }, [cellLast]);
 
   const [showLog, setShowLog] = useState(false);
   /* 기록 모달의 사람 필터 — 이름 칸의 '기록'으로 들어오면 그 사람 것만 봅니다.
@@ -3129,8 +3120,6 @@ export default function GoldSettlement() {
       })
     );
     setOpenRow(null);
-    setBurst([]); // 앞 판에서 누른 것이 새 표 위에 남으면 안 됩니다
-    setStruck([]);
     /* 뷰어의 주소에는 방이 적혀 있습니다 — 지우면 새로고침할 때 파티로 못 돌아옵니다 */
     if (!viewer) clearHash();
   };
@@ -5067,8 +5056,6 @@ export default function GoldSettlement() {
        효과가 렌더 뒤에 돌아야 방금 적은 기록이 실리므로, 여기서는 표시만 켭니다 */
     wantNow.current = true;
     const id = "L" + seq.current++;
-    /* 자수도 '방금 바뀐' 카드에 섞습니다 — 되돌리는 자리가 이미 거기라서 새 장치를 안 만듭니다. 자수 정정이 카드 안의 +줄을 되돌린 것이면 긋는다 */
-    if (!(d < 0 && strikeIfShown(lastPress))) notePress(id);
     /* 방장의 눈은 판에 있으니 판에서도 알립니다 — 그 칸이 잠깐 금색으로 번쩍입니다 */
     setConfessFx({
       rowId: row.id,
@@ -5424,8 +5411,8 @@ export default function GoldSettlement() {
       else if (e.kind === "clear")
         out.push({ i: e.id, k: "clear", n: e.name || "전체", t: e.item ? "비움 " + e.item : "비움", g: e.delta });
       /* 취소는 원래 카드가 눌림이었을 때만 — 안 보여 준 것을 되돌리는 카드는 뜻이 없습니다 */
-      else if (e.kind === "cancel" && e.refId && isPress(e.refId))
-        out.push({ i: e.id, k: "cancel", ref: e.refId, n: e.name, t: e.item, g: e.delta, f: faceOf(e.rowId) });
+      else if (e.kind === "cancel" && (e.refId ? isPress(e.refId) : !!e.colId))
+        out.push({ i: e.id, k: "cancel", ...(e.refId ? { ref: e.refId } : {}), n: e.name, t: e.item, g: e.delta, f: faceOf(e.rowId) });
     }
     return out.reverse();
   };
@@ -6198,7 +6185,7 @@ export default function GoldSettlement() {
   const confessOk = (colId, dir) => {
     noteCf(colId, dir);
     /* 되돌린 본인에게도 한 줄 — 숫자만 줄면 "잘못 눌렀나"가 됩니다 (2026-09-05, §8 초안) */
-    if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
+    if (dir < 0) say("자수를 취소했어요.");
   };
   /* 거절 — HTTP 의 에러와 소켓의 nope 가 같이 옵니다. 갈래를 한 벌로 둡니다 */
   const confessFail = (code, status, msg) => {
@@ -6224,7 +6211,7 @@ export default function GoldSettlement() {
     if (DEMO) {
       /* 파티원 예시 — 서버 없이 내 줄만 움직입니다. 같이 해보기 9걸음(누르기) */
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, counts: { ...r.counts, [colId]: String(Math.max(0, num(r.counts[colId]) + dir)) } } : r)));
-      if (dir < 0) say("자수를 정정했어요 — 방금 것을 되돌렸어요.");
+      if (dir < 0) say("자수를 취소했어요.");
       noteCf(colId, dir);
       if (tutorialRef.current) tutHit((dir > 0 ? "confess:" : "unconfess:") + colId); // 파티원 튜토리얼 1·3·4걸음
       return;
@@ -7360,12 +7347,8 @@ export default function GoldSettlement() {
     live.current.n[row.id + ":" + col.id] = before + 1;
     live.current.total[row.id] = after;
     bump(row.id, col.id, 1, gold);
-    /* 룰렛 결과도 '방금 바뀐' 카드에 남깁니다 (2026-09-08 사용자 지적) — 판을 바꾼 건은
-       클릭이든 룰렛이든 되돌리는 자리가 같아야 하는데, 여기만 카드에 안 실려서
-       방금 돌린 판을 그 자리에서 못 되돌렸습니다. cancelEntry 는 rowId·colId·n·delta 로
-       돌아가니 룰렛 줄도 그대로 되돌아갑니다(그래서 n 을 1 로 남겨 둔 것입니다) */
+    /* 룰렛 줄도 [기록]에서 되돌아갑니다 — cancelEntry 는 rowId·colId·n·delta 로 돌아가니 n 을 1 로 남겨 둡니다 */
     const id = "L" + seq.current++;
-    notePress(id);
     appendLog({
       id,
       kind: "roulette",
@@ -7474,7 +7457,7 @@ export default function GoldSettlement() {
   const liveN = (row, colId) => live.current.n[row.id + ":" + colId] ?? num(row.counts[colId]);
 
   /* 카운터 셀의 ＋/−. 횟수를 움직이고 한 줄 남깁니다. 이름·항목은 나중에 지워져도
-     읽히도록 그 시점 글자를 같이 적어 둡니다. 왼클릭 +1, 우클릭 −1, 둘 다 기록됩니다. */
+     읽히도록 그 시점 글자를 같이 적어 둡니다. 왼클릭은 +1 한 줄, 우클릭은 그 칸의 마지막 누름 취소(2026-09-26). */
   const pressCell = (row, col, dir = 1) => {
     /* 준비 상태 — 칸은 잠겨 있습니다. 세기 시작하는 문은 [시작] 하나입니다 (§3.1) */
     if (ready) {
@@ -7508,7 +7491,7 @@ export default function GoldSettlement() {
       else
         sayLog(
           <>
-            {"룰렛은 우클릭으로 빼지 않아요. 잘못 돌렸으면 ["}
+            {"룰렛 결과는 우클릭이 아니라 ["}
             <button
               className="gs-toast-link"
               onClick={() => {
@@ -7528,34 +7511,35 @@ export default function GoldSettlement() {
     const before = liveN(row, col.id);
     if (dir > 0 ? before >= MAX_COUNT : before <= 0) return;
     const priceG = Math.round(goldOf(col.price));
-    /* − 는 마지막으로 쌓인 건의 금액을 되돌립니다 — 단가가 바뀐 뒤라면
-       지금 단가가 아니라 그때 넣었던 금액을 빼야 총액이 맞습니다. */
-    const lastPress =
-      dir < 0
-        ? [...log].reverse().find(
-            (e) =>
-              (e.kind === "press" || e.kind === "confess") &&
-              e.rowId === row.id &&
-              e.colId === col.id &&
-              e.n > 0 &&
-              !e.cancelled
-          )
-        : null;
-    const gold = dir > 0 ? priceG : -(lastPress ? lastPress.delta : priceG);
-    const after = liveTotal(row) + gold;
-    live.current.n[row.id + ":" + col.id] = before + dir;
+    /* 우클릭 = 그 칸의 마지막 누름 취소 (2026-09-26 사용자 확정) — [기록] 창의 [취소]와 같은 길이라
+       그 줄에 취소선이 가고, 아직 방송에 안 나간 카드는 안 나갑니다. 감면은 우클릭에 없습니다 —
+       봐주는 건 기타의 마이너스 금액입니다(횟수는 일어난 일, 기타는 판단). (폐기) 언제든 −1 줄을 적던 것 */
+    if (dir < 0) {
+      const lastPress = [...log]
+        .reverse()
+        .find((e) => (e.kind === "press" || e.kind === "confess") && e.rowId === row.id && e.colId === col.id && e.n > 0 && !e.cancelled);
+      if (lastPress) {
+        cancelEntry(lastPress);
+        return;
+      }
+      /* 누름 줄이 기록에 없는 칸 — 200줄을 넘어 밀렸거나 기록 없이 이어 온 판. 그을 줄 없이 취소 한 줄만 적습니다 */
+      const after = liveTotal(row) - priceG;
+      live.current.n[row.id + ":" + col.id] = before - 1;
+      live.current.total[row.id] = after;
+      bump(row.id, col.id, -1, -priceG);
+      appendLog({ kind: "cancel", rowId: row.id, colId: col.id, delta: -priceG, name: seatName(row, rows.indexOf(row)), item: col.name, after });
+      return;
+    }
+    const after = liveTotal(row) + priceG;
+    live.current.n[row.id + ":" + col.id] = before + 1;
     live.current.total[row.id] = after;
-    bump(row.id, col.id, dir, gold);
-    const id = "L" + seq.current++;
-    /* 우클릭이 카드 안의 +줄을 되돌린 것이면 그 줄을 긋는다 — 같은 일이 두 그림(줄 삭제 · 파란 −줄)으로 갈리지 않게 (2026-09-24) */
-    if (!(dir < 0 && strikeIfShown(lastPress))) notePress(id);
+    bump(row.id, col.id, 1, priceG);
     appendLog({
-      id,
       kind: "press",
       rowId: row.id,
       colId: col.id,
-      n: dir,
-      delta: gold,
+      n: 1,
+      delta: priceG,
       name: seatName(row, rows.indexOf(row)),
       item: col.name,
       after,
@@ -7658,6 +7642,7 @@ export default function GoldSettlement() {
           kind: "cancel",
           refId: en.id,
           rowId: en.rowId,
+          colId: en.colId,
           delta: -en.delta,
           name: en.name,
           item: en.item,
@@ -9144,7 +9129,7 @@ export default function GoldSettlement() {
     if (need > room + 1) card.style.minWidth = need + (card.offsetWidth - room) + "px";
   }, [cols, simple, readOnly, tab, view, unit]);
   return (
-    <div ref={rootRef} className={"gs" + (DEMO ? " gs-demoapp" : "") + (tabbed ? " gs-tabbed" : "") + (!ready && !guestLobby && !showLobby && !inviteGate && !blockedCard ? " gs-connected" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (!readOnly && burstRows.length > 0 ? " gs-pressing" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
+    <div ref={rootRef} className={"gs" + (DEMO ? " gs-demoapp" : "") + (tabbed ? " gs-tabbed" : "") + (!ready && !guestLobby && !showLobby && !inviteGate && !blockedCard ? " gs-connected" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
       {DEMO &&
         (() => {
           /* 진행 표시 (2026-09-06 사용자 확정) — 장 점을 선으로 잇고 지금 장은 크게, 옆에 `3장 파티원 모으기 · 2/4`.
@@ -10198,7 +10183,7 @@ export default function GoldSettlement() {
               ) : (
                 <p className="gs-cellnote">
                   칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" />{" "}
-                  우클릭하면 1회 빠져요.
+                  우클릭하면 마지막 1회를 취소해요.
                 </p>
               )}
           </div>
@@ -10536,6 +10521,7 @@ export default function GoldSettlement() {
                             const cn = num(row.counts[c.id] ?? "");
                             const can = readOnly && canConfess(row, c);
                             const left = can ? cfLeft(c.id) : 0;
+                            const cl = readOnly ? null : cellLast[row.id + ":" + c.id]; // 방금 누른 칸의 눈금·칩·표 (방장 화면)
                             return (
                               <button
                                 key={c.id}
@@ -10550,7 +10536,7 @@ export default function GoldSettlement() {
                                   e.preventDefault();
                                   pressCell(row, c, -1);
                                 }}
-                                aria-label={`${nm}의 ${c.name || "항목"} 1회 추가 (우클릭: 1회 빼기)`}
+                                aria-label={`${nm}의 ${c.name || "항목"} 1회 추가 (우클릭: 마지막 1회 취소)`}
                               >
                                 <span className="gs-rd-lab">
                                   <span className="gs-rd-labname">{(c.name || "").trim() || "항목"}</span>
@@ -10571,6 +10557,9 @@ export default function GoldSettlement() {
                                 {/* 파티원 — 되돌릴 수 있는 30초는 칸 아래 눈금 길이로, 장부에 적힌 순간은 번쩍임으로 */}
                                 {left > 0 && <i className="gs-cf-tick" style={{ width: (left / CONFESS_UNDO_MS) * 100 + "%" }} aria-hidden="true" />}
                                 {myCard && cfFlash && cfFlash.id === c.id && <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />}
+                                {cl && cl.tick && <PressTick key={cl.tick.id} t={cl.tick.t} />}
+                                {cl && cl.chip && <i className="gs-hit-chip" key={cl.chip} aria-hidden="true">취소</i>}
+                                {cl && cl.mark > 0 && <i className="gs-hit-mark" aria-hidden="true">−{cl.mark}</i>}
                               </button>
                             );
                           })}
@@ -10773,7 +10762,7 @@ export default function GoldSettlement() {
                       </button>
                       <span className="gs-tip-body" role="tooltip">
                         <b>항목</b>은 벌금 사유예요. 1회당 단가를 정해 두고, 칸을 눌러 횟수를
-                        세요. 우클릭하면 1회 빠져요.
+                        세요. 우클릭하면 마지막 1회를 취소해요.
                       </span>
                     </span>
                   </th>
@@ -11033,6 +11022,7 @@ export default function GoldSettlement() {
                         if (ready || guestLobby) return null;
                         const cnt = row.counts[c.id] ?? "";
                         const n = num(cnt);
+                        const cl = readOnly ? null : cellLast[row.id + ":" + c.id]; // 방금 누른 칸의 눈금·칩·표 (방장 화면)
                         if (!simple) {
                           return (
                             <td
@@ -11040,8 +11030,8 @@ export default function GoldSettlement() {
                               className={cross && cross.c === c.id ? "gs-litcol" : undefined}
                               data-col={c.id}
                             >
-                              {/* 카운터 칸 — 왼클릭 = 1회, 우클릭 = 1회 빼기 (게임 인벤토리 문법).
-                                  둘 다 기록에 남고, 실수는 반대 클릭이나 기록에서 바로잡습니다.
+                              {/* 카운터 칸 — 왼클릭 = 1회, 우클릭 = 그 칸의 마지막 누름 취소 (2026-09-26; 게임 인벤토리 문법).
+                                  둘 다 기록에 남고, 실수는 우클릭이나 기록에서 바로잡습니다.
                                   보조 버튼을 칸 위에 겹치지 않아 오클릭 여지가 없습니다. */}
                               <div className="gs-hitwrap">
                                 {/* 자수로 바뀐 칸 — 방장의 눈은 판에 있으니 판에서 알립니다 */}
@@ -11049,7 +11039,7 @@ export default function GoldSettlement() {
                                   confessFx.rowId === row.id &&
                                   confessFx.colId === c.id && (
                                     <span className="gs-hovtip gs-conftip" role="status">
-                                      <b>{confessFx.nick}</b> {confessFx.d < 0 ? "자수 정정" : "자수"}
+                                      <b>{confessFx.nick}</b> {confessFx.d < 0 ? "자수 취소" : "자수"}
                                     </span>
                                   )}
                                 {/* 누르면 얼마가 붙는지 — 십자 하이라이트는 "어디"만 말하고
@@ -11093,7 +11083,7 @@ export default function GoldSettlement() {
                                     e.preventDefault();
                                     pressCell(row, c, -1);
                                   }}
-                                  aria-label={`${row.name || "이 사람"}의 ${c.name || "항목"} 1회 추가 (우클릭: 1회 빼기)`}
+                                  aria-label={`${row.name || "이 사람"}의 ${c.name || "항목"} 1회 추가 (우클릭: 마지막 1회 취소)`}
                                 >
                                   {/* 숫자가 주인공 — 누르기 전엔 옅은 ＋만, 누른 뒤엔 가운데 큰 횟수 */}
                                   {n > 0 ? (
@@ -11112,6 +11102,10 @@ export default function GoldSettlement() {
                                   {readOnly && you && you.rowId === row.id && cfFlash && cfFlash.id === c.id && (
                                     <i className="gs-cf-flash" key={cfFlash.t} aria-hidden="true" />
                                   )}
+                                  {/* 방금 누른 칸 (2026-09-26) — 눈금 60초 · 취소 칩 1초 · 늦은 취소의 파란 표 */}
+                                  {cl && cl.tick && <PressTick key={cl.tick.id} t={cl.tick.t} />}
+                                  {cl && cl.chip && <i className="gs-hit-chip" key={cl.chip} aria-hidden="true">취소</i>}
+                                  {cl && cl.mark > 0 && <i className="gs-hit-mark" aria-hidden="true">−{cl.mark}</i>}
                                 </button>
                               </div>
                             </td>
@@ -11653,7 +11647,7 @@ export default function GoldSettlement() {
                         en.mode === "forward" ? " (지금부터)" : ""
                       }`}
                     {en.kind === "press" && `${en.item || "항목"} ${signedMan(en.delta)}`}
-                    {en.kind === "confess" && `${en.n < 0 ? "자수 정정" : "자수"} — ${en.item || "항목"} ${signedMan(en.delta)}`}
+                    {en.kind === "confess" && `${en.n < 0 ? "자수 취소" : "자수"} — ${en.item || "항목"} ${signedMan(en.delta)}`}
                     {en.kind === "extra" && `${en.item || "기타"} ${signedMan(en.delta)}`}
                     {en.kind === "extra-del" &&
                       `${en.item || "기타"} 삭제 ${signedMan(en.delta)}`}
@@ -12128,66 +12122,6 @@ export default function GoldSettlement() {
             {vcard.t || ""}{" "}
             <em>{(vcard.g > 0 ? "+" : "−") + man(Math.abs(vcard.g))}</em>
           </span>
-        </div>
-      )}
-      {/* 방금 누른 것 — 아래가 고정이고 위로 자랍니다. 새 줄이 맨 아래에 붙어서
-          방금 누른 것은 늘 같은 자리에 있습니다. 올려 두면 시계가 멈춥니다. */}
-      {!readOnly && burstRows.length > 0 && (
-        <div
-          className="gs-press"
-          onMouseEnter={() => setBurstHold(true)}
-          onMouseLeave={() => {
-            setBurstHold(false);
-            setBurstKey((k) => k + 1); // 손을 떼면 시계도 막대도 처음부터
-          }}
-        >
-          <div className="gs-press-track">
-            <i
-              className="gs-press-bar"
-              key={burstKey}
-              style={{ animationDuration: BURST_MS + "ms" }}
-              aria-hidden="true"
-            />
-          </div>
-          <div className="gs-press-head">
-            방금 바뀐 <b>{burstRows.length}건</b>
-          </div>
-          <ul className="gs-press-rows">
-            {burstRows.map((e) => {
-              /* 1분 안에 정정된 줄 — 카드의 ✕로든 우클릭으로든 같은 그림: 남겨 두고 긋는다 (2026-09-24 사용자 확정) */
-              const done = !!e.cancelled || struck.includes(e.id);
-              return (
-              /* 왼쪽 색 띠 — 늘면 붉게, 정정(줄면) 푸르게 (2026-09-07 사용자: 정정 칩과 부호 색만으로는 구분이 약하다) */
-              <li key={e.id} className={(e.delta < 0 ? "dn" : "up") + (done ? " done" : "")}>
-                {/* 왼쪽 눈금 — 위에서 아래로 시간이 흐릅니다. 방금 것과 아까 것이 한눈에 갈립니다 */}
-                <span className="gs-press-ago">
-                  {Math.max(0, Math.floor((burstNow - e.t) / 1000))}초 전
-                </span>
-                <b>{e.name}</b>
-                {/* 파티원이 누른 것과 방장이 누른 것을 갈라 봅니다 — 안 그러면 "내가 저걸 눌렀나?"가 됩니다 */}
-                {e.kind === "confess" && (
-                  <span className="gs-press-conf">{e.n < 0 ? "자수 정정" : "자수"}</span>
-                )}
-                {/* 룰렛으로 붙은 건도 갈라 봅니다 — 안 그러면 누른 적 없는 줄이 끼어든 것으로
-                    읽힙니다. 자수 칩과 같은 자리·같은 결. 라벨은 초안 (2026-09-08) */}
-                {e.kind === "roulette" && <span className="gs-press-conf">룰렛</span>}
-                <i>{e.item}</i>
-                <u className={e.delta < 0 ? "dn" : undefined}>
-                  {(e.delta > 0 ? "+" : "−") + man(Math.abs(e.delta))}
-                </u>
-                {!done && (
-                  <button
-                    className="gs-press-x"
-                    onClick={() => cancelEntry(e)}
-                    aria-label={(e.name || "이 줄") + " " + (e.item || "항목") + " 취소"}
-                  >
-                    ✕
-                  </button>
-                )}
-              </li>
-              );
-            })}
-          </ul>
         </div>
       )}
       {toast && (
@@ -15795,7 +15729,7 @@ const HOST_STEPS = [
     sel: ".gs-grid tbody tr[data-row='r2'] .gs-hit[aria-label^='실리안의 죽음']",
     text: (
       <>
-        아, 죽은 건 실리안이 아니라 니나브였어요. 실리안 줄의 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 1회 빼요.
+        아, 죽은 건 실리안이 아니라 니나브였어요. 실리안 줄의 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 취소해요.
       </>
     ),
     wait: "unpress:r2:c2",
@@ -17465,9 +17399,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rec{font-style:normal; font-size:11px; letter-spacing:.06em; color:var(--gold); border:1px solid rgba(var(--gold-rgb),.7); padding:1px 6px; border-radius:2px; line-height:1.5}
 .gs-helpseen{font-size:11px; letter-spacing:.04em; color:var(--ink-body); border:1px solid rgba(var(--ink-rgb),.35); padding:1px 6px; border-radius:2px; line-height:1.5}
 .gs-helppop .gs-guide-foot{font-size:12.5px; color:var(--ink-body)}
-.gs-pressing{padding-bottom:300px}
 .gs-coaching{padding-bottom:200px} /* 예시 앱 바닥 여백 — 표 아래 말풍선을 토스트 자리 위로 올릴 스크롤 여지 (2026-09-06 낮) */
-/* (폐기 2026-09-24) .gs-coaching .gs-press{display:none} — 카드가 덮던 표 아래 줄이 없어졌고, 2장이 이 카드를 가리킨다 */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach.gs-coach-top{z-index:65} /* 시트(50)·작은 창(.gs-seatpop 60) 안을 가리킬 때만 (2026-09-06 · 2026-09-24) */
 .gs-coach-ring{position:fixed; border:2px solid var(--gold); border-radius:6px; pointer-events:none}
@@ -18448,60 +18380,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-fxcard.roul b::before{content:'\u25ce '; color:var(--gold)}
 @keyframes gs-fxin{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
 @media (prefers-reduced-motion:reduce){ .gs-fxcard{animation:none} }
-/* 방금 누른 것 — 장부 결로. 줄 사이는 점선, 숫자는 고정폭.
-   취소는 올린 줄에만 나타나서 평소에는 읽기만 하는 카드입니다. */
-/* 룩 (2026-09-24 사용자 확정, 목업 recent ②) — 직각 2px, 색 띠 2px, 글꼴은 조작부 산스(명조·모노는 종이에만). 폭 360 → 340 */
-.gs-press{position:fixed; right:18px; bottom:18px; z-index:45; width:340px;
-  background:var(--paper-2); border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px;
-  box-shadow:0 8px 24px rgba(var(--shadow-rgb),.35); overflow:hidden;
-  animation:gs-press-in .16s ease-out}
-/* 남은 시간 — 묶음 전체에 하나뿐인 시계입니다 */
-.gs-press-track{height:2px; background:rgba(var(--ink-rgb),.09)}
-.gs-press-bar{display:block; height:2px; background:rgba(var(--gold-rgb),.85);
-  transform-origin:left; animation:gs-press-run linear forwards}
-@keyframes gs-press-run{from{transform:scaleX(1)} to{transform:scaleX(0)}}
-.gs-press:hover .gs-press-bar{animation-play-state:paused}
-.gs-press-head{padding:8px 12px 7px; font-size:12px; color:var(--ink-2);
-  border-bottom:1px solid rgba(var(--ink-rgb),.1)}
-.gs-press-head{display:flex; align-items:baseline; gap:5px}
-.gs-press-head b{color:var(--ink); font-weight:600; font-size:12.5px; font-variant-numeric:tabular-nums}
-.gs-press-rows{list-style:none; margin:0; padding:0}
-.gs-press-rows li{display:flex; align-items:center; gap:8px; padding:8px 10px; min-height:36px;
-  border-left:2px solid var(--red)} /* 색 띠 — 늘면 붉게, 정정은 푸르게 (2026-09-07 사용자) */
-.gs-press-rows li.dn{border-left-color:var(--blue)}
-.gs-press-rows li + li{border-top:1px dotted rgba(var(--ink-rgb),.13)}
-.gs-press-rows b{font-weight:600; font-size:14px; color:var(--ink)}
-.gs-press-rows i{font-style:normal; font-size:13px; color:var(--ink-body)}
-/* 왼쪽 눈금 — 자릿수가 늘어도 이름이 안 밀리게 폭을 잡아 둡니다 */
-.gs-press-ago{flex:none; min-width:44px; text-align:right; font-variant-numeric:tabular-nums;
-  font-size:11px; color:var(--ink-2); opacity:.8; white-space:nowrap}
-.gs-press-rows u{text-decoration:none; margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums;
-  font-size:13.5px; color:var(--red)}
-/* 정정된 줄 — 1분 안이면 지우지 않고 긋는다 (2026-09-24 사용자 확정). 색 띠는 잉크로, ✕ 는 없다 */
-.gs-press-rows li.done{border-left-color:rgba(var(--ink-rgb),.25)}
-.gs-press-rows li.done b,.gs-press-rows li.done i,.gs-press-rows li.done u{text-decoration:line-through; text-decoration-thickness:1.5px;
-  text-decoration-color:rgba(var(--ink-rgb),.6); color:var(--ink-2)}
-.gs-press-rows li.done .gs-press-ago{opacity:.5}
-/* 좁은 화면 — 무대 밖에 카드 자리가 없으면(뷰포트 < 1080 + 2×(340+18)) 같은 카드를 작게. 묶음은 그대로 보이고 덮는 넓이만 준다 (목업 recent ⑤) */
-@media (max-width:1795px){
-  .gs-press{width:300px}
-  .gs-press-rows li{padding:6px 8px 6px 9px; min-height:32px; gap:7px}
-  .gs-press-rows b{font-size:13px} .gs-press-rows i{font-size:12px} .gs-press-rows u{font-size:12.5px}
-  .gs-press-ago{min-width:40px; font-size:10.5px}
-  .gs-press-head{padding:6px 10px 5px; font-size:11.5px}
-}
-.gs-press-rows u.dn{color:var(--blue)}
-.gs-press-x{width:24px; height:24px; flex:none; display:grid; place-items:center; padding:0;
-  border:1px solid transparent; background:transparent; color:var(--ink-2); font:inherit;
-  font-size:12px; border-radius:2px; cursor:pointer; opacity:0}
-.gs-press-rows li:hover .gs-press-x,.gs-press-x:focus-visible{opacity:1;
-  border-color:rgba(var(--ink-rgb),.28)}
-.gs-press-x:hover{color:var(--ink); background:rgba(var(--ink-rgb),.1)}
-@keyframes gs-press-in{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
-@media (prefers-reduced-motion:reduce){
-  .gs-press{animation:none}
-  .gs-press-bar{animation:none; transform:scaleX(1)}
-}
 .gs-toast{position:fixed; left:50%; bottom:max(18px,4vh); transform:translateX(-50%);
   z-index:70; max-width:min(560px,92vw); padding:12px 18px; border-radius:6px;
   background:var(--paper,#2a2320); color:var(--ink); font-size:13.5px; line-height:1.65;
@@ -19439,9 +19317,6 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-tab-confess{border-color:rgba(var(--gold-rgb),.55)}
 .gs-tab-confess.on{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
 
-/* ── 자수가 왔다는 표시 ── */
-.gs-press-conf{flex:none; font-size:10px; letter-spacing:.08em; color:var(--gold);
-  border:1px solid rgba(var(--gold-rgb),.5); border-radius:2px; padding:1px 4px}
 /* 자수로 바뀐 칸이 잠깐 번쩍입니다 — 방장의 눈은 판에 있습니다 */
 .gs-hit-conf{animation:gs-confflash 1.1s ease-out}
 @keyframes gs-confflash{
@@ -19453,6 +19328,22 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* ── 파티원 화면 (2026-09-17) — 방장 화면 그대로, 남의 줄·카드는 흐리게 ── */
 .gs-row-far > th .gs-namecell,.gs-row-far > td.gs-sumcell{opacity:.5}
 .gs-hit .gs-cf-tick{border-radius:0 0 0 3px}
+/* ── 방금 누른 칸 (2026-09-26 사용자 확정, 목업 press2) — 칸은 마지막에 한 일을 보여 줍니다 ──
+   누름: 금색 눈금이 60초 동안 왼쪽에서 줄어듭니다(파티원 칸의 30초 눈금과 같은 부품; 마감이 아니라 "방금"의 표시).
+   눈금 안의 취소: [취소] 칩 1초 — 방금 것을 고친 건 지나갑니다. 눈금이 꺼진 뒤의 취소: 파란 −n 표가 다음에 그 칸을
+   건드릴 때까지 남습니다 — 오래된 것을 지운 건 남아야 합니다(사용자: 잠깐 보여 주면 곤란하다).
+   (폐기) 오른쪽 아래 '방금 바뀐' 카드(.gs-press) — 사용자: 쓸모가 없다, 눈이 칸을 떠난다 */
+.gs-hit-tick{position:absolute; left:0; bottom:0; width:100%; height:2px; background:var(--gold); border-radius:0 0 0 3px;
+  transform-origin:left; animation:gs-tick-run linear forwards; pointer-events:none}
+@keyframes gs-tick-run{from{transform:scaleX(1)} to{transform:scaleX(0)}}
+.gs-hit-chip,.gs-hit-mark{position:absolute; right:5px; top:4px; font-family:inherit; font-style:normal; font-weight:600; font-size:11px; line-height:1;
+  pointer-events:none; font-variant-numeric:tabular-nums}
+.gs-hit-chip{padding:3px 6px; border-radius:2px; background:var(--ink); color:var(--paper); animation:gs-chip 1.2s ease-out forwards}
+@keyframes gs-chip{0%{opacity:0; transform:translateY(-3px)} 12%{opacity:1; transform:none} 75%{opacity:1} 100%{opacity:0}}
+.gs-hit-mark{color:var(--blue)}
+.gs-rd-hit .gs-hit-chip,.gs-rd-hit .gs-hit-mark{top:2px; right:4px; font-size:10px}
+.gs-rd-hit .gs-hit-chip{padding:2px 4px}
+@media (prefers-reduced-motion:reduce){ .gs-hit-tick{animation:none} .gs-hit-chip{animation:none; opacity:0} }
 /* ── 빈 초상화 팝오버 (2026-09-18) ── */
 .gs-seatpopwrap{position:relative; display:inline-flex}
 .gs-rd-picbtn{border:0; padding:0; cursor:pointer; font:inherit}
