@@ -3399,8 +3399,9 @@ export default function GoldSettlement() {
     const host = demoHostName();
     setRoundName("예시 파티");
     setCols(DEFAULT_COLS.filter((c) => !isRoulette(c)));
-    setRows((prev) => prev.map((r) => (r.id === "r1" ? { ...r, name: host } : r)));
-    putSeats((prev) => prev.map((s) => (s.id === "r1" ? { ...s, name: host, named: true } : s)));
+    /* 2번 줄 실리안은 방장이 미리 적어 둔 이름 — 3장의 "적어 둔 줄" 배치가 이 이름을 쓴다 (2026-09-25; 적기 걸음이면 다른 이름을 적을 수 있어 부팅 때 적는다) */
+    setRows((prev) => prev.map((r) => (r.id === "r1" ? { ...r, name: host } : r.id === "r2" ? { ...r, name: "실리안" } : r)));
+    putSeats((prev) => prev.map((s) => (s.id === "r1" ? { ...s, name: host, named: true } : s.id === "r2" ? { ...s, name: "실리안", named: true } : s)));
     setMembers([]);
   };
   /* 더미 파티원 — 명단에 st:"ok"·rowId 없음으로 넣으면 시작 전 규칙대로 앱이 첫 빈 자리에 앉힙니다(앉음 강조·토스트 그대로).
@@ -3436,9 +3437,11 @@ export default function GoldSettlement() {
      3번 줄은 이름을 안 적은 채 숫자만 — 5장에서 니나브가 배치되며 닉네임이 채워진다. 줄을 통째로 세우므로 기록에는 안 남는다
      (기록은 그 앞 걸음에서 방장이 직접 누른 것으로 보였다). (폐기) 서른여덟 번 누르던 tutSeed · 혼자 쓰기 tutSoloSeed */
   const tutSeed = () => {
-    const next = tutRows(demoHostName());
-    setRows((prev) => next.map((r, i) => ({ ...(prev[i] || {}), ...r })));
-    putSeats((prev) => next.map((r, i) => ({ ...(prev.find((s) => s.id === r.id) || { id: r.id, acct: null, mem: null }), name: r.name, named: i !== 2 })));
+    setRows((prev) => {
+      const r3 = (prev.find((r) => r.id === "r3") || {}).name; // 3장에서 니나브가 붙으며 채워진 이름 그대로
+      return tutRows(demoHostName(), r3).map((r, i) => ({ ...(prev[i] || {}), ...r }));
+    });
+    putSeats((prev) => prev.map((s, i) => (TUT_NAMES[i] && i > 2 ? { ...s, name: TUT_NAMES[i], named: true } : s)));
   };
   /* 걸음에 들어설 때 하는 일 — 웨이 도착(4장 사람 아이콘 걸음), 판 채우기(5장 머리) */
   const tutEntered = useRef(-1);
@@ -3453,10 +3456,7 @@ export default function GoldSettlement() {
     /* (폐기 2026-09-06 낮) enter:"handoff" — 걸음에 들어서자마자 파티원 예시를 얹던 것. 지금은 [실리안의 화면 보기]를 눌러야(onNext) */
     /* (폐기 2026-09-24) enter:"wei"(대기 줄) · "soloseed"(혼자 쓰기) */
     if (st.enter === "arrive:ninav") tutArrive("ninav"); // 5장 — 실리안을 놓은 뒤 니나브가 들어온다
-    if (st.enter === "seed") {
-      partyT(tutSeed, 300);
-      partyT(() => setCoach((c) => (c && c.kind === "party" ? { ...c, ready: true } : c)), 1400); // 채우기 끝 → [다음 장] 등장 (여덟 줄을 한 번에 세운다)
-    }
+    if (st.enter === "seed") tutSeed(); // 6장에 들어서며 바로 — 기다림 걸음 없이 첫 말풍선이 말한다 (2026-09-25)
   }, [coach]);
   /* 4장(파티원 예시)이 끝나 방장 예시로 돌아올 때 — 실리안이 거기서 누른 잡힘 1이 그제야 올라오고(토스트도 진짜처럼) 5장으로.
      리스너는 첫 렌더의 클로저라 최신 tutConfess·걸음은 ref 로 봅니다 */
@@ -5678,7 +5678,7 @@ export default function GoldSettlement() {
          열은 방장이 1장에서 만든 뒤와 같게 잡힘·죽음·암살 — 룰렛 없음 (2026-09-06 낮 사용자). 독립 파티원 튜토리얼도 같은 판.
          (폐기) 넷이 잡힘 1회씩인 판 · 6장 예시의 빈 판과 초대장(vlobby) */
       setCols([...DEFAULT_COLS.filter((c) => !isRoulette(c)), { id: "ctut", name: "암살", price: "100,000" }]);
-      setRows(tutRows(demoHostName(), "니나브"));
+      setRows(tutRows(demoHostName(), "니나브", DEMO_CH4)); // 4장 예시는 세기 전(숫자·4번 줄부터 이름 없음), 독립 파티원 튜토리얼은 채워진 판
       setOwnerNick(demoHostName());
       const rd = realDcAva();
       setRows2v([
@@ -7476,6 +7476,7 @@ export default function GoldSettlement() {
       return;
     }
     courseHit(dir > 0 ? "press" : "unpress");
+    courseHit((dir > 0 ? "press:" : "unpress:") + row.id + ":" + col.id); // 튜토리얼 5장 — 줄·칸을 짚는 걸음 (2026-09-25)
     const before = liveN(row, col.id);
     if (dir > 0 ? before >= MAX_COUNT : before <= 0) return;
     const priceG = Math.round(goldOf(col.price));
@@ -9067,7 +9068,7 @@ export default function GoldSettlement() {
              독립 파티원 튜토리얼은 걸음 점 여섯 개. [그만두기]는 없습니다 — ✕·Esc 가 나가는 길 */
           const st = coach && coach.kind === "party" ? TOUR_FLOW[coach.step] : null;
           const soloMember = DEMO_MEMBER && !DEMO_CH4;
-          const ch = st ? st.ch : DEMO_CH4 ? 5 : 0;
+          const ch = st ? st.ch : DEMO_CH4 ? 3 : 0;
           const inCh = TOUR_FLOW.filter((x) => x.ch === ch);
           const shown = inCh.filter((x) => x.wait !== "auto");
           const cur = st ? Math.max(1, shown.indexOf(st) + 1 || inCh.slice(0, inCh.indexOf(st) + 1).filter((x) => x.wait !== "auto").length) : 0;
@@ -9470,7 +9471,7 @@ export default function GoldSettlement() {
                     역할 문구 — 파티원은 사용자 지정, 방장은 초안. (폐기, 같은 날) 한 줄에 이름·서브·버튼 안 `추천` */}
                 {/* (폐기 2026-09-24) 혼자 쓰기 행 — 방장 코스 1~4장이 혼자 쓰는 전부라 흡수. 잠금(TUTORIALS_OFF, 09-15~24)도 풀었다 */}
                 {[
-                  { k: "host", name: "방장 튜토리얼", role: "벌금표를 쓰고 파티원을 부르는 사람", sub: TOUR_CHAPTERS.length + "장 · 표 쓰기부터 파티원까지", seen: coachSeen("party"), go: startPartyCourse },
+                  { k: "host", name: "방장 튜토리얼", role: "벌금표를 쓰고 파티원을 부르는 사람", sub: TOUR_CHAPTERS.length + "장 · 표 쓰기부터 정산까지", seen: coachSeen("party"), go: startPartyCourse },
                   { k: "member", name: "파티원 튜토리얼", role: "초대를 받은 사람", sub: MEMBER_STEPS.filter((x) => x.wait !== "auto").length + "걸음 · 자수와 내 방송 주소", seen: coachSeen("mtour"), go: startMemberTour },
                 ]
                   .sort((a, b) => (a.k === recKey ? -1 : b.k === recKey ? 1 : 0))
@@ -15632,75 +15633,70 @@ function MouseIcon({ side }) {
    걸음 종류: wait(표적을 눌러야 넘어감) · action(가리키기, [다음]/[다음 장]) · wait:"auto"(기다림, 잠김).
    ch 는 장 번호(0부터). enter/exit 은 걸음에 들어설 때·나갈 때 하는 일. 문구는 전부 초안 */
 /* 파티원 화면은 4장 — 파티원을 모은 직후, 벌금 세기 전에 (2026-09-06 낮 사용자 확정; (폐기) 맨 끝 8장) */
-/* 걸음표 (2026-09-24 사용자 확정 — §3.9 개정). 방장 6장: 표 → 정산 → 방송 → 파티. 표가 주인이고 초대는 얹는 것(09-19 밤 합의)이라 1~4장이 혼자 쓰는
-   전부이고 5·6장이 파티원. 파티원 화면(6장)은 5장 바로 뒤 — "모으기 바로 뒤"(09-06)는 그대로. 6장에 초대장은 없다(방장은 초대장을 볼 일이 없고,
-   시간이 거꾸로 가는 설명이 거기서 났다). 배치는 두 번 — 이름을 적어 둔 줄(실리안), 안 적은 줄(니나브 — 닉네임이 채워진다).
-   (폐기 2026-09-24) 옛 8장(판 만들기·모으기·[시작]·자리 정하기·정산 끝내기·로비 판 기록 — §3.12 에 없는 화면) · 혼자 쓰기 5장(방장 코스에 흡수) ·
-   TUTORIALS_OFF 잠금(2026-09-15~24) */
-const TOUR_CHAPTERS = ["이름과 항목", "벌금 세기", "정산", "방송에 띄우기", "파티원 부르기", "파티원 화면"];
+/* 걸음표 (2026-09-25 사용자 확정 — §3.9 개정 2차). 방장 6장은 하루의 순서 — 표 만들고(이름과 항목) → 방송 켜고 → 파티원 부르고 → 파티원이 자수하고 →
+   세고 → 정산. (폐기 09-25) 표 → 정산 → 방송 → 파티 순서(혼자 쓰는 사람을 앞에 두느라 파티를 뒤로 보낸 것 — 사용자: 옛 순서가 좋았다) ·
+   '방금 바뀐' 카드 걸음(누르면 저절로 나타나고 ✕가 붙어 있어 찾아야 할 것이 아니다) · "여덟이 한 판 돌았다고 칠게요…" 기다림 걸음(정산 첫 말풍선 한 문장으로).
+   세기 걸음은 누르는 곳이 다 다르다(사용자 09-25: 같은 곳만 누르니 좋지 않다) — 니나브 잡힘 → 실리안 죽음 → 그 칸 우클릭 → 니나브 죽음.
+   6장(파티원 화면)에 초대장은 없다(09-24). 배치는 두 번 — 이름을 적어 둔 줄(실리안, 부팅 때 적어 둔다), 안 적은 줄(니나브 — 닉네임이 채워진다).
+   (폐기 2026-09-24) 옛 8장 · 혼자 쓰기 5장 · TUTORIALS_OFF 잠금 */
+const TOUR_CHAPTERS = ["이름과 항목", "방송에 띄우기", "파티원 부르기", "파티원 화면", "벌금 세기", "정산"];
 const HOST_STEPS = [
-  /* 1장 이름과 항목 — 이름·단가는 가리키기만, 항목 추가는 직접 (2026-09-06 사용자). 더하는 항목은 암살 10만(옛 예시 셋째 열이라 2장 숫자가 맞는다) */
-  { ch: 0, sel: ".gs-grid tbody tr[data-row='r2'] .gs-in-name", text: "파티원 이름은 여기 적어요. 비워 두면 (모험가2)로 나가요.", action: "다음", lock: true },
+  /* 1장 이름과 항목 — 이름·단가는 가리키기만, 항목 추가는 직접 (2026-09-06 사용자). 실리안은 부팅 때 적어 둔다(3장의 "적어 둔 줄" 배치가 그 이름을 쓴다) */
+  { ch: 0, sel: ".gs-grid tbody tr[data-row='r2'] .gs-in-name", text: "파티원 이름은 여기 적어요. 실리안은 미리 적어 뒀어요. 비워 두면 (모험가2)로 나가요.", action: "다음", lock: true },
   { ch: 0, sel: ".gs-grid thead .gs-colh-price", text: "1회 단가는 여기를 누르면 고쳐요. 항목 이름은 바로 위 글자를 누르면 되고요.", action: "다음", lock: true },
   { ch: 0, sel: ".gs-addcol", text: "암살도 세 볼까요? 항목을 하나 더 만들어요.", wait: "addcol:open" },
   { ch: 0, sel: ".gs-modal .gs-coltype .gs-coltype-pick:first-child", text: "보통 항목을 골라요.", wait: "addcol:done", top: true },
-  { ch: 0, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-col", text: "새 열이 생겼어요. 이름 칸에 암살이라고 적고 [다음].", action: "다음" },
-  { ch: 0, sel: ".gs-grid thead .gs-colh[data-col='ctut'] .gs-in-price", text: "1회 10만이면 10. 적고 [다음]. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음 장" }, // 사용자 지정 문구 (2026-09-06 낮)
-  /* 2장 벌금 세기 — 누르기 · 방금 바뀐 카드 · 우클릭 되돌리기 · 기록 · 여덟 명 채우기. colfix 는 1장을 떠난 뒤(이름·단가를 안 적었으면 암살·10만) */
+  { ch: 0, sel: ".gs-grid thead .gs-colh[data-col='ctut']", text: "새 열이 생겼어요. 이름 칸에 암살, 단가 칸에 10을 적고 [다음 장]. 1회 10만이면 10. 항목 이름 옆 ×를 눌러, 항목을 삭제할 수도 있어요.", action: "다음 장" }, // 사용자 지정 문구(2026-09-06 낮) 포함
+  /* 2장 방송에 띄우기 — 발급까지. colfix 는 1장을 떠난 뒤(이름·단가를 안 적었으면 암살·10만) */
+  { ch: 1, sel: ".gs-obsbtn", text: "방송에 띄우려면 여기예요.", wait: "obs", enter: "colfix" },
+  { ch: 1, sel: ".gs-modal .gs-obs-two .gs-authgo:not(.gs-dcbtn)", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 연동 없이도 받을 수 있어요.", wait: "obsgot", top: true },
+  { ch: 1, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. [복사]해서 OBS 브라우저 소스에 한 번만 넣으면 파티가 바뀌어도 그대로예요. 넣는 법은 이 창의 [OBS에 넣는 방법]에 있어요.", action: "다음 장", lock: true, top: true, exit: "closeObs" },
+  /* 3장 파티원 부르기 — 연동 전 창까지 진짜 길을 밟고, 예시 앱만 연동된 것으로 (09-24 사용자 확정 ③). 배치는 두 번 (사용자 지정) */
+  { ch: 2, sel: ".gs-ptybtn", text: "파티원을 불러 볼게요. 여기예요.", wait: "party:open" },
+  { ch: 2, sel: ".gs-seatpop .gs-dcbtn", text: "초대하려면 Discord 연동이 먼저예요. 예시라 진짜 연동은 안 해요. 눌러요.", wait: "dclink", top: true },
+  { ch: 2, sel: ".gs-seatpop .gs-lbstart", text: "초대 메시지를 복사해 Discord에 붙여 넣으면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link", top: true },
+  { ch: 2, sel: ".gs-ptybtn", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto", after: "다음" }, // 실리안이 들어오면 [다음] — 자동 넘김 없음
+  { ch: 2, sel: ".gs-grid tbody tr[data-row='r2'] .gs-rowi-empty", text: "실리안이 들어왔어요. 사람이 안 붙은 줄의 사진 자리가 켜졌죠. 실리안 줄을 눌러 배치해요.", wait: "place:silian" },
+  { ch: 2, sel: ".gs-grid tbody tr[data-row='r3'] .gs-rowi-empty", text: "니나브도 왔어요. 이름을 안 적은 줄에 놓으면 닉네임이 들어가요. (모험가3) 줄을 눌러요.", wait: "place:ninav", enter: "arrive:ninav" },
+  /* 4장 파티원 화면 — [실리안의 화면 보기]를 눌러야 파티원 예시가 위에 번져 나온다 (2026-09-06 낮 사용자: 자동은 뜬금없다). 돌아오면(party-demo-resume)
+     실리안이 거기서 누른 잡힘 1이 올라오고 5장 */
+  { ch: 3, sel: ".gs-ptybtn", text: "둘 다 붙었어요. 자리를 옮기거나 내보낼 땐 [파티원]이에요. 그런데 실리안 쪽에선 어떻게 보일까요?", lock: true, action: "실리안의 화면 보기", exit: "handoff" },
+  /* 5장 벌금 세기 — 누르는 곳이 다 다르다: 니나브 잡힘(누르기) → 실리안 죽음(누르기) → 같은 칸 우클릭(빼기) → 니나브 죽음(누르기). 끝에 [기록] */
   {
-    ch: 1,
-    sel: ".gs-grid tbody tr[data-row='r1'] .gs-hit",
+    ch: 4,
+    sel: ".gs-grid tbody tr[data-row='r3'] .gs-hit[aria-label^='니나브의 잡힘']",
     text: (
       <>
-        방장은 칸을 직접 눌러요. <MouseIcon side="left" /> 누르면 1회. 한번 눌러 보세요.
+        실리안이 자수한 잡힘 1회가 올라와 있죠? 방장은 누구 칸이든 직접 눌러요. 니나브가 잡혔어요. 니나브 줄의 잡힘 칸을 <MouseIcon side="left" /> 눌러요.
       </>
     ),
-    wait: "press",
-    enter: "colfix",
+    wait: "press:r3:c1",
   },
-  { ch: 1, sel: ".gs-press", text: "방금 누른 건 오른쪽 아래 카드에 모여요. 잘못 눌렀으면 ✕로 취소해요.", action: "다음", lock: true },
+  { ch: 4, sel: ".gs-grid tbody tr[data-row='r2'] .gs-hit[aria-label^='실리안의 죽음']", text: "이번엔 실리안이 죽었어요. 실리안 줄의 죽음 칸을 눌러요.", wait: "press:r2:c2" },
   {
-    ch: 1,
-    sel: ".gs-grid tbody tr[data-row='r1'] .gs-hit",
+    ch: 4,
+    sel: ".gs-grid tbody tr[data-row='r2'] .gs-hit[aria-label^='실리안의 죽음']",
     text: (
       <>
-        같은 칸을 <MouseIcon side="right" /> 우클릭해도 되돌려요. 해 보세요.
+        아, 죽은 건 실리안이 아니라 니나브였어요. 실리안 줄의 죽음 칸을 <MouseIcon side="right" /> 우클릭해서 1회 빼요.
       </>
     ),
-    wait: "unpress",
+    wait: "unpress:r2:c2",
   },
-  { ch: 1, sel: ".gs-logbtn", text: "누른 기록이 전부 남아요. 취소도 여기서 해요.", action: "다음", lock: true },
-  /* after — 채우기가 끝나면 그제야 [다음 장]이 나타나고, 넘어가는 건 사용자 몫 (2026-09-06 낮 사용자: 템포) */
-  { ch: 1, sel: ".gs-grid", text: "여덟이 한 판 돌았다고 칠게요…", lock: true, wait: "auto", after: "다음 장", enter: "seed" },
-  /* 3장 정산 — 정산 내역이 어두운 막에 가리면 안 된다 (2026-09-06 사용자). [비우기]는 가리키기만 */
-  { ch: 2, sel: ".gs-tab-ledger", text: "누른 게 사람별로 정산돼 있어요. 수수료도 여기서 정해요.", wait: "tab:ledger", clear: true },
-  { ch: 2, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. [Discord 공유용 복사]로 붙여 넣어요.", wait: "tab:mail", clear: true },
-  { ch: 2, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
-  { ch: 2, sel: ".gs-wipebtn", text: "다음 판은 [비우기]. 숫자만 0이 되고 이름·항목은 남아요. [되돌리기]도 있어요.", action: "다음 장", lock: true, clear: true },
-  /* 4장 방송에 띄우기 — 발급까지. 혼자 쓰는 사람은 여기까지 */
-  { ch: 3, sel: ".gs-obsbtn", text: "방송에 띄우려면 여기예요.", wait: "obs" },
-  { ch: 3, sel: ".gs-modal .gs-obs-two .gs-authgo:not(.gs-dcbtn)", text: "주소는 계정마다 하나예요. 없으면 여기서 받아요. 연동 없이도 받을 수 있어요.", wait: "obsgot", top: true },
-  { ch: 3, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. 파티가 바뀌어도 그대로. [복사]로 가져가요.", action: "다음", lock: true, top: true },
-  { ch: 3, sel: ".gs-modal .gs-obs-lineact", text: "브라우저 소스로 넣는 법은 여기. 한 번만 넣으면 돼요. 혼자 쓸 거면 여기까지예요.", action: "다음 장", lock: true, top: true, exit: "closeObs" },
-  /* 5장 파티원 부르기 — 연동 전 창까지 진짜 길을 밟고, 예시 앱만 연동된 것으로 (사용자 확정 ③). 배치는 두 번 (사용자 지정) */
-  { ch: 4, sel: ".gs-ptybtn", text: "파티원을 불러 볼게요. 여기예요.", wait: "party:open" },
-  { ch: 4, sel: ".gs-seatpop .gs-dcbtn", text: "초대하려면 Discord 연동이 먼저예요. 예시라 진짜 연동은 안 해요. 눌러요.", wait: "dclink", top: true },
-  { ch: 4, sel: ".gs-seatpop .gs-lbstart", text: "초대 메시지를 복사해 Discord에 붙여 넣으면 돼요. 보내는 건 이번엔 저희가 대신할게요.", wait: "link", top: true },
-  { ch: 4, sel: ".gs-ptybtn", text: "보냈어요. 사람들이 들어올 거예요…", lock: true, wait: "auto", after: "다음" }, // 실리안이 들어오면 [다음] — 자동 넘김 없음
-  { ch: 4, sel: ".gs-grid tbody tr[data-row='r2'] .gs-rowi-empty", text: "실리안이 들어왔어요. 사람이 안 붙은 줄의 사진 자리가 켜졌죠. 실리안 줄을 눌러 배치해요.", wait: "place:silian" },
-  { ch: 4, sel: ".gs-grid tbody tr[data-row='r3'] .gs-rowi-empty", text: "니나브도 왔어요. 이름을 안 적은 줄에 놓으면 닉네임이 들어가요. (모험가3) 줄을 눌러요.", wait: "place:ninav", enter: "arrive:ninav" },
-  { ch: 4, sel: ".gs-ptybtn", text: "둘 다 붙었어요. 자리를 옮기거나 내보낼 땐 [파티원]이에요.", action: "다음 장", lock: true },
-  /* 6장 파티원 화면 — [실리안의 화면 보기]를 눌러야 파티원 예시가 위에 번져 나온다 (2026-09-06 낮 사용자: 자동은 뜬금없다). 돌아오면(party-demo-resume)
-     실리안이 거기서 누른 잡힘 1이 올라오고 마지막 걸음 */
-  { ch: 5, sel: ".gs-grid", text: "그런데 실리안 쪽에선 어떻게 보일까요?", lock: true, action: "실리안의 화면 보기", exit: "handoff" },
-  { ch: 5, sel: ".gs-grid tbody tr[data-row='r2']", text: "실리안이 자수한 잡힘이 올라와 있죠? 파티원이 누른 것과 방장이 누른 게 한 표에 쌓여요. 여기까지예요.", lock: true, action: "다 봤어요" },
+  { ch: 4, sel: ".gs-grid tbody tr[data-row='r3'] .gs-hit[aria-label^='니나브의 죽음']", text: "이제 니나브 줄의 죽음 칸을 눌러요.", wait: "press:r3:c2" },
+  { ch: 4, sel: ".gs-logbtn", text: "누른 게 전부 기록에 남아요. 지난 것을 취소할 때도 여기예요.", action: "다음 장", lock: true },
+  /* 6장 정산 — 들어서며 여덟 명을 채운다(걸음 없이 한 문장). 정산 내역이 어두운 막에 가리면 안 된다 (2026-09-06 사용자). 마지막은 [비우기] 가리키기 */
+  { ch: 5, sel: ".gs-tab-ledger", text: "예시로 여덟 명의 벌금을 채웠어요. 사람별 정산은 [정산 장부]예요. 눌러요.", wait: "tab:ledger", clear: true, enter: "seed" },
+  { ch: 5, sel: ".gs-tab-mail", text: "누가 누구에게 얼마 보낼지예요. [Discord 공유용 복사]로 붙여 넣어요.", wait: "tab:mail", clear: true },
+  { ch: 5, sel: ".gs-tab-sheet", text: "벌금표로 돌아갈게요.", wait: "tab:sheet", clear: true },
+  { ch: 5, sel: ".gs-wipebtn", text: "다음 판은 [비우기]. 숫자만 0이 되고 이름·항목은 남아요. 여기까지예요.", action: "다 봤어요", lock: true, clear: true },
 ];
 /* 파티원 튜토리얼 — 파티원 예시 앱에서, 배치된 상태(실리안 자리)로 시작. 초대장은 없다(이미 들어온 사람이 보는 것 — 2026-09-06 근거 그대로).
    [발급] 걸음은 없다 — 연동 계정은 만들 때 주소를 받는다 (2026-09-24). 칸은 카드·카운터 어느 보기든 같은 aria-label 로 짚는다 */
 const MEMBER_STEPS = [
-  { ch: 5, sel: ".gs-sheetbox", text: "들어온 파티원은 같은 표를 봐요. 내 줄만 밝아요. 자리는 방장이 정해요.", action: "다음", lock: true, clear: true },
+  { ch: 3, sel: ".gs-sheetbox", text: "들어온 파티원은 같은 표를 봐요. 내 줄만 밝아요. 자리는 방장이 정해요.", action: "다음", lock: true, clear: true },
   {
-    ch: 5,
+    ch: 3,
     sel: ".gs-hit[aria-label^='실리안의 죽음']",
     text: (
       <>
@@ -15710,7 +15706,7 @@ const MEMBER_STEPS = [
     wait: "confess:c2",
   },
   {
-    ch: 5,
+    ch: 3,
     sel: ".gs-hit[aria-label^='실리안의 죽음']",
     text: (
       <>
@@ -15720,7 +15716,7 @@ const MEMBER_STEPS = [
     wait: "unconfess:c2",
   },
   {
-    ch: 5,
+    ch: 3,
     sel: ".gs-hit[aria-label^='실리안의 잡힘']",
     text: (
       <>
@@ -15729,17 +15725,17 @@ const MEMBER_STEPS = [
     ),
     wait: "confess:c1",
   },
-  { ch: 5, sel: ".gs-tabs", text: "정산 장부와 보낼 우편도 여기서 봐요.", action: "다음", lock: true },
-  { ch: 5, sel: ".gs-obsbtn", text: "내 방송에도 이 판을 띄울 수 있어요. 여기서요.", wait: "obs" },
-  { ch: 5, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. OBS 브라우저 소스에 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "알겠어요", lock: true, top: true, exit: "closeObs" },
+  { ch: 3, sel: ".gs-tabs", text: "정산 장부와 보낼 우편도 여기서 봐요.", action: "다음", lock: true },
+  { ch: 3, sel: ".gs-obsbtn", text: "내 방송에도 이 판을 띄울 수 있어요. 여기서요.", wait: "obs" },
+  { ch: 3, sel: ".gs-modal .gs-obs-addrbox", text: "이게 내 방송용 주소예요. OBS 브라우저 소스에 한 번만 넣으면 파티가 바뀌어도 그대로예요.", action: "알겠어요", lock: true, top: true, exit: "closeObs" },
 ];
-/* 방장 튜토리얼 6장(파티원 화면) — 배치된 뒤의 표부터 자수·정정까지만. 끝나면 방장 예시로 돌아간다. (폐기 2026-09-24) 초대장 걸음 */
+/* 방장 튜토리얼 4장(파티원 화면) — 배치된 뒤의 표부터 자수·정정까지만. 끝나면 방장 예시로 돌아간다. (폐기 2026-09-24) 초대장 걸음 */
 const MEMBER_INHOST = [
-  { ch: 5, sel: ".gs-sheetbox", text: "실리안에겐 같은 표가 보여요. 자기 줄만 밝고 남의 줄은 어두워요.", action: "다음", lock: true, clear: true },
+  { ch: 3, sel: ".gs-sheetbox", text: "실리안에겐 같은 표가 보여요. 자기 줄만 밝고 남의 줄은 어두워요.", action: "다음", lock: true, clear: true },
   MEMBER_STEPS[1],
   MEMBER_STEPS[2],
   MEMBER_STEPS[3],
-  { ch: 5, sel: ".gs-hit[aria-label^='실리안의 잡힘']", text: "올라갔어요. 이제 방장 화면으로 돌아가서 볼게요.", lock: true, action: "방장 화면으로" },
+  { ch: 3, sel: ".gs-hit[aria-label^='실리안의 잡힘']", text: "올라갔어요. 이제 방장 화면으로 돌아가서 볼게요.", lock: true, action: "방장 화면으로" },
 ];
 const TOUR_FLOW = DEMO_CH4 ? MEMBER_INHOST : DEMO_MEMBER ? MEMBER_STEPS : HOST_STEPS;
 const FLOW_CHAPTERS = TOUR_CHAPTERS;
@@ -15749,16 +15745,17 @@ const TUT_MEMBERS = [
   { acct: "ninav", nick: "니나브", ava: { p: 1, u: TUT_PIC("ninav") } },
 ];
 /* 여덟 명 예시 판 — 이름은 사용자 지정 8인 라벨(2026-09-06: 니나브 웨이 실리안 샨디 아제나 이난나 바훈투르 카단; 방장 줄까지 여덟이라 카단은 뺀다),
-   숫자는 옛 벌금판 예시(DEFAULT_PEOPLE) 그대로 — 여덟 명 합 172만. 3번 줄은 이름을 안 적은 줄(숫자만) — 5장에서 니나브가 배치되며 닉네임이 채워진다
-   (2026-09-24 사용자). 파티원 예시는 그 뒤라 named3 로 니나브를 받는다 */
+   숫자는 옛 벌금판 예시(DEFAULT_PEOPLE) 그대로 — 여덟 명 합 172만. 3번 줄은 3장에서 니나브가 배치되며 닉네임이 채워지는 줄이라 named3 로 받는다.
+   blank 는 4장 파티원 예시용 — 아직 세기 전이라 숫자가 없고 4번 줄부터는 이름도 없다 */
 const TUT_NAMES = [null, "실리안", "", "웨이", "샨디", "아제나", "이난나", "바훈투르"]; // null = 방장, "" = 안 적음
-const tutRows = (host, named3) =>
+const tutRows = (host, named3, blank) =>
   TUT_NAMES.map((n, i) => {
     const [, w1, w2, w3] = DEFAULT_PEOPLE[i];
+    const nm = n === null ? host : n === "" ? named3 || FILL_NAME(3) : n;
     return {
       id: "r" + (i + 1),
-      name: n === null ? host : n === "" ? named3 || FILL_NAME(3) : n,
-      counts: { c1: w1 ? String(w1) : "", c2: w2 ? String(w2) : "", ...(w3 ? { ctut: String(w3) } : {}) },
+      name: blank && i > 2 ? FILL_NAME(i + 1) : nm,
+      counts: blank ? {} : { c1: w1 ? String(w1) : "", c2: w2 ? String(w2) : "", ...(w3 ? { ctut: String(w3) } : {}) },
       extras: [],
     };
   });
@@ -15830,17 +15827,26 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
     setBox(null);
     setBh(0);
     const first = document.querySelector(sel);
-    /* 창만 세로로 움직입니다 — scrollIntoView 는 표 같은 안쪽 스크롤 상자까지 가로로 밀어서 채워지는 칸이 안 보였습니다 (2026-09-06 사용자).
-       표적과 그 아래 말풍선 자리(약 130px)가 다 보이면 그대로 둡니다. (폐기, 같은 날) center 옵션 — 스크롤이 튄다(사용자) */
+    /* 스크롤 기준 셋 (2026-09-25 사용자: 기준이 없고 난잡하다) — ① 고정 요소(창·작은 창·카드) 안의 표적이면 안 움직인다(스크롤해도 제자리라 끝까지
+       내려가기만 했다) ② 표적이 문서 위쪽(뷰포트 절반 안)이면 맨 위로(위 표적이 진행 띠 밑에 깔리던 것) ③ 그보다 아래면 표적이 띠 아래 1/3 지점에.
+       창만 세로로 움직인다 — scrollIntoView 는 표 같은 안쪽 스크롤 상자까지 가로로 밀었다 (2026-09-06 사용자).
+       (폐기 09-25) "표적이 16px 안쪽이면 그만큼, 말풍선 자리 130px 이 토스트 구역에 걸리면 그만큼"만 움직이던 것 */
     if (first) {
-      const r = first.getBoundingClientRect();
-      /* 화면 아래 110px 은 토스트 자리 — 말풍선이 거기 앉으면 토스트에 가립니다(2026-09-06 낮 사용자). 토스트를 옮기는 대신 말풍선이 비킵니다 */
-      const bottom = window.innerHeight - 110;
-      const need = Math.min(r.height + 130, bottom - 32);
-      let dy = 0;
-      if (r.top < 16) dy = r.top - 16;
-      else if (r.top + need > bottom) dy = Math.min(r.top - 16, r.top + need - bottom);
-      if (dy) window.scrollBy(0, dy);
+      let pinned = false;
+      for (let e = first; e && e !== document.body; e = e.parentElement) {
+        const ps = getComputedStyle(e).position;
+        if (ps === "fixed" || ps === "sticky") {
+          pinned = true;
+          break;
+        }
+      }
+      if (!pinned) {
+        const docTop = first.getBoundingClientRect().top + window.scrollY;
+        const band = document.querySelector(".gs-demoband");
+        const bandH = band ? band.offsetHeight : 0;
+        const want = docTop < window.innerHeight * 0.5 ? 0 : Math.max(0, Math.round(docTop - bandH - window.innerHeight / 3));
+        if (Math.abs(want - window.scrollY) > 1) window.scrollTo(0, want);
+      }
     }
     let raf = 0;
     let miss = 0;
