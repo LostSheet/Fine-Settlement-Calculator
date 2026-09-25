@@ -9177,7 +9177,7 @@ export default function GoldSettlement() {
           );
         })()}
       <style>{CSS}</style>
-      {nickAsk && !DEMO && auth && <NickDialog auth={auth} member={recMember} ownerNick={ownerNick} onDone={finishNick} />}
+      {nickAsk && !DEMO && auth && <NickDialog auth={auth} ownerNick={ownerNick} onDone={finishNick} />}
 
 
       {/* ── 내가 앉아 있는 방의 판이 다시 열렸어요 — 자기 앱에 돌아와 있는 사람에게
@@ -16110,9 +16110,10 @@ function LookAlpha({ look, onPick }) {
 }
 
 /* 닉네임 창 (2026-09-25 사용자 확정, 목업 nick2 가) — 연동 직후 한 번. Discord 표시 이름을 미리 채워 [확인] 한 번이면 끝. 취소는 없다(Esc·× 도 확인과 같다).
-   미리보기는 닉네임이 실제로 쓰이는 자리: 파티원(남의 판)이면 방장 벌금표의 줄, 방장이면 초대 메시지. 반쪽짜리 진실(방장이 적어 둔 이름이 먼저)은 밑줄 한 문장이 말한다.
+   미리보기는 닉네임이 실제로 적히는 자리 — 방장 벌금표의 줄(남의 판을 보는 중이면 그 방장 이름, 아니면 `방장`). 반쪽짜리 진실(방장이 적어 둔 이름이 먼저)은 밑줄 한 문장이 말한다.
+   창은 누구에게나 하나다 (2026-09-25 사용자: 방장이라고 평생 방장이 아니다 — (폐기, 같은 날) 방장이면 초대 메시지를 미리 보여 주던 갈래, 목업에 없던 것을 말 없이 넣었었다).
    (검토 후 폐기) 방송 현황판의 줄 — 같은 조건에 "누가 방송을 켰나"까지 걸리고 오버레이 룩을 앱에 한 벌 더 그려야 했다 */
-function NickDialog({ auth, member, ownerNick, onDone }) {
+function NickDialog({ auth, ownerNick, onDone }) {
   const [v, setV] = useState((auth && auth.nick) || "");
   const ref = useRef(null);
   useEffect(() => {
@@ -16123,11 +16124,12 @@ function NickDialog({ auth, member, ownerNick, onDone }) {
     }
   }, []);
   const shown = v.trim() || "(이름 없음)";
-  const host = ownerNick || "방장";
+  const host = ownerNick || "방장"; // 캡션의 "{host}의 벌금표"
+  const hostRow = ownerNick || FILL_NAME(1); // 방장 줄의 이름 — 모르면 이름 없는 줄 자리표시([방장] 표와 "방장"이 겹치지 않게)
   const submit = () => onDone(v);
   return (
     <InfoModal title="닉네임" onClose={submit}>
-      <p className="gs-nk-lede">{member ? "벌금표에 적힐 이름을 정해요." : "초대 메시지와 파티원 화면에 보일 이름을 정해요."}</p>
+      <p className="gs-nk-lede">벌금표에 적힐 이름을 정해요.</p>
       <div className="gs-nk-row">
         <label htmlFor="gs-nk-in">닉네임</label>
         <input
@@ -16146,15 +16148,13 @@ function NickDialog({ auth, member, ownerNick, onDone }) {
         />
         <span className="gs-nk-cnt">{[...v.trim()].length}/8</span>
       </div>
-      {member ? (
-        <>
-          <p className="gs-nk-cap">{host}의 벌금표 · 빈 줄에 나를 배치하면 이렇게 보여요</p>
+      <p className="gs-nk-cap">{host}의 벌금표 · 빈 줄에 나를 배치하면 이렇게 보여요</p>
           <div className="gs-nk-table">
             <div className="gs-nk-r dim">
               <span className="gs-nk-pic">{NK_SIL}</span>
               <span className="gs-nk-name">
                 <span className="gs-metag gs-metag-host">방장</span>
-                {host}
+                {hostRow}
               </span>
               <span className="gs-nk-cell">＋</span>
               <span className="gs-nk-cell">＋</span>
@@ -16173,19 +16173,7 @@ function NickDialog({ auth, member, ownerNick, onDone }) {
               <span className="gs-nk-sum">0</span>
             </div>
           </div>
-          <p className="gs-nk-note">방장이 이름을 미리 적어 둔 줄에 나를 배치하면 그 이름이 먼저예요.</p>
-        </>
-      ) : (
-        <>
-          <p className="gs-nk-cap">초대 메시지 · 파티원에게 이렇게 보여요</p>
-          <div className="gs-nk-msg">
-            <b>{shown}의 벌금팟에 초대해요.</b>
-            <span>👉 눌러서 참여하기</span>
-            <span>Discord 연동이 필요해요.</span>
-          </div>
-          <p className="gs-nk-note">벌금표의 내 이름은 표에서 직접 적어요.</p>
-        </>
-      )}
+      <p className="gs-nk-note">방장이 이름을 미리 적어 둔 줄에 나를 배치하면 그 이름이 먼저예요.</p>
       <div className="gs-dialog-btns">
         <button className="gs-btn" onClick={submit}>
           확인
@@ -19536,8 +19524,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-nk-name.me{color:var(--gold)}
 .gs-nk-cell{height:32px; border:1px dashed rgba(var(--ink-rgb),.3); border-radius:2px; display:grid; place-items:center; color:rgba(var(--ink-rgb),.4); font-size:13px}
 .gs-nk-sum{font-variant-numeric:tabular-nums; text-align:right; color:var(--gold); font-size:15px}
-.gs-nk-msg{display:flex; flex-direction:column; gap:2px; padding:10px 12px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; background:rgba(var(--lift-rgb),.16); font-size:13px; line-height:1.6; color:var(--ink-body)}
-.gs-nk-msg b{color:var(--ink)}
+/* (폐기 2026-09-25) .gs-nk-msg — 방장 갈래의 초대 메시지 미리보기 */
 .gs-dcmark{display:inline-block; width:14px; height:14px; background:#5865f2}
 .gs-pc-foot{align-self:stretch; display:flex; justify-content:center; margin-top:16px; padding-top:8px; border-top:1px dotted rgba(var(--ink-rgb),.3)}
 .gs-pc-out{display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border:0; border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer}
