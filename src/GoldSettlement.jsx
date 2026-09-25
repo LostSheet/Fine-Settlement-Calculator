@@ -17031,6 +17031,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   white-space:nowrap; box-shadow:0 6px 16px rgba(var(--shadow-rgb),.35); pointer-events:none}
 .gs-tabhint::before{content:""; position:absolute; left:14px; top:-5px; width:9px; height:9px; transform:rotate(45deg); background:var(--ink)}
 .gs-tabhint i{font-style:normal; opacity:.5}
+/* 카드는 이름 바로 밑이 항목 단추라 덮지 않게 머리 줄 안에 나란히(꼬리 없음) */
+.gs-rd-head .gs-tabhint{position:static; margin-left:8px; box-shadow:none}
+.gs-rd-head .gs-tabhint::before{display:none}
 .gs-tabhint kbd{display:inline-block; min-width:14px; padding:1px 5px; border:1px solid color-mix(in srgb, currentColor 40%, transparent); border-bottom-width:2px; border-radius:2px;
   font:500 10.5px/1.3 'IBM Plex Sans KR',sans-serif; color:inherit; background:color-mix(in srgb, currentColor 12%, transparent); vertical-align:1px}
 /* 이름 칸은 줄지 않는다 — 줄면 표가 이 열을 최소로 접어 이름이 잘린다(예전에 안전구역으로 막던 것) */
