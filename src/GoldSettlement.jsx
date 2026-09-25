@@ -405,7 +405,23 @@ const madeOf = (sv) =>
    "아직 이름을 안 정한 자리, 자동으로 차거나 나중에 고치는 칸"을 그 자리에서 말합니다.
    게임 캐릭터 이름을 빌리면 진짜 사람처럼 읽혀서 못 씁니다(실리안 여덟 명은 폐기). */
 const ANON = (i) => FILL_NAME(i + 1);
-const seatName = (row, i) => ((row && row.name) || "").trim() || ANON(i);
+/* 빈 줄의 자리표시 (2026-09-26 사용자) — 줄 번호가 기본이되, 그 이름을 다른 줄이 이미 쓰면(옛 자리표시가 저장된 이름으로
+   줄을 옮겨 왔거나 손으로 친 이름) 안 쓰는 다음 번호로. 저장된 자리표시는 그대로 둔다(줄을 가리키던 호칭이라 다시 안 매긴다) */
+const fillNames = (list) => {
+  const taken = new Set((list || []).map((r) => ((r && r.name) || "").trim()).filter(Boolean));
+  return (list || []).map((r, i) => {
+    if (((r && r.name) || "").trim()) return null;
+    let k = i + 1;
+    while (taken.has(FILL_NAME(k))) k++;
+    const nm = FILL_NAME(k);
+    taken.add(nm);
+    return nm;
+  });
+};
+/* 지금 표의 자리표시 — 줄 id 로. 앱이 렌더마다 채우고 seatName 이 본다(RAW_G 와 같은 방식) */
+let FILL_BY_ID = {};
+const fillOf = (row, i) => (row && FILL_BY_ID[row.id]) || ANON(i);
+const seatName = (row, i) => ((row && row.name) || "").trim() || fillOf(row, i);
 /* 판 기록에 적을 파티원 — 손으로 적은 이름만 남깁니다. 자리 채우는 기본 이름은
    누구인지 말해 주지 않아서 목록만 길어집니다 */
 const realNames = (rws) =>
@@ -2362,6 +2378,15 @@ export default function GoldSettlement() {
 
   const [cols, setCols] = useState(boot.current.cols);
   const [rows, setRows] = useState(boot.current.rows);
+  /* 빈 줄의 자리표시 표 (2026-09-26) — fillNames 규칙을 줄 id 로. 같은 규칙이 표·정산 장부·우편·기록·방송·파티원 창에 한 번에 갑니다 */
+  FILL_BY_ID = useMemo(() => {
+    const f = fillNames(rows);
+    const o = {};
+    rows.forEach((r, i) => {
+      if (f[i]) o[r.id] = f[i];
+    });
+    return o;
+  }, [rows]);
   const [feePercent, setFeePercent] = useState(boot.current.feePercent);
   // 정산 방식도 수수료처럼 파티 장부에 붙어 다닙니다
   /* (감춤 2026-09-21 사용자) 정산 방식은 벌금통 고정 — 고르는 자리를 감췄으니 값도 안 움직인다.
@@ -8649,6 +8674,7 @@ export default function GoldSettlement() {
     const takenNames = new Set(d.rows.map((r) => (r.name || "").trim()).filter((n) => n && !isFillName(n)));
     /* (2026-09-20) 앱이 적은 닉네임은 방장이 손댄 이름이 아니다(named:false) — 그래야 사람이 바뀌거나 자리를 비울 때 이름이 사람을 따라간다 */
     const autoIdx = new Set();
+    const fill = fillNames(d.rows); // 빈 줄은 겹치지 않는 자리표시로 — 자리표시끼리는 겹칠 수 없으니 겹침 검사는 손으로 친 이름만 걸린다 (2026-09-26)
     const names = d.rows.map((r, i) => {
       const nm = (r.name || "").trim();
       if (r.acct && r.acct !== (r.oacct || null) && (!nm || isFillName(nm))) {
@@ -8659,7 +8685,7 @@ export default function GoldSettlement() {
           return nick;
         }
       }
-      return nm || FILL_NAME(i + 1);
+      return nm || fill[i];
     });
     const dup = names.find((n, i) => names.indexOf(n) !== i);
     if (dup) return "'" + dup + "' 이름이 두 줄에 있어요. 한쪽을 고쳐 주세요.";
@@ -10458,8 +10484,8 @@ export default function GoldSettlement() {
                             <input
                               className={"gs-in gs-rd-name" + (dupName(row.id, row.name) ? " gs-dup" : "")}
                               value={row.name}
-                              placeholder={ANON(i)}
-                              size={Math.max(3, [...String(row.name || ANON(i))].length + 1)}
+                              placeholder={fillOf(row, i)}
+                              size={Math.max(3, [...String(row.name || fillOf(row, i))].length + 1)}
                               onChange={(e) => patchRow(row.id, "name", e.target.value)}
                               onFocus={(e) => {
                                 e.currentTarget.dataset.was = row.name || "";
@@ -10985,7 +11011,7 @@ export default function GoldSettlement() {
                             /* 준비 상태에서는 자리의 이름이 원본입니다 (§3.1) — 빈 자리는 빈 칸으로
                                보여 자리표시가 뜨고, 고치면 자리에 적힙니다. 줄은 자리를 따라옵니다 */
                             value={ready ? (seats.find((k) => k.id === row.id) || {}).name || "" : row.name}
-                            placeholder={ANON(i)}
+                            placeholder={fillOf(row, i)}
                             onChange={(e) =>
                               ready
                                 ? renameSeat(row.id, e.target.value)
@@ -11083,7 +11109,7 @@ export default function GoldSettlement() {
                                     e.preventDefault();
                                     pressCell(row, c, -1);
                                   }}
-                                  aria-label={`${row.name || "이 사람"}의 ${c.name || "항목"} 1회 추가 (우클릭: 마지막 1회 취소)`}
+                                  aria-label={`${seatName(row, i)}의 ${c.name || "항목"} 1회 추가 (우클릭: 마지막 1회 취소)`}
                                 >
                                   {/* 숫자가 주인공 — 누르기 전엔 옅은 ＋만, 누른 뒤엔 가운데 큰 횟수 */}
                                   {n > 0 ? (
@@ -11380,7 +11406,8 @@ export default function GoldSettlement() {
                   const net = r.nets[i];
                   return (
                     <tr key={row.id}>
-                      <td className="gs-l gs-nm">{row.name || "—"}</td>
+                      {/* 빈 이름은 우편과 같은 자리표시 (2026-09-26 사용자: —로 찍혔다) */}
+                      <td className="gs-l gs-nm">{seatName(row, rows.findIndex((x) => x.id === row.id))}</td>
                       <Amount v={r.fines[i]} />
                       <Amount v={r.shares[i]} />
                       <Amount v={net} sign className={"gs-net" + (net > 0 ? " gs-pos" : net < 0 ? " gs-neg" : "")} />
@@ -14302,6 +14329,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
     );
   };
   const ghostRow = ghost && ghost.kind === "order" ? findRow(D, ghost.rowId) : null;
+  const fill = fillNames(D.rows); // 빈 줄의 자리표시 — 표와 같은 규칙 (2026-09-26)
   return (
     <div className="gs-modal gs-sp-modal">
       <div
@@ -14348,7 +14376,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                     className="gs-in gs-sp-name"
                     data-sname={r.id}
                     value={r.name}
-                    placeholder={FILL_NAME(i + 1)}
+                    placeholder={fill[i] || ""}
                     spellCheck={false}
                     aria-label="줄 이름"
                     /* 사람을 고른 동안에는 줄 전체가 놓을 곳 — 이름 칸을 눌러도 포커스를 가져가지 않고 그 줄에 놓는다 */
@@ -14369,7 +14397,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, onDiscord, o
                   />
                   <span className="gs-sp-slot">{r.acct ? person(r.acct, "row", r.id) : <span className="gs-sp-empty">비어 있음</span>}</span>
                   {!r.acct && !r.fine ? (
-                    <button type="button" className="gs-x gs-sp-del" onClick={() => delRow(r.id)} title="줄 지우기" aria-label={(r.name || FILL_NAME(i + 1)) + " 줄 지우기"}>
+                    <button type="button" className="gs-x gs-sp-del" onClick={() => delRow(r.id)} title="줄 지우기" aria-label={(r.name || fill[i]) + " 줄 지우기"}>
                       ×
                     </button>
                   ) : (
