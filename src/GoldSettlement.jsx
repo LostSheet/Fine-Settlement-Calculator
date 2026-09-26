@@ -1201,8 +1201,8 @@ const demoHostName = () => {
   return n && n !== "손님" ? n : "방장";
 };
 /* 독립 파티원 튜토리얼의 방장은 예시 인물 (2026-09-26 사용자: 방장이 내 별명으로 나왔다 — 파티원이 보는 방장은 남이다).
-   방장 4장에서 넘어온 파티원 예시(DEMO_CH4)는 보는 사람이 곧 방장이라 진짜 별명 그대로. 이름은 임시 — 사용자 확정 대기 */
-const TUT_HOST = "카단";
+   방장 4장에서 넘어온 파티원 예시(DEMO_CH4)는 보는 사람이 곧 방장이라 진짜 별명 그대로. 이름은 사용자 확정(09-26) */
+const TUT_HOST = "아만";
 const tutHostName = () => (DEMO_MEMBER && !DEMO_CH4 ? TUT_HOST : demoHostName());
 /* 진짜 계정의 Discord 초상화 묶음 — 예시 앱이 5장에서 '연동된 것으로' 칠 때 방장 줄에 쓴다(있을 때만, 없으면 실루엣). 서버엔 안 간다 */
 const realDcAva = () => {
@@ -8487,7 +8487,6 @@ export default function GoldSettlement() {
         /* 방금 앉은 사람은 들어오는 길에 소켓이 한 번 갈리곤 합니다(로그인 뒤 다시 엶) — 그 10초는 '방금 앉았어요'가 먼저 */
         if (!host && arrived[row.id])
           return { kind: "new", host, mine: false, nick: (mem && mem.nick) || name, masked: acct.slice(0, 2) + "••••" };
-        if (!host && mem && mem.on === false) return { kind: "off", host, mine: false };
         return { kind: "on", host, mine: false };
       }
       return { kind: name && !isFillName(name) ? "typed" : "empty", host: false, mine: false };
@@ -8515,13 +8514,6 @@ export default function GoldSettlement() {
               {k.nick} {k.masked}
             </span>
           )}
-        </>
-      );
-    else if (k.kind === "off")
-      body = (
-        <>
-          <i className="gs-sdot off" aria-hidden="true" />
-          연결 끊김
         </>
       );
     else if (k.kind === "typed")
@@ -8581,8 +8573,9 @@ export default function GoldSettlement() {
   const partyAccts = partyLive ? seats.filter((s) => s.acct && !(auth && s.acct === auth.id)).map((s) => s.acct) : [];
   const partyCount = partyAccts.length;
   /* 단추 둘째 줄의 "m명 연결됨" — 줄에 붙은 사람 중 지금 앱을 열어 둔 사람. (폐기 2026-09-20 사용자) "지금 접속 m명" — 친구 목록의 '접속 중'으로 읽힌다 */
-  const partyOn = partyAccts.filter((a) => (members.find((m) => m.acct === a) || {}).on !== false).length;
-  const waitNow = waitBelow.filter((p) => p.on !== false).sort((a, b) => (a.t || 0) - (b.t || 0));
+  /* 접속 여부는 세지 않는다 (2026-09-26 사용자: 끊긴 사람을 보여 줄 필요가 없다 — 사람 얘기는 Discord 에서, 자수는 부차적). 배치 대기 = 수락하고 줄이 없는 사람, 접속과 무관.
+     (폐기) partyOn "n명 연결됨" · waitNow 의 on 필터 · 줄 사진의 흐림·점선과 꼬리표 "연결 끊김" */
+  const waitNow = [...waitBelow].sort((a, b) => (a.t || 0) - (b.t || 0));
   const curWait = waitNow.find((p) => p.acct === placeCur) || waitNow[0] || null;
   /* 메모장 모드에는 표 바가 없어 안내를 세울 곳이 없다 — 거기서는 빈 사진 자리가 지금처럼 목록을 연다 */
   const placeOn = !readOnly && !simple && !!curWait;
@@ -10801,7 +10794,6 @@ export default function GoldSettlement() {
                               const st = seats.find((k) => k.id === row.id);
                               const acct = partyLive ? st && st.acct : null;
                               const mem = acct ? members.find((k) => k.acct === acct) : null;
-                              const off = !!mem && mem.on === false;
                               const isHostRow = !!(acct && auth && acct === auth.id);
                               const linked = !!(auth && auth.dc);
                               const mine = isHostRow ? myAva(auth) : null;
@@ -10810,7 +10802,7 @@ export default function GoldSettlement() {
                                  파티원 것은 서버가 가려서 주고(dcu), 내 것은 이 브라우저가 가린다 */
                               const masked = (mem && mem.dcu) || (isHostRow && auth && auth.dc && auth.dc.user ? Array.from(auth.dc.user).slice(0, 2).join("") + "••••" : "");
                               return (
-                                <span className={"gs-tip gs-rowmeta" + (off ? " gs-rowmeta-off" : "")}>
+                                <span className="gs-tip gs-rowmeta">
                                   {acct ? (
                                     /* 찬 줄도 누르는 곳 (2026-09-19, 안 3) — 누구인지, [자리 비우기] */
                                     <button
@@ -10874,7 +10866,6 @@ export default function GoldSettlement() {
                                           <i>ID:</i> {masked}
                                         </span>
                                       )}
-                                      {off && <span className="gs-tipline">연결 끊김</span>}
                                     </span>
                                   )}
                                 </span>
@@ -11751,7 +11742,6 @@ export default function GoldSettlement() {
           tray={[...new Set(waitBelow.map((p) => p.acct))]}
           linked={!!(auth && auth.dc)}
           copied={flash === "inv"}
-          sub={partyCount > 0 ? partyCount + "명 · " + partyOn + "명 연결됨" : ""}
           inviteLive={inviteLive || tutorial} /* 예시 앱은 [초대 메시지 복사] 한 얼굴 */
           inviteExpiresAt={relay.invite?.exp || 0}
           onReInvite={askReInvite}
@@ -13833,7 +13823,7 @@ function PlacerAva({ p, size }) {
     </span>
   );
 }
-function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, sub, inviteLive, inviteExpiresAt, onReInvite, focusRow, onDiscord, onCopyInvite, onSave, onCancel }) {
+function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, inviteLive, inviteExpiresAt, onReInvite, focusRow, onDiscord, onCopyInvite, onSave, onCancel }) {
   /* 초대 시계 (결정표 11) — 창이 열려 있는 동안만 1초마다 돈다. 앱 전체를 1초마다 다시 그리지 않으려고 여기서만 센다 (작은 창에서 옮겨 옴 2026-09-26) */
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
@@ -14123,7 +14113,7 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, sub, inviteL
       >
         {/* (고침 2026-09-19) '자리 배치' → '파티원'. 사람을 들이는 일은 표에서 한다 — 이 창은 앉은 사람을 옮기거나 맞바꿀 때, 줄을 한꺼번에 고칠 때, 파티원을 내보낼 때 */}
         <h3>
-          파티원{sub ? <span className="gs-sp-sub">{sub}</span> : null}
+          파티원
         </h3>
         <div className="gs-sp-cols">
           <div className="gs-sp-left">
@@ -16966,7 +16956,6 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowi-ro{display:inline-flex; align-items:center; justify-content:center; cursor:default}
 /* 초상화 크기 (2026-09-16 사용자: 글자 높이만큼) — 줄·대기 줄 24, 자수 카드 28, 계정 칩 24 */
 .gs-rowmeta:hover .gs-rowi,.gs-rowi:focus-visible{color:var(--gold); border-color:rgba(var(--gold-rgb),.7)}
-.gs-rowmeta-off .gs-rowi{opacity:.4; border-style:dashed}
 .gs-rowi:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
 /* 툴팁은 위로 편다 — 아래로 펴면 뒤 줄(DOM 뒤, 같은 층)이 덮어 안 보였다. 앞 줄은 늘 아래에 깔리므로
    위로 넘치는 건 보인다 */
@@ -18743,7 +18732,6 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-seatstrip-new{border:1px solid rgba(var(--gold-rgb),.85); background:rgba(var(--gold-rgb),.12); color:var(--ink)}
 .gs-seatstrip-empty{opacity:.7}
 .gs-sdot{width:7px; height:7px; border-radius:50%; background:#6fbf73; flex:none}
-.gs-sdot.off{background:var(--ink-2); opacity:.6}
 .gs-seatstrip-hint{margin-left:auto; font-size:11.5px; color:var(--ink-2)}
 .gs-seatstrip .gs-lb-tag{margin-left:2px}
 .gs-lb-tag-host{background:var(--chip-bg); color:var(--chip-fg); border-color:transparent}
@@ -19366,7 +19354,6 @@ button.gs-sp-del:hover{color:var(--red); background:rgba(var(--ink-rgb),.08)}
 /* 좁은 열이라 한 문장이 꼬리 한 마디만 남기고 넘어갔다("자수할 / 수 있어요") — 줄 길이를 고르게 */
 .gs-sp-inv{padding:14px 4px 0}
 /* 오른쪽 단 (2026-09-26) — 제목 옆 부제 · 초대 줄(단추 + 남은 시간 · 새로 발급) · 둘째 머리 · 빈 대기 글 · 찬 초상화에서 열었을 때 밝히는 줄 */
-.gs-sp-sub{margin-left:10px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:400; font-size:12.5px; color:var(--ink-2); letter-spacing:0}
 .gs-sp-invrow{display:flex; align-items:center; flex-wrap:wrap; gap:10px 12px; padding:12px 2px 0}
 .gs-sp-invrow .gs-lbstart{margin-left:0}
 .gs-sp-invmeta{display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--ink-2)}
