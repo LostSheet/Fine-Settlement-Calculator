@@ -1507,6 +1507,8 @@ function routeHash(view, gen) {
    보고 있는지(주소가 맞는지, 어느 릴레이인지) 확인할 방법이 없었습니다.
    도메인과 경로는 남기고 토큰·초대 코드만 지웁니다 — 방송 화면에 새서 곤란한 것은 그 둘뿐입니다. */
 const BULLET = "•".repeat(8);
+/* 방송용 주소 상자의 가림 (2026-09-26 사용자) — 도메인까지 점으로. 도메인 + 점 여덟은 말줄임에 잘려 "잘린 주소"로 읽혔다 */
+const HIDE_DOTS = (n) => "•".repeat(n);
 const maskUrl = (u) => {
   const s = String(u || "");
   if (!s) return "";
@@ -14662,7 +14664,11 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDis
               {srcMode === "one" ? (
                 /* 주소 상자 (2026-09-06 사용자 확정) — 주소가 카드의 주인공이라 금테 상자에 크게. 계정 줄은 그대로 위 */
                 <div className="gs-obs-boxtop gs-obs-addrbox">
-                  <span className="gs-obs-urltext">{showObs ? obsUrl : maskUrl(obsUrl)}</span>
+                  {showObs ? (
+                    <span className="gs-obs-urltext gs-obs-urlshown">{obsUrl}</span>
+                  ) : (
+                    <span className="gs-obs-urltext gs-obs-urlhidden" aria-label="가려진 주소">{HIDE_DOTS(28)}</span>
+                  )}
                   <button
                     className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
                     onClick={() => setShowObs((v) => !v)}
@@ -14681,8 +14687,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDis
                       똑같아 보여서 뭐가 다른지 화면이 말을 못 했습니다 (2026-09-05) */}
                   <div className="gs-obs-srcrow gs-obs-addrbox gs-obs-addrbox-2">
                     <b>현황판</b>
-                    <span className="gs-obs-urltext">
-                      {(showObs ? obsUrl : maskUrl(obsUrl)) + "?type=board"}
+                    <span className={"gs-obs-urltext " + (showObs ? "gs-obs-urlshown" : "gs-obs-urlhidden")}>
+                      {(showObs ? obsUrl : HIDE_DOTS(16)) + "?type=board"}
                     </span>
                     <button
                       className="gs-btn gs-btn-sm gs-btn-ghost gs-eyebtn"
@@ -14703,8 +14709,8 @@ function ObsShare({ relay, putRelay, auth, onOpenAuth, onIssue, onDiscord, onDis
                       룰렛 주소는 없어도 현황판만 나오므로(아래 안내) 무게를 낮춥니다 */}
                   <div className="gs-obs-srcrow gs-obs-addrbox gs-obs-addrbox-2">
                     <b>룰렛</b>
-                    <span className="gs-obs-urltext">
-                      {(showObs ? obsUrl : maskUrl(obsUrl)) + "?type=spin"}
+                    <span className={"gs-obs-urltext " + (showObs ? "gs-obs-urlshown" : "gs-obs-urlhidden")}>
+                      {(showObs ? obsUrl : HIDE_DOTS(16)) + "?type=spin"}
                     </span>
                     <button
                       className="gs-btn gs-btn-sm gs-btn-ghost"
@@ -17147,6 +17153,13 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-copybox.copied{border-color:var(--gold); background:rgba(var(--gold-rgb),.08)}
 .gs-obs-urltext{display:block; font-family:var(--mono); font-size:13px; color:var(--ink);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* 방송용 주소 (2026-09-26 사용자: 가린 건 가린 티가 나야 하고, 보인 건 드래그로 전부 잡혀야 한다) —
+   가림은 점만(도메인도 안 보임, 선택 안 됨) · 보기는 줄을 바꿔 61자가 다 보이고 한 번에 통째로 선택된다.
+   (폐기) 도메인 + 점 여덟에 말줄임 17px — 41자도 353px 에 안 들어가 가림도 보기도 잘렸고 토큰은 어느 쪽에서도 안 보였다 */
+.gs-obs-urlhidden{letter-spacing:.1em; color:var(--ink-2); user-select:none}
+.gs-obs-urlshown{white-space:normal; word-break:break-all; overflow:visible; text-overflow:clip; line-height:1.55; user-select:all; cursor:text}
+.gs-obs-boxtop:has(.gs-obs-urlshown),.gs-obs-srcrow:has(.gs-obs-urlshown){align-items:flex-start}
+.gs-obs-boxtop:has(.gs-obs-urlshown) .gs-btn,.gs-obs-srcrow:has(.gs-obs-urlshown) .gs-btn{margin-top:1px}
 .gs-obs-copyhint{display:block; margin-top:5px; font-size:11.5px; color:var(--ink-2)}
 .gs-obs-copybox.copied .gs-obs-copyhint{color:var(--gold)}
 /* 머리(제목·×)는 스크롤을 따라옵니다 (2026-09-05) — 긴 창 어디서든 닫혀야 해서.
@@ -17461,7 +17474,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-boxtop{display:flex; align-items:center; gap:10px}
 /* 주소 상자 (2026-09-06 사용자: 주소에 박스를 넣어 강조) — 나눈 소스는 줄마다 상자, 글자는 조금 작게 */
 .gs-obs-addrbox{margin-top:12px; padding:9px 10px 9px 12px; border:1px solid rgba(var(--gold-rgb),.6); border-radius:2px; background:rgba(var(--lift-rgb),.35)}
-.gs-obs-addrbox .gs-obs-urltext{font-size:17px; color:var(--gold); letter-spacing:.01em}
+.gs-obs-addrbox .gs-obs-urltext{font-size:14px; color:var(--gold); letter-spacing:.01em} /* 17 → 14 (2026-09-26) — 이 폭에 61자가 두 줄로 들어간다 */
 .gs-obs-addrbox-2 .gs-obs-urltext{font-size:14px}
 .gs-obs-addrbox-2 + .gs-obs-addrbox-2{margin-top:8px}
 .gs-btn-copy{padding:9px 16px; font-size:13px}
