@@ -1200,6 +1200,10 @@ const demoHostName = () => {
   const n = realNick();
   return n && n !== "손님" ? n : "방장";
 };
+/* 독립 파티원 튜토리얼의 방장은 예시 인물 (2026-09-26 사용자: 방장이 내 별명으로 나왔다 — 파티원이 보는 방장은 남이다).
+   방장 4장에서 넘어온 파티원 예시(DEMO_CH4)는 보는 사람이 곧 방장이라 진짜 별명 그대로. 이름은 임시 — 사용자 확정 대기 */
+const TUT_HOST = "카단";
+const tutHostName = () => (DEMO_MEMBER && !DEMO_CH4 ? TUT_HOST : demoHostName());
 /* 진짜 계정의 Discord 초상화 묶음 — 예시 앱이 5장에서 '연동된 것으로' 칠 때 방장 줄에 쓴다(있을 때만, 없으면 실루엣). 서버엔 안 간다 */
 const realDcAva = () => {
   try {
@@ -3488,6 +3492,7 @@ export default function GoldSettlement() {
     /* (폐기 2026-09-24) enter:"wei"(대기 줄) · "soloseed"(혼자 쓰기) */
     if (st.enter === "arrive:ninav") tutArrive("ninav"); // 5장 — 실리안을 놓은 뒤 니나브가 들어온다
     if (st.enter === "seed") tutSeed(); // 6장에 들어서며 바로 — 기다림 걸음 없이 첫 말풍선이 말한다 (2026-09-25)
+    if (st.enter === "gate:off") setTutGate(false); // 4장 — 초대장 걸음이 지나면 표로 (2026-09-26)
   }, [coach]);
   /* 4장(파티원 예시)이 끝나 방장 예시로 돌아올 때 — 실리안이 거기서 누른 잡힘 1이 그제야 올라오고(토스트도 진짜처럼) 5장으로.
      리스너는 첫 렌더의 클로저라 최신 tutConfess·걸음은 ref 로 봅니다 */
@@ -4247,9 +4252,12 @@ export default function GoldSettlement() {
 
   const membersLoaded = useRef(false);
   const roundAtRef = useRef(0);
+  /* 파티는 Discord 연동 계정에만 (2026-09-26 사용자 확정) — 연동이 없으면 명단을 읽지 않고, 자리에 붙은 계정은 잠재운다(지우지 않는다: 연동하면 그대로 돌아온다).
+     파티원(뷰어)은 늘 연동된 사람이라 그대로. 옛 방에 남은 명단이 익명 계정에 보이던 어긋남을 여기서 막는다 */
+  const partyOk = () => readOnly || !!(authRef.current && authRef.current.dc);
   const refreshMembers = async () => {
     const a = authRef.current;
-    if (!a || !relay.room || tutorialRef.current) return; // 예시 파티의 명단은 서버 것이 아닙니다 (2026-09-06)
+    if (!a || !a.dc || !relay.room || tutorialRef.current) return; // 예시 파티의 명단은 서버 것이 아닙니다 (2026-09-06) · 연동 없인 파티 없음 (2026-09-26)
     try {
       const r = await roomApi.members(a.token, relay.room);
       if (r && typeof r.roundAt === "number") roundAtRef.current = r.roundAt;
@@ -4746,7 +4754,7 @@ export default function GoldSettlement() {
       rows2: nRows.map((x, i) => {
         const s = (list || []).find((k) => k.id === x.id);
         const mm = s && s.acct ? (members || []).find((q) => q.acct === s.acct) : null;
-      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0,
+      return { rowId: x.id, n: seatName(x, i), a: s && s.acct && partyOk() ? 1 : 0, h: s && s.acct && partyOk() && authRef.current && s.acct === authRef.current.id ? 1 : 0,
         /* 방장 줄의 초상화도 싣는다 (2026-09-17: 파티원 화면이 방장 화면을 그대로 쓴다) */
         ava: mm && mm.ava ? mm.ava : s && s.acct && authRef.current && s.acct === authRef.current.id ? myAvaWire(authRef.current) : undefined };
       }),
@@ -5500,7 +5508,7 @@ export default function GoldSettlement() {
     rows2: rows.map((x, i) => {
       const s = seatsRef.current.find((k) => k.id === x.id);
       const mm = s && s.acct ? (members || []).find((q) => q.acct === s.acct) : null;
-      return { rowId: x.id, n: seatName(x, i), a: s && s.acct ? 1 : 0, h: s && s.acct && authRef.current && s.acct === authRef.current.id ? 1 : 0,
+      return { rowId: x.id, n: seatName(x, i), a: s && s.acct && partyOk() ? 1 : 0, h: s && s.acct && partyOk() && authRef.current && s.acct === authRef.current.id ? 1 : 0,
         /* 방장 줄의 초상화도 싣는다 (2026-09-17: 파티원 화면이 방장 화면을 그대로 쓴다) */
         ava: mm && mm.ava ? mm.ava : s && s.acct && authRef.current && s.acct === authRef.current.id ? myAvaWire(authRef.current) : undefined };
     }),
@@ -5732,11 +5740,11 @@ export default function GoldSettlement() {
          열은 방장이 1장에서 만든 뒤와 같게 잡힘·죽음·암살 — 룰렛 없음 (2026-09-06 낮 사용자). 독립 파티원 튜토리얼도 같은 판.
          (폐기) 넷이 잡힘 1회씩인 판 · 6장 예시의 빈 판과 초대장(vlobby) */
       setCols([...DEFAULT_COLS.filter((c) => !isRoulette(c)), { id: "ctut", name: "암살", price: "100,000" }]);
-      setRows(tutRows(demoHostName(), "니나브", DEMO_CH4)); // 4장 예시는 세기 전(숫자·4번 줄부터 이름 없음), 독립 파티원 튜토리얼은 채워진 판
-      setOwnerNick(demoHostName());
-      const rd = realDcAva();
+      setRows(tutRows(tutHostName(), "니나브", DEMO_CH4)); // 4장 예시는 세기 전(숫자·4번 줄부터 이름 없음), 독립 파티원 튜토리얼은 채워진 판
+      setOwnerNick(tutHostName());
+      const rd = DEMO_CH4 ? realDcAva() : null; // 독립 코스의 방장은 예시 인물이라 내 사진도 안 쓴다
       setRows2v([
-        { rowId: "r1", n: demoHostName(), a: 1, h: 1, ava: rd || undefined },
+        { rowId: "r1", n: tutHostName(), a: 1, h: 1, ava: rd || undefined },
         ...TUT_MEMBERS.map((m, i) => ({ rowId: "r" + (i + 2), n: m.nick, a: 1, h: 0, ava: m.ava })),
       ]);
       setFeePercent("5");
@@ -6314,7 +6322,10 @@ export default function GoldSettlement() {
     !(you && you.st);
   /* 연동 전 초대장은 화면 한 장(현행 유지). 옮기기는 벌금판 위의 확인창 (2026-09-16 사용자) */
   /* (폐기 2026-09-24) 6장 파티원 예시(DEMO_CH4)가 초대장부터 시작하던 것 — 배치된 뒤의 표부터 본다 */
-  const inviteGate = gateBase && gateKind === "discord";
+  /* 방장 4장의 파티원 예시는 초대장부터 (2026-09-26 사용자: 방장에게는 보이고, 파티원 코스에는 없이) — 방장이 초대장을 볼 길은 여기뿐.
+     첫 걸음이 지나면(enter:"gate:off") 표로. (폐기 09-24) 4장에 초대장 없음 */
+  const [tutGate, setTutGate] = useState(DEMO_CH4);
+  const inviteGate = (gateBase && gateKind === "discord") || tutGate;
   const moveGate = gateBase && meReady && gateKind === "move";
   /* 방장 별명 — 명단에 들기 전엔 소켓이 없어서 peek 로 한 번 묻는다 */
   useEffect(() => {
@@ -8468,7 +8479,7 @@ export default function GoldSettlement() {
   const seatKind = (row, i) => {
     if (!readOnly) {
       const st = seats.find((k) => k.id === row.id);
-      const acct = st && st.acct;
+      const acct = partyLive ? st && st.acct : null;
       const name = ((st ? st.name : row.name) || "").trim();
       if (acct) {
         const mem = members.find((k) => k.acct === acct);
@@ -8554,6 +8565,7 @@ export default function GoldSettlement() {
   );
   /* 들어오려는 사람 (§3.3, 2026-09-05 표준화) — 정원이 차서 기다리는 사람, 내보냈다 다시 온 사람, 진행 중에
      들어왔는데 빈 줄이 없어 자리를 기다리는 사람. 모집 카드와 판 중 [초대 링크] 창이 같은 목록을 씁니다 */
+  const partyLive = partyOk(); // 연동 없이는 파티원·대기·연결 표시가 없다 (2026-09-26)
   const waiting = members.filter(
     (m) => m.st === "ok" && !m.rowId && !seats.some((k) => k.acct === m.acct)
   );
@@ -8563,10 +8575,10 @@ export default function GoldSettlement() {
   /* 표 아래 줄 — 신청(내보냈던 사람·정원 참)과, 진행 중에 처음 온 사람(`들어왔어요`, [받기]가 첫 빈 줄/새 줄에 앉힘).
      자기 줄이 남아 있는 사람은 그 줄 밑에 붙습니다. 시작 전에 처음 온 사람은 위 효과가 바로 앉혀 여기 서지 않습니다 */
   /* 기다리는 사람은 누구든 표 아래 한 곳 (2026-09-16) — 처음 오는 사람도, 나갔다 돌아오는 사람도 */
-  const waitBelow = [...pending, ...waiting.map((w) => ({ ...w, waiting: true }))];
+  const waitBelow = partyLive ? [...pending, ...waiting.map((w) => ({ ...w, waiting: true }))] : [];
   /* [파티원] (2026-09-20 확정) — 표가 주인이고 초대는 그 위에 얹는 기능이다. 들어온 사람은 표를 보기만 하고, 방장이 줄에 붙이는 것이 곧 허락이다.
      들어온 사람 = 지금 접속해 있고 줄이 없는 사람, 온 순서대로. 접속을 끊은 사람은 파티원 창의 목록에만 남는다(서버는 줄 없는 회원의 on 도 준다) */
-  const partyAccts = seats.filter((s) => s.acct && !(auth && s.acct === auth.id)).map((s) => s.acct);
+  const partyAccts = partyLive ? seats.filter((s) => s.acct && !(auth && s.acct === auth.id)).map((s) => s.acct) : [];
   const partyCount = partyAccts.length;
   /* 단추 둘째 줄의 "m명 연결됨" — 줄에 붙은 사람 중 지금 앱을 열어 둔 사람. (폐기 2026-09-20 사용자) "지금 접속 m명" — 친구 목록의 '접속 중'으로 읽힌다 */
   const partyOn = partyAccts.filter((a) => (members.find((m) => m.acct === a) || {}).on !== false).length;
@@ -9158,7 +9170,8 @@ export default function GoldSettlement() {
           말하므로 여기서는 뺍니다 — 같은 말이 화면에 둘이면 하나는 읽히지 않습니다. */}
       {/* 대기실엔 설명 슬립이 없습니다 (2026-09-06) — 칩 '시작 전'과 자리 띠가 말합니다. (폐기) `자리에 앉았어요 — 방장이 시작하면 함께 시작돼요.` */}
       {/* (A1, 2026-09-16) 쪽지는 라벨이 못 하는 말만 — 요청 중·연결 중·읽기 전용 안내와 [신청 취소]·실시간 줄은 판 라벨로 갔다 */}
-      {readOnly && !genView && (liveState === "dead" || !!denied || demoRoom || !auth || (guestPlaying && !scribeOn && !showConfess)) && (
+      {/* 예시 앱(튜토리얼)엔 쪽지 없음 (2026-09-26 사용자: 자리 있는 파티원 예시에 "읽기 전용"이 떴다) — 예시 방 구경꾼(CAFE22)에겐 그대로 */}
+      {readOnly && !genView && !DEMO && (liveState === "dead" || !!denied || demoRoom || !auth || (guestPlaying && !scribeOn && !showConfess)) && (
         <div
           key={roPulse}
           className={
@@ -10312,7 +10325,7 @@ export default function GoldSettlement() {
               <div className="gs-rdgrid" style={{ "--cols": cols }}>
                 {rows.map((row, i) => {
                   const st = seats.find((k) => k.id === row.id);
-                  const acct = st && st.acct;
+                  const acct = partyLive ? st && st.acct : null;
                   const mem = acct ? members.find((m) => m.acct === acct) : null;
                   const isHostRow = !!(acct && auth && acct === auth.id);
                   const linked = !!(auth && auth.dc);
@@ -10786,7 +10799,7 @@ export default function GoldSettlement() {
                                (폐기, 같은 날) 초상화 모서리 집 배지 — 방장으로 안 읽혔다(사용자) */
                             if (!readOnly) {
                               const st = seats.find((k) => k.id === row.id);
-                              const acct = st && st.acct;
+                              const acct = partyLive ? st && st.acct : null;
                               const mem = acct ? members.find((k) => k.acct === acct) : null;
                               const off = !!mem && mem.on === false;
                               const isHostRow = !!(acct && auth && acct === auth.id);
@@ -11732,7 +11745,7 @@ export default function GoldSettlement() {
       {/* 자리 배치 창 (2026-09-17 확정). (폐기) 표 아래 사람의 [자리 정하기] 시트 */}
       {seatOpen && !readOnly && (
         <SeatPlacer
-          rows={rows.map((x) => ({ id: x.id, name: x.name || "", acct: (seats.find((k) => k.id === x.id) || {}).acct || null, fine: !noFine(x) }))}
+          rows={rows.map((x) => ({ id: x.id, name: x.name || "", acct: partyLive ? (seats.find((k) => k.id === x.id) || {}).acct || null : null, fine: !noFine(x) }))}
           people={placerPeople()}
           hostAcct={auth ? auth.id : null}
           tray={[...new Set(waitBelow.map((p) => p.acct))]}
@@ -15596,7 +15609,9 @@ const MEMBER_STEPS = [
 ];
 /* 방장 튜토리얼 4장(파티원 화면) — 배치된 뒤의 표부터 자수·정정까지만. 끝나면 방장 예시로 돌아간다. (폐기 2026-09-24) 초대장 걸음 */
 const MEMBER_INHOST = [
-  { ch: 3, sel: ".gs-sheetbox", text: "실리안에겐 같은 표가 보여요. 자기 줄만 밝고 남의 줄은 어두워요.", action: "다음", lock: true, clear: true },
+  /* 초대장부터 (2026-09-26 사용자) — 친구가 무엇을 받는지 방장이 볼 수 있는 자리는 여기뿐. 독립 파티원 코스에는 없다(이미 지나온 화면) */
+  { ch: 3, sel: ".gs-invite", text: "실리안에게는 먼저 이런 초대장이 가요. [Discord 연동을 통해 참여하기]를 누르면 연동을 거쳐 표로 들어와요.", action: "다음", lock: true, clear: true },
+  { ch: 3, sel: ".gs-sheetbox", text: "실리안에겐 같은 표가 보여요. 자기 줄만 밝고 남의 줄은 어두워요.", action: "다음", lock: true, clear: true, enter: "gate:off" },
   MEMBER_STEPS[1],
   MEMBER_STEPS[2],
   MEMBER_STEPS[3],
