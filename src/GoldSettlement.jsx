@@ -2579,7 +2579,16 @@ export default function GoldSettlement() {
   /* 보기 방식은 탭으로 고정했습니다 — 스크롤 보기를 쓰던 브라우저도 조용히 탭으로 */
   const tabbed = true;
   /* 어느 탭을 그릴지는 파티원 자격을 알아야 정해집니다 — showSheet 들은 아래(guestPlaying 뒤)에서 셉니다 */
+  /* 탭을 바꿔 들어올 때만 줄이 차례로 선다 (2026-09-26 사용자 "나 38", 목업 tabs) — 첫 부팅·칸 누름·줄 추가엔 없다.
+     뿌리의 .gs-tabin 을 0.9초(320ms + 마지막 줄 시작 450ms 안)만 세운다. 같은 탭을 다시 눌렀을 땐 안 선다(줄이 제자리에서 움직인다) */
+  const [tabIn, setTabIn] = useState(false);
+  const tabInT = useRef(null);
   const pickTab = (k) => {
+    if (k !== tab) {
+      setTabIn(true);
+      clearTimeout(tabInT.current);
+      tabInT.current = setTimeout(() => setTabIn(false), 900);
+    }
     setTab(k);
     window.scrollTo(0, 0);
     courseHit("tab:" + k); // 튜토리얼 5장·파티원 3걸음
@@ -9114,7 +9123,7 @@ export default function GoldSettlement() {
     if (need > room + 1) card.style.minWidth = need + (card.offsetWidth - room) + "px";
   }, [cols, simple, readOnly, tab, view, unit]);
   return (
-    <div ref={rootRef} className={"gs" + (DEMO ? " gs-demoapp" : "") + (tabbed ? " gs-tabbed" : "") + (!ready && !guestLobby && !showLobby && !inviteGate && !blockedCard ? " gs-connected" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "")}>
+    <div ref={rootRef} className={"gs" + (DEMO ? " gs-demoapp" : "") + (tabbed ? " gs-tabbed" : "") + (!ready && !guestLobby && !showLobby && !inviteGate && !blockedCard ? " gs-connected" : "") + (dark ? " gs-dark" : "") + (picking ? " gs-picking" : "") + (inviteGate ? " gs-invitegate" : "") + (coach && coach.kind === "party" ? " gs-coaching" : "") + (tabIn ? " gs-tabin" : "")}>
       {DEMO &&
         (() => {
           /* 진행 표시 (2026-09-06 사용자 확정) — 장 점을 선으로 잇고 지금 장은 크게, 옆에 `3장 파티원 모으기 · 2/4`.
@@ -10343,7 +10352,7 @@ export default function GoldSettlement() {
                   const exSum = extraSum(row);
                   const etcOpen = !readOnly && etcRow === row.id;
                   return (
-                    <div key={row.id} className={"gs-rd" + (myCard ? " gs-rd-mine" : "") + (far ? " gs-rd-far" : "")} data-row={row.id}>
+                    <div key={row.id} className={"gs-rd" + (myCard ? " gs-rd-mine" : "") + (far ? " gs-rd-far" : "")} data-row={row.id} style={{ "--i": i, "--n": rows.length }}>
                       {/* 인원 삭제 (2026-09-18 사용자: × 는 좌측 상단에 작게) — 표의 × 와 같은 확인을 거친다. 마우스를 올리면 보인다 */}
                       {!readOnly && (
                         <button className="gs-x gs-rowdel gs-rd-x" onClick={() => askDelRow(row)} aria-label={`${row.name || "이 사람"} 삭제`}>
@@ -10760,6 +10769,7 @@ export default function GoldSettlement() {
                         spin && spin.phase === "pick" ? () => pickPassTarget(row) : undefined
                       }
                       data-row={row.id}
+                      style={{ "--i": i, "--n": rows.length }} /* 탭 등장의 차례 (2026-09-26) */
                     >
                       <th className="gs-stick gs-l">
                         <div className="gs-namecell">
@@ -11306,7 +11316,7 @@ export default function GoldSettlement() {
                 {party.map((row, i) => {
                   const net = r.nets[i];
                   return (
-                    <tr key={row.id}>
+                    <tr key={row.id} style={{ "--i": i, "--n": party.length + 1 }}>
                       {/* 빈 이름은 우편과 같은 자리표시 (2026-09-26 사용자: —로 찍혔다) */}
                       <td className="gs-l gs-nm">{seatName(row, rows.findIndex((x) => x.id === row.id))}</td>
                       <Amount v={r.fines[i]} />
@@ -11323,7 +11333,7 @@ export default function GoldSettlement() {
                 })}
               </tbody>
               <tfoot>
-                <tr>
+                <tr style={{ "--i": party.length, "--n": party.length + 1 }}>
                   <th scope="row" className="gs-l">합계</th>
                   <Amount v={r.total} />
                   <td />
@@ -17748,6 +17758,13 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-envs{display:flex; flex-direction:column; gap:14px}
 .gs-env{animation:gs-in .5s cubic-bezier(.2,.7,.3,1) backwards; animation-delay:calc(var(--i,0) * 65ms)}
 @keyframes gs-in{from{opacity:0; transform:translateY(10px) rotate(-.4deg)} to{opacity:1; transform:none}}
+/* 탭을 바꿔 들어올 때의 등장 (2026-09-26 사용자 "나 38", 목업 tabs) — 벌금표 줄·카드·정산 장부 줄이 위에서 아래로 38ms 간격, 한 줄 320ms.
+   줄이 많으면 간격을 줄여 마지막 줄이 0.45초 안에 시작한다(min(38ms, 450ms/n)). 뿌리의 .gs-tabin 은 탭을 바꾼 뒤 0.9초만 —
+   첫 부팅·칸 누름·줄 추가엔 없다. 우편은 봉투(.gs-env, 65ms)가 이미 돈다. (검토 후 폐기) 한 장 통째 320ms — 바뀐 걸 못 알아본다 */
+.gs-tabin .gs-grid tbody tr,.gs-tabin .gs-rd,.gs-tabin .gs-ledger tbody tr,.gs-tabin .gs-ledger tfoot tr{
+  animation:gs-rowin .32s ease-out backwards; animation-delay:calc(var(--i,0) * min(38ms, 450ms / var(--n,1)))}
+@keyframes gs-rowin{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+@media (prefers-reduced-motion:reduce){ .gs-tabin .gs-grid tbody tr,.gs-tabin .gs-rd,.gs-tabin .gs-ledger tbody tr,.gs-tabin .gs-ledger tfoot tr{animation:none} }
 .gs-env-air{padding:6px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.16);
   background:repeating-linear-gradient(45deg,
     var(--red) 0 9px, var(--envelope-paper) 9px 18px, var(--blue) 18px 27px, var(--envelope-paper) 27px 36px)}
