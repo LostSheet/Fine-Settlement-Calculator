@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, Fragment } from "react";
-import { createPortal } from "react-dom";
 
 /* ==================================================================
    벌금 정산 · 최소 송금 계산기
@@ -8844,18 +8843,6 @@ export default function GoldSettlement() {
     const named = {};
     touched.forEach((t) => (named[t.id] = t.named));
     const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: added ? [added] : [], named, note: "되돌렸어요." });
-    if (err) say(err);
-  };
-  /* 찬 초상화 팝오버의 [자리 비우기] (2026-09-19) — 줄의 숫자는 그대로, 사람만 뺀다. 앱이 적어 둔 닉네임이면 이름도 같이 비운다 */
-  const quickUnseat = async (rowId) => {
-    const draft = draftNow();
-    const row = draft.find((r) => r.id === rowId);
-    if (!row || !row.acct || (auth && row.acct === auth.id)) return;
-    const who = nickOf(row.acct);
-    const touched = [snapRow(rowId)];
-    if (autoNamedRow(rowId)) row.name = freeFillName(draft.indexOf(row) + 1);
-    row.acct = null;
-    const err = await applyPlacement({ rows: draft, tray: [], rejected: [], deleted: [], note: undoNote(who + " 님의 자리를 비웠어요.", touched, null), noteMs: 7000 });
     if (err) say(err);
   };
   /* 켜진 빈 사진 자리를 누르면 — 그 줄(또는 새 줄)에 바로 */
