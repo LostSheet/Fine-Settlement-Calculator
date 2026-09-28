@@ -9880,8 +9880,9 @@ export default function GoldSettlement() {
             {/* 표 도구는 모드 뒤, 디바이더 하나 건너 (2026-09-24 사용자 확정: 결정표 2) — 왼쪽은 "표가 어떻게 보이나"(모드 · 항목 관리 · 입력 단위),
                 오른쪽은 "무엇을 하나"(파티원 · 기록 · 비우기). GitHub·Notion·Airtable 의 배치와 같다.
                 (폐기 2026-09-20) 표 상자 안의 두 줄짜리 표 바 — 도구가 세 줄에 걸쳐 박스 안에 있어서 표 머리가 231px 에서 시작했다 */}
-            {!simple && !readOnly && <i className="gs-toolsep" aria-hidden="true" />}
-            {!simple && !readOnly && (
+            {/* 메모장 모드도 같은 도구 줄 (2026-09-28 사용자 "다른 카드들과 일관되게") — (폐기) 입력 단위가 상자 안 둘째 줄에 따로 섰다 */}
+            {!readOnly && <i className="gs-toolsep" aria-hidden="true" />}
+            {!readOnly && (
                 <span className="gs-tabletools">
                   {cardsMode && !readOnly && (
                     <span className="gs-itemswrap">
@@ -9981,8 +9982,10 @@ export default function GoldSettlement() {
               )}
           </div>
           <div className="gs-tools gs-sheetactions">
-            {/* [파티원] — 초대와 배치의 문. 오른쪽 무리의 첫 자리 (2026-09-24 사용자 확정). 초대·공유는 어느 앱이든 오른쪽 끝 무리다 */}
-            {!simple && !readOnly && (
+            {/* [파티원] — 초대와 배치의 문. 오른쪽 무리의 첫 자리 (2026-09-24 사용자 확정). 초대·공유는 어느 앱이든 오른쪽 끝 무리다.
+                메모장 모드에도 선다 (2026-09-28) — 표의 초상화가 파티원 창을 여는데 단추만 없었다. [기록]·[비우기]는 메모장에선 할 일이 없어 없다
+                (메모 글이 곧 기록이고, 카운터로 돌아갈 때 fromMemoRows 가 기록에 적는다) */}
+            {!readOnly && (
                 <span className="gs-pty" role="group" aria-label="파티원">
                   <button
                     type="button"
@@ -10128,9 +10131,13 @@ export default function GoldSettlement() {
           </>
         )}
         {/* 마우스 안내 — 상자 바로 위 오른쪽 끝 한 줄 (2026-09-24 사용자 확정: 결정표 5). 카운터·카드 두 모드 같은 자리, 파티원 문구도 그대로 든다 */}
-        {!simple && (
+        {(!simple || !readOnly) && (
           <div className="gs-cellnote-row">
-              {readOnly ? (
+              {simple ? (
+                /* 메모장 모드 (2026-09-28) — 같은 자리에 한 문장. (폐기) 상자 안 머리 줄 "메모장에 적은 내용이 오른쪽 표에 바로 들어가요"(옆 표가 치는 대로 바뀌어 스스로 말한다) ·
+                   메모장 발치 "한 줄에 한 사람 · 줄 끝 숫자가 금액" */
+                <p className="gs-cellnote">한 줄에 한 사람씩 적고, 줄 끝 숫자가 금액이에요.</p>
+              ) : readOnly ? (
                 /* 파티원 — 누른 건 방장 벌금판에 올라가고, 서버가 30초 안의 되돌리기만 받는다 (§3.6) */
                 <p className="gs-cellnote">
                   내 칸을 <MouseIcon side="left" /> 누르면 1회 쌓이고, <MouseIcon side="right" /> 우클릭하면 되돌려요. 되돌리기는 30초 안에만
@@ -10146,7 +10153,7 @@ export default function GoldSettlement() {
         )}
         {/* 내용 상자 — 정산 장부와 같은 규칙: 박스는 표만 감싼다 (2026-09-24 사용자 확정: 결정표 2).
             카드 모드는 카드가 제 가장자리를 가지니 박스를 두르지 않는다 (결정표 13) */}
-        <div className={"gs-card gs-sheetbox" + (((cardsMode && !readOnly) || memberCards) ? " gs-sheetbox-cards" : "") + (placeOn ? " gs-placing" : "") + (placeOn && justCame ? " gs-justcame" : "")} ref={sheetBoxRef}>
+        <div className={"gs-card gs-sheetbox" + (((cardsMode && !readOnly) || memberCards) ? " gs-sheetbox-cards" : "") + (simple ? " gs-sheetbox-memo" : "") + (placeOn ? " gs-placing" : "") + (placeOn && justCame ? " gs-justcame" : "")} ref={sheetBoxRef}>
 
         {/* 읽기 전용·복귀 안내는 카드 맨 위 한 줄로 — 표 아래에 두면 표가 길 때 화면 밖으로 밀립니다.
             방장이 메모장으로 바꾸면 자수 탭이 없어지므로(보통 항목이 없습니다) 뒷말도 같이
@@ -10251,8 +10258,6 @@ export default function GoldSettlement() {
         )}
         {/* 입력 단위는 두 모드가 같은 설정을 씁니다 — 메모장은 줄의 숫자, 카운터는 합계 수정 */}
         {/* 입력 단위 (§3.12.7) — 메모장 모드에는 표 바가 없어 표 위에 홀로 선다. 카운터 모드는 표 바 안 */}
-        {simple && <p className="gs-headnote gs-memonote">메모장에 적은 내용이 오른쪽 표에 바로 들어가요</p>}
-        {simple && unitSeg(true)}
         {/* 누르는 것(복사)은 왼쪽, 읽는 것(조작법)은 오른쪽 — 손이 가는 쪽에 버튼을 둡니다 */}
 
         {/* 사용법은 카드 안에서 펼치지 않고 팝업으로 띄웁니다 — 탭 화면에서 표가 밀리지 않게 */}
@@ -10289,7 +10294,6 @@ export default function GoldSettlement() {
                 placeholder={"쿼카 25\n순두부 30\nㅈ냥이 44"}
                 aria-label="이름과 금액을 줄마다 적기"
               />
-              <p className="gs-memo-note">한 줄에 한 사람 · 줄 끝 숫자가 금액</p>
             </div>
           )}
 
@@ -11140,7 +11144,7 @@ export default function GoldSettlement() {
                           표의 행 번호와 어긋날 수 있어서요 */}
                       {simple ? (
                         <td className="gs-sumcell">
-                          {won(Math.max(0, simpleGold(row)))}
+                          {man(Math.max(0, simpleGold(row)))}
                         </td>
                       ) : readOnly ? (
                         /* 파티원 화면의 합계는 읽기 전용입니다 — 눌러도 입력칸이 열리지
@@ -11253,7 +11257,7 @@ export default function GoldSettlement() {
                 )}
                 <td className="gs-foot gs-foot-grand">
                   <span className="gs-caplab gs-foot-lab">합계</span>
-                  {r ? (simple ? won(r.total) : man(r.total)) : "0"}
+                  {r ? man(r.total) : "0"}
                 </td>
                 {!readOnly && <td className="gs-foot gs-toolcell" />}
               </tr>
@@ -16396,12 +16400,20 @@ const CSS = `
 .gs-sheethead .gs-sheetactions{margin-left:auto}
 .gs-sheethead .gs-btn{height:32px; padding-top:0; padding-bottom:0; display:inline-flex; align-items:center}
 .gs-surface .gs-tablebar{margin-bottom:12px}
-.gs-memonote{margin:0 0 10px}
 /* 벌금표도 장부와 같은 규칙 (2026-09-24 사용자 확정: 결정표 2·13) — 도구 한 줄은 박스 밖, 박스는 표만.
    표 머리가 231 → 약 160 으로 올라온다. 카드 모드는 카드가 제 가장자리를 가지니 박스를 두르지 않는다 */
 .gs-tabbed .gs-sheetsec{background:transparent; border:0; border-radius:0; padding:0; box-shadow:none}
 .gs-surface.gs-sheetsec > .gs-sheetbox{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; padding:0; overflow:hidden}
 .gs-surface.gs-sheetsec > .gs-sheetbox.gs-sheetbox-cards{background:transparent; border:0; border-radius:0; overflow:visible}
+/* 메모장 모드 (2026-09-28 사용자 "다른 카드들과 일관되게", 목업 memo 가) — 바깥 상자를 걷고 표 칸만 카운터와 같은 상자. 메모장은 제 테두리가 종이.
+   (폐기) 상자 하나가 안내·단위·메모장·표를 다 감싸고 안쪽 여백 0 — 글과 메모장 칸이 테두리에 붙었고 상자 안에 상자였다 */
+.gs-surface.gs-sheetsec > .gs-sheetbox.gs-sheetbox-memo{background:transparent; border:0; border-radius:0; overflow:visible}
+.gs-sheetbox-memo .gs-split > .gs-scroll{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; overflow:hidden}
+/* 메모장 머리 밑줄을 표 머리 밑줄과 같은 높이에 (표 머리 41px + 상자 윗선 1px) */
+.gs-sheetbox-memo .gs-memo-head{min-height:42px; padding-bottom:0; box-sizing:border-box}
+/* 밝게 — 메모장 머리가 이제 크라프트 위에 선다: 도구 줄과 같은 한 단 진한 보조 잉크·선 (09-24 규칙) */
+.gs:not(.gs-dark) .gs-sheetbox-memo .gs-memo-head{--ink-2:#4a4136}
+.gs:not(.gs-dark) .gs-sheetbox-memo .gs-fontctl button{border-color:rgba(var(--ink-rgb),.5)}
 /* 도구 한 줄 — 왼쪽 무리는 10px, (?)는 모드 세그에 붙고(5px) 디바이더 하나 건너 표 도구 */
 .gs-sheethead .gs-sheetmodes{gap:10px}
 .gs-sheethead .gs-modebar > .gs-tip{margin-left:-4px}
@@ -16413,7 +16425,7 @@ const CSS = `
 .gs-sheethead .gs-logbtn > svg{width:15px; height:15px; opacity:.85; flex:none}
 /* 마우스 안내 — 상자 바로 위 오른쪽 끝 */
 .gs-sheetsec > .gs-cellnote-row{display:flex; justify-content:flex-end; margin:-4px 2px 8px}
-.gs-sheetsec > .gs-cellnote-row .gs-cellnote{margin:0; white-space:nowrap}
+.gs-sheetsec > .gs-cellnote-row .gs-cellnote{margin:0; white-space:nowrap; min-height:19px} /* 마우스 그림이 없는 메모장 문장도 같은 높이 — 모드를 바꿔도 상자 위끝이 제자리 (2026-09-28) */
 /* 도착 띠 — 바탕은 불투명(따라올 때 표가 비치면 안 된다): 크라프트 위에 옅은 금색 */
 .gs-arrive{--arrive-bg:linear-gradient(rgba(var(--gold-rgb),.09),rgba(var(--gold-rgb),.09)),var(--kraft);
   display:flex; align-items:center; height:64px; margin:0 0 12px; padding:0 14px 0 12px;
@@ -16648,7 +16660,7 @@ const CSS = `
 
 /* 금액만 모드: 왼쪽 메모장 + 오른쪽 표 */
 .gs-split{display:grid; grid-template-columns:minmax(210px,.85fr) minmax(0,1.15fr); gap:18px;
-  align-items:start}
+  align-items:stretch} /* 두 칸 위끝·아래끝 맞춤 (2026-09-28) — 메모장 높이 = 표 높이 */
 .gs-memo{display:flex; flex-direction:column; min-width:0}
 .gs-memo-head{display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding-bottom:8px; border-bottom:1.5px solid var(--ink); min-height:46px}
@@ -16660,10 +16672,10 @@ const CSS = `
 .gs-fontctl button:hover{border-color:var(--ink); color:var(--ink); background:rgba(var(--ink-rgb),.06)}
 .gs-fontctl b{font-family:var(--mono); font-weight:400; font-size:11px; color:var(--ink-2);
   min-width:16px; text-align:center}
-.gs-memo-note{margin:7px 0 0; font-size:10.5px; color:var(--ink-2); text-align:right}
 /* 글자 크기는 인라인 스타일로 조절되고, 기본은 오른쪽 이름 글자 크기를 따릅니다.
-   높이는 화면을 따라 늘어나 방송 중 전광판 역할을 합니다. */
-.gs-memo-ta{margin-top:10px; min-height:max(460px, calc(100vh - 420px)); font-size:15px;
+   높이는 옆 표의 높이를 따릅니다 (2026-09-28 사용자, 목업 memo 가) — 줄이 늘면 표가 길어지고 메모장도 같이 길어진다.
+   (폐기) 화면을 따라 늘어나 방송 중 전광판 역할(min-height:max(460px, 100vh − 420px)) — 방송은 현황판 주소가 맡은 뒤로 쓸 데가 없었고, 표 아래가 비었다 */
+.gs-memo-ta{margin-top:10px; flex:1 1 auto; min-height:230px; resize:none; font-size:15px;
   line-height:2.06; white-space:pre-wrap}
 
 /* 간단 모드 단위 라디오 */
@@ -16724,6 +16736,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-grid-narrow .gs-sumcell{font-size:22px}
 .gs-grid-narrow .gs-simple-lab{font-size:16px}
 .gs-grid-narrow .gs-caplab{font-size:12px}
+.gs-grid-narrow thead th.gs-stick{padding-left:8px} /* 카운터 모서리 칸의 '이름'과 같은 8px (2026-09-28 사용자: 테두리에 붙었다) */
 .gs-grid-narrow tfoot .gs-foot,.gs-grid-narrow .gs-foot-grand{font-size:20px !important}
 
 /* 카운터 표 — 핵심(이름·×N·합계) 25px. 셀이 곧 버튼이라 큼직하게 둡니다.
