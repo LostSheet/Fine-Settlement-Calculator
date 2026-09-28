@@ -421,6 +421,21 @@ const fillNames = (list) => {
 let FILL_BY_ID = {};
 const fillOf = (row, i) => (row && FILL_BY_ID[row.id]) || ANON(i);
 const seatName = (row, i) => ((row && row.name) || "").trim() || fillOf(row, i);
+/* 저장된 "(모험가N)" 이름 칸 (2026-09-28 사용자 "룩은 권장안으로") — 비운 칸의 자리표시와 같은 흐린 글자, 누르면 통째로 선택되어 바로 치면 바뀐다.
+   데이터는 그대로다(줄을 지우거나 옮겨도 호칭이 안 바뀌라고 적어 둔 것). 마우스로 누르면 mouseup 이 선택을 풀어서 한 번 막는다 */
+const fillCls = (name) => (isFillName((name || "").trim()) ? " gs-in-fill" : "");
+const fillFocus = (e) => {
+  const el = e.currentTarget;
+  if (!isFillName((el.value || "").trim())) return;
+  el.select();
+  el.dataset.fillsel = "1";
+};
+const fillMouseUp = (e) => {
+  const el = e.currentTarget;
+  if (el.dataset.fillsel !== "1") return;
+  delete el.dataset.fillsel;
+  e.preventDefault();
+};
 /* 판 기록에 적을 파티원 — 손으로 적은 이름만 남깁니다. 자리 채우는 기본 이름은
    누구인지 말해 주지 않아서 목록만 길어집니다 */
 const realNames = (rws) =>
@@ -10408,7 +10423,7 @@ export default function GoldSettlement() {
                           ) : (
                             /* 이름은 카드에서 바로 — 카운터 표의 이름 칸과 같은 규칙(겹치면 되돌림) */
                             <input
-                              className={"gs-in gs-rd-name" + (dupName(row.id, row.name) ? " gs-dup" : "")}
+                              className={"gs-in gs-rd-name" + (dupName(row.id, row.name) ? " gs-dup" : "") + fillCls(row.name)}
                               value={row.name}
                               placeholder={fillOf(row, i)}
                               size={Math.max(3, [...String(row.name || fillOf(row, i))].length + 1)}
@@ -10416,7 +10431,9 @@ export default function GoldSettlement() {
                               onFocus={(e) => {
                                 e.currentTarget.dataset.was = row.name || "";
                                 setNameFocus(row.id);
+                                fillFocus(e);
                               }}
+                              onMouseUp={fillMouseUp}
                               onBlur={(e) => {
                                 setNameFocus(null);
                                 if (!dupName(row.id, row.name)) return;
@@ -10923,7 +10940,8 @@ export default function GoldSettlement() {
                             </button>
                           ) : (
                           <input
-                            className={"gs-in gs-in-name" + (dupName(row.id, row.name) ? " gs-dup" : "")}
+                            className={"gs-in gs-in-name" + (dupName(row.id, row.name) ? " gs-dup" : "") + fillCls(ready ? (seats.find((k) => k.id === row.id) || {}).name : row.name)}
+                            onMouseUp={fillMouseUp}
                             size={Math.max(3, [...String((ready ? (seats.find((k) => k.id === row.id) || {}).name || "" : row.name) || ANON(i))].length + 1)}
                             /* 준비 상태에서는 자리의 이름이 원본입니다 (§3.1) — 빈 자리는 빈 칸으로
                                보여 자리표시가 뜨고, 고치면 자리에 적힙니다. 줄은 자리를 따라옵니다 */
@@ -10938,6 +10956,7 @@ export default function GoldSettlement() {
                             onFocus={(e) => {
                               e.currentTarget.dataset.was = row.name || "";
                               setNameFocus(row.id);
+                              fillFocus(e);
                             }}
                             onBlur={(e) => {
                               setNameFocus(null);
@@ -14160,7 +14179,9 @@ function SeatPlacer({ rows, people, hostAcct, tray, linked, copied, inviteLive, 
                     ≡
                   </span>
                   <input
-                    className="gs-in gs-sp-name"
+                    className={"gs-in gs-sp-name" + fillCls(r.name)}
+                    onFocus={fillFocus}
+                    onMouseUp={fillMouseUp}
                     data-sname={r.id}
                     value={r.name}
                     placeholder={fill[i] || ""}
@@ -16403,12 +16424,12 @@ const CSS = `
 /* 벌금표도 장부와 같은 규칙 (2026-09-24 사용자 확정: 결정표 2·13) — 도구 한 줄은 박스 밖, 박스는 표만.
    표 머리가 231 → 약 160 으로 올라온다. 카드 모드는 카드가 제 가장자리를 가지니 박스를 두르지 않는다 */
 .gs-tabbed .gs-sheetsec{background:transparent; border:0; border-radius:0; padding:0; box-shadow:none}
-.gs-surface.gs-sheetsec > .gs-sheetbox{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; padding:0; overflow:hidden}
+.gs-surface.gs-sheetsec > .gs-sheetbox{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; padding:0} /* (폐기 2026-09-28) overflow:hidden — 첫 줄 꼬리표가 상자 윗선에서 잘렸다 */
 .gs-surface.gs-sheetsec > .gs-sheetbox.gs-sheetbox-cards{background:transparent; border:0; border-radius:0; overflow:visible}
 /* 메모장 모드 (2026-09-28 사용자 "다른 카드들과 일관되게", 목업 memo 가) — 바깥 상자를 걷고 표 칸만 카운터와 같은 상자. 메모장은 제 테두리가 종이.
    (폐기) 상자 하나가 안내·단위·메모장·표를 다 감싸고 안쪽 여백 0 — 글과 메모장 칸이 테두리에 붙었고 상자 안에 상자였다 */
 .gs-surface.gs-sheetsec > .gs-sheetbox.gs-sheetbox-memo{background:transparent; border:0; border-radius:0; overflow:visible}
-.gs-sheetbox-memo .gs-split > .gs-scroll{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; overflow:hidden}
+.gs-sheetbox-memo .gs-split > .gs-scroll{background:var(--paper); border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px}
 /* 메모장 머리 밑줄을 표 머리 밑줄과 같은 높이에 (표 머리 41px + 상자 윗선 1px) */
 .gs-sheetbox-memo .gs-memo-head{min-height:42px; padding-bottom:0; box-sizing:border-box}
 /* 밝게 — 메모장 머리가 이제 크라프트 위에 선다: 도구 줄과 같은 한 단 진한 보조 잉크·선 (09-24 규칙) */
@@ -16718,6 +16739,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-in{border:0; background:transparent; font:inherit; color:var(--ink); padding:6px 2px;
   width:100%; border-radius:0}
 .gs-in::placeholder{color:rgba(var(--ink-rgb),.28)}
+.gs .gs-in.gs-in-fill{color:rgba(var(--ink-rgb),.28)} /* 저장된 "(모험가N)" — 자리표시와 같은 흐린 글자 (2026-09-28) */
 .gs-x{border:0; background:transparent; font-family:inherit; color:rgba(var(--ink-rgb),.36); font-size:17px; line-height:1;
   cursor:pointer; padding:3px 5px; border-radius:2px}
 .gs-x:hover{color:var(--red); background:rgba(var(--red-rgb),.1)}
@@ -17771,9 +17793,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ex-why{flex:1; min-width:0; font-size:13px;
   border-bottom:1px dotted rgba(var(--ink-rgb),.45); padding:3px 2px}
 
-.gs-grid tfoot td{border-top:1.5px solid var(--ink); padding-top:9px !important;
+.gs-grid tfoot td{border-top:1.5px solid var(--ink); padding-top:9px !important; padding-bottom:12px !important; /* 아래 여백 — 표 위쪽과 같게 (2026-09-28 사용자: 아래가 협소) */
   font-family:var(--mono); font-size:13px; text-align:center; color:var(--ink-2)}
-.gs-grid tfoot th{border-top:1.5px solid var(--ink); padding-top:9px !important}
+.gs-grid tfoot th{border-top:1.5px solid var(--ink); padding-top:9px !important; padding-bottom:12px !important}
 .gs-foot-disc{color:var(--red) !important; opacity:.75}
 .gs-foot-lab{margin-right:10px; vertical-align:middle}
 .gs-foot-grand{text-align:right !important; padding-right:6px !important;
