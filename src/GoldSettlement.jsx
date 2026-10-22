@@ -1084,7 +1084,7 @@ const savePresets = (l) => {
 
 function loadRelay() {
   if (typeof window === "undefined") return { on: false };
-  if (DEMO) return { on: false, look: { t: "bars", alpha: 10 } }; // 예시 앱엔 방이 없습니다
+  if (DEMO) return { on: false, look: { t: "cells", alpha: 10 } }; // 예시 앱엔 방이 없습니다
   try {
     const v = JSON.parse(window.localStorage.getItem(RELAY_KEY) || "null");
     if (!v || typeof v !== "object") throw 0;
@@ -1110,10 +1110,11 @@ function loadRelay() {
       look:
         v.look && typeof v.look === "object" && typeof v.look.t === "string"
           ? { t: lookT(v.look.t), alpha: [0, 10, 25, 50, 75, 100].includes(v.look.alpha) ? v.look.alpha : 25, line: v.look.line ? 1 : undefined }
-          : { t: "bars", alpha: 10 },
+          : { t: "cells", alpha: 10 },
       lookMig: v.lookMig ? 1 : undefined,
       lookMig2: v.lookMig2 ? 1 : undefined, // 2026-09-07 외형 기본값 강제 적용 표시
       lookMig3: v.lookMig3 ? 1 : undefined, // 2026-09-08 기본 테마를 막대 줄로 강제 적용한 표시
+      lookMig4: v.lookMig4 ? 1 : undefined, // 2026-10-22 기본 테마를 칸으로 강제 적용한 표시
       /* 2026-09-06 모델 — 판 존재 표시, 프리셋 이름(시작 때 채움), 이어서 고른 판.
          (버그 기록) 여기서 안 받아 줘서 새로고침하면 판이 없는 걸로 돌아갔다 */
       boardOn: v.boardOn ? true : undefined,
@@ -1162,9 +1163,21 @@ function loadRelay() {
         window.localStorage.setItem(RELAY_KEY, JSON.stringify(out));
       } catch (e2) {}
     }
+    /* 새 기본 테마(칸)로 강제 적용 (2026-10-22 사용자 확정: 기존 사용자도 덮어쓴다). 한 번만, 표시를 남깁니다.
+       투명도는 각자 고른 값 그대로 둡니다 — 바꾸는 것은 테마 하나입니다. 그 뒤에 막대로 되돌린 사람은 그대로 남습니다.
+       계정에 저장된 외형은 lookIn 이, 앱을 안 연 사람의 방송은 오버레이가 같은 규칙(tv 표시가 없으면 칸)으로 읽습니다 */
+    if (!out.lookMig4) {
+      out.look = { ...out.look, t: "cells" };
+      out.lookMig4 = 1;
+      try {
+        window.localStorage.setItem(RELAY_KEY, JSON.stringify(out));
+      } catch (e2) {}
+    }
     return out;
   } catch (e) {
-    return { on: false, look: { t: "bars", alpha: 10 } };
+    /* 처음 온 사람 — 옮길 것이 없으니 표시를 전부 미리 달아 둡니다 (2026-10-22). 안 달면 두 번째로 열 때 옛 이주가 돕니다 —
+       lookMig3 이 외형을 막대로 덮고(lookMig4 표시가 이미 있어 칸으로 안 돌아옴), lookMig2 가 첫날 고른 룰렛·알림 취향을 지웁니다 */
+    return { on: false, look: { t: "cells", alpha: 10 }, lookMig: 1, lookMig2: 1, lookMig3: 1, lookMig4: 1 };
   }
 }
 function saveRelay(v) {
@@ -5471,9 +5484,10 @@ export default function GoldSettlement() {
   };
 
   const lookOut = () => {
-    const lk = relay.look || { t: "bars", alpha: 10 };
-    /* 서버는 해석 없이 그대로 나릅니다. line(헤어라인)은 판 테마의 것이라 지금은 그릴 곳이 없습니다 */
-    const base = { t: lookT(lk.t), bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) };
+    const lk = relay.look || { t: "cells", alpha: 10 };
+    /* 서버는 해석 없이 그대로 나릅니다. line(헤어라인)은 판 테마의 것이라 지금은 그릴 곳이 없습니다.
+       tv:2 는 "테마를 둘(칸·막대) 중에서 고른 값"이라는 표시입니다 (2026-10-22) — 이게 없는 외형은 오버레이와 lookIn 이 칸으로 읽습니다 */
+    const base = { t: lookT(lk.t), tv: 2, bg: 100 - (lk.alpha ?? 25), ...(lk.line ? { line: 1 } : {}) };
     /* 룰렛 말고는 전부 계정 것입니다 (2026-09-07 사용자 확정) — 슬라이드·알림·끈 항목·합계·순액도
        내 주소의 설정이라 여기 같이 싣습니다. 판(state)의 같은 값은 이걸 저장하지 않은 계정의
        기본값으로만 남습니다. 룰렛(원판·테마·감속)은 여기 없습니다 — 판이 정합니다 */
@@ -13299,7 +13313,7 @@ function PresetModal({ presets, onSave, onLoad, onDelete, onClose }) {
   );
 }
 
-/* 외형 — 배경 투명도·방송 열·벌금 알림·룰렛 외형.
+/* 외형 — 테마·배경 투명도·방송 열·벌금 알림·룰렛 외형.
    창을 따로 두면 "주소는 여기, 생김새는 저기"로 갈려서 한 번에 못 끝냅니다.
    그래서 껍데기 없이 몸통만 내주고, 오버레이 공유 설정 창이 이걸 안에 답니다. */
 function LookBody({ relay, putRelay, ovCols, pvLook, isOff, sumOn, netOn, slideOn, onOvSlide, onOvItem, onOvKey }) {
@@ -13322,6 +13336,17 @@ function LookBody({ relay, putRelay, ovCols, pvLook, isOff, sumOn, netOn, slideO
         </p>
       )}
       <div className="gs-obs-rows">
+        {/* 테마 (2026-10-22 사용자 확정: 새 테마로 바꾸고 고르기를 되살린다, 둘만). 판 모양이 거의 같아 OBS 소스는 다시 안 잡아도 된다 */}
+        <span className="gs-obs-lab">테마</span>
+        <div className="gs-obs-ctl">
+          <div className="gs-seg" role="group" aria-label="테마">
+            {LOOK_THEMES.map((t) => (
+              <button key={t} className={lookT(relay.look.t) === t ? "on" : ""} onClick={() => pickLook({ ...relay.look, t })}>
+                {LOOK_THEME_NAMES[t]}
+              </button>
+            ))}
+          </div>
+        </div>
         <span className="gs-obs-lab">배경 투명도</span>
         <div className="gs-obs-ctl">
           <LookAlpha look={relay.look} onPick={pickLook} />
@@ -15873,18 +15898,23 @@ function CoachMark({ sel, text, action, step, total, block, lock, center, overMo
   );
 }
 
-/* 오버레이 테마는 기본(막대 줄) 하나입니다 (2026-09-24 사용자 확정: 투명도만 남긴다).
-   고르는 칸은 없앴지만 테마를 싣는 길(외형의 t → 서버 → 오버레이 data-t)은 남겨 둡니다 — 테마를 다시 들이면
-   여기 이름을 보태고 page.js 의 THEMES 에도 보탭니다. 목록에 없는 이름(예전 어두운 판·밝은 판)은 기본으로 읽습니다.
+/* 오버레이 테마는 둘 — 칸(cells, 기본)과 막대 줄(bars) (2026-10-22 사용자 확정: 새 테마로 바꾸고 고르기를 되살린다, 둘만).
+   칸은 월즈·MSI 2026 중계 그래픽의 결(검정 직각 칸 + 1px 선, 좁은 숫자체, 금색 글자 총액) — page.js 칸 테마 절.
+   목록에 없는 이름(예전 어두운 판·밝은 판)은 기본으로 읽습니다. 이름을 보태면 page.js 의 THEMES 에도 보탭니다.
+   (폐기 2026-10-22) 막대 하나뿐이던 목록 (2026-09-24 사용자 확정: 투명도만 남긴다)
    (폐기 2026-09-24) 기본 · 어두운 판 · 밝은 판 테마 칩과 사선 견본 */
-const LOOK_THEMES = ["bars"];
+const LOOK_THEMES = ["cells", "bars"];
+/* 고르는 칸의 이름 — 초안 */
+const LOOK_THEME_NAMES = { cells: "기본", bars: "막대" };
 function lookT(t) {
-  return LOOK_THEMES.includes(t) ? t : "bars";
+  return LOOK_THEMES.includes(t) ? t : "cells";
 }
-/* 서버가 읽는 키는 t·bg·s 셋뿐입니다 — 앱이 쓰는 alpha(판 투명도)와 bg 는 서로 뒤집힌 값입니다 */
+/* 서버가 읽는 키는 t·bg·s 셋뿐입니다 — 앱이 쓰는 alpha(판 투명도)와 bg 는 서로 뒤집힌 값입니다.
+   tv 표시가 없는 계정 외형은 칸 테마가 생기기 전에 저장된 것이라 칸으로 읽습니다 (2026-10-22 기존 사용자 덮어쓰기) —
+   안 그러면 로그인할 때 서버의 옛 막대가 lookMig4 로 바꾼 이 브라우저 값을 도로 덮습니다 */
 const lookIn = (srv) => {
   const a = srv && srv.bg != null ? 100 - Math.round(srv.bg) : 25;
-  return { t: lookT(srv.t), alpha: [0, 10, 25, 50, 75, 100].includes(a) ? a : 25, line: srv.line ? 1 : undefined };
+  return { t: lookT(srv.tv ? srv.t : ""), alpha: [0, 10, 25, 50, 75, 100].includes(a) ? a : 25, line: srv.line ? 1 : undefined };
 };
 const sameLook = (a, b) => !!a && !!b && a.t === b.t && !!a.line === !!b.line && (a.alpha ?? 25) === (b.alpha ?? 25);
 

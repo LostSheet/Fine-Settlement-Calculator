@@ -17,7 +17,9 @@ export const PAGE_HTML = `<!doctype html>
 <!-- 방송용 글꼴 (2026-09-08 사용자 확정) — 시스템 고딕으로는 어떤 형태를 씌워도
      방송 그래픽으로 안 읽힙니다. 못 받아오면 조용히 아래 폴백으로 떨어집니다(§0 침묵). -->
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;600;700;800&family=Barlow+Condensed:wght@600;700&display=swap">
+<!-- 칸 테마 글꼴 (2026-10-22) — 이름·제목은 Pretendard, 숫자는 위의 Barlow Condensed. 못 받으면 고딕 A1 로 떨어집니다 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
   :root{--ink:#f5f0e6; --gold:#e8c66a}
   *{margin:0; padding:0; box-sizing:border-box}
@@ -101,6 +103,8 @@ export const PAGE_HTML = `<!doctype html>
   .ov-delta.plus{color:#6fb4ff} /* 뜻색 한 벌 (2026-09-08) — 순액과 같은 파랑·산호 */
   /* 비어 있을 때는 칩 배경만 남지 않도록 아예 감춥니다 */
   .ov-delta:empty{display:none}
+  /* 만·억 단위 칸 (2026-10-22) — 크기는 테마가 정합니다. 막대는 그대로 */
+  .ov-u{font-style:normal}
   /* 순액이 꺼져 있으면 칩은 판 바깥(투명 영역)으로 나갑니다 — 카드를 넓히지 않으니
      판이 작아지지 않고, OBS 소스에 어차피 남던 여백을 대신 씁니다.
      잘리지 않게 fitBoard 가 그 튀어나온 만큼을 폭에 얹어서 배율을 잽니다. */
@@ -471,23 +475,36 @@ export const PAGE_HTML = `<!doctype html>
   .ov-move.down{color:#ff7d6b}
   @keyframes ov-hold{0%,82%{opacity:1} 100%{opacity:0}}
 
-  /* ---- 기본 테마 = 막대 줄 (2026-09-08 사용자 확정) ----
+  /* ---- 배경 투명도는 판의 모든 바탕·선에 같은 비율로 (2026-10-22 사용자 확정 가′ — "막대에서 투명도가 일관성이 없다") ----
+     setBg 가 --bg 에서 --k(= bg/.9, 최대 1)와 그 곱(--k55·--k50·--k14)을 만들어 칸마다 제 진하기에 곱합니다.
+     기본 투명도 10(bg .9)에서 k = 1 이라 지금 그림 그대로이고, 100 이면 글자만 남습니다.
+     바탕이 옅어질수록 글자에 얇은 외곽선 + 번짐(--shd, bg .75 아래에서 0 → 1)을 둡니다 — 번짐만으로는 밝은 장면에서
+     금색 금액이 금빛 번개에 묻혔습니다(목업 dev/theme t6). 카드·룰렛·증감 칩의 바탕은 판 바깥의 사건이라 안 따릅니다.
+     (폐기 2026-10-22) 줄·머리 바탕만 투명도를 따르고 등수 칸·기둥(.55)·머리 라벨 칸(불투명)·크림 띠·금색 칸,
+     칸 테마의 1px 선·금색 띠는 고정이던 것 — 투명도 100 에서 빈 칸과 틀만 떠 있었습니다(사용자 지적) */
+  .ov{text-shadow:-1px 0 0 rgba(0,0,0,var(--shd,0)), 1px 0 0 rgba(0,0,0,var(--shd,0)),
+    0 -1px 0 rgba(0,0,0,var(--shd,0)), 0 1px 0 rgba(0,0,0,var(--shd,0)), 0 0 .5vw rgba(0,0,0,var(--shd2,0))}
+
+  /* ---- 막대 줄 뼈대 — 막대(bars)와 칸(cells) 두 테마가 같이 씁니다 (2026-10-22) ----
+     칸 테마는 이 뼈대(줄마다 막대, 두 조각 머리, 열 폭·여백 맞춤)를 그대로 쓰고 겉만 갈아입습니다 — 아래 칸 테마 절.
+     :is() 는 Chromium 88 부터라 OBS 30(CEF 103)에서도 됩니다. 명시도는 [data-t="bars"] 하나일 때와 같습니다.
+     ---- (아래는 막대 테마 기록) 기본 테마 = 막대 줄 (2026-09-08 사용자 확정) ----
      판을 버리고 줄마다 각진 막대를 세웁니다. 막대 사이로 게임 화면이 비쳐서
      불투명한데도 판보다 덜 가립니다. 머리는 두 조각 — 제목 블록과 금색 지표 블록.
      1위는 막대를 채우지 않고 등수·이름만 금색입니다(사용자 확정). */
-  html[data-t="bars"] .ov{padding:0}
-  html[data-t="bars"] .ov-head{background:rgba(23,19,14,var(--bg,.9));
+  html:is([data-t="bars"],[data-t="cells"]) .ov{padding:0}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head{background:rgba(23,19,14,var(--bg,.9));
     align-items:center; padding:1vw 1.6vw; margin-bottom:1.02vw}
-  html[data-t="bars"] .ov-head::after{display:none}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head::after{display:none}
   /* 제목을 판 왼쪽 끝으로 당기던 음수 여백은 블록 안에서는 제목을 바깥으로 밀어냅니다.
      빈 등수·변동 칸은 없앱니다 — 이름 열이 flex:1 이라 뒤의 열은 그대로 맞습니다 */
-  html[data-t="bars"] .ov-head > .ov-rank,
-  html[data-t="bars"] .ov-head > .ov-move{display:none}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head > .ov-rank,
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head > .ov-move{display:none}
   /* 머리줄 글자 (2026-09-08 사용자 확정, 목업 A) — 크기를 올리고 무게를 한 단계 내립니다.
      방송에서 판이 500px 이면 머리줄 글자는 15~25px 로 나오는데, 그 크기에서 700~800 은 고딕 A1 의
      속공간(벌·금·순·위·잡·죽)이 메워져 덩어리로 보이고 송출 인코딩이 한 번 더 뭉갭니다.
      (폐기) 제목 3.3vw/700/.05em · 총액 3.4vw/800 · 라벨 상한 2.2vw/700 · 슬라이드 라벨 3.4vw/700 */
-  html[data-t="bars"] .ov-name-t, html[data-t="bars"] .ov-lobby-t{margin-left:0;
+  html:is([data-t="bars"],[data-t="cells"]) .ov-name-t, html:is([data-t="bars"],[data-t="cells"]) .ov-lobby-t{margin-left:0;
     font-size:3.8vw; font-weight:600; letter-spacing:.03em}
   /* 금색 블록 — 합계와 대기실 인원이 같은 자리에 섭니다. 왼쪽 띠는 box-shadow 라
      자리를 안 먹습니다: 열 간격을 그대로 덮어서 칸 정렬이 안 틀어집니다.
@@ -496,7 +513,7 @@ export const PAGE_HTML = `<!doctype html>
   /* 총액은 4vw/700 (2026-09-08) — 목업 A 의 3.8 은 무게가 내려간 만큼 커진 게 안 보였다(사용자).
      한 눈금 더 올리되 줄의 금액(4.4vw)보다는 작게 — 머리와 줄의 위계는 남깁니다.
      열 폭(--goldw)은 줄 글자로 "9999만"을 재 두어서 4vw 의 총액은 1억 전까지 그 안에 듭니다 */
-  html[data-t="bars"] .ov-total, html[data-t="bars"] .ov-lobby-n{
+  html:is([data-t="bars"],[data-t="cells"]) .ov-total, html:is([data-t="bars"],[data-t="cells"]) .ov-lobby-n{
     background:var(--gold); color:#17130e; opacity:1; font-size:4vw; font-weight:700;
     align-self:stretch; display:flex; align-items:center; justify-content:flex-end;
     min-width:9.5vw; position:relative;
@@ -504,7 +521,7 @@ export const PAGE_HTML = `<!doctype html>
        margin-right:-1.6vw 를 지워서 머리와 줄의 열이 1.6vw 어긋납니다 (2026-09-08 실측) */
     margin-top:-1vw; margin-bottom:-1vw;
     /* 두꺼운 띠 — 값 칸(금색)만. 라벨 칸의 두 배입니다 (2026-09-08 사용자 확정) */
-    box-shadow:-.45vw 0 0 0 rgba(245,240,230,.5)}
+    box-shadow:-.45vw 0 0 0 rgba(245,240,230,var(--k50,.5))}
   /* 금색은 값에만 씁니다 (2026-09-08 사용자 확정). 슬라이드에서 이 자리는 합계일 땐 총액(값),
      항목·순액일 땐 이름입니다. 이름일 때까지 금색이면 "금색 = 돈"이 흐려지고, 나란히에서
      같은 단어(잡힘)가 어두운 색면에 크림 글자인 것과도 어긋납니다.
@@ -512,17 +529,23 @@ export const PAGE_HTML = `<!doctype html>
   /* 머리줄 라벨 칸은 불투명 (2026-09-08 사용자 확정) — 줄의 칸(등수·이름·기둥)은 .55 그대로 두어 게임이
      비치는 건 지키고, 이름표인 머리줄만 늘 같은 얼굴을 갖습니다. 반투명이면 뒤의 게임이 밝을 때
      크림 글자의 대비가 죽었습니다(사용자 방송 화면). 라벨은 3.8vw/600 */
-  html[data-t="bars"] .ov-total.as-lab{
-    background:#17130e; color:rgba(245,240,230,.92); font-size:3.8vw; font-weight:600;
+  html:is([data-t="bars"],[data-t="cells"]) .ov-total.as-lab{
+    background:rgba(23,19,14,var(--k,1)); color:rgba(245,240,230,.92); font-size:3.8vw; font-weight:600;
     /* 라벨일 땐 띠도 라벨 두께로 — 두꺼운 띠는 노란 칸의 짝입니다 */
-    box-shadow:-.22vw 0 0 0 rgba(245,240,230,.5)}
+    box-shadow:-.22vw 0 0 0 rgba(245,240,230,var(--k50,.5))}
   /* 금색 블록 안의 증감은 어두운 짝으로 (2026-09-08 사용자 지적: 황색 띠에 녹색이 안 보인다).
      총액이 굴러갈 때 그 사이에 끼는 증감 한 줄(.ov-mvreel > i.d)이 금색 바탕에 떠 버립니다.
      뜻색은 한 벌 — 금색 위에서도 파랑·산호, 톤만 어둡게 (2026-09-08 사용자 확정).
      (폐기) 밝은 판의 --up #2f7a4d / --dn #b8462f — "4.8~4.9" 는 크림 바탕에서 잰 값이었고
      금색 #e8c66a 위에서는 3.2 였다. #1a4f80 은 5.1, #8f331f 는 4.8 */
-  html[data-t="bars"] .ov-total .ov-mvreel.up > i.d{color:#1a4f80}
-  html[data-t="bars"] .ov-total .ov-mvreel.dn > i.d{color:#8f331f}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-total .ov-mvreel.up > i.d{color:#1a4f80}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-total .ov-mvreel.dn > i.d{color:#8f331f}
+  /* 투명도 50 이상(data-bgl)이면 금색 칸이 금색 글자가 됩니다 (2026-10-22 사용자 확정 가′) — 칸이 옅어지면
+     진한 글자가 게임에 묻혀서, 칸 테마처럼 글자에 금색을 옮깁니다. 그때 증감 줄도 밝은 짝으로 */
+  html[data-bgl="1"][data-t="bars"] .ov-total:not(.as-lab),
+  html[data-bgl="1"][data-t="bars"] .ov-lobby-n{background:none; color:var(--gold)}
+  html[data-bgl="1"][data-t="bars"] .ov-total .ov-mvreel.up > i.d{color:#6fb4ff}
+  html[data-bgl="1"][data-t="bars"] .ov-total .ov-mvreel.dn > i.d{color:#ff7d6b}
   /* 칠해진 값 칸은 글자 뒤에 1.6vw 를 둡니다 (2026-09-08 사용자 지적: 글자가 칸 끝에 딱 붙는다).
      1.6vw 는 줄의 오른쪽 안쪽 여백과 같은 값이라, 블록 안의 글자가 아래 금액들과 같은 선에서
      끝납니다. content-box 라 그 여백이 --goldw 를 안 먹습니다 — border-box 로 두면 그 폭에
@@ -535,9 +558,9 @@ export const PAGE_HTML = `<!doctype html>
      기둥이 생기기 전에는 그 자리에 경계가 없어 안 보이던 것이, 이제 카드 모서리가 숫자에 닿습니다.
      슬라이드에서 나란히로 "전환"만 하면 괜찮아 보이는 건 슬라이드가 부호 붙은 값까지 잡아 둔
      17.0vw 가 래칫으로 남아서일 뿐이고, 새로고침하면 그 여유가 사라집니다 */
-  html[data-t="bars"] .ov-total,
-  html[data-t="bars"] .ov-lobby-n,
-  html[data-t="bars"] .ov-row > .ov-gold{
+  html:is([data-t="bars"],[data-t="cells"]) .ov-total,
+  html:is([data-t="bars"],[data-t="cells"]) .ov-lobby-n,
+  html:is([data-t="bars"],[data-t="cells"]) .ov-row > .ov-gold{
     padding-left:1.6vw; padding-right:1.6vw; box-sizing:content-box}
   /* 마지막 칸은 판의 안쪽 여백을 먹어 색이 막대 오른쪽 끝까지 갑니다 (2026-09-08 사용자 지적:
      색면이 끝에서 1.6vw 앞에 멈춰 머리줄만 덜 그려진 것처럼 보인다).
@@ -545,8 +568,8 @@ export const PAGE_HTML = `<!doctype html>
      ★ 머리와 줄에 똑같이 걸어야 합니다 — 한쪽에만 걸면 그쪽 flex:1 칸(제목/이름)만 1.6vw
      자라서 그 뒤의 열이 통째로 어긋납니다 (2026-09-08 실측: 순액 머리에만 걸었더니
      머리 총액이 줄 금액보다 15px 오른쪽, 순액 라벨도 순액 값보다 15px 오른쪽) */
-  html[data-t="bars"] .ov-head > :last-child,
-  html[data-t="bars"] .ov-row > :last-child{
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head > :last-child,
+  html:is([data-t="bars"],[data-t="cells"]) .ov-row > :last-child{
     margin-right:-1.6vw; padding-right:1.6vw; box-sizing:content-box}
 
   /* 머리줄의 한 마디 = [띠][칸][반투명 공백] (2026-09-08 사용자 확정).
@@ -556,17 +579,17 @@ export const PAGE_HTML = `<!doctype html>
      (폐기 2026-09-08) 잡힘~순액을 하나의 색면으로 잇던 것 — 다리로 이어 붙이면 칸이 어디서
      갈리는지 안 보여서 "이 열의 몫이 여기까지"라는 직관이 실제 칸과 어긋났습니다.
      실측: 잡힘은 라벨 앞이 1.01vw 인데 죽음은 2.61vw 라, 폭이 같은 두 열이 좁고/넓게 읽혔습니다 */
-  html[data-t="bars"] .ov-head > .ov-chead,
-  html[data-t="bars"] .ov-head > .ov-nethead{
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head > .ov-chead,
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head > .ov-nethead{
     align-self:stretch; display:flex; align-items:center; position:relative;
     margin-top:-1vw; margin-bottom:-1vw; /* 단축 금지 — :last-child 의 margin-right 를 지웁니다 */
     /* 600/.04em, 불투명 (2026-09-08 사용자 확정) — 작은 라벨은 굵기보다 크기와 자간이 먼저 읽힙니다.
        바탕은 라벨 칸(.ov-total.as-lab)과 같은 이유로 불투명. (폐기) 700 · rgba(8,7,6,.55) */
     opacity:1; font-weight:600; letter-spacing:.04em; color:rgba(245,240,230,.92);
-    background:#17130e;
-    box-shadow:-.22vw 0 0 0 rgba(245,240,230,.5)}
-  html[data-t="bars"] .ov-head > .ov-chead{justify-content:center}
-  html[data-t="bars"] .ov-head > .ov-nethead{justify-content:flex-end}
+    background:rgba(23,19,14,var(--k,1)); /* 기본 투명도에선 불투명 그대로, 높이면 같이 옅어진다 (2026-10-22) */
+    box-shadow:-.22vw 0 0 0 rgba(245,240,230,var(--k50,.5))}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head > .ov-chead{justify-content:center}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-head > .ov-nethead{justify-content:flex-end}
   /* (폐기 2026-09-08) 첫 라벨 칸의 띠를 빼던 것 — 잡힘만 왼쪽 경계가 없어서 다른 칸보다
      좁게 읽혔습니다. 이제 네 칸 모두 제 띠를 갖습니다 */
 
@@ -580,39 +603,120 @@ export const PAGE_HTML = `<!doctype html>
      슬라이드의 항목·순액 페이즈에는 기둥이 없습니다 — 금색 머리와 짝을 이뤄
      "지금 돈을 보고 있다"를 말합니다. 나란히에서 잡힘 열이 맨 줄인 것과도 같습니다.
      배경은 칸이, 밝기(--slop)와 미끄러짐은 안쪽 .ov-slot 이 맡습니다 */
-  html[data-t="bars"] .ov-row > .ov-gold{
+  html:is([data-t="bars"],[data-t="cells"]) .ov-row > .ov-gold{
     align-self:stretch; display:flex; align-items:center; justify-content:flex-end;
     margin-top:-.85vw; margin-bottom:-.85vw; /* 단축 금지 — :last-child 의 margin-right 를 지웁니다 */
-    background:rgba(8,7,6,.55)}
-  html[data-t="bars"] .ov-row > .ov-gold.as-cnt,
-  html[data-t="bars"] .ov-row > .ov-gold.as-net{background:none}
+    background:rgba(8,7,6,var(--k55,.55))}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-row > .ov-gold.as-cnt,
+  html:is([data-t="bars"],[data-t="cells"]) .ov-row > .ov-gold.as-net{background:none}
   /* 줄 = 막대. 사이 간격이 판 노릇을 합니다 */
-  html[data-t="bars"] .ov-row{background:rgba(20,17,14,var(--bg,.9)); border-radius:0;
+  html:is([data-t="bars"],[data-t="cells"]) .ov-row{background:rgba(20,17,14,var(--bg,.9)); border-radius:0;
     padding:.85vw 1.6vw .85vw 0}
   /* 간격은 막대 '사이'에만 둡니다 — 마지막 막대에 아래 여백을 달면 판(.ov)에 안쪽 여백이
      없어서 그 여백이 판 밖으로 빠져나가고(마진 상쇄), fitBoard 가 그만큼 짧게 재서
      맨 아래 막대가 잘렸습니다 (2026-09-08 실측: 836px 로 재고 실제는 840px) */
-  html[data-t="bars"] .ov-row + .ov-row{border-top:none; margin-top:.34vw}
-  html[data-t="bars"] .ov-rank{align-self:stretch; display:flex; align-items:center;
-    justify-content:center; background:rgba(8,7,6,.55); width:6.4vw; margin:-.85vw 0}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-row + .ov-row{border-top:none; margin-top:.34vw}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-rank{align-self:stretch; display:flex; align-items:center;
+    justify-content:center; background:rgba(8,7,6,var(--k55,.55)); width:6.4vw; margin:-.85vw 0}
   /* 대기실 빈 자리는 채우지 않고 점선만 — 이 앱에서 점선이 이미 뜻하는 것(빈 칸·빈 줄·
      아직 아무도 없는 자리)과 말이 맞습니다. outline 은 자리를 안 먹어 막대 크기가 그대로입니다 */
-  html[data-t="bars"] .ov-lbrow.lb-empty{background:none;
+  html:is([data-t="bars"],[data-t="cells"]) .ov-lbrow.lb-empty{background:none;
     outline:max(1px, .2vw) dashed rgba(245,240,230,.34);
     outline-offset:calc(-1 * max(1px, .2vw))}
-  html[data-t="bars"] .ov-lbrow.lb-empty .ov-rank{background:none}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-lbrow.lb-empty .ov-rank{background:none}
   /* 점선은 막대당 하나입니다 — 테두리가 이미 '빈 자리'라고 말하는데 이름 칸에도 점선을 그으면
      한 줄에 점선이 둘입니다. 판 테마에서는 반대로 이름 칸 점선만 있습니다 */
-  html[data-t="bars"] .ov-lbrow.lb-empty .ov-name::after{display:none}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-lbrow.lb-empty .ov-name::after{display:none}
   /* 이름이 없으면 줄 상자가 등수 글자 높이로 주저앉아 빈 막대만 낮아집니다 —
      보이지 않는 한 글자로 이름 칸의 줄 높이를 세웁니다 (2026-09-08 실측) */
-  html[data-t="bars"] .ov-lbrow.lb-empty .ov-name::before{content:"\\00a0"}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-lbrow.lb-empty .ov-name::before{content:"\\00a0"}
   /* 대기실 줄은 번호·이름 두 칸뿐이라 벌금표보다 짧습니다 — 변동·금액 칸만큼 자리를 비워
      폭을 맞춥니다. 시작하는 순간 판이 옆으로 안 벌어집니다 (2026-09-08 사용자 확정) */
-  html[data-t="bars"] .ov-lbrow::after{content:''; flex:none; width:16.7vw}
+  html:is([data-t="bars"],[data-t="cells"]) .ov-lbrow::after{content:''; flex:none; width:16.7vw}
   /* 발치 문구도 막대 하나 — 판이 없어져서 맨 글자로 두면 밝은 화면에서 사라집니다 */
-  html[data-t="bars"] .ov-lobby-note{background:rgba(23,19,14,var(--bg,.9));
+  html:is([data-t="bars"],[data-t="cells"]) .ov-lobby-note{background:rgba(23,19,14,var(--bg,.9));
     margin-top:1.02vw; padding:.85vw 1.6vw; opacity:1; color:rgba(245,240,230,.78)}
+
+  /* ---- 칸 테마 cells — 새 기본 (2026-10-22 사용자 확정, 목업 dev/theme 의 D) ----
+     레퍼런스는 월즈·MSI 2026 중계 그래픽입니다(사용자가 고름). 조사한 대회 중계 11건이 전부 직각이고, 데이터 판에 사선·광택을
+     쓴 곳은 없었습니다. 옮긴 것: 검정 불투명 직각 칸 + 1px 밝은 테두리(표의 칸 선), 흰 글자의 크기·굵기로만 위계,
+     색은 가는 세로 띠와 작은 채운 칩에만, 숫자는 좁고 굵은 숫자체, 이름은 보통 폭 굵은 글씨.
+     채운 금색 블록은 없습니다 — 총액도 금색 글자입니다(사용자 확정). 금색은 여전히 돈에만, 1위는 등수·이름의 금색 글자만.
+     잰 값(같은 OBS 상자 287×245, 나란히): 이름 16.5 · 금액 18.7 · 항목 15.0 · 순액 12.7px — 막대는 16.3 · 16.3 · 12.6 · 10.7.
+     좁은 숫자체 덕에 같은 상자에서 숫자만 커집니다 */
+  html[data-t="cells"]{--ink:#f5f6f8; --gold:#f2c75a; --hl:rgba(255,255,255,var(--k14,.14)); --hlc:rgba(255,255,255,.14); --chmax:2.3}
+  html[data-t="cells"] body{font-family:'Pretendard Variable',Pretendard,'Gothic A1','Malgun Gothic',sans-serif}
+  html[data-t="cells"] .ov-gold, html[data-t="cells"] .ov-total, html[data-t="cells"] .ov-rank,
+  html[data-t="cells"] .ov-cnum, html[data-t="cells"] .ov-net,
+  html[data-t="cells"] .ov-delta, html[data-t="cells"] .ov-lobby-n{
+    font-family:'Barlow Condensed','Pretendard Variable',Pretendard,'Gothic A1',sans-serif}
+  /* 줄 — 막대마다 1px 밝은 테두리. 사이 .3vw 로 게임이 비치는 건 막대와 같습니다 */
+  html[data-t="cells"] .ov-row{background:rgba(10,11,15,var(--bg,.9)); font-weight:600;
+    box-shadow:inset 0 0 0 1px var(--hl)}
+  html[data-t="cells"] .ov-row + .ov-row{margin-top:.3vw}
+  /* 등수 — 진한 블록 대신 오른쪽 칸 선 하나 */
+  html[data-t="cells"] .ov-rank{background:none; width:5.2vw; font-size:3.9vw; font-weight:700;
+    color:rgba(245,246,248,.62); box-shadow:inset -1px 0 0 var(--hl)}
+  html[data-t="cells"] .ov-row.top .ov-rank{color:var(--gold)}
+  /* 순위 변동 칸은 좁게 붙입니다 — 비어 있는 시간이 대부분이라 이름이 등수에서 떠 보였습니다.
+     접어서 등수 위에 얹으면 ▲5 가 이름에 겹쳐서(목업에서 확인) 4.4vw 칸은 남깁니다. 글꼴은 본문(Pretendard) —
+     좁은 숫자체에는 ▲ 가 없어 다른 글꼴의 큰 ▲ 로 떨어지고, 3.8vw 칸에서 숫자가 이름에 덮였습니다(구현 뒤 확인) */
+  html[data-t="cells"] .ov-row > .ov-move{width:4.4vw; margin-right:-.9vw; font-size:2.5vw;
+    text-align:left; white-space:nowrap}
+  /* 금액 — 기둥 대신 왼쪽 칸 선, 좁은 숫자체 5vw. 칸 높이는 이름 줄(4.4vw × 1.2)과 같게 1.056em */
+  html[data-t="cells"] .ov-row > .ov-gold{background:none; font-weight:700; font-size:5vw;
+    box-shadow:inset 1px 0 0 var(--hl)}
+  html[data-t="cells"] .ov-mvbox{height:1.056em}
+  html[data-t="cells"] .ov-mvreel > i{height:1.056em; line-height:1.056em}
+  html[data-t="cells"] .ov-cnum{font-size:4vw; font-weight:600; color:rgba(245,246,248,.88); opacity:1}
+  html[data-t="cells"] .ov-cnum.z{opacity:.36}
+  html[data-t="cells"] .ov-net{font-size:3.4vw; font-weight:700}
+  /* 머리 — 왼쪽 끝 금색 세로 띠(중계의 팀색 띠 자리). 열 이름은 흐리게 — 덜 보여도 된다(사용자) */
+  html[data-t="cells"] .ov-head{background:rgba(10,11,15,var(--bg,.9)); padding:.8vw 1.6vw .8vw 2.4vw;
+    margin-bottom:.3vw; box-shadow:inset 0 0 0 1px var(--hl), inset .8vw 0 0 rgba(242,199,90,var(--k,1))}
+  html[data-t="cells"] .ov-name-t, html[data-t="cells"] .ov-lobby-t{font-size:3.4vw; font-weight:700; letter-spacing:.01em}
+  html[data-t="cells"] .ov-head > .ov-chead,
+  html[data-t="cells"] .ov-head > .ov-nethead{background:none; box-shadow:none; color:rgba(245,246,248,.45);
+    font-weight:600; margin-top:-.8vw; margin-bottom:-.8vw}
+  html[data-t="cells"] .ov-total, html[data-t="cells"] .ov-lobby-n{background:none; color:var(--gold);
+    font-weight:700; font-size:5vw; margin-top:-.8vw; margin-bottom:-.8vw; box-shadow:inset 1px 0 0 var(--hl)}
+  html[data-t="cells"] .ov-total .ov-mvreel.up > i.d{color:#6fb4ff}
+  html[data-t="cells"] .ov-total .ov-mvreel.dn > i.d{color:#ff7d6b}
+  html[data-t="cells"] .ov-total.as-lab{background:none; color:rgba(245,246,248,.7); font-size:3vw; font-weight:600;
+    font-family:'Pretendard Variable',Pretendard,'Gothic A1',sans-serif; box-shadow:inset 1px 0 0 var(--hl)}
+  /* 만·억 — 숫자보다 작게. 한글은 숫자체에 없어 본문 글꼴로 나옵니다 */
+  html[data-t="cells"] .ov-u{font-size:.74em; font-weight:600; margin-left:.04em}
+  /* 증감 칩 — 중계의 "+2.0K" 처럼 채운 작은 칸, 글자는 흰색 */
+  html[data-t="cells"] .ov-delta{background:#2f7fd6; color:#fff; font-weight:700}
+  html[data-t="cells"] .ov-delta.minus{background:#d8463a; color:#fff}
+  /* 대기실 */
+  html[data-t="cells"] .ov-lbrow.lb-empty{box-shadow:none}
+  html[data-t="cells"] .ov-lobby-note{background:rgba(10,11,15,var(--bg,.9)); color:rgba(245,246,248,.78);
+    box-shadow:inset 0 0 0 1px var(--hl)}
+  /* 클릭 알림 카드 — 같은 검정 칸, 금액은 금색 글자, 이름 칸과 금액 칸 사이는 1px 선. 왼쪽 끝 금색 띠는 머리와 같은 표지.
+     크기(이름 7.2 · 꼬리표 3.4 · 금액 5.6)와 초상화·움직임은 그대로입니다 */
+  html[data-t="cells"] .ov-fx{box-shadow:0 0 0 1px var(--hlc); border-left:.8vw solid var(--gold)}
+  html[data-t="cells"] .ov-fx.roul{box-shadow:0 0 0 .22vw var(--gold)}
+  html[data-t="cells"] .ov-face{background:#16181e}
+  html[data-t="cells"] .ov-face.sil{color:rgba(245,246,248,.4)}
+  html[data-t="cells"] .ov-fx b{background:#0a0b0f; color:#f5f6f8; font-weight:700}
+  html[data-t="cells"] .ov-fx b small{opacity:.6; font-weight:500}
+  html[data-t="cells"] .ov-fx span{background:#0a0b0f; color:var(--gold); border-top:1px solid var(--hlc);
+    font-family:'Barlow Condensed','Pretendard Variable',Pretendard,'Gothic A1',sans-serif; font-weight:700}
+  html[data-t="cells"] .ov-fx.up em{color:var(--gold)}
+  html[data-t="cells"] .ov-fx.dn em{color:#ff7d6b}
+  /* 룰렛 상자 — 담는 상자·칩·바늘·허브 바탕만 칸 테마로. 원판(칸 색·새틴·눈금·글자)은 그대로입니다 (2026-09-08 사용자: 룰렛은 그대로) */
+  html[data-t="cells"] .ov-sp{color:#f5f6f8; background:#0a0b0f;
+    box-shadow:inset 0 0 0 1px var(--hlc), calc(var(--u)*-.9) 0 0 0 var(--gold)}
+  html[data-t="cells"] .ov-sp-item, html[data-t="cells"] .ov-sp-out em,
+  html[data-t="cells"] .ov-sp-delta{color:rgba(245,246,248,.55)}
+  html[data-t="cells"] .ov-sp-delta b{color:#f5f6f8}
+  html[data-t="cells"] .ov-tchip{background:#15171c; box-shadow:inset 0 0 0 1px var(--hlc)}
+  html[data-t="cells"] .ov-w-pin{border-top-color:#f5f6f8}
+  html[data-t="cells"] .ov-w-hub{background:#111318}
+  html[data-t="cells"] .ov-reel{background:#0f1115}
+  html[data-t="cells"] .ov-reel-n.side{color:#f5f6f8}
+  html[data-t="cells"] .ov-sp-gone{background:rgba(10,11,15,.9)}
 
   /* (폐기 2026-09-24 사용자 확정: 투명도만 남긴다) 어두운 판 · 밝은 판 · 판 없이 두 가지 — 테마 CSS 전부.
      밝은 판의 카드·룰렛 뒤집기, 판 테마의 줄 사이 실선과 헤어라인 테두리도 같이 갔습니다 */
@@ -730,19 +834,46 @@ export const PAGE_HTML = `<!doctype html>
   /* fit=1 이면 미리보기 창입니다. 진짜 OBS 안에서는 절대 켜지지 않게 한 번 더 막습니다 */
   var isPreview = q.get("fit") === "1" && !window.obsstudio;
   if (isPreview) root.dataset.preview = "1";
-  /* 테마는 막대 줄(bars) 하나입니다 (2026-09-24 사용자 확정: 투명도만 남긴다).
-     테마를 고르는 길(주소 t= · 계정 외형 t)은 그대로 두고, 목록에 없는 이름은 막대로 읽습니다 —
-     예전 어두운 판·밝은 판·판 없는 테마를 적어 둔 OBS 소스도 막대로 나옵니다 */
-  var THEMES = ["bars"];
-  var themeOf = function (t) { return THEMES.indexOf(t) >= 0 ? t : "bars"; };
+  /* 테마는 둘 — 칸(cells, 기본)과 막대 줄(bars) (2026-10-22 사용자 확정: 새 테마로 바꾸고 고르기를 되살린다, 둘만).
+     목록에 없는 이름은 기본(칸)으로 읽습니다 — 예전 어두운 판·밝은 판·판 없는 테마를 적어 둔 소스도 칸으로 나옵니다.
+     (폐기 2026-10-22) 막대 하나뿐이던 목록 (2026-09-24 사용자 확정: 투명도만 남긴다) */
+  var THEMES = ["cells", "bars"];
+  var themeOf = function (t) { return THEMES.indexOf(t) >= 0 ? t : "cells"; };
+  /* 외형의 tv 는 "테마를 둘 중에서 고른 뒤에 저장된 값"이라는 표시입니다 (2026-10-22 사용자 확정: 기존 사용자도 새 테마로 덮어쓴다).
+     표시가 없는 외형은 칸 테마가 생기기 전에 저장된 것이라, 막대로 적혀 있어도 칸으로 읽습니다 —
+     앱을 다시 열지 않은 사람의 방송도 워커가 바뀌는 순간 같이 바뀝니다. 주소에 직접 적은 t= 는 그대로 따릅니다 */
+  var lookTheme = function (lk) { return themeOf(lk && lk.tv ? lk.t : ""); };
+  /* 테마가 바뀌면 열 폭 래칫을 풀고 다시 잽니다 — 두 테마는 숫자 글꼴이 달라서(칸은 좁은 숫자체) 옛 폭이 남으면
+     판이 그만큼 넓은 채로 남습니다. 새 글꼴은 처음 쓰일 때 받아 오므로 다 오면 한 번 더 잽니다 */
+  var setTheme = function (t) {
+    if (root.dataset.t === t) return;
+    root.dataset.t = t;
+    goldHW = 0; netHW = 0; nameHW = 0;
+    var re = function () {
+      if (board && document.querySelector(".ov")) setGoldW(board);
+      fitCheads(); fitLabel(); fitBoard();
+    };
+    re();
+    if (document.fonts && document.fonts.ready && document.fonts.ready.then) document.fonts.ready.then(re);
+  };
   var urlTheme = q.get("t");
   var urlBg = q.get("bg");
   var urlS = q.get("s");
   var urlLine = q.get("line"); // 헤어라인 (2026-09-06) — 주소에 적으면 그쪽이 우선
   root.dataset.t = themeOf(urlTheme);
   if (urlLine != null) root.dataset.line = urlLine === "1" ? "1" : "0";
+  /* 배경 투명도 (2026-10-22 사용자 확정 가′) — --bg 하나에서 판의 모든 바탕·선의 진하기와 글자 외곽선을 같이 정합니다.
+     k = bg/.9: 기본(투명도 10)에서 1 이라 지금 그림 그대로. 외곽선은 bg .75 아래에서 0 → 1.
+     bg ≤ .5(투명도 50 이상)면 막대의 금색 총액 칸이 금색 글자가 됩니다(data-bgl) */
+  var setBg = function (v) {
+    var k = Math.min(1, v / 0.9), sh = Math.max(0, Math.min(1, (0.75 - v) / 0.75));
+    var set = function (n, x) { root.style.setProperty(n, String(+x.toFixed(3))); };
+    set("--bg", v); set("--k", k); set("--k55", 0.55 * k); set("--k50", 0.5 * k); set("--k14", 0.14 * k);
+    set("--shd", sh); set("--shd2", sh * 0.6);
+    root.dataset.bgl = v <= 0.5 ? "1" : "0";
+  };
   var bg = parseInt(urlBg, 10);
-  if (!isNaN(bg)) root.style.setProperty("--bg", Math.min(100, Math.max(0, bg)) / 100);
+  if (!isNaN(bg)) setBg(Math.min(100, Math.max(0, bg)) / 100);
   var s = parseInt(urlS, 10);
   if (!isNaN(s)) document.body.style.fontSize = Math.min(300, Math.max(50, s)) + "%";
 
@@ -763,10 +894,10 @@ export const PAGE_HTML = `<!doctype html>
     if (!lk || typeof lk !== "object") return;
     if (fromAcct) acctLook = lk;
     else if (acctLook) return;
-    if (!urlTheme) root.dataset.t = themeOf(lk.t);
+    if (!urlTheme) setTheme(lookTheme(lk));
     if (urlLine == null) root.dataset.line = lk.line ? "1" : "0";
     if (urlBg == null && lk.bg != null)
-      root.style.setProperty("--bg", Math.min(100, Math.max(0, lk.bg)) / 100);
+      setBg(Math.min(100, Math.max(0, lk.bg)) / 100);
     if (urlS == null && lk.s != null) {
       var ls = parseInt(lk.s, 10);
       if (!isNaN(ls)) document.body.style.fontSize = Math.min(300, Math.max(50, ls)) + "%";
@@ -975,6 +1106,14 @@ export const PAGE_HTML = `<!doctype html>
     }
     return (neg ? "\u2212" : "") + out;
   };
+  /* 만·억 단위를 따로 싸 둡니다 (2026-10-22 사용자 확정) — 칸 테마는 숫자가 좁은 숫자체라, 같은 크기의 '만'(한글은 본문 글꼴)이
+     숫자보다 크고 굵어 보였습니다. 크기는 CSS(.ov-u)가 테마마다 정하고 막대 테마에서는 그대로입니다.
+     사람 이름에는 쓰지 않습니다 — '아만'처럼 만으로 끝나는 이름이 있습니다 */
+  var unitH = function (t) {
+    var s = String(t), u = s.slice(-1);
+    return u === "만" || u === "억" ? s.slice(0, -1) + '<i class="ov-u">' + u + "</i>" : s;
+  };
+  var manH = function (g) { return unitH(manShort(g)); };
 
   /* \uac12\uc740 **\ub298 \uac19\uc740 \uc0c1\uc790**\uc5d0 \ub2f4\uc2b5\ub2c8\ub2e4 (2026-09-08 \uc0ac\uc6a9\uc790 \uc9c0\uc801: \uc790\uafb8 \uae30\uc6cc\ub0b4\uc9c0 \ub9d0\uace0 \uadfc\ubcf8\uc744 \ucc3e\uc544\ub77c).
      \uad74\ub7ec\uac08 \ub54c\ub294 .ov-mvbox \uc548\uc758 \uce78\uc774\uace0 \uc549\uc558\uc744 \ub54c\ub294 \ub9e8 \uae00\uc790\uc600\uc2b5\ub2c8\ub2e4 \u2014 \uc0c1\uc790\uac00 \ub458\uc774\ub77c
@@ -1045,8 +1184,10 @@ export const PAGE_HTML = `<!doctype html>
     wrap.appendChild(nprobe);
     wrap.appendChild(mprobe);
     box.appendChild(wrap);
-    var mw = function (el, t) {
-      el.textContent = t;
+    /* 돈은 화면과 같은 꼴(단위 칸 포함)로 잽니다 — 칸 테마는 단위가 작아서 글자로만 재면 폭이 부풉니다 */
+    var mw = function (el, t, money) {
+      if (money) el.innerHTML = unitH(t);
+      else el.textContent = t;
       return el.offsetWidth;
     };
     /* 밑값은 manShort 가 만들어 낼 수 있는 **가장 넓은 꼴**로 잡습니다 (2026-09-08 사용자 지적:
@@ -1059,25 +1200,25 @@ export const PAGE_HTML = `<!doctype html>
     var WIDE = ["9999만", "99.9만", "9,999"];
     var WIDE_SIGNED = ["−9999만", "−99.9만", "−9,999"];
     var w = 0;
-    WIDE.forEach(function (t) { w = Math.max(w, mw(probe, t)); });
+    WIDE.forEach(function (t) { w = Math.max(w, mw(probe, t, 1)); });
     /* 슬라이드에서는 순액이 이 칸으로 들어옵니다 — 부호 붙은 꼴까지 미리 자리를 잡습니다 */
-    if (slideOn) WIDE_SIGNED.forEach(function (t) { w = Math.max(w, mw(probe, t)); });
+    if (slideOn) WIDE_SIGNED.forEach(function (t) { w = Math.max(w, mw(probe, t, 1)); });
     var nw = 0;
-    WIDE_SIGNED.forEach(function (t) { nw = Math.max(nw, mw(nprobe, t)); });
+    WIDE_SIGNED.forEach(function (t) { nw = Math.max(nw, mw(nprobe, t, 1)); });
     var mwd = 0;
     var total = 0;
     rows.forEach(function (r) {
       mwd = Math.max(mwd, mw(mprobe, r.n || ""));
       total += r.g || 0;
-      w = Math.max(w, mw(probe, manShort(r.g)));
-      nw = Math.max(nw, mw(nprobe, (r.d > 0 ? "+" : "") + manShort(r.d || 0)));
+      w = Math.max(w, mw(probe, manShort(r.g), 1));
+      nw = Math.max(nw, mw(nprobe, (r.d > 0 ? "+" : "") + manShort(r.d || 0), 1));
       /* 슬라이드 모드는 횟수·순액도 같은 칸에 오므로 그 폭까지 처음부터 잽니다 — 판이 지표마다 숨 쉬지 않게 */
       if (slideOn) {
         (r.c || []).forEach(function (v) { if (v) w = Math.max(w, mw(probe, String(v))); });
-        w = Math.max(w, mw(probe, (r.d > 0 ? "+" : "") + manShort(r.d || 0)));
+        w = Math.max(w, mw(probe, (r.d > 0 ? "+" : "") + manShort(r.d || 0), 1));
       }
     });
-    w = Math.max(w, mw(probe, manShort(total)));
+    w = Math.max(w, mw(probe, manShort(total), 1));
     box.removeChild(wrap);
     /* 첫 그림에서 자가 0으로 나오는 때가 있습니다(레이아웃 전) — 0 을 못 박지 말고 다음 프레임에 다시 잽니다 (2026-09-06 하네스에서 봄) */
     if (!w) {
@@ -1119,7 +1260,8 @@ export const PAGE_HTML = `<!doctype html>
     /* 상한 3.0 (2026-09-08 사용자 확정, 목업 A) — 2.2 는 두 글자 라벨도 칸의 70% 만 써서 방송에서 제일 작은
        글자였다. 자(box)는 칸 폭 6.4 에서 좌우 숨통 .25 씩을 뺀 5.9 — 두 글자가 3.0 으로 꽉 차면 색면에
        끼어 보여서, 상한은 3.0 이되 실제로는 그 안에서 한 눈금 줄어 앉습니다 */
-    var MAXV = 3.0, MINV = 1.6;
+    /* 상한은 테마가 CSS 변수(--chmax)로 정합니다 (2026-10-22) — 칸 테마는 열 이름이 덜 보여도 돼서(사용자) 2.3, 막대는 3.0 그대로 */
+    var MAXV = parseFloat(getComputedStyle(root).getPropertyValue("--chmax")) || 3.0, MINV = 1.6;
     var box = 5.9 * (window.innerWidth / 100); // 칸 폭(6.4vw) 안쪽 자리(px). 배율 전 레이아웃 기준
     if (!box) return;
     [].forEach.call(document.querySelectorAll(".ov-chead, .ov-nethead"), function (el) {
@@ -1206,7 +1348,7 @@ export const PAGE_HTML = `<!doctype html>
             (showSum ? slotHtml(r, { k: "sum" }, rc, showD, dAge, delay) : "") +
             (showNet
               ? '<span class="ov-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
-                  (r.d > 0 ? "+" : "") + manShort(r.d) + '</span>'
+                  unitH((r.d > 0 ? "+" : "") + manShort(r.d)) + '</span>'
               : '')) + '</div>';
     }).join("");
 
@@ -1237,11 +1379,11 @@ export const PAGE_HTML = `<!doctype html>
     }
     if (ph.k === "net")
       return '<span class="ov-gold as-net ' + (r.d > 0 ? "plus" : r.d < 0 ? "minus" : "") + '">' +
-        slot(still((r.d > 0 ? "+" : "") + manShort(r.d || 0))) + '</span>';
-    return '<span class="ov-gold">' + slot(still(manShort(r.g)) +
+        slot(still(unitH((r.d > 0 ? "+" : "") + manShort(r.d || 0)))) + '</span>';
+    return '<span class="ov-gold">' + slot(still(manH(r.g)) +
       '<span class="ov-delta ' + (showD ? (rc.d > 0 ? "plus" : "minus") : "") + '"' +
         (showD ? delay(dAge) : "") + '>' +
-        (showD ? (rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d)) : "") + '</span>') +
+        (showD ? unitH((rc.d > 0 ? "+" : "−") + manShort(Math.abs(rc.d))) : "") + '</span>') +
       '</span>';
   };
   /* 머리줄의 총액 자리 — 합계일 땐 총액, 항목일 땐 항목 이름, 순액일 땐 '순액' (사용자 확정: 총액 자리를 라벨 자리로) */
@@ -1253,7 +1395,7 @@ export const PAGE_HTML = `<!doctype html>
     }
     if (ph.k === "net") return '<span class="ov-total as-lab">' + slot(still("순액")) + '</span>';
     return '<span class="ov-total">' +
-      slot(still(manShort((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0)))) + '</span>';
+      slot(still(manH((board || []).reduce(function (a, r) { return a + (r.g || 0); }, 0)))) + '</span>';
   };
   /* 라벨이 칸보다 길면 글자를 줄입니다 (2.0~3.4vw) — 칸을 넓히면 판이 넓어져 배율이 떨어집니다 */
   var fitLabel = function () {
@@ -2142,7 +2284,7 @@ export const PAGE_HTML = `<!doctype html>
       /* 이름 칸: 이름 + 항목 꼬리표. 금색 칸: 금액만 (2026-09-08 사용자 확정 ㉢ 값이 주인공).
          정정은 꼬리표 앞에 붙습니다. (폐기) 금색 칸에 "항목 +금액" 한 줄 — 문장처럼 읽혔다 */
       '<b><i class="ov-fx-nm">' + esc(e.n) + "</i><small>" + (e.k === "cancel" || e.k === "sub" ? "취소 · " : "") + esc(e.t || "") + "</small></b>" +
-      "<span><em>" + (up ? "+" : "−") + manShort(Math.abs(e.g)) + "</em></span></div>";
+      "<span><em>" + unitH((up ? "+" : "−") + manShort(Math.abs(e.g))) + "</em></span></div>";
   };
   /* 사진이 못 왔을 때 — 상체 모양으로 (디스코드 CDN 이 막힌 방송 프로그램, 지운 사진) */
   var guardFace = function (root) {
@@ -2274,8 +2416,8 @@ export const PAGE_HTML = `<!doctype html>
       /* 여기서는 번쩍임을 안 켭니다 — 빛은 순위가 바뀐 줄의 것이고, 순위는 판이 앉을 때
          정해집니다(rowsHtml 의 머리). 스와이프는 금액 이야기라 제 몫만 합니다 */
       var up = m.to > m.from;
-      var mid = (up ? "+" : "\u2212") + manShort(Math.abs(m.to - m.from));
-      var a = manShort(m.from), c = manShort(m.to);
+      var mid = unitH((up ? "+" : "\u2212") + manShort(Math.abs(m.to - m.from)));
+      var a = manH(m.from), c = manH(m.to);
       /* 아래로 굴릴 때는 순서를 뒤집고 반대 방향으로 — 둘 다 새 값에서 멈춥니다 */
       var items = up ? [a, mid, c] : [c, mid, a];
       /* 굴러가는 칸이라고 표시합니다 (2026-09-08) — 0원 줄의 흐림이 릴까지 누르지 않게 */
@@ -2471,7 +2613,7 @@ export const PAGE_HTML = `<!doctype html>
           }).join("") +
           (showSum
             ? '<span class="ov-total">' +
-              slot(still(manShort(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)))) + "</span>"
+              slot(still(manH(board.reduce(function (a, r) { return a + (r.g || 0); }, 0)))) + "</span>"
             : "") +
           (showNet ? '<span class="ov-nethead">순액</span>' : ""));
     fitCheads(); // 머리줄을 그린 뒤에 — 확대(fitBoard) 전에 크기를 정해야 합니다
