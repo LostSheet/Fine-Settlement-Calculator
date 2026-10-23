@@ -23,7 +23,10 @@ const bundle = fs
 fs.rmSync("bundle.tmp.js");
 
 // 숫자 서체는 즉시 뜨도록 인라인. 나머지 폰트는 컴포넌트의 @import 로 로드됩니다.
-const font = fs.readFileSync(path.join("assets", "cutive.woff2")).toString("base64");
+// Courier Prime 보통·굵게 (2026-10-23, latin 부분 — 구글 폰트와 같은 unicode-range). (폐기) cutive.woff2
+const font400 = fs.readFileSync(path.join("assets", "courier-prime-400.woff2")).toString("base64");
+const font700 = fs.readFileSync(path.join("assets", "courier-prime-700.woff2")).toString("base64");
+const LATIN = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD";
 
 const html = `<!doctype html>
 <html lang="ko">
@@ -40,7 +43,8 @@ const html = `<!doctype html>
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
-@font-face{font-family:'Cutive Mono';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,${font}) format('woff2')}
+@font-face{font-family:'Courier Prime';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,${font400}) format('woff2');unicode-range:${LATIN}}
+@font-face{font-family:'Courier Prime';font-style:normal;font-weight:700;font-display:swap;src:url(data:font/woff2;base64,${font700}) format('woff2');unicode-range:${LATIN}}
 html,body{margin:0;padding:0;background:#c3a97f}
 @media (prefers-color-scheme:dark){html,body{background:#241f19}}
 </style>

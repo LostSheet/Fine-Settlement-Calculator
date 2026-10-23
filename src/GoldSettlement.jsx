@@ -11161,13 +11161,17 @@ export default function GoldSettlement() {
                             onClose={() => setDiscRow(null)}
                           />
                         ) : (
-                          /* 평소엔 금액만. 빈 칸이면 아무것도 두지 않습니다 — 올리면 입력이 나옵니다 */
+                          /* 평소엔 금액만. 빈 칸은 흐린 + 하나 (2026-10-23 사용자 "권장안대로") — 눌러야 열리는 칸인데
+                             아무것도 없으면 여덟 줄 내내 빈 띠로 보였습니다. 읽기 전용·잠긴 판엔 안 둡니다.
+                             금액은 부호대로 — 기타는 "항목에 없는 벌금"이라 대개 더하는 돈이고, 빨강은 뺄 때만 */
                           <div className="gs-disc-view">
-                            {ex.length > 0 && (
+                            {ex.length > 0 ? (
                               <>
-                                <span className="gs-disc-amt">{man(exSum)}</span>
+                                <span className={"gs-disc-amt" + (exSum < 0 ? " gs-neg" : "")}>{man(exSum)}</span>
                                 <span className="gs-disc-sub">{ex.length}건</span>
                               </>
+                            ) : (
+                              !readOnly && !ready && <span className="gs-disc-add" aria-hidden="true">+</span>
                             )}
                           </div>
                         )}
@@ -11346,8 +11350,8 @@ export default function GoldSettlement() {
                   <th>벌금</th>
                   <th>받을 몫</th>
                   <th className="gs-net">순액</th>
-                  <th className="gs-tail">수수료</th>
-                  <th className="gs-tail">최종</th>
+                  {/* (폐기 2026-10-23) 수수료·최종 두 열 — 보내는 사람은 최종이 순액과 늘 같고, 다른 건 받는 사람의
+                      수수료뿐이라 한 사람의 답이 두 칸에 나뉘었다. 받는 사람의 실수령은 순액 칸 작은 줄로 옮겼다 */}
                 </tr>
               </thead>
               <tbody>
@@ -11360,13 +11364,15 @@ export default function GoldSettlement() {
                       <td className="gs-l gs-nm">{seatName(row, rows.findIndex((x) => x.id === row.id))}</td>
                       <Amount v={r.fines[i]} />
                       <Amount v={r.shares[i]} />
-                      <Amount v={net} sign className={"gs-net" + (net > 0 ? " gs-pos" : net < 0 ? " gs-neg" : "")} />
-                      {/* 수수료는 실제값에서 빼서 구합니다 — 요율을 곱하면 통마다 걸린 내림과 안 맞습니다.
-                          받는 사람 앞으로 온 통들의 금액 합 = 그 사람의 순액이라, 순액 − 실수령이 곧 수수료 합입니다 */}
-                      <Amount v={net > 0 ? net - r.gotten[i] : 0} className="gs-tail" one />
-                      {/* 최종 — 받는 사람은 실제로 손에 들어오는 돈, 보내는 사람은 부치는 돈(음수).
-                          색은 순액 열이 맡습니다. 여기까지 칠하면 보내는 사람 행에서 같은 값이 두 번 강조됩니다 */}
-                      <Amount v={net > 0 ? r.gotten[i] : net} sign className="gs-tail" one />
+                      {/* 순액이 이 표의 답 (2026-09-21). 받는 사람은 수수료를 뗀 실수령을 작은 줄에 같이 적는다
+                          (2026-10-23 사용자 "권장안대로" — 셋째 줄로 내리면 받는 사람 줄만 높아져 한 줄에).
+                          실수령은 통마다 내림이 걸린 실제값 r.gotten — 요율을 곱해 다시 셈하지 않는다 */}
+                      <Amount
+                        v={net}
+                        sign
+                        className={"gs-net" + (net > 0 ? " gs-pos" : net < 0 ? " gs-neg" : "")}
+                        note={net > 0 && r.gotten[i] !== net ? "받는 금액 " + won(r.gotten[i]) : null}
+                      />
                     </tr>
                   );
                 })}
@@ -11376,10 +11382,8 @@ export default function GoldSettlement() {
                   <th scope="row" className="gs-l">합계</th>
                   <Amount v={r.total} />
                   <td />
-                  <td className="gs-net" />
-                  {/* 열을 다 더하면 우편으로 나가는 총액과 같습니다 (봉투의 수수료 도장 합) */}
-                  <Amount v={r.feeTotal} className="gs-tail" one />
-                  <td />
+                  {/* 수수료 합 — 봉투의 수수료 도장을 다 더한 값 */}
+                  <td className="gs-net">{r.feeTotal > 0 && <span className="gs-raw">수수료 합계 {won(r.feeTotal)}</span>}</td>
                 </tr>
               </tfoot>
             </table>
@@ -16102,19 +16106,10 @@ function Confirm({ ask, onCancel, onDone }) {
   );
 }
 
-/* 장부 한 칸: '21만5000' 을 크게, 원래 숫자는 아래에 작고 흐리게 */
-function Amount({ v, sign, className = "", one }) {
+/* 장부 한 칸: '21만5000' 을 크게, 원래 숫자는 아래에 작고 흐리게. note — 작은 줄 뒤에 붙는 한마디(받는 금액)
+   (폐기 2026-10-23) one — 숫자 한 줄만 쓰던 꼬리 두 열(수수료·최종)용 */
+function Amount({ v, sign, className = "", note }) {
   const plus = sign && v > 0 ? "+" : "";
-  /* one — 만 표기와 원 표기를 병기하지 않고 숫자 한 줄만 (2026-09-21 사용자, 장부의 꼬리 두 열) */
-  if (one)
-    return (
-      <td className={className}>
-        <span className="gs-one">
-          {plus}
-          {won(v)}
-        </span>
-      </td>
-    );
   return (
     <td className={className}>
       <span className="gs-man">
@@ -16124,6 +16119,7 @@ function Amount({ v, sign, className = "", one }) {
       <span className="gs-raw">
         {plus}
         {won(v)}
+        {note ? " · " + note : ""}
       </span>
     </td>
   );
@@ -16265,7 +16261,7 @@ function Envelope({ idx, from, items, total, fee, feePct }) {
 }
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Cutive+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap');
 
 /* 낮 팔레트 — 크라프트 종이. 알파가 붙는 색은 삼원색만 변수로 두어
    어두운 팔레트에서 통째로 갈아끼울 수 있게 했습니다. */
@@ -16281,7 +16277,9 @@ const CSS = `
   --cell:rgba(255,255,255,.25); --cell-on:rgba(255,255,255,.5); --cell-hover:rgba(255,255,255,.6);
   --tex-rgb:90,60,20;      /* 종이결 무늬 */
   --shadow-rgb:60,40,15; --red-rgb:156,43,34; --gold-rgb:138,100,21; --blue-rgb:35,72,107;
-  --mono:'Cutive Mono',monospace;
+  /* 숫자 서체 (2026-10-23 사용자 "권장안대로") — 타자기체는 그대로 두고 굵은체가 있는 Courier Prime 으로.
+     Cutive Mono 는 굵기가 하나뿐이라 합계·장부의 큰 줄을 굵기로 세울 수 없었다. (폐기) 'Cutive Mono' */
+  --mono:'Courier Prime',monospace;
   /* 무대 폭 — 시스템 줄·마스트·카드·로비가 전부 이 한 줄을 씁니다. 수명 동사
      ([시작]과 [정산 끝내기]·[중단])가 같은 우상단 모서리에 서는 조건입니다 (§3.4) */
   --stage:1080px;
@@ -16379,7 +16377,7 @@ const CSS = `
 .gs-tip-sec{display:block}
 .gs-tip-sec + .gs-tip-sec{margin-top:10px}
 .gs-tip-sec b{display:block; margin-bottom:1px}
-.gs-tip-more{display:block; margin-top:11px; font:inherit; font-size:11.5px; cursor:pointer;
+.gs-tip-more{display:block; margin-top:11px; font:inherit; font-size:12px; cursor:pointer;
   color:var(--tip-em); background:transparent; border:0; border-top:1px solid rgba(255,255,255,.16);
   padding:7px 0 0; width:100%; text-align:left}
 .gs-tip-more:hover{text-decoration:underline}
@@ -16492,19 +16490,19 @@ const CSS = `
 .gs-arrive-stuck .gs-arrive-tail{display:none}
 .gs-arrive .gs-arrive-door{display:none; margin-left:10px} /* 붙었을 때만 (2026-09-26 — 작은 창 껍데기 없이 단추 자체를 켜고 끈다) */
 .gs-arrive.gs-arrive-stuck .gs-arrive-door{display:inline-flex}
-.gs-arrive-door{height:28px; padding:0 10px; gap:6px; display:inline-flex; align-items:center; font-size:12.5px;
+.gs-arrive-door{height:28px; padding:0 10px; gap:6px; display:inline-flex; align-items:center; font-size:13px;
   border-color:rgba(var(--gold-rgb),.8); color:var(--gold)}
 /* 대기 줄 — "대기 중" + 사진·이름 칩. 칩은 끌 수 있다(사진과 같은 규칙) */
 .gs-pty-sp{flex:1}
 .gs-pty-queue{display:inline-flex; align-items:center; gap:6px; padding-left:14px; margin-left:4px;
   border-left:1px solid rgba(var(--ink-rgb),.22); min-width:0; overflow:hidden}
-.gs-pty-qlab{font-size:11.5px; color:var(--ink-2); margin-right:4px; flex:none}
+.gs-pty-qlab{font-size:12px; color:var(--ink-2); margin-right:4px; flex:none}
 .gs-pty-chip{display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 9px 0 3px; flex:none;
   border:1px solid rgba(var(--ink-rgb),.2); border-radius:2px; background:rgba(var(--lift-rgb),.12);
   font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:13px; color:var(--ink-body); cursor:grab; touch-action:none}
 .gs-pty-chip:hover,.gs-pty-chip:focus-visible{border-color:var(--gold)}
 .gs-pty-chip .gs-pty-face{width:22px; height:22px; cursor:inherit}
-.gs-arrive .gs-pty-act{height:28px; padding-left:10px; padding-right:10px; font-size:12.5px; flex:none; white-space:nowrap}
+.gs-arrive .gs-pty-act{height:28px; padding-left:10px; padding-right:10px; font-size:13px; flex:none; white-space:nowrap}
 .gs-surface.gs-sheetsec > .gs-sheetbox{animation:gs-sheet-in .28s cubic-bezier(.2,.7,.3,1)}
 @keyframes gs-sheet-in{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
 @media(prefers-reduced-motion:reduce){.gs-surface.gs-sheetsec > .gs-sheetbox{animation:none}.gs-tab{transition:none}}
@@ -16530,7 +16528,7 @@ const CSS = `
 .gs-tools{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 /* 높이 세 단 (2026-09-24 사용자 확정): 기본 32 · 작은(.gs-btn-sm) 28 · 넓은 단추(발급 .gs-authgo, 두 줄 .gs-cl)는 제 높이.
    (폐기) 글자 크기와 안쪽 여백에서 나오던 27·32·34·35·36·37·39 */
-.gs-btn{font:inherit; font-size:12.5px; letter-spacing:.04em; cursor:pointer; padding:6px 14px; line-height:1.3;
+.gs-btn{font:inherit; font-size:13px; letter-spacing:.04em; cursor:pointer; padding:6px 14px; line-height:1.3;
   min-height:32px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center;
   border:1px solid var(--chip-bg); background:var(--chip-bg); color:var(--chip-fg); border-radius:2px;
   white-space:nowrap}
@@ -16575,10 +16573,10 @@ const CSS = `
 .gs-io-vis{display:flex; align-items:center; justify-content:center; gap:12px;
   background:var(--cell); border:1px dashed rgba(var(--kraftdk-rgb),.6); padding:14px 12px;
   min-height:104px}
-.gs-io-memo{white-space:pre; font-family:var(--mono); font-size:12.5px; line-height:1.9;
+.gs-io-memo{white-space:pre; font-family:var(--mono); font-size:13px; line-height:1.9;
   background:var(--cell-on); border:1px solid rgba(var(--ink-rgb),.25); padding:7px 10px}
 .gs-io-arr{color:var(--ink-2)}
-.gs-io-rows{display:flex; flex-direction:column; gap:5px; font-size:12.5px; min-width:96px}
+.gs-io-rows{display:flex; flex-direction:column; gap:5px; font-size:13px; min-width:96px}
 .gs-io-rows > span{display:flex; gap:10px; justify-content:space-between;
   border-bottom:1px dotted rgba(var(--ink-rgb),.3); padding-bottom:2px}
 .gs-io-rows b{color:var(--blue); font-weight:600}
@@ -16586,7 +16584,7 @@ const CSS = `
 /* 카운터 축소판 — 이름 열 + 항목 두 열의 미니 표 */
 .gs-io-mini{display:grid; grid-template-columns:auto 58px 58px; gap:6px 10px;
   align-items:center; justify-items:center}
-.gs-io-cap{font-size:10.5px; letter-spacing:.08em; color:var(--ink-2); min-height:13px}
+.gs-io-cap{font-size:11px; letter-spacing:.08em; color:var(--ink-2); min-height:13px}
 .gs-io-name{justify-self:start; font-family:'Gowun Batang',serif; font-weight:700;
   font-size:14px}
 .gs-io-cell{display:flex; align-items:center; justify-content:center; width:58px; height:36px;
@@ -16595,7 +16593,7 @@ const CSS = `
 .gs-io-cell.on{border-style:solid; background:var(--cell-on)}
 .gs-io-cell em{font-style:normal; font-size:10px; color:var(--ink-2); margin-left:3px}
 .gs-io-cell:not(.on){color:var(--ink-2)}
-.gs-intro-desc{font-size:12.5px; line-height:1.75; color:var(--ink-body)}
+.gs-intro-desc{font-size:13px; line-height:1.75; color:var(--ink-body)}
 .gs-intro-foot{margin-top:20px; font-size:12px; color:var(--ink-2)}
 
 /* 확인 창 */
@@ -16605,7 +16603,7 @@ const CSS = `
 .gs-dialog{max-height:calc(100vh - 40px); overflow-y:auto; display:flex; flex-direction:column; width:100%; max-width:376px; background:var(--paper); border:1px solid var(--kraft-dk);
   padding:20px 20px 16px; box-shadow:0 16px 44px rgba(var(--shadow-rgb),.4)}
 .gs-dialog h3{margin:0; font-family:'Gowun Batang',serif; font-size:17px; font-weight:700}
-.gs-dialog p{margin:9px 0 0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
+.gs-dialog p{margin:9px 0 0; font-size:13px; line-height:1.8; color:var(--ink-body)}
 .gs-dialog-btns{display:flex; justify-content:flex-end; align-items:stretch; gap:8px;
   margin-top:18px; flex-wrap:wrap}
 /* 결과 금액을 안고 있는 버튼 — 라벨 아래 한 줄. 옆 버튼들은 같은 높이로 맞춥니다 */
@@ -16617,7 +16615,7 @@ const CSS = `
 .gs-ta{width:100%; margin-top:12px; min-height:230px; resize:vertical; box-sizing:border-box;
   padding:11px 12px; border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px;
   background:rgba(var(--lift-rgb),.42); color:var(--ink);
-  font-family:var(--mono); font-size:12.5px; line-height:1.7; white-space:pre; overflow:auto}
+  font-family:var(--mono); font-size:13px; line-height:1.7; white-space:pre; overflow:auto}
 .gs-ta:focus{outline:2px solid var(--blue); outline-offset:1px}
 /* 버튼 줄과 높이를 맞춥니다 (gs-btn 이 32px) */
 .gs-qm{width:32px; height:32px; border:1px solid rgba(var(--ink-rgb),.35); background:transparent;
@@ -16638,7 +16636,7 @@ const CSS = `
 .gs-tip-body{display:none; position:absolute; top:calc(100% + 8px); left:50%;
   transform:translateX(-50%);
   width:240px; padding:10px 12px; background:var(--chip-bg); color:var(--chip-fg);
-  font-family:'IBM Plex Sans KR',sans-serif; font-size:11.5px; font-weight:400; line-height:1.7;
+  font-family:'IBM Plex Sans KR',sans-serif; font-size:12px; font-weight:400; line-height:1.7;
   letter-spacing:0; text-align:left; border-radius:2px; box-shadow:0 6px 18px rgba(var(--shadow-rgb),.3);
   z-index:30; pointer-events:none}
 .gs-tip-body b{color:var(--tip-em); font-weight:600}
@@ -16669,7 +16667,7 @@ const CSS = `
     rgba(var(--ink-rgb),.28) calc(50% - .5px), rgba(var(--ink-rgb),.28) calc(50% + .5px),
     transparent calc(50% + .5px));
   pointer-events:none}
-.gs-corner-col,.gs-corner-row{position:absolute; font-size:10.5px; letter-spacing:.12em;
+.gs-corner-col,.gs-corner-row{position:absolute; font-size:11px; letter-spacing:.12em;
   color:var(--ink-2)}
 .gs-corner-col{top:3px; right:10px}
 .gs-corner-row{bottom:9px; left:8px} /* 2026-09-24 사용자 확정: 끌기 손잡이(≡) 왼쪽과 같은 선. (폐기) 0 — 박스가 표만 감싸면서 테두리에 붙었다 */
@@ -16708,6 +16706,8 @@ const CSS = `
 .gs-seg .gs-tip-body{width:250px}
 .gs-seg button:hover:not(:disabled):not(.on){background:rgba(var(--ink-rgb),.07); color:var(--ink)}
 .gs-seg button.on{background:var(--chip-bg); color:var(--chip-fg)}
+/* 도구 줄의 분절 컨트롤은 단추와 같은 32px (2026-10-23 사용자 "권장안대로") — 모드 30 · 입력 단위 24 · 단추 32 가 한 줄에 섰다 */
+.gs-sheetmodes .gs-seg button{padding-top:7px; padding-bottom:7px}
 
 /* 금액만 모드: 왼쪽 메모장 + 오른쪽 표 */
 .gs-split{display:grid; grid-template-columns:minmax(210px,.85fr) minmax(0,1.15fr); gap:18px;
@@ -16732,20 +16732,20 @@ const CSS = `
 /* 간단 모드 단위 라디오 */
 /* (폐기 2026-09-20) .gs-unitbar — 입력 단위는 세그 단추(.gs-unitseg)로 */
 /* 카운터 조작법 — 입력 단위 상자 바로 아래, 표 머리 위 */
-.gs-cellnote{margin:-9px 0 13px; padding-left:2px; font-size:11.5px; color:var(--ink-2);
+.gs-cellnote{margin:-9px 0 13px; padding-left:2px; font-size:12px; color:var(--ink-2);
   letter-spacing:.01em}
-.gs-unitnote{flex:1; min-width:180px; font-size:11.5px; color:var(--ink-2);
+.gs-unitnote{flex:1; min-width:180px; font-size:12px; color:var(--ink-2);
   display:flex; align-items:center; flex-wrap:wrap; gap:0 6px}
 /* 친 숫자 → 그 금액. 한 짝이 한 칩이라 눈이 안 헤맵니다 */
 .gs-unitex{display:inline-flex; align-items:baseline; gap:5px; font-weight:400;
   padding:2px 9px; border-radius:99px; white-space:nowrap;
   background:rgba(var(--lift-rgb),.32); border:1px solid rgba(var(--kraftdk-rgb),.45)}
 .gs-unitex i{font-style:normal; font-family:var(--mono); color:var(--ink-body)}
-.gs-unitex em{font-style:normal; font-size:10.5px; opacity:.55}
+.gs-unitex em{font-style:normal; font-size:11px; opacity:.55}
 .gs-unitex span{color:var(--gold); font-weight:700}
 .gs-simpleh{min-width:150px}
 .gs-simple-lab{color:var(--ink) !important}
-.gs-fee{display:flex; align-items:center; gap:7px; font-size:12.5px}
+.gs-fee{display:flex; align-items:center; gap:7px; font-size:13px}
 .gs-fee .gs-in-fee{width:48px; border-bottom:1.5px solid var(--ink); text-align:center; padding:4px 0}
 
 /* 스크롤바 — 기본 두께는 이 화면(창 안의 창)에 비해 너무 굵습니다.
@@ -16773,7 +16773,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-x{border:0; background:transparent; font-family:inherit; color:rgba(var(--ink-rgb),.36); font-size:17px; line-height:1;
   cursor:pointer; padding:3px 5px; border-radius:2px}
 .gs-x:hover{color:var(--red); background:rgba(var(--red-rgb),.1)}
-.gs-caplab{font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
+.gs-caplab{font-size:11px; letter-spacing:.12em; color:var(--ink-2)}
 
 /* 벌금표 */
 /* 표는 제 폭대로 서고 스크롤은 뷰포트가 합니다 (2026-09-06 낮 사용자: 표 안 스크롤보다 창 가로 스크롤이 훨씬 알아보기 쉽다).
@@ -16812,7 +16812,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-grid-count .gs-disch-top{font-size:19px}
 .gs-grid-count .gs-colh-price{font-size:11px; margin-top:3px}
 /* 바닥줄 — 항목별 소계는 비우고 최종 금액 하나만 크게 */
-.gs-grid-count .gs-foot-grand{font-size:25px !important; color:var(--gold) !important}
+.gs-grid-count .gs-foot-grand{font-size:25px !important; color:var(--gold) !important; font-weight:700}
 .gs-hitwrap{position:relative; display:flex; padding:6px 4px}
 /* 숫자 중심 셀 — 누르기 전엔 옅은 ＋, 누른 뒤엔 가운데 큰 횟수가 주인공입니다 */
 .gs-hit{font:inherit; color:var(--ink); cursor:pointer; position:relative;
@@ -16835,7 +16835,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 }
 
 /* 합계 직접 수정 — 글자를 누르면 입력칸으로 바뀝니다 */
-.gs-sumedit{font:inherit; font-family:var(--mono); font-size:inherit; color:inherit;
+.gs-sumedit{font:inherit; font-family:var(--mono); font-size:inherit; color:inherit; font-weight:700;
   border:0; background:transparent; cursor:pointer; padding:9px 0; width:100%; text-align:right;
   border-bottom:1px dashed rgba(var(--gold-rgb),.35)}
 .gs-sumedit:hover{border-bottom-color:var(--gold)}
@@ -16855,7 +16855,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
   margin:0 0 14px; padding:9px 13px; border-left:2px solid var(--red);
   background:rgba(var(--red-rgb),.09); animation:gs-slipin .16s ease-out}
 @keyframes gs-slipin{from{opacity:0; transform:translateY(-3px)} to{opacity:1; transform:none}}
-.gs-slip-msg{font-size:12.5px; color:var(--red); line-height:1.6}
+.gs-slip-msg{font-size:13px; color:var(--red); line-height:1.6}
 .gs-slip .gs-undo{margin-left:auto}
 .gs-slip-x{flex:none; color:var(--red); opacity:.7; font-size:15px}
 .gs-slip-x:hover{opacity:1}
@@ -16870,14 +16870,14 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-tools .gs-grp-risky{margin-right:12px}
 .gs-btn-warn{border-color:rgba(var(--red-rgb),.55); color:var(--red)}
 .gs-btn-warn:hover{background:rgba(var(--red-rgb),.1); border-color:var(--red)}
-.gs-dialog .gs-log-note{font-size:11.5px; color:var(--ink-2); margin:9px 0 0}
+.gs-dialog .gs-log-note{font-size:12px; color:var(--ink-2); margin:9px 0 0}
 .gs-log-head{display:flex; align-items:center; justify-content:space-between; gap:12px;
   flex-wrap:wrap}
 .gs-seg-sm button{font-size:11px; padding:5px 10px}
 .gs-log-list{list-style:none; margin:12px 0 0; padding:0 2px 0 0;
   max-height:min(430px,58vh); overflow-y:auto; font-variant-numeric:tabular-nums} /* 조작부 글꼴 규칙 (2026-09-24): 명조·모노는 종이에만 */
 .gs-log-list li{display:flex; align-items:baseline; gap:10px; padding:6px 2px;
-  border-bottom:1px dotted rgba(var(--ink-rgb),.22); font-size:13.5px}
+  border-bottom:1px dotted rgba(var(--ink-rgb),.22); font-size:14px}
 .gs-log-t{color:var(--ink-2); font-size:12px; flex:none}
 .gs-log-nm{color:var(--blue); flex:none; max-width:9em; overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap}
@@ -16900,16 +16900,16 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 /* 열이 넓어져도 항목명과 × 가 서로 떨어지지 않도록 묶어 둡니다 */
 .gs-colh-top{display:flex; align-items:center; justify-content:center; gap:2px;
   max-width:132px; margin:0 auto}
-.gs-in-col{font-size:13.5px; font-weight:600; text-align:center; padding:4px 0;
+.gs-in-col{font-size:14px; font-weight:600; text-align:center; padding:4px 0;
   min-width:3em; max-width:12em}
 .gs-colh-price{display:flex; align-items:center; justify-content:center; gap:3px;
   font-size:10px; color:var(--ink-2); margin-top:1px; white-space:nowrap}
-.gs-in-price{font-family:var(--mono); font-size:12.5px; min-width:2ch; text-align:center;
+.gs-in-price{font-family:var(--mono); font-size:13px; min-width:2ch; text-align:center;
   padding:2px 0; border-bottom:1px dotted rgba(var(--ink-rgb),.5); color:var(--gold)}
 .gs-pricewrap{display:inline-flex; align-items:center; gap:3px}
 /* 센 기록이 있는 항목의 단가 — 버튼이지만 입력칸과 같은 얼굴 (버튼은 색을 상속하지 않아 명시) */
 .gs-pricebtn{background:transparent; border:0; border-bottom:1px dotted rgba(var(--ink-rgb),.5);
-  cursor:pointer; color:var(--gold); font-family:var(--mono); font-size:12.5px; padding:2px 0;
+  cursor:pointer; color:var(--gold); font-family:var(--mono); font-size:13px; padding:2px 0;
   min-width:2ch; text-align:center}
 .gs-pricebtn:hover{border-bottom-style:solid}
 /* 단가 창의 입력 줄 — '지금 3만 → [5] 만G' 가 한 문장으로 읽히게 가운데 배치 */
@@ -16920,7 +16920,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-pm-in{width:96px; font-family:var(--mono); font-size:22px; text-align:center; color:var(--gold);
   padding:4px 2px; border-bottom:2px solid rgba(var(--ink-rgb),.35)}
 .gs-pm-in:focus{border-bottom-color:var(--gold)}
-.gs-pm-unit{font-style:normal; font-size:12.5px; color:var(--ink-2)}
+.gs-pm-unit{font-style:normal; font-size:13px; color:var(--ink-2)}
 /* 결과 줄(78만 → 130만)은 흐름 밖(절대배치) — 라벨은 늘 제자리, 숫자만 바닥에 떠오릅니다 */
 .gs-pm-btns .gs-btn{min-height:56px; position:relative}
 .gs-pm-btns .gs-btn em.gs-pm-sub{position:absolute; left:0; right:0; bottom:4px;
@@ -16928,8 +16928,8 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-pm-btns .gs-btn em.gs-pm-sub.on{opacity:.75}
 .gs-disch{min-width:112px}
 .gs-disch-top{display:flex; align-items:center; justify-content:center; gap:5px;
-  font-size:13.5px; font-weight:600; padding:4px 0; color:var(--red)}
-.gs-unit{font-size:12.5px; letter-spacing:.06em; color:var(--ink-2)}
+  font-size:14px; font-weight:600; padding:4px 0; color:var(--ink)} /* (폐기 2026-10-23) 빨강 — 감면 칸 시절의 색 */
+.gs-unit{font-size:13px; letter-spacing:.06em; color:var(--ink-2)}
 /* 장부 상자 — 우편 봉투와 같은 자리에 서는 종이 상자. 단위는 상자 안 오른쪽 위 */
 .gs-ledgersec .gs-ledgerbox{margin-top:0; position:relative}
 /* 벌금표도 같은 뼈대 — 머리줄은 상자 밖, 내용은 상자 안 */
@@ -16945,7 +16945,7 @@ html::-webkit-scrollbar-thumb:hover,body::-webkit-scrollbar-thumb:hover{
 .gs-sv-grp{display:inline-flex; flex-direction:column; align-items:center; gap:5px}
 .gs-sv-fines svg{color:var(--kraft-dk)}
 .gs-sv-shares svg{color:var(--blue)}
-.gs-sv-grp em,.gs-sv-pot em{font-style:normal; font-size:11.5px; letter-spacing:.02em;
+.gs-sv-grp em,.gs-sv-pot em{font-style:normal; font-size:12px; letter-spacing:.02em;
   white-space:nowrap}
 .gs-sv-pot{display:inline-flex; flex-direction:column; align-items:center; gap:4px}
 .gs-sv-pot svg{color:var(--gold)}
@@ -17007,7 +17007,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 이름 적는 중 Tab 안내 (2026-09-25 사용자 확정, 목업 tabhint 나) — 커서가 있는 이름 칸 바로 아래 꼬리표. 프로필 카드 말풍선(.gs-pc-tip)과 같은 잉크 바탕, 떠 있어 표가 안 밀린다 */
 .gs-namewrap,.gs-rd-head{position:relative}
 .gs-tabhint{position:absolute; left:0; top:calc(100% + 6px); z-index:30; display:inline-flex; align-items:center; gap:6px; padding:4px 8px;
-  font-family:'IBM Plex Sans KR',sans-serif; font-size:11.5px; font-weight:400; letter-spacing:0; color:var(--paper); background:var(--ink); border-radius:2px;
+  font-family:'IBM Plex Sans KR',sans-serif; font-size:12px; font-weight:400; letter-spacing:0; color:var(--paper); background:var(--ink); border-radius:2px;
   white-space:nowrap; box-shadow:0 6px 16px rgba(var(--shadow-rgb),.35); pointer-events:none}
 .gs-tabhint::before{content:""; position:absolute; left:14px; top:-5px; width:9px; height:9px; transform:rotate(45deg); background:var(--ink)}
 .gs-tabhint i{font-style:normal; opacity:.5}
@@ -17015,7 +17015,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rd-head .gs-tabhint{position:static; margin-left:8px; box-shadow:none}
 .gs-rd-head .gs-tabhint::before{display:none}
 .gs-tabhint kbd{display:inline-block; min-width:14px; padding:1px 5px; border:1px solid color-mix(in srgb, currentColor 40%, transparent); border-bottom-width:2px; border-radius:2px;
-  font:500 10.5px/1.3 'IBM Plex Sans KR',sans-serif; color:inherit; background:color-mix(in srgb, currentColor 12%, transparent); vertical-align:1px}
+  font:500 11px/1.3 'IBM Plex Sans KR',sans-serif; color:inherit; background:color-mix(in srgb, currentColor 12%, transparent); vertical-align:1px}
 /* 이름 칸은 줄지 않는다 — 줄면 표가 이 열을 최소로 접어 이름이 잘린다(예전에 안전구역으로 막던 것) */
 .gs-namewrap .gs-in-name,.gs-namewrap .gs-name-ro{flex:none}
 .gs-metag{display:inline-block; flex:none; margin-left:6px; font-family:'IBM Plex Sans KR',system-ui,sans-serif; font-weight:500; font-size:11px;
@@ -17056,7 +17056,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 도구 열 — [기록][삭제]. 합계 오른쪽에 세로 선을 세워 "여기부터는 숫자가 아니라
    손잡이"라고 가릅니다. 선은 머리줄부터 바닥줄까지 칸마다 왼쪽 테두리로 이어집니다.
    세는 손이 오가는 카운터 칸에서 가장 먼 자리라 오클릭 여지도 가장 적습니다. */
-.gs-toolh,.gs-toolcell{border-left:1px solid rgba(var(--ink-rgb),.2);
+/* 세로 선은 손잡이가 보이는 줄에만 (2026-10-23 사용자 "권장안대로") — 손잡이는 올린 줄에만 뜨는데 선은 늘 있어서
+   나머지 줄에선 빈 열로 읽혔습니다. 머리·바닥 줄에는 손잡이가 없어 선도 없습니다 */
+.gs-toolh,.gs-toolcell{border-left:1px solid transparent;
   width:1%; white-space:nowrap; padding:0 4px 0 9px !important}
 .gs-toolbtns{display:flex; align-items:center; justify-content:flex-end; gap:2px}
 .gs-rowlog,.gs-rowppl{flex:none; display:inline-flex; align-items:center; justify-content:center;
@@ -17067,6 +17069,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 평소엔 숨기고 그 줄에 마우스를 올렸을 때만 — 방송에 잡히는 표라 평소엔 조용하게.
    숨겨도 자리는 그대로 차지하므로(opacity) 표가 흔들리지 않습니다. */
 .gs-rowdel{flex:none; opacity:0; transition:opacity .12s}
+.gs-grid tbody tr:hover > .gs-toolcell,
+.gs-toolcell:focus-within{border-left-color:rgba(var(--ink-rgb),.2)}
 .gs-grid tbody tr:hover .gs-rowdel,
 .gs-toolcell:focus-within .gs-rowdel,
 .gs-rowdel:focus-visible{opacity:1}
@@ -17120,7 +17124,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-addrow th,.gs-addrow td{border-bottom:0 !important}
 /* 이름이 오른쪽 끝으로 갔으니 '+ 인원 추가'도 그 줄에 맞춥니다 — 새 줄이 생길 자리 바로 밑 */
 .gs-addrow .gs-stick{text-align:right}
-.gs-add{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--ink-2);
+.gs-add{border:0; background:transparent; font:inherit; font-size:13px; color:var(--ink-2);
   cursor:pointer; padding:10px 0; letter-spacing:.03em}
 .gs-add:hover{color:var(--ink)}
 
@@ -17131,8 +17135,11 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-disc .gs-qx{position:absolute; right:4px; top:50%; transform:translateY(-50%); z-index:6; min-width:240px;
   background:var(--paper); border:1px solid rgba(var(--gold-rgb),.5); border-radius:6px; padding:8px 10px;
   box-shadow:0 10px 24px rgba(0,0,0,.35)}
-.gs-disc-amt{display:block; font-family:var(--mono); font-size:15px; color:var(--red)}
-.gs-disc-sub{display:block; font-size:10.5px; color:var(--ink-2); margin-top:2px;
+.gs-disc-amt{display:block; font-family:var(--mono); font-size:15px; color:var(--ink)}
+/* 빈 기타 칸의 흐린 + — 눌러야 열리는 칸이라는 표시. 올리면 진해집니다 */
+.gs-disc-add{display:block; font-size:18px; line-height:1; color:rgba(var(--ink-rgb),.28)}
+.gs-disc:hover .gs-disc-add{color:rgba(var(--ink-rgb),.6)}
+.gs-disc-sub{display:block; font-size:11px; color:var(--ink-2); margin-top:2px;
   max-width:124px; margin-inline:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
 /* OBS로 공유 */
@@ -17141,9 +17148,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obsbtn svg{flex:none; opacity:.75}
 .gs-obs-room{display:flex; align-items:baseline; gap:9px; margin-top:14px; padding-bottom:11px;
   border-bottom:1px dotted rgba(var(--ink-rgb),.28)}
-.gs-obs-label{font-size:11.5px; color:var(--ink-2)}
+.gs-obs-label{font-size:12px; color:var(--ink-2)}
 .gs-obs-room b{font-size:15px}
-.gs-obs-on{margin-left:auto; font-size:11.5px; color:var(--ink-2)}
+.gs-obs-on{margin-left:auto; font-size:12px; color:var(--ink-2)}
 /* 주소 카드 — 창의 주인공이라 금테 상자 하나에 담습니다 (2026-09-05 목업 확정).
    비로그인 때는 같은 카드에 발급 버튼이 듭니다 — 자리가 같아야 "받으면 여기 뜬다"가 보입니다 */
 .gs-obs-card{margin-top:16px; padding:13px 14px 12px;
@@ -17157,7 +17164,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-newtab{display:inline-flex; align-items:center; gap:6px}
 .gs-obs-newtab svg{flex:none; opacity:.7}
 .gs-obs-cardfoot{margin:12px 0 0; padding-top:10px;
-  border-top:1px solid rgba(var(--gold-rgb),.22); font-size:11.5px}
+  border-top:1px solid rgba(var(--gold-rgb),.22); font-size:12px}
 /* 비로그인 — 외형은 보이되 잠급니다: 주소를 받으면 꾸밀 화면이라는 예고입니다 */
 .gs-obs-locked{opacity:.45; pointer-events:none; user-select:none}
 /* 두 컴퓨터 함정을 막는 한 줄 (§3.11) — 혜택이 아니라 경고라 금색으로 세웁니다 */
@@ -17169,17 +17176,17 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-fresh{margin:0 0 14px; padding:12px 13px; border-radius:8px;
   background:rgba(var(--gold-rgb),.09); border:1px solid rgba(var(--gold-rgb),.42)}
 .gs-obs-fresh > b{display:block; font-size:14px; color:var(--gold); margin-bottom:5px}
-.gs-obs-fresh p{margin:0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
+.gs-obs-fresh p{margin:0; font-size:13px; line-height:1.8; color:var(--ink-body)}
 .gs-obs-fresh2{margin-top:7px !important; color:var(--ink-2) !important}
 .gs-obs-url{display:flex; gap:8px; margin-top:14px}
 .gs-obs-url input{flex:1; min-width:0; font-size:12px; font-family:var(--mono); padding:9px 10px;
   border:1px solid rgba(var(--ink-rgb),.25); border-radius:2px;
   background:rgba(var(--lift-rgb),.3); color:var(--ink)}
 .gs-obs-acts{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:11px}
-.gs-obs-toggle{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink-2);
+.gs-obs-toggle{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-2);
   cursor:pointer; margin-left:auto}
 .gs-obs-toggle input{accent-color:var(--ink); margin:0}
-.gs-obs-note{font-size:11.5px; color:var(--ink-2); margin-top:10px; line-height:1.7}
+.gs-obs-note{font-size:12px; color:var(--ink-2); margin-top:10px; line-height:1.7}
 .gs-obs-sec{margin-top:18px; padding-top:14px; border-top:1px dotted rgba(var(--ink-rgb),.28)}
 /* 생김새 묶음의 머리 — 점선보다 한 단 굵게 그어 "여기부터 다른 이야기"를 만듭니다 */
 /* .gs-dialog h3 가 margin:0 으로 더 셉니다 — 여기서 이겨야 위쪽 여백이 생깁니다 */
@@ -17208,7 +17215,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-rowr{margin-left:auto; display:flex; align-items:center; gap:10px}
 .gs-obs-acctr{margin-left:auto; display:flex; align-items:center; gap:10px}
 /* 버튼보다 가벼운 문 — 채운 버튼과 무게를 다투지 않게 밑줄 글자로 */
-.gs-swaplink{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
+.gs-swaplink{font:inherit; font-size:13px; font-weight:600; color:var(--gold);
   background:none; border:0; cursor:pointer; padding:0; white-space:nowrap;
   text-decoration:underline; text-underline-offset:3px}
 .gs-swaplink:hover{color:var(--ink)}
@@ -17224,7 +17231,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-urlhidden,.gs-obs-urlshown{white-space:normal; word-break:break-all; overflow:visible; text-overflow:clip; line-height:1.55}
 .gs-obs-urlhidden{color:var(--ink-2); user-select:none} /* 점의 수 = 주소 글자 수라 보기와 같은 두 줄 — 눈을 눌러도 상자가 안 움직인다 */
 .gs-obs-urlshown{user-select:all; cursor:text}
-.gs-obs-copyhint{display:block; margin-top:5px; font-size:11.5px; color:var(--ink-2)}
+.gs-obs-copyhint{display:block; margin-top:5px; font-size:12px; color:var(--ink-2)}
 .gs-obs-copybox.copied .gs-obs-copyhint{color:var(--gold)}
 /* 머리(제목·×)는 스크롤을 따라옵니다 (2026-09-05) — 긴 창 어디서든 닫혀야 해서.
    발치의 [닫기]는 그래서 폐지했습니다 */
@@ -17235,7 +17242,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-obs-headr{margin-left:auto; display:flex; align-items:center; gap:16px}
 /* 켜짐/꺼짐 슬라이드 스위치 */
 .gs-switch{position:relative; display:inline-flex; align-items:center; gap:8px;
-  font-size:12.5px; color:var(--ink-2); cursor:pointer; user-select:none}
+  font-size:13px; color:var(--ink-2); cursor:pointer; user-select:none}
 .gs-switch input{position:absolute; opacity:0; width:0; height:0}
 .gs-sw-track{width:34px; height:19px; border-radius:10px; flex:none;
   background:rgba(var(--ink-rgb),.28); position:relative; transition:background .15s}
@@ -17251,21 +17258,21 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-easebar{flex-wrap:wrap}
 .gs-glide{display:flex; align-items:center; gap:8px; flex:1 1 220px; min-width:220px}
 .gs-glide input[type=range]{flex:1; min-width:120px; accent-color:var(--gold); cursor:pointer}
-.gs-glide-l{font-size:11.5px; color:var(--ink-2); white-space:nowrap}
+.gs-glide-l{font-size:12px; color:var(--ink-2); white-space:nowrap}
 .gs-helpbtn{position:relative}
 .gs-qdot{position:absolute; right:4px; top:4px; width:7px; height:7px; border-radius:50%; background:var(--gold)}
 .gs-guide-list{display:flex; flex-direction:column}
 .gs-guide-row{display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px dotted rgba(var(--ink-rgb),.2); font-size:13px}
 .gs-guide-row:first-child{border-top:0; padding-top:2px}
 .gs-guide-row b{font-family:'Gowun Batang',serif; font-size:14px; color:var(--ink)}
-.gs-guide-n{font-size:11.5px; color:var(--ink-2)}
-.gs-guide-now{font-size:10.5px; letter-spacing:.08em; color:var(--gold); border:1px solid rgba(var(--gold-rgb),.6); padding:1px 6px; border-radius:2px}
+.gs-guide-n{font-size:12px; color:var(--ink-2)}
+.gs-guide-now{font-size:11px; letter-spacing:.08em; color:var(--gold); border:1px solid rgba(var(--gold-rgb),.6); padding:1px 6px; border-radius:2px}
 .gs-guide-seen{font-size:11px; color:var(--ink-2)}
 .gs-guide-else{margin-left:auto}
 .gs-guide-row .gs-btn{margin-left:auto}
-.gs-guide-foot{margin:14px 0 0; padding-top:12px; border-top:1px solid rgba(var(--ink-rgb),.14); font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-guide-foot{margin:14px 0 0; padding-top:12px; border-top:1px solid rgba(var(--ink-rgb),.14); font-size:12px; color:var(--ink-2); line-height:1.7}
 /* 로비 권유 줄 (2026-09-06) */
-.gs-tutline{grid-column:1/-1; display:flex; align-items:center; gap:12px; margin:0; text-align:left; padding:10px 12px; border:1px solid rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.07); font-size:12.5px; color:var(--ink-body); flex-wrap:wrap}
+.gs-tutline{grid-column:1/-1; display:flex; align-items:center; gap:12px; margin:0; text-align:left; padding:10px 12px; border:1px solid rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.07); font-size:13px; color:var(--ink-body); flex-wrap:wrap}
 .gs-tutline b{color:var(--ink)}
 .gs-tutline-r{margin-left:auto; display:flex; gap:8px}
 /* 예시 앱 창(부모)과 예시 띠(예시 앱) (2026-09-06) */
@@ -17280,7 +17287,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-demo-load-over{z-index:4}
 /* (폐기 2026-09-06 낮) .gs-demo-prev — 8장으로 갈아 끼우던 옛 iframe */
 /* 띠는 스크롤해도 늘 보입니다 — sticky, 걸음 막(48) 위·모달(50) 아래 (2026-09-06 낮 사용자: 상단 N장 인디케이터가 항상 보이게) */
-.gs-demoband{position:sticky; top:0; z-index:49; margin:-20px -20px 0; padding:9px 20px; display:flex; align-items:center; justify-content:center; gap:18px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:12.5px; color:var(--ink-body)}
+.gs-demoband{position:sticky; top:0; z-index:49; margin:-20px -20px 0; padding:9px 20px; display:flex; align-items:center; justify-content:center; gap:18px; background:rgba(var(--gold-rgb),.16); border-bottom:1px solid rgba(var(--gold-rgb),.55); font-size:13px; color:var(--ink-body)}
 /* 예시 앱의 머리 띠는 진행 띠 바로 아래서 시작한다 (2026-09-24 사용자: 띠와 머리 줄이 겹쳤다) — 평소의 -20px 끌어올림을 예시에서만 끈다 */
 .gs-demoapp .gs-mastband{margin-top:0} /* (버그 09-24) 뿌리 클래스를 gs-demo 로 붙였다가 부모의 예시 창 컨테이너 .gs-demo 와 겹쳐 예시 앱이 통째로 가운데 격자가 됐다 */
 .gs-tourdots{display:flex; align-items:center}
@@ -17293,17 +17300,17 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-tourlabel{font-weight:600; color:var(--ink)}
 /* [?] 팝오버 (2026-09-06 낮 손질) — 행마다 이름·칩·역할·서브를 세로로, 칩은 테두리 있는 라벨로 (사용자: 시인성) */
 .gs-helppop{width:min(460px, 92vw)}
-.gs-helppop-h{margin:0 0 6px; font-size:14.5px; color:var(--ink); font-weight:700}
+.gs-helppop-h{margin:0 0 6px; font-size:15px; color:var(--ink); font-weight:700}
 .gs-helprow{display:flex; align-items:center; gap:14px; padding:12px 0; border-top:1px dotted rgba(var(--ink-rgb),.2)}
 .gs-helprow-main{display:flex; flex-direction:column; gap:3px; min-width:0}
 .gs-helprow-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 .gs-helprow b{font-family:'Gowun Batang',serif; font-size:15px; color:var(--ink); white-space:nowrap}
 .gs-helprow-role{margin:0; font-size:13px; color:var(--ink); line-height:1.5}
-.gs-helprow-sub{margin:0; font-size:12.5px; color:var(--ink-body); line-height:1.5}
+.gs-helprow-sub{margin:0; font-size:13px; color:var(--ink-body); line-height:1.5}
 .gs-helprow .gs-btn{margin-left:auto; white-space:nowrap; flex:none}
 .gs-rec{font-style:normal; font-size:11px; letter-spacing:.06em; color:var(--gold); border:1px solid rgba(var(--gold-rgb),.7); padding:1px 6px; border-radius:2px; line-height:1.5}
 .gs-helpseen{font-size:11px; letter-spacing:.04em; color:var(--ink-body); border:1px solid rgba(var(--ink-rgb),.35); padding:1px 6px; border-radius:2px; line-height:1.5}
-.gs-helppop .gs-guide-foot{font-size:12.5px; color:var(--ink-body)}
+.gs-helppop .gs-guide-foot{font-size:13px; color:var(--ink-body)}
 .gs-coaching{padding-bottom:200px} /* 예시 앱 바닥 여백 — 표 아래 말풍선을 토스트 자리 위로 올릴 스크롤 여지 (2026-09-06 낮) */
 .gs-coach{position:fixed; inset:0; z-index:48} /* 모달(50)보다 아래 — 안내가 조작을 못 막습니다 */
 .gs-coach.gs-coach-top{z-index:65} /* 시트(50)·작은 창(.gs-seatpop 60) 안을 가리킬 때만 (2026-09-06 · 2026-09-24) */
@@ -17329,7 +17336,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 위로 뒤집힌 말풍선 — 꼬리도 반대쪽 두 변을 씁니다 */
 .gs-coach-bubble.up .gs-coach-tail{top:auto; bottom:-7px; border-left:0; border-top:0;
   border-right:1px solid var(--gold); border-bottom:1px solid var(--gold)}
-.gs-coach-bubble p{margin:0 22px 10px 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-coach-bubble p{margin:0 22px 10px 0; font-size:13px; line-height:1.7; color:var(--ink-body)}
 /* 막는 일은 문서에서 가로채 하고, 이 층은 그리기만 합니다 */
 .gs-coach-pass{pointer-events:none}
 .gs-coach-pass .gs-coach-bubble{pointer-events:auto}
@@ -17343,14 +17350,14 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   font-size:14px; line-height:1; border-radius:2px; cursor:pointer; padding:0}
 .gs-coach-x:hover{background:rgba(var(--ink-rgb),.1); color:var(--ink)}
 /* 카운터는 버튼 줄 오른쪽 끝 — 진행 표시이자, 다음과 건너뛰기를 양 끝으로 벌리는 칸막이 */
-.gs-coach-step{margin-left:auto; font-style:normal; font-size:10.5px;
+.gs-coach-step{margin-left:auto; font-style:normal; font-size:11px;
   color:var(--ink-2); font-family:var(--mono)}
 .gs-coach-btns{display:flex; align-items:center; gap:14px}
 .gs-coach-btns .gs-coach-step:first-child{margin-left:auto}
-.gs-obs-ro{margin-top:12px; font-size:12.5px; color:var(--ink-2)}
+.gs-obs-ro{margin-top:12px; font-size:13px; color:var(--ink-2)}
 .gs-obs-ro b{color:var(--ink)}
 /* 물음은 경고가 아닙니다 — 빨강은 되돌릴 수 없는 것에만 씁니다 */
-.gs-obs-why{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--gold);
+.gs-obs-why{border:0; background:transparent; font:inherit; font-size:13px; color:var(--gold);
   cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0}
 /* (폐기 2026-09-08) .gs-lookmore — '다른 테마와 투명도' 단추. 테마가 셋뿐이고 투명도가 밖으로 나와 접을 것이 없습니다 */
 /* (폐기 2026-09-24) 외형 절 머리 .gs-obs-look·.gs-obs-lookhead — 절 넷이 설정 표 하나(.gs-obs-rows)가 되면서 */
@@ -17366,7 +17373,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-crewdemo + .gs-crewrow{border-top:1px dotted rgba(var(--ink-rgb),.3); margin-top:2px; padding-top:2px}
 /* 접이 구역 */
 /* 가이드는 이미지가 커서 목록만 스크롤 — 닫기 버튼은 항상 화면 안에 있습니다 */
-.gs-obs-guide{margin:10px 0 0 18px; font-size:12.5px; color:var(--ink-body); line-height:1.8}
+.gs-obs-guide{margin:10px 0 0 18px; font-size:13px; color:var(--ink-body); line-height:1.8}
 .gs-obs-guide li{margin-bottom:14px}
 /* 그림은 폭 520·높이 380 안에 — 1번 그림(소스 목록)은 세로가 길어 폭만 묶으면 화면 한 장을 다 먹습니다 (2026-09-05) */
 .gs-obs-guide img{display:block; width:auto; max-width:min(100%,520px); max-height:380px; margin-top:8px;
@@ -17384,7 +17391,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-gain-col{border:1px solid rgba(var(--ink-rgb),.2); border-radius:2px; padding:14px;
   background:rgba(var(--lift-rgb),.28)}
 .gs-gain-col h4{margin:0; font-size:14px; color:var(--ink); font-weight:700}
-.gs-gain-tag{display:inline-block; font-size:10.5px; letter-spacing:.1em; color:var(--ink-2);
+.gs-gain-tag{display:inline-block; font-size:11px; letter-spacing:.1em; color:var(--ink-2);
   border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px; padding:2px 7px}
 .gs-gain-sub{margin:7px 0 0; font-size:12px; color:var(--ink-2)}
 .gs-gain-art{display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;
@@ -17392,7 +17399,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-gain-src{font-size:11px; color:var(--ink-body); border:1px solid rgba(var(--ink-rgb),.28);
   border-radius:2px; padding:4px 8px; background:var(--paper); text-align:center}
 .gs-gain-outs{display:flex; flex-direction:column; gap:4px}
-.gs-gain-outs i{font-style:normal; font-size:10.5px; color:var(--ink-2);
+.gs-gain-outs i{font-style:normal; font-size:11px; color:var(--ink-2);
   border:1px solid rgba(var(--ink-rgb),.22); border-radius:2px; padding:3px 7px; background:var(--paper)}
 .gs-gain-arrow{color:var(--ink-2); font-size:13px}
 .gs-gain-list{margin:0; padding:0; list-style:none; font-size:12px; color:var(--ink-body);
@@ -17402,22 +17409,22 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-gain-list li.yes::before{content:"✓"; color:var(--gold)}
 .gs-gain-list li.no::before{content:"—"; color:var(--ink-2)}
 .gs-dialog h4.gs-gain-h{margin:24px 0 12px; font-size:14px; color:var(--ink); font-weight:700}
-.gs-gain-note{margin:10px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
-.gs-gain-foot{margin:20px 0 0; padding-top:14px; font-size:12.5px; color:var(--ink-body);
+.gs-gain-note{margin:10px 0 0; font-size:12px; color:var(--ink-2); line-height:1.7}
+.gs-gain-foot{margin:20px 0 0; padding-top:14px; font-size:13px; color:var(--ink-body);
   line-height:1.8; border-top:1px dotted rgba(var(--ink-rgb),.28)}
 /* 편집 권한 창 — OBS 설정에서 쓰던 줄 모양을 그대로 씁니다 */
-.gs-key p{margin:0 0 8px; font-size:12.5px; color:var(--ink-2); line-height:1.8}
-.gs-key-foot{margin-top:16px !important; padding-top:12px; font-size:11.5px !important;
+.gs-key p{margin:0 0 8px; font-size:13px; color:var(--ink-2); line-height:1.8}
+.gs-key-foot{margin-top:16px !important; padding-top:12px; font-size:12px !important;
   border-top:1px dotted rgba(var(--ink-rgb),.25)}
 .gs-obs-warn{color:var(--red) !important; opacity:.9}
 /* 공유 설정 창의 단 제목 */
-.gs-key-h{margin:18px 0 6px; font-size:13.5px; color:var(--ink);
+.gs-key-h{margin:18px 0 6px; font-size:14px; color:var(--ink);
   display:flex; align-items:center; gap:10px}
 .gs-key h4.gs-key-h:first-child{margin-top:0}
 /* 문장 안에 버튼을 끼우면 줄바꿈에 따라 "두세요."만 남고 그 옆에 버튼이 붙어
    답답해 보입니다. 버튼은 제 줄에 세웁니다 */
 .gs-obs-keysline{margin:16px 0 0}
-.gs-obs-keysline p{margin:0 0 11px; font-size:12.5px; color:var(--ink-2); line-height:1.75}
+.gs-obs-keysline p{margin:0 0 11px; font-size:13px; color:var(--ink-2); line-height:1.75}
 .gs-acts-end{justify-content:flex-end; margin-top:16px}
 .gs-fold{display:block; font:inherit; font-size:12px; color:var(--ink-2);
   background:transparent; border:0; cursor:pointer; padding:8px 2px 2px; text-align:left}
@@ -17425,7 +17432,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 지난 판 줄 */
 .gs-genrow{display:flex; align-items:center; gap:9px; background:rgba(var(--ink-rgb),.05);
   border:1px solid rgba(var(--ink-rgb),.2); border-radius:7px; padding:8px 11px;
-  margin-top:7px; font-size:12.5px}
+  margin-top:7px; font-size:13px}
 .gs-genrow b{font-weight:600; color:var(--ink)}
 .gs-genrow-meta{font-size:11px; color:var(--ink-2)}
 .gs-genrow-r{margin-left:auto; display:flex; gap:7px; align-items:center}
@@ -17441,8 +17448,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-idbar-t{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
 .gs-idname{margin:0; font-family:'Gowun Batang',serif; font-size:17px; font-weight:700;
   color:var(--ink)}
-.gs-idwhen{font-size:11.5px; color:var(--ink-2)}
-.gs-idmsg{font-size:12.5px; color:var(--ink-body)}
+.gs-idwhen{font-size:12px; color:var(--ink-2)}
+.gs-idmsg{font-size:13px; color:var(--ink-body)}
 .gs-idmsg b{color:var(--ink)}
 .gs-idbar-r{margin-left:auto; display:flex; align-items:center; gap:10px}
 .gs-idtot{font-family:var(--mono); font-size:18px; color:var(--gold)}
@@ -17454,7 +17461,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   background:rgba(var(--ink-rgb),.06)}
 /* 파티원 칩 — 방장은 금색, 나는 파랑. 전부 적습니다 */
 /* 기록의 사람 이름 — 가운뎃점으로 나눈 평문 (2026-09-07 밤 사용자 지정). (폐기) 이름마다 둥근 칩 */
-.gs-idmems{display:block; margin-top:7px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-idmems{display:block; margin-top:7px; font-size:13px; line-height:1.7; color:var(--ink-body)}
 .gs-idmem{color:var(--ink-body)}
 .gs-idmem-sep{font-style:normal; color:var(--ink-2); opacity:.7; margin:0 5px}
 .gs-idmem-host{color:var(--gold)}
@@ -17462,7 +17469,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 막 끝낸 판의 발치 한 줄 (2026-09-08 사용자 확정 B) — 말은 왼쪽, 버튼은 오른쪽 끝(사용자 지정).
    점선은 띠 안의 층을 가르되 띠를 쪼개지 않을 만큼만 */
 .gs-idfoot{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; padding-top:10px;
-  border-top:1px dashed rgba(var(--gold-rgb),.28); font-size:12.5px; color:var(--ink-2)}
+  border-top:1px dashed rgba(var(--gold-rgb),.28); font-size:13px; color:var(--ink-2)}
 /* .gs-lbstart 에 딸린 margin-left:auto 가 버튼을 오른쪽 끝으로 밉니다 — 여기선 목업대로 왼쪽입니다 (버그 기록 2026-09-08, 초대 덩이에서 한 번 겪음).
    (폐기 2026-09-08, 같은 날) .gs-idnext{margin-left:auto} — 오른쪽 정렬 요청은 철회됐습니다 */
 .gs-idfoot .gs-idnext{margin-left:0}
@@ -17474,7 +17481,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   padding:0; cursor:pointer; color:inherit; display:block}
 .gs-hisbody:hover .gs-hist1 b{text-decoration:underline; text-underline-offset:3px}
 .gs-hist1{display:flex; align-items:baseline; gap:7px}
-.gs-hist1 b{font-family:'Gowun Batang',serif; font-weight:700; font-size:14.5px; color:var(--ink)}
+.gs-hist1 b{font-family:'Gowun Batang',serif; font-weight:700; font-size:15px; color:var(--ink)}
 .gs-hist1 span{font-size:11px; color:var(--ink-2)}
 .gs-hisrow .gs-idmems{margin-top:7px}
 .gs-hisrow .gs-idmem{font-size:11px; padding:2px 7px}
@@ -17482,10 +17489,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 방 생성 직후 복구 코드 안내 */
 .gs-obs-fresh{margin-top:12px; padding:10px 12px; border:1px dashed rgba(var(--gold-rgb),.5);
   border-radius:6px; background:rgba(var(--gold-rgb),.06)}
-.gs-obs-fresh p{margin:0 0 8px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-obs-fresh p{margin:0 0 8px; font-size:13px; line-height:1.7; color:var(--ink-body)}
 /* (폐기 2026-09-20 사용자) .gs-sysbrand — 머리 줄의 '벌금 정산' */
 /* 지금 어느 화면인지 — 브랜드 옆 한 마디 (2026-09-05) */
-.gs-sysscreen{font-size:12.5px; color:var(--ink-2); margin-left:11px; padding-left:13px;
+.gs-sysscreen{font-size:13px; color:var(--ink-2); margin-left:11px; padding-left:13px;
   border-left:1px solid rgba(var(--ink-rgb),.22); letter-spacing:.03em; white-space:nowrap}
 /* 소스 구성 — 카드 두 장의 그림이 "한 소스/나눈 소스"의 뜻을 말합니다.
    소스 나누기 문장 줄 바로 아래, 주소 카드 밖에 섭니다 (2026-09-05 재배치) */
@@ -17519,19 +17526,19 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 나눈 소스의 주소 두 줄 */
 .gs-obs-srcrow{display:flex; align-items:center; gap:8px; margin-top:8px}
 .gs-obs-srcnote + .gs-obs-srcrow,.gs-obs-srcpick + .gs-obs-srcrow{margin-top:14px}
-.gs-obs-srcrow > b{flex:0 0 44px; font-size:12.5px; color:var(--ink-body)}
+.gs-obs-srcrow > b{flex:0 0 44px; font-size:13px; color:var(--ink-body)}
 .gs-obs-srcrow .gs-obs-urltext{flex:1; min-width:0}
 /* .gs-dialog p 가 더 세서(선택자 무게) 창 안에서는 그쪽이 이깁니다 — 여기서 이겨야
    설명이 줄 목록과 같은 소리로 말합니다 */
-.gs-dialog .gs-obs-srcnote{margin:6px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-dialog .gs-obs-srcnote{margin:6px 0 0; font-size:12px; color:var(--ink-2); line-height:1.7}
 /* 주소 자리에 앉는 한글 안내 — 주소 글꼴(고정폭)을 쓰면 자간이 벌어져 늘어져 보입니다 */
-.gs-obs-urlnote{flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--ink-2);
+.gs-obs-urlnote{flex:1 1 auto; min-width:0; font-size:13px; color:var(--ink-2);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 /* 주소 줄 아래 설명 한 줄 */
-.gs-obs-oneline{margin:8px 0 0 !important; font-size:12.5px; color:var(--ink-2); line-height:1.75}
+.gs-obs-oneline{margin:8px 0 0 !important; font-size:13px; color:var(--ink-2); line-height:1.75}
 /* 설명은 왼쪽, 하는 것은 오른쪽 끝 — 한 줄 안 모양을 맞춥니다 (§9-1) */
 .gs-obs-line{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px}
-.gs-obs-linetxt{flex:1 1 220px; min-width:0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-obs-linetxt{flex:1 1 220px; min-width:0; font-size:12px; color:var(--ink-2); line-height:1.7}
 .gs-obs-line .gs-btn,.gs-obs-line .gs-seg,.gs-obs-line .gs-obs-lineact{margin-left:auto; flex:none}
 /* 주소 줄 — 주소가 남는 자리를 다 쓰고 새로 발급은 오른쪽 끝에 붙습니다.
    되돌릴 수 없는 단추라 복사 단추들과는 줄을 나눕니다. */
@@ -17549,7 +17556,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-slip-live .gs-slip-msg{color:var(--ink-body)}
 .gs-slip-dead{border-left-color:var(--red); background:rgba(var(--red-rgb),.09)}
 .gs-slip-dead .gs-slip-msg{color:var(--red)}
-.gs-slip-who{margin-left:auto; font-size:12.5px; color:var(--ink-2);
+.gs-slip-who{margin-left:auto; font-size:13px; color:var(--ink-2);
   display:inline-flex; align-items:center}
 /* 초록 점 — 붙어 있다는 표시. 갱신이 올 때마다 한 번 퍼집니다 */
 .gs-live-dot{display:inline-block; width:7px; height:7px; border-radius:50%;
@@ -17590,7 +17597,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
    (폐기 2026-09-22) 컨트롤 줄 왼쪽 끝 — 머리 높이는 안 내지만 좌상단이 계속 빈다. "참여 중"은 컨트롤이 아니라 문맥이다 */
 .gs-boardlabel{display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px;
   border:1px solid var(--blue); border-radius:2px; background:rgba(var(--blue-rgb),.08);
-  font-size:12.5px; letter-spacing:.03em; color:var(--blue); white-space:nowrap;
+  font-size:13px; letter-spacing:.03em; color:var(--blue); white-space:nowrap;
   position:absolute; left:0; top:-12px; margin:0}
 .gs-mastrow-away .gs-mastleft{margin-top:28px}
 /* 남의 판 라벨의 실시간 점 (A1) — 붙어 있으면 초록, 끊기면 회색 */
@@ -17609,9 +17616,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   color:var(--blue); border-color:rgba(var(--blue-rgb),.6)}
 /* 초대 쪽지 — 잉크 선에 2px, 얕은 그림자, 명조 제목, 점선 아래 모노 바닥글 */
 /* (폐기 2026-09-20) 머리의 [초대] 쪽지 — 초대는 표 위 [파티원]의 작은 창이 맡는다. .gs-invnote-p·-list 는 그 창이 쓴다 */
-.gs-invnote-p{margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-invnote-p{margin:0; font-size:13px; line-height:1.7; color:var(--ink-body)}
 .gs-invnote-foot{margin-top:12px; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3);
-  font-size:11.5px; line-height:1.7; color:var(--ink-2)}
+  font-size:12px; line-height:1.7; color:var(--ink-2)}
 /* 디스코드 단추 — 상표색 하나만 쓴다 */
 .gs-dcbtn{background:#5865f2 !important; color:#fff !important; border-color:#5865f2 !important}
 /* 디스코드 마크 (2026-09-16 사용자) — 상표 마크를 글자색으로 칠한다. (폐기) 흰 네모 자리표시 */
@@ -17620,7 +17627,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   -webkit-mask:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+PHBhdGggZD0nTTIwLjMxNyA0LjM2OThhMTkuNzkxMyAxOS43OTEzIDAgMDAtNC44ODUxLTEuNTE1Mi4wNzQxLjA3NDEgMCAwMC0uMDc4NS4wMzcxYy0uMjExLjM3NTMtLjQ0NDcuODY0OC0uNjA4MyAxLjI0OTUtMS44NDQ3LS4yNzYyLTMuNjgtLjI3NjItNS40ODY4IDAtLjE2MzYtLjM5MzMtLjQwNTgtLjg3NDItLjYxNzctMS4yNDk1YS4wNzcuMDc3IDAgMDAtLjA3ODUtLjAzNyAxOS43MzYzIDE5LjczNjMgMCAwMC00Ljg4NTIgMS41MTUuMDY5OS4wNjk5IDAgMDAtLjAzMjEuMDI3N0MuNTMzNCA5LjA0NTgtLjMxOSAxMy41Nzk5LjA5OTIgMTguMDU3OGEuMDgyNC4wODI0IDAgMDAuMDMxMi4wNTYxYzIuMDUyOCAxLjUwNzYgNC4wNDEzIDIuNDIyOCA1Ljk5MjkgMy4wMjk0YS4wNzc3LjA3NzcgMCAwMC4wODQyLS4wMjc2Yy40NjE2LS42MzA0Ljg3MzEtMS4yOTUyIDEuMjI2LTEuOTk0MmEuMDc2LjA3NiAwIDAwLS4wNDE2LS4xMDU3Yy0uNjUyOC0uMjQ3Ni0xLjI3NDMtLjU0OTUtMS44NzIyLS44OTIzYS4wNzcuMDc3IDAgMDEtLjAwNzYtLjEyNzdjLjEyNTgtLjA5NDMuMjUxNy0uMTkyMy4zNzE4LS4yOTE0YS4wNzQzLjA3NDMgMCAwMS4wNzc2LS4wMTA1YzMuOTI3OCAxLjc5MzMgOC4xOCAxLjc5MzMgMTIuMDYxNCAwYS4wNzM5LjA3MzkgMCAwMS4wNzg1LjAwOTVjLjEyMDIuMDk5LjI0Ni4xOTgxLjM3MjguMjkyNGEuMDc3LjA3NyAwIDAxLS4wMDY2LjEyNzYgMTIuMjk4NiAxMi4yOTg2IDAgMDEtMS44NzMuODkxNC4wNzY2LjA3NjYgMCAwMC0uMDQwNy4xMDY3Yy4zNjA0LjY5OC43NzE5IDEuMzYyOCAxLjIyNSAxLjk5MzJhLjA3Ni4wNzYgMCAwMC4wODQyLjAyODZjMS45NjEtLjYwNjcgMy45NDk1LTEuNTIxOSA2LjAwMjMtMy4wMjk0YS4wNzcuMDc3IDAgMDAuMDMxMy0uMDU1MmMuNTAwNC01LjE3Ny0uODM4Mi05LjY3MzktMy41NDg1LTEzLjY2MDRhLjA2MS4wNjEgMCAwMC0uMDMxMi0uMDI4NnpNOC4wMiAxNS4zMzEyYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU1LTIuNDE4OSAyLjE1Ny0yLjQxODkgMS4yMTA4IDAgMi4xNzU3IDEuMDk1MiAyLjE1NjggMi40MTkgMCAxLjMzMzItLjk1NTUgMi40MTg5LTIuMTU2OSAyLjQxODl6bTcuOTc0OCAwYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU0LTIuNDE4OSAyLjE1NjktMi40MTg5IDEuMjEwOCAwIDIuMTc1NyAxLjA5NTIgMi4xNTY4IDIuNDE5IDAgMS4zMzMyLS45NDYgMi40MTg5LTIuMTU2OCAyLjQxODlaJy8+PC9zdmc+") center/contain no-repeat;
   mask:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+PHBhdGggZD0nTTIwLjMxNyA0LjM2OThhMTkuNzkxMyAxOS43OTEzIDAgMDAtNC44ODUxLTEuNTE1Mi4wNzQxLjA3NDEgMCAwMC0uMDc4NS4wMzcxYy0uMjExLjM3NTMtLjQ0NDcuODY0OC0uNjA4MyAxLjI0OTUtMS44NDQ3LS4yNzYyLTMuNjgtLjI3NjItNS40ODY4IDAtLjE2MzYtLjM5MzMtLjQwNTgtLjg3NDItLjYxNzctMS4yNDk1YS4wNzcuMDc3IDAgMDAtLjA3ODUtLjAzNyAxOS43MzYzIDE5LjczNjMgMCAwMC00Ljg4NTIgMS41MTUuMDY5OS4wNjk5IDAgMDAtLjAzMjEuMDI3N0MuNTMzNCA5LjA0NTgtLjMxOSAxMy41Nzk5LjA5OTIgMTguMDU3OGEuMDgyNC4wODI0IDAgMDAuMDMxMi4wNTYxYzIuMDUyOCAxLjUwNzYgNC4wNDEzIDIuNDIyOCA1Ljk5MjkgMy4wMjk0YS4wNzc3LjA3NzcgMCAwMC4wODQyLS4wMjc2Yy40NjE2LS42MzA0Ljg3MzEtMS4yOTUyIDEuMjI2LTEuOTk0MmEuMDc2LjA3NiAwIDAwLS4wNDE2LS4xMDU3Yy0uNjUyOC0uMjQ3Ni0xLjI3NDMtLjU0OTUtMS44NzIyLS44OTIzYS4wNzcuMDc3IDAgMDEtLjAwNzYtLjEyNzdjLjEyNTgtLjA5NDMuMjUxNy0uMTkyMy4zNzE4LS4yOTE0YS4wNzQzLjA3NDMgMCAwMS4wNzc2LS4wMTA1YzMuOTI3OCAxLjc5MzMgOC4xOCAxLjc5MzMgMTIuMDYxNCAwYS4wNzM5LjA3MzkgMCAwMS4wNzg1LjAwOTVjLjEyMDIuMDk5LjI0Ni4xOTgxLjM3MjguMjkyNGEuMDc3LjA3NyAwIDAxLS4wMDY2LjEyNzYgMTIuMjk4NiAxMi4yOTg2IDAgMDEtMS44NzMuODkxNC4wNzY2LjA3NjYgMCAwMC0uMDQwNy4xMDY3Yy4zNjA0LjY5OC43NzE5IDEuMzYyOCAxLjIyNSAxLjk5MzJhLjA3Ni4wNzYgMCAwMC4wODQyLjAyODZjMS45NjEtLjYwNjcgMy45NDk1LTEuNTIxOSA2LjAwMjMtMy4wMjk0YS4wNzcuMDc3IDAgMDAuMDMxMy0uMDU1MmMuNTAwNC01LjE3Ny0uODM4Mi05LjY3MzktMy41NDg1LTEzLjY2MDRhLjA2MS4wNjEgMCAwMC0uMDMxMi0uMDI4NnpNOC4wMiAxNS4zMzEyYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU1LTIuNDE4OSAyLjE1Ny0yLjQxODkgMS4yMTA4IDAgMi4xNzU3IDEuMDk1MiAyLjE1NjggMi40MTkgMCAxLjMzMzItLjk1NTUgMi40MTg5LTIuMTU2OSAyLjQxODl6bTcuOTc0OCAwYy0xLjE4MjUgMC0yLjE1NjktMS4wODU3LTIuMTU2OS0yLjQxOSAwLTEuMzMzMi45NTU0LTIuNDE4OSAyLjE1NjktMi40MTg5IDEuMjEwOCAwIDIuMTc1NyAxLjA5NTIgMi4xNTY4IDIuNDE5IDAgMS4zMzMyLS45NDYgMi40MTg5LTIuMTU2OCAyLjQxODlaJy8+PC9zdmc+") center/contain no-repeat}
 .gs-acctchip{display:inline-flex; align-items:center; gap:7px; height:32px; padding:0 10px 0 4px; border:1px solid rgba(var(--ink-rgb),.25);
-  border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer; white-space:nowrap}
+  border-radius:2px; background:transparent; font:inherit; font-size:13px; color:var(--ink); cursor:pointer; white-space:nowrap}
 .gs-acctchip:hover{border-color:rgba(var(--ink-rgb),.5)}
 /* 초상화 — 둥근 네모(한 변의 4분의 1), 1px 잉크 선. 디스코드 원본 파일이 정사각형이라 충돌이 없다 */
 /* 초상화 둥글기 2px (2026-09-24 사용자 확정) — 앱의 다른 것들과 같은 직각. (폐기 §3.12.7) 둥근 네모 25% */
@@ -17632,10 +17639,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rowi-ava:has(.gs-ava){width:var(--rowpic); height:var(--rowpic); border:0; background:transparent; padding:0; border-radius:2px; box-shadow:none; overflow:hidden}
 .gs-rowi-ava:has(.gs-ava) .gs-ava{border:0}
 .gs-conf-who .gs-ava{align-self:center}
-.gs-waithead{display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--ink-2); letter-spacing:.04em}
+.gs-waithead{display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink-2); letter-spacing:.04em}
 .gs-waithead .gs-btn{margin-left:auto}
 .gs-waitline .gs-ava{margin-right:2px}
-.gs-waitto{font-size:11.5px; color:var(--ink-2); margin-left:auto; margin-right:6px}
+.gs-waitto{font-size:12px; color:var(--ink-2); margin-left:auto; margin-right:6px}
 .gs-waitto-none{color:var(--red)}
 /* 단추 줄 규칙 (§9-3, 2026-09-16 개정) — 창·카드의 단추는 오른쪽 아래, 주 동작이 먼저·취소가 마지막(Windows 순서). 가운데 정렬·양끝 정렬 없음 */
 .gs-invite-acts{display:flex; justify-content:flex-end; gap:8px; margin-top:14px}
@@ -17644,10 +17651,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-nickform .gs-in-nick{flex:1 1 auto; width:auto; min-width:0; height:38px; padding:0 12px; font-size:17px; text-align:left; letter-spacing:.06em}
 .gs-nickform .gs-dialog-btns{margin:0; flex:none}
 /* 입력 단위 — 표 바 오른쪽의 분절 컨트롤. 상자와 알약은 폐기 */
-.gs-unitseg{display:inline-flex; align-items:center; gap:8px; font-size:11.5px; color:var(--ink-2); flex-wrap:wrap}
+.gs-unitseg{display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-2); flex-wrap:wrap}
 .gs-unitseg-solo{display:flex; margin:0 0 12px}
 .gs-segbox{display:inline-flex; border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px; overflow:hidden}
-.gs-segbtn{font:inherit; font-size:12px; padding:3px 9px; border:0; border-left:1px solid rgba(var(--ink-rgb),.25);
+.gs-segbtn{font:inherit; font-size:12px; padding:0 12px; height:30px; border:0; border-left:1px solid rgba(var(--ink-rgb),.25);
   background:transparent; color:var(--ink-2); cursor:pointer; letter-spacing:.02em}
 .gs-segbtn:first-child{border-left:0}
 .gs-segbtn.on{background:var(--chip-bg); color:var(--chip-fg); font-weight:600}
@@ -17658,7 +17665,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-mastrow .gs-title{margin-top:0}
 /* 뒤로가기 — 제목 위에 따로 두어 '목록으로 돌아간다'로 읽히게 */
 .gs-backrow{display:inline-flex; align-items:center; gap:6px; border:0; background:transparent;
-  font:inherit; font-size:12.5px; color:var(--ink-2); cursor:pointer; padding:3px 8px 3px 4px;
+  font:inherit; font-size:13px; color:var(--ink-2); cursor:pointer; padding:3px 8px 3px 4px;
   border-radius:6px; margin:0 0 2px -4px}
 .gs-backrow:hover{background:rgba(var(--ink-rgb),.08); color:var(--ink)}
 .gs-backrow i{font-style:normal; font-size:16px; line-height:1}
@@ -17679,7 +17686,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-party-dd:hover i{background:rgba(var(--ink-rgb),.16); color:var(--ink)}
 .gs-crewmenu.gs-partymenu{left:0; right:auto; top:calc(100% + 8px); width:min(320px,86vw);
   padding:7px}
-.gs-partymenu .gs-crewload{font-family:'Gowun Batang',serif; font-weight:700; font-size:15.5px;
+.gs-partymenu .gs-crewload{font-family:'Gowun Batang',serif; font-weight:700; font-size:16px;
   padding:11px 26px 11px 12px; gap:9px}
 .gs-partymenu .gs-crewload em{font-family:'IBM Plex Sans KR',system-ui,sans-serif;
   font-weight:500; font-size:11px}
@@ -17711,9 +17718,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lobby-name{display:flex; align-items:baseline; gap:12px}
 .gs-lobby-name b{font-family:'Gowun Batang',serif; font-weight:700; font-size:21px;
   letter-spacing:-.01em}
-.gs-lobby-name em{font-style:normal; font-size:11.5px; color:var(--gold)}
+.gs-lobby-name em{font-style:normal; font-size:12px; color:var(--gold)}
 .gs-lobby-now{font-weight:600}
-.gs-lobby-meta{display:flex; align-items:baseline; gap:7px; font-size:12.5px; color:var(--ink-2);
+.gs-lobby-meta{display:flex; align-items:baseline; gap:7px; font-size:13px; color:var(--ink-2);
   line-height:1.5}
 .gs-lobby-meta em{font-style:normal}
 /* 모드 세그 — 툴바로 오면서 잃은 아이콘-글자 정렬을 되살립니다 */
@@ -17742,10 +17749,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-help-sec:first-of-type{margin-top:16px}
 .gs-help-sec h4{margin:0 0 2px; font-size:13px; letter-spacing:.04em}
 /* 정산 방식 설명 창 */
-.gs-split-lead{font-size:12.5px; color:var(--ink-2); margin:2px 0 4px; line-height:1.7}
+.gs-split-lead{font-size:13px; color:var(--ink-2); margin:2px 0 4px; line-height:1.7}
 .gs-split-sec{margin-top:16px}
-.gs-split-sec h4{margin:0 0 6px; font-size:13.5px}
-.gs-split-sec p{margin:0 0 10px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-split-sec h4{margin:0 0 6px; font-size:14px}
+.gs-split-sec p{margin:0 0 10px; font-size:13px; line-height:1.7; color:var(--ink-body)}
 /* 삭제·개명은 평소엔 옅게 — 카드에 올리면 또렷해집니다 */
 .gs-lobby-card .gs-x{position:absolute; right:10px; top:50%; transform:translateY(-50%);
   opacity:.45; transition:opacity .12s}
@@ -17770,13 +17777,13 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-crewrow .gs-x{position:absolute; right:3px; top:50%; transform:translateY(-50%); opacity:0}
 .gs-crewrow:hover .gs-x, .gs-crewrow .gs-x:focus-visible{opacity:1}
 .gs-crewload{flex:1; min-width:0; display:flex; align-items:baseline; gap:10px; border:0;
-  background:transparent; font:inherit; font-size:13.5px; color:var(--ink); cursor:pointer;
+  background:transparent; font:inherit; font-size:14px; color:var(--ink); cursor:pointer;
   text-align:left; padding:8px 24px 8px 8px; border-radius:2px}
 .gs-crewload:hover{background:rgba(var(--ink-rgb),.08)}
 .gs-crewload em{font-style:normal; font-size:11px; color:var(--ink-2); margin-left:auto}
 .gs-crewsave{display:flex; align-items:center; gap:7px; margin-top:5px; padding:8px 8px 5px 8px;
   border-top:1px dotted rgba(var(--ink-rgb),.3)}
-.gs-crewsave .gs-in{flex:1; min-width:0; font-size:12.5px; padding:4px 2px;
+.gs-crewsave .gs-in{flex:1; min-width:0; font-size:13px; padding:4px 2px;
   border-bottom:1px solid rgba(var(--ink-rgb),.35)}
 .gs-crewsave .gs-btn{flex:none}
 
@@ -17792,8 +17799,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-qx-in{flex:1; min-width:0; font-family:var(--mono); font-size:17px; text-align:right;
   padding:5px 4px; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px;
   background:rgba(var(--lift-rgb),.25); color:var(--red)}
-.gs-qx-unit{flex:none; font-style:normal; font-size:10.5px; color:var(--ink-2)}
-.gs-qx-go{flex:none; padding:5px 9px; font-size:11.5px}
+.gs-qx-unit{flex:none; font-style:normal; font-size:11px; color:var(--ink-2)}
+.gs-qx-go{flex:none; padding:5px 9px; font-size:12px}
 .gs-qx-why{border:0; background:transparent; font:inherit; font-size:11px; cursor:pointer;
   color:var(--ink-2); text-decoration:underline; text-underline-offset:3px; padding:1px 0}
 .gs-qx-why:hover{color:var(--red)}
@@ -17809,8 +17816,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ex-head{display:flex; align-items:baseline; gap:9px; padding-bottom:9px;
   border-bottom:1px dashed rgba(var(--ink-rgb),.3)}
 .gs-ex-who{font-family:'Gowun Batang',serif; font-size:15px; font-weight:700}
-.gs-ex-cap{flex:1; font-size:10.5px; letter-spacing:.12em; color:var(--ink-2)}
-.gs-fold{border:1px solid rgba(var(--ink-rgb),.3); background:transparent; font:inherit; font-size:11.5px;
+.gs-ex-cap{flex:1; font-size:11px; letter-spacing:.12em; color:var(--ink-2)}
+.gs-fold{border:1px solid rgba(var(--ink-rgb),.3); background:transparent; font:inherit; font-size:12px;
   color:var(--ink-2); cursor:pointer; padding:4px 10px; border-radius:2px}
 .gs-fold:hover{color:var(--ink); border-color:var(--ink); background:rgba(var(--ink-rgb),.06)}
 .gs-ex-list{list-style:none; margin:0; padding:0}
@@ -17892,14 +17899,18 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   font-size:13px !important; color:var(--ink-2)}
 /* 정산 장부 — 핵심(이름·만 표기 금액) 24px, 서브는 한 단계씩 */
 .gs-ledger{width:100%; border-collapse:collapse; font-family:var(--mono);
-  font-size:13.5px; min-width:520px}
-.gs-ledger th{font-family:'IBM Plex Sans KR',sans-serif; font-size:12.5px; letter-spacing:.12em;
+  font-size:14px; min-width:520px}
+.gs-ledger th{font-family:'IBM Plex Sans KR',sans-serif; font-size:13px; letter-spacing:.12em;
   color:var(--ink-2); font-weight:500; text-align:right; padding:0 10px 8px;
   border-bottom:1.5px solid var(--ink); white-space:nowrap}
 .gs-ledger td{text-align:right; padding:12px 10px; white-space:nowrap;
   border-bottom:1px dotted rgba(var(--ink-rgb),.26)}
 .gs-ledger .gs-l{text-align:left}
-.gs-man{display:block; font-size:24px; line-height:1.25}
+/* 금액 세 열(벌금·받을 몫·순액)은 같은 폭, 나머지는 이름 (2026-10-23) — 수수료·최종 두 열을 순액 칸 작은 줄로 합치자
+   빈 폭이 전부 순액에 몰렸다. 24% 면 순액 작은 줄("+1,234,567 · 받는 금액 1,172,839")도 한 줄에 든다 */
+.gs-ledger th:not(.gs-l),.gs-ledger td:not(.gs-l){width:24%}
+/* 큰 줄은 굵게 (2026-10-23) — 숫자 서체를 굵은체가 있는 Courier Prime 으로 바꾸면서. 작은 줄(.gs-raw)은 보통 굵기 */
+.gs-man{display:block; font-size:24px; line-height:1.25; font-weight:700}
 .gs-raw{display:block; font-size:13px; line-height:1.35; color:rgba(var(--ink-rgb),.42); margin-top:2px}
 .gs-nm{font-family:'Gowun Batang',serif; font-size:24px; font-weight:700}
 .gs-pos{color:var(--blue)}
@@ -17907,11 +17918,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ledger em{font-style:normal; font-size:13px; color:var(--ink-2); margin-left:9px;
   font-family:'IBM Plex Sans KR',sans-serif}
 .gs-dim{color:rgba(var(--ink-rgb),.35); font-family:'IBM Plex Sans KR',sans-serif; font-size:14px}
-/* 장부의 꼬리 두 열(수수료·최종) — 정산의 답은 순액이고 이 둘은 우편이 그 위에 얹는 것이라,
-   정확히 적되 먼저 읽히지는 않게 한 단계 낮춥니다 (2026-09-21 사용자) */
-.gs-ledger .gs-tail{color:rgba(var(--ink-rgb),.6)}
-.gs-ledger .gs-tail .gs-man{font-size:20px}
-.gs-one{display:block; font-size:20px; line-height:1.25}
+/* (폐기 2026-10-23) 장부의 꼬리 두 열(수수료·최종)을 한 단계 낮추던 .gs-tail · .gs-one — 두 열을 순액 칸 작은 줄로 합쳤다 */
 /* 순액은 이 표의 답 — 열 하나를 기둥으로 세웁니다 (2026-09-21 사용자).
    색은 앱 문법 그대로: 밝게는 흰 기운으로 떠 보이고, 어둡게는 눌러 파 보입니다 */
 .gs-ledger .gs-net{background:rgba(var(--lift-rgb),.16)}
@@ -17968,7 +17975,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   color:var(--sp-ink2); margin-left:7px}
 .gs-spin-pick{border-color:var(--red); background:var(--paper,#2a2320)}
 /* 안내 자리는 늘 잡아 둡니다 — 글자가 생기며 판이 커지면 눈이 튑니다 */
-.gs-spin-gone{font-size:12.5px; color:#dcae5e; opacity:.9; min-height:18px}
+.gs-spin-gone{font-size:13px; color:#dcae5e; opacity:.9; min-height:18px}
 .gs-spin-status{font-size:20px; color:var(--ink-body); letter-spacing:.02em}
 .gs-spin .gs-spin-status{color:#c9bda9}
 .gs-spin-skip{font-size:12px; color:var(--ink-2); opacity:.7; min-height:17px}
@@ -18054,7 +18061,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   color:var(--ink-2); cursor:pointer}
 .gs-slook-c:hover{border-color:var(--gold)}
 .gs-slook-c.on{border-color:var(--gold); background:rgba(var(--gold-rgb),.12); color:var(--ink)}
-.gs-slook-c b{font-size:12.5px; color:var(--ink)}
+.gs-slook-c b{font-size:13px; color:var(--ink)}
 .gs-slook-c em{font-style:normal; font-size:11px; opacity:.8}
 .gs-slook-art{display:grid; place-items:center; width:100%; height:58px}
 .gs-slook-disc{width:52px; height:52px; border-radius:50%;
@@ -18073,7 +18080,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 한 판 예시 — 눌러야 펼쳐집니다. 늘 떠 있으면 설정 줄이 멀어집니다 */
 .gs-rc-ex{margin-top:10px}
 .gs-rc-exbtn{border:1px dashed rgba(var(--ink-rgb),.35); border-radius:2px;
-  background:transparent; font:inherit; font-size:11.5px; color:var(--ink-2);
+  background:transparent; font:inherit; font-size:12px; color:var(--ink-2);
   cursor:pointer; padding:5px 11px}
 .gs-rc-exbtn:hover{border-color:var(--gold); color:var(--ink)}
 .gs-rc-exlist{margin:9px 0 0; padding:11px 14px 11px 30px; border-radius:2px;
@@ -18081,7 +18088,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   line-height:1.85}
 .gs-rc-exlist li{margin:0; padding-left:2px}
 .gs-rc-exlist li::marker{color:var(--gold); font-weight:700}
-.gs-rc-exfoot{margin:7px 2px 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-rc-exfoot{margin:7px 2px 0; font-size:12px; color:var(--ink-2); line-height:1.7}
 /* 면과 비율 — 왼쪽 미리보기 + 오른쪽 표 */
 .gs-rc-body{display:flex; gap:16px; align-items:flex-start; margin-top:10px}
 .gs-rc-left{flex:0 0 168px; display:flex; flex-direction:column; align-items:center; gap:9px}
@@ -18099,7 +18106,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   width:44px; height:44px; border-radius:50%; pointer-events:none;
   background:radial-gradient(circle at 34% 30%, #4a3c30, #241d17 70%);
   border:1.5px solid #dcae5e}
-.gs-rc-pvnote{margin:0; font-size:10.5px; color:var(--ink-2); text-align:center;
+.gs-rc-pvnote{margin:0; font-size:11px; color:var(--ink-2); text-align:center;
   line-height:1.55}
 .gs-rc-vegas{margin:0; font-size:11px; color:var(--gold); line-height:1.55;
   background:rgba(var(--gold-rgb),.08); border:1px dashed rgba(var(--gold-rgb),.4);
@@ -18123,7 +18130,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rc-look{display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;
   color:var(--ink-2); margin-top:8px}
 .gs-rc-look > span{min-width:74px}
-.gs-rc-hint{font-style:normal; font-size:11.5px; opacity:.7; margin-left:2px}
+.gs-rc-hint{font-style:normal; font-size:12px; opacity:.7; margin-left:2px}
 .gs-rc-lookbtn{border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px; background:transparent;
   font:inherit; font-size:12px; color:var(--ink-body); cursor:pointer; padding:4px 11px}
 .gs-rc-lookbtn.on{border-color:var(--gold-ink); background:rgba(var(--gold-rgb),.14);
@@ -18192,13 +18199,13 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-spin-out-free{overflow:visible}
 /* 건너뛰기·닫기 — 자리를 고정해서 상태가 바뀌어도 판이 안 밀립니다 */
 .gs-spin-act{min-height:30px; display:flex; align-items:center; justify-content:center}
-.gs-spin-skipbtn{font:600 12.5px/1 'IBM Plex Sans KR',system-ui,sans-serif;
+.gs-spin-skipbtn{font:600 13px/1 'IBM Plex Sans KR',system-ui,sans-serif;
   padding:7px 16px; border-radius:2px; cursor:pointer; letter-spacing:.02em;
   color:var(--sp-ink2,#c9bda9); background:transparent;
   border:1px solid rgba(var(--gold-rgb),.32)}
 .gs-spin-skipbtn:hover{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
 .gs-spin-skipbtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
-.gs-spin-delta{font-size:13.5px; color:var(--sp-ink2); min-height:19px}
+.gs-spin-delta{font-size:14px; color:var(--sp-ink2); min-height:19px}
 .gs-spin-delta b{color:var(--sp-ink)}
 .gs-spin-delta .up{color:#ff9d92; font-weight:700}
 .gs-spin-delta .dn{color:#7fb8ff; font-weight:700}
@@ -18254,7 +18261,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-ovlive-frame{display:block; width:100%; aspect-ratio:16 / 9; border:0}
 /* 넣을 열의 눈 단추 — 그림 밖, 종이 위의 칩. 꺼진 열은 옅게 + 취소선 */
 .gs-oveyes{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px}
-.gs-oveye{display:inline-flex; align-items:center; gap:5px; font:inherit; font-size:11.5px; line-height:1; padding:4px 9px 4px 7px;
+.gs-oveye{display:inline-flex; align-items:center; gap:5px; font:inherit; font-size:12px; line-height:1; padding:4px 9px 4px 7px;
   border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; background:transparent; color:var(--ink); cursor:pointer}
 .gs-oveye:hover{border-color:rgba(var(--ink-rgb),.6)}
 .gs-oveye.off{color:var(--ink-2); border-color:rgba(var(--ink-rgb),.14)}
@@ -18294,7 +18301,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 @media (prefers-reduced-motion:reduce){ .gs-fxcard{animation:none} }
 .gs-toast{position:fixed; left:50%; bottom:max(18px,4vh); transform:translateX(-50%);
   z-index:70; max-width:min(560px,92vw); padding:12px 18px; border-radius:6px;
-  background:var(--paper,#2a2320); color:var(--ink); font-size:13.5px; line-height:1.65;
+  background:var(--paper,#2a2320); color:var(--ink); font-size:14px; line-height:1.65;
   border:1px solid rgba(var(--gold-rgb),.6); box-shadow:0 8px 26px rgba(0,0,0,.45);
   pointer-events:none; text-align:center;
   animation:gs-toast-in .22s ease-out, gs-toast-out .4s ease-in 3.2s forwards}
@@ -18314,10 +18321,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   border:1px solid rgba(var(--ink-rgb),.22); border-radius:2px; background:transparent; font:inherit}
 .gs-coltype-pick:hover{border-color:var(--gold-ink); background:rgba(var(--gold-rgb),.07)}
 .gs-coltype-pick b{display:block; font-size:15px; color:var(--ink); margin-bottom:4px}
-.gs-coltype-pick span{display:block; font-size:12.5px; line-height:1.75; color:var(--ink-body)}
+.gs-coltype-pick span{display:block; font-size:13px; line-height:1.75; color:var(--ink-body)}
 
 .gs-rc{width:100%; border-collapse:collapse; margin:12px 0}
-.gs-rc th{font-size:11.5px; color:var(--ink-2); font-weight:400; text-align:right; padding:0 8px 6px}
+.gs-rc th{font-size:12px; color:var(--ink-2); font-weight:400; text-align:right; padding:0 8px 6px}
 .gs-rc th.gs-l{text-align:left}
 .gs-rc td{padding:6px 8px; text-align:right; border-top:1px dotted rgba(var(--ink-rgb),.18)}
 .gs-rc td.gs-l{text-align:left}
@@ -18330,7 +18337,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-rc-w:focus{border-color:var(--gold-ink) !important; background:rgba(var(--gold-rgb),.1)}
 .gs-rc-pct{font-size:12px; color:var(--ink-2); width:64px}
 .gs-rc-onoff{border:1px solid rgba(var(--ink-rgb),.3); border-radius:99px; background:transparent;
-  font:inherit; font-size:11.5px; color:var(--ink-2); cursor:pointer; padding:3px 11px}
+  font:inherit; font-size:12px; color:var(--ink-2); cursor:pointer; padding:3px 11px}
 .gs-rc-onoff.on{border-color:var(--gold-ink); background:rgba(var(--gold-rgb),.14);
   color:var(--ink); font-weight:700}
 .gs-rc-del{border:0; background:transparent; font:inherit; font-size:15px; color:var(--ink-2);
@@ -18344,7 +18351,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   font-variant-numeric:tabular-nums; min-width:62px}
 .gs-rc-addbtn:hover:not(:disabled){border-color:var(--gold-ink); color:var(--ink)}
 .gs-rc-addbtn:disabled{opacity:.4; cursor:default}
-.gs-rc-note{margin:10px 0 0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
+.gs-rc-note{margin:10px 0 0; font-size:13px; line-height:1.8; color:var(--ink-body)}
 .gs-rc-reset{margin-top:12px; border:0; background:transparent; font:inherit; font-size:12px;
   color:var(--ink-2); cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:2px 0}
 .gs-rc-reset:hover{color:var(--ink)}
@@ -18363,11 +18370,11 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-slip-green{border-left-color:#6fbf73; background:rgba(111,191,115,.1)}
 .gs-slip-act{margin-left:auto}
 .gs-slip-urlbox{flex:1; min-width:220px; display:flex; flex-direction:column; gap:3px}
-.gs-urltext{font-family:var(--mono); font-size:12.5px; color:var(--ink-body);
+.gs-urltext{font-family:var(--mono); font-size:13px; color:var(--ink-body);
   word-break:break-all; letter-spacing:.02em}
 
 /* 판 기록 창 — 목록은 보기·삭제만 */
-.gs-gens-lead{margin:0 0 4px; font-size:11.5px; line-height:1.75; color:var(--ink-2)}
+.gs-gens-lead{margin:0 0 4px; font-size:12px; line-height:1.75; color:var(--ink-2)}
 
 /* 파티원 화면 — 내 줄만 금색, 나머지는 한 톤 물러납니다 */
 .gs-myrow .gs-in-name{color:var(--gold); font-weight:700}
@@ -18411,7 +18418,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lbcnt{margin-left:auto; font-family:var(--mono); font-size:13px; color:var(--gold)}
 .gs-lb-none{margin:0; font-size:12px; color:var(--ink-2); line-height:1.75;
   padding:10px 4px; text-align:center}
-.gs-lb-note{margin:10px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-lb-note{margin:10px 0 0; font-size:12px; color:var(--ink-2); line-height:1.7}
 .gs-lb-note b{color:var(--ink-body); font-weight:600}
 /* 모으기 열 — 섹션 셋이 같은 리듬으로 섭니다. 이 순서가 곧 파티 서랍의 순서입니다 */
 .gs-lbsec{margin-bottom:16px}
@@ -18427,15 +18434,15 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lbjoin{display:flex; flex-direction:column; align-items:center; text-align:center;
   padding:20px 8px 8px; color:var(--ink-2)}
 .gs-lbjoin > svg{opacity:.5}
-.gs-lbjoin-h{margin:11px 0 0; font-family:'Gowun Batang',serif; font-size:16.5px;
+.gs-lbjoin-h{margin:11px 0 0; font-family:'Gowun Batang',serif; font-size:17px;
   font-weight:700; color:var(--ink)}
 .gs-lbjoin .gs-lbask-gains{display:inline-block; text-align:left; margin:12px auto 0}
-.gs-lbjoin-go{margin-top:16px; min-width:200px; padding:10px 20px; font-size:13.5px}
+.gs-lbjoin-go{margin-top:16px; min-width:200px; padding:10px 20px; font-size:14px}
 .gs-lbjoin-more{margin:12px 0 0; font-size:12px}
 .gs-lbask-gains{list-style:none; margin:10px 0 0; padding:0}
 .gs-lbask-gains li{font-size:12px; color:var(--ink-body); line-height:1.8; padding-left:14px; position:relative}
 .gs-lbask-gains li::before{content:"·"; position:absolute; left:3px; color:var(--gold)}
-.gs-lbask-p{margin:2px 0 0; font-size:12.5px; color:var(--ink-body); line-height:1.85}
+.gs-lbask-p{margin:2px 0 0; font-size:13px; color:var(--ink-body); line-height:1.85}
 .gs-lbask-a{display:flex; margin-top:13px}
 .gs-lbask-a .gs-btn{margin-left:auto}
 /* 신청 한 줄 — 금테로 갈라 눈이 먼저 가게 (§3.1). 로비와 파티 서랍이 같은 모양입니다 */
@@ -18446,24 +18453,24 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lbreq > b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
 .gs-lbreq-id{font-family:var(--mono); font-size:11px; color:var(--ink-2)}
 /* 내려앉은 까닭 한 줄 — 금색이라 "고칠 것이 있다"가 읽힙니다 (§3.3) */
-.gs-lbreq-why{font-size:11.5px; color:var(--gold); flex:0 1 auto; min-width:0}
+.gs-lbreq-why{font-size:12px; color:var(--gold); flex:0 1 auto; min-width:0}
 .gs-lbreq-r{margin-left:auto; display:flex; align-items:center; gap:9px; flex:none}
 /* 주소는 제 줄을 쓰고, 남은 시간과 버튼이 아랫줄에서 오른쪽 끝으로 몰립니다 (§9-1) —
    한 줄에 다 세우면 폭이 다른 버튼이 들쭉날쭉 접힙니다 */
 .gs-lbinv{display:flex; align-items:center; justify-content:flex-end; gap:9px 10px; flex-wrap:wrap}
-.gs-lbinv-u{flex:1 1 100%; min-width:0; font-family:var(--mono); font-size:12.5px;
+.gs-lbinv-u{flex:1 1 100%; min-width:0; font-family:var(--mono); font-size:13px;
   color:var(--ink-2); overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
-.gs-lbinv-left{margin-right:auto; font-size:11.5px; color:var(--ink-2); white-space:nowrap}
+.gs-lbinv-left{margin-right:auto; font-size:12px; color:var(--ink-2); white-space:nowrap}
 /* 정원은 자주 만지는 것이 아니라 링크 줄 밑에 작게 (§3.1) */
 .gs-lbcap{display:flex; align-items:center; gap:8px; margin-top:10px;
-  font-size:11.5px; color:var(--ink-2)}
+  font-size:12px; color:var(--ink-2)}
 .gs-lb-capctl{display:inline-flex; align-items:center; gap:5px}
 .gs-lb-capctl button{font:inherit; font-size:12px; width:20px; height:20px; line-height:1;
   border:1px solid rgba(var(--ink-rgb),.3); background:transparent; color:var(--ink-2);
   border-radius:2px; cursor:pointer; display:grid; place-items:center}
 .gs-lb-capctl button:hover:not(:disabled){color:var(--ink); border-color:var(--kraft-dk)}
 .gs-lb-capctl button:disabled{opacity:.3; cursor:default}
-.gs-lbcapn{font-family:var(--mono); font-size:12.5px; color:var(--ink-body);
+.gs-lbcapn{font-family:var(--mono); font-size:13px; color:var(--ink-body);
   min-width:4ch; text-align:center}
 .gs-lb-tag{font-size:10px; letter-spacing:.08em; padding:2px 6px; border-radius:99px;
   background:var(--chip-bg); color:var(--chip-fg); flex:none}
@@ -18489,7 +18496,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 계정이 붙은 자리는 이름 옆에 파란 아이디 — 자리의 참고 정보입니다 (§3.2) */
 /* 가린 아이디 — 10.5px 는 점인지 글자인지도 안 보였습니다. 확인용 표식이라 읽히는
    크기여야 하고, 전체는 title 로 봅니다 */
-.gs-lbrow-id{font-family:var(--mono); font-size:12.5px; color:var(--blue); flex:none;
+.gs-lbrow-id{font-family:var(--mono); font-size:13px; color:var(--blue); flex:none;
   letter-spacing:.04em}
 .gs-lbrow{cursor:text}
 .gs-lbrow-in,.gs-lbrow-id,.gs-lbslot-x{cursor:auto}
@@ -18506,7 +18513,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 /* 명단 발치 — 왼쪽이 무엇을 하면 되는지, 오른쪽 끝이 채우는 문입니다 (§9-1) */
 .gs-lbrosterfoot{display:flex; align-items:center; gap:12px; margin-top:11px;
   padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.22)}
-.gs-lbrosterhint{margin:0; flex:1 1 auto; min-width:0; font-size:11.5px; line-height:1.7;
+.gs-lbrosterhint{margin:0; flex:1 1 auto; min-width:0; font-size:12px; line-height:1.7;
   color:var(--ink-2)}
 .gs-lbfill{margin-left:auto}
 .gs-lbrosterhint + .gs-lbfill{margin-left:0}
@@ -18520,9 +18527,9 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lbstart:disabled:hover{background:var(--gold)}
 .gs-lbcoledit{display:flex; flex-direction:column; gap:6px}
 .gs-lbcolrow{display:flex; align-items:center; gap:8px}
-.gs-lbcolrow .gs-in-col{flex:0 1 9em; min-width:4em; font-size:12.5px; text-align:left;
+.gs-lbcolrow .gs-in-col{flex:0 1 9em; min-width:4em; font-size:13px; text-align:left;
   padding-left:2px}
-.gs-lbcolprice{display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
+.gs-lbcolprice{display:inline-flex; align-items:center; gap:5px; font-size:12px;
   color:var(--ink-2); flex:none}
 /* 만드는 문 둘은 발치 오른쪽 끝에 나란히 (§9-3) */
 .gs-lbcolfoot{display:flex; align-items:center; justify-content:flex-end; gap:14px; margin-top:8px}
@@ -18541,10 +18548,10 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-invite{width:420px; max-width:100%; text-align:center; padding:26px 24px 22px}
 .gs-invite > svg{color:var(--gold)}
 .gs-invite-h{margin:12px 0 0; font-family:'Gowun Batang',serif; font-size:19px; font-weight:700}
-.gs-invite-sub{margin:8px 0 0; font-size:12.5px; color:var(--ink-body)}
-.gs-invite-names{margin:6px 0 0; font-family:'Gowun Batang',serif; font-weight:700; font-size:13.5px}
+.gs-invite-sub{margin:8px 0 0; font-size:13px; color:var(--ink-body)}
+.gs-invite-names{margin:6px 0 0; font-family:'Gowun Batang',serif; font-weight:700; font-size:14px}
 .gs-invite .gs-invite-go{display:block; width:100%; margin:18px 0 0; padding:12px 14px; font-size:14px}
-.gs-invite-note{margin:12px 0 0; font-size:11.5px; color:var(--ink-2)}
+.gs-invite-note{margin:12px 0 0; font-size:12px; color:var(--ink-2)}
 /* ── 로비 — 나 | 파티 두 기둥 (§3.0, 2026-09-05) ── */
 .gs-lobbyhome{max-width:var(--stage); margin:18px auto 0; display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:15px; align-items:start}
@@ -18562,15 +18569,15 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   border:1px solid rgba(var(--gold-rgb),.6); background:rgba(0,0,0,.2); border-radius:2px; padding:2px 8px}
 .gs-lh-set{margin-left:auto}
 .gs-lh-addr{display:flex; align-items:center; gap:9px; margin-top:14px; flex-wrap:nowrap}
-.gs-lh-url{font-family:var(--mono); font-size:12.5px; letter-spacing:.06em; color:var(--ink-body);
+.gs-lh-url{font-family:var(--mono); font-size:13px; letter-spacing:.06em; color:var(--ink-body);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1 1 auto}
 .gs-lh-login{margin:0}
 .gs-lh-rule{border:0; border-top:1px solid rgba(var(--ink-rgb),.14); margin:16px 0 14px}
-.gs-lh-live{font-size:10.5px; padding:2px 7px; border:1px solid rgba(var(--gold-rgb),.6); color:var(--gold);
+.gs-lh-live{font-size:11px; padding:2px 7px; border:1px solid rgba(var(--gold-rgb),.6); color:var(--gold);
   border-radius:2px; letter-spacing:.06em; margin-left:2px}
 .gs-lh-pname{font-family:'Gowun Batang',serif; font-weight:700; font-size:21px; margin-top:2px}
 .gs-lh-chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px}
-.gs-lh-chip{font-size:11.5px; padding:3px 9px; border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px;
+.gs-lh-chip{font-size:12px; padding:3px 9px; border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px;
   color:var(--ink-body)}
 .gs-lh-chip.r{border-color:rgba(var(--gold-rgb),.55)}
 .gs-lh-seats{display:flex; gap:5px; flex-wrap:wrap; margin-top:12px; align-items:center}
@@ -18578,14 +18585,14 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   border-radius:14px; background:rgba(var(--ink-rgb),.08)}
 .gs-lh-seat.ph{width:22px; height:22px; padding:0; border-radius:50%;
   border:1px dashed rgba(var(--kraftdk-rgb),.9); background:transparent}
-.gs-lh-seatn{font-size:11.5px; color:var(--ink-2); margin-left:4px}
+.gs-lh-seatn{font-size:12px; color:var(--ink-2); margin-left:4px}
 .gs-lh-chip-seat{border-style:dashed}
 .gs-lh-foot{display:flex; justify-content:flex-end; margin-top:16px}
 .gs-lh-foot .gs-lbstart,.gs-lh-box .gs-lbstart{margin-left:0}
 /* 내 판 카드의 상자 — 네 얼굴이 같은 뼈대 (2026-09-06): 가운데 정렬, 사실 한 줄·설명 한 줄·버튼 줄.
    빈 판만 점선, 두고 나온 진행 중만 금테. (폐기) .gs-lh-empty 점선 상자는 백지에만 있었다 */
 .gs-lh-box{border:1px solid rgba(var(--ink-rgb),.48); background:rgba(var(--ink-rgb),.035); border-radius:6px; padding:18px 16px 16px; text-align:center; /* 테두리를 또렷하게 — 상자 전체가 누르는 영역임을 알리는 선 (2026-09-07 사용자: 롤처럼 상자 안 우상단 ×까지는 말고 테두리로) */
-  color:var(--ink-2); font-size:12.5px; line-height:1.7}
+  color:var(--ink-2); font-size:13px; line-height:1.7}
 .gs-lh-box.empty{border:1px dashed var(--kraft-dk); border-radius:0}
 .gs-lh-box.live{border-color:rgba(var(--gold-rgb),.55); box-shadow:inset 3px 0 0 var(--gold)}
 .gs-lh-box .gs-lh-facts{margin:0}
@@ -18607,8 +18614,8 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-go{cursor:pointer; transition:border-color .15s, background .15s}
 .gs-lh-go:hover{border-color:rgba(var(--gold-rgb),.75); background:rgba(var(--gold-rgb),.05)}
 .gs-lh-go:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
-.gs-lh-names{margin:4px 0 0; font-size:13.5px; color:var(--ink); line-height:1.6}
-.gs-lh-goto{display:inline-block; margin-top:12px; color:var(--gold); font-weight:600; font-size:12.5px; letter-spacing:.02em}
+.gs-lh-names{margin:4px 0 0; font-size:14px; color:var(--ink); line-height:1.6}
+.gs-lh-goto{display:inline-block; margin-top:12px; color:var(--gold); font-weight:600; font-size:13px; letter-spacing:.02em}
 .gs-lh-back{margin-bottom:14px}
 .gs-lh-join{display:flex; gap:8px; margin-top:8px}
 /* 입력칸은 칸처럼 보여야 합니다 (2026-09-07 사용자: 어디가 텍스트 박스인지 안 보인다) — 표 안 .gs-in 과 달리 테두리·바탕·안쪽 여백 */
@@ -18617,11 +18624,11 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
 .gs-lh-in::placeholder{color:rgba(var(--ink-rgb),.45)}
 .gs-lh-mates{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:14px}
 .gs-lh-mates .gs-caplab{margin-right:4px}
-.gs-lh-mate{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:12.5px; padding:3px 9px;
+.gs-lh-mate{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:13px; padding:3px 9px;
   border-radius:14px; border:1px solid rgba(var(--ink-rgb),.3); background:transparent; color:var(--ink); cursor:pointer}
 .gs-lh-mate:hover{border-color:var(--gold)}
-.gs-lh-note{margin:12px 0 0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
-.gs-lh-recfoot{display:flex; align-items:center; gap:12px; margin-top:10px; font-size:11.5px; color:var(--ink-2)}
+.gs-lh-note{margin:12px 0 0; font-size:12px; color:var(--ink-2); line-height:1.7}
+.gs-lh-recfoot{display:flex; align-items:center; gap:12px; margin-top:10px; font-size:12px; color:var(--ink-2)}
 .gs-lh-recfoot .gs-auth-linkb{margin-left:auto}
 .gs-lh-stat b{color:var(--ink-body); font-weight:600}
 /* 준비 상태의 표 — 칸은 잠겨 있고 ＋도 없습니다. 세기 시작하는 문은 [시작] 하나입니다 (§3.1) */
@@ -18647,7 +18654,7 @@ tr.gs-dragging .gs-drag{opacity:1; color:var(--gold); cursor:grabbing}
   letter-spacing:.03em; display:inline-flex; align-items:center; gap:3px}
 .gs-crumb:hover{color:var(--gold)}
 .gs-crumb span{font-size:16px; line-height:1}
-.gs-stchip{font-size:10.5px; padding:2px 8px; border-radius:2px; letter-spacing:.06em; white-space:nowrap; flex:none}
+.gs-stchip{font-size:11px; padding:2px 8px; border-radius:2px; letter-spacing:.06em; white-space:nowrap; flex:none}
 .gs-stchip-ready{border:1px dashed rgba(var(--ink-rgb),.4); color:var(--ink-2)}
 .gs-stchip-live{border:1px solid rgba(var(--gold-rgb),.6); color:var(--gold)}
 /* 줄의 사람 시트 (§3.2) */
@@ -18690,7 +18697,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-rd-hit{flex:1 1 84px; width:auto; min-width:0; height:44px; min-height:0; padding:0 8px; gap:6px; justify-content:space-between; text-align:left; border-style:solid; border-color:rgba(var(--ink-rgb),.4)}
 .gs-rd-hit:hover{border-color:rgba(var(--ink-rgb),.7)}
 .gs-rd-hit.gs-hit-on{border-color:var(--gold)}
-.gs-rd-lab{display:flex; flex-direction:column; align-items:flex-start; line-height:1.15; min-width:0; font-size:12.5px; color:var(--ink)}
+.gs-rd-lab{display:flex; flex-direction:column; align-items:flex-start; line-height:1.15; min-width:0; font-size:13px; color:var(--ink)}
 .gs-rd-labname{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
 .gs-rd-labprice{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--gold); white-space:nowrap}
 .gs-rd-n{display:inline-flex; align-items:center; line-height:1; white-space:nowrap; flex:none}
@@ -18726,7 +18733,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 /* [항목 관리] 칸 — 단추 아래에 뜬다 (2026-09-18 확정 A). 칩은 세로로 하나씩. (폐기) .gs-cardtools 표 바 아래 펼침 */
 .gs-itemswrap{position:relative; display:inline-flex}
 .gs-itempop{position:absolute; left:0; top:calc(100% + 6px); z-index:20; min-width:300px; padding:10px 12px 12px; background:var(--paper); border:1px solid rgba(var(--ink-rgb),.45); border-radius:2px; font-weight:400; box-shadow:0 10px 24px rgba(var(--shadow-rgb),.4); white-space:nowrap}
-.gs-itempop-h{font-size:10.5px; letter-spacing:.12em; color:var(--ink-2); margin-bottom:8px}
+.gs-itempop-h{font-size:11px; letter-spacing:.12em; color:var(--ink-2); margin-bottom:8px}
 .gs-itempop-list{display:flex; flex-direction:column; gap:6px; align-items:flex-start}
 .gs-itempop .gs-citem{width:100%; gap:4px; padding-right:4px}
 .gs-itempop .gs-citem-x{margin-left:auto}
@@ -18743,14 +18750,14 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-itemsbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
 .gs-citem{display:inline-flex; align-items:center; gap:2px; height:32px; box-sizing:border-box; border:1px solid rgba(var(--ink-rgb),.35); border-radius:2px; background:var(--paper); padding:0 2px 0 6px}
 .gs-citem .gs-citem-name{width:5em; font-size:13px; padding:2px 4px}
-.gs-citem-price{font:inherit; font-family:var(--mono); font-size:12.5px; color:var(--gold); background:transparent; border:0; cursor:pointer; padding:0 6px; white-space:nowrap; height:100%}
+.gs-citem-price{font:inherit; font-family:var(--mono); font-size:13px; color:var(--gold); background:transparent; border:0; cursor:pointer; padding:0 6px; white-space:nowrap; height:100%}
 .gs-citem-price:hover{text-decoration:underline}
 .gs-citem-price .gs-price-suffix{margin-left:3px}
 .gs-citem .gs-pricewrap{display:inline-flex; align-items:center; padding:0 2px}
 .gs-citem-x{height:100%; padding:0 6px}
 .gs-citem-add{height:32px; box-sizing:border-box; padding:0 10px}
 .gs-tablebar .gs-segbox{height:34px; box-sizing:border-box}
-.gs-tablebar .gs-segbtn{height:100%; padding:0 11px; display:inline-flex; align-items:center; font-size:12.5px}
+.gs-tablebar .gs-segbtn{height:100%; padding:0 11px; display:inline-flex; align-items:center; font-size:13px}
 .gs-tablebar .gs-cellnote{margin:0; white-space:nowrap}
 .gs-invmodal .gs-lbsec{margin-top:12px}
 .gs-easebar{margin-top:12px}
@@ -18759,7 +18766,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 /* 어디서나 한 줄 (2026-09-08 사용자: 칩과 허브도 일관성) — 모집 카드와 파티 허브가 같은 모양입니다.
    두 줄 묶음(l1·l2)은 자리만 잡고 자식들이 직접 줄에 섭니다. (폐기 2026-09-07 밤) 두 줄 고정 */
 /* 판을 만드는 문 둘 (2026-09-08 사용자 확정) — 로비 파티 카드 안에서 세로로, 위가 파티원 초대·아래가 혼자 세기 */
-.gs-forklead{margin:0; font-size:12.5px; color:var(--ink-2); line-height:1.75}
+.gs-forklead{margin:0; font-size:13px; color:var(--ink-2); line-height:1.75}
 .gs-forklead b{color:var(--ink-body)}
 /* 단 머리 라벨이 가름선을 겸합니다 (2026-09-08 확정 ②) — (폐기) 점선 border-top: 라벨 선과 겹쳐 선이 둘이 됐다 */
 .gs-forksolo{margin-top:18px}
@@ -18790,8 +18797,8 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-hubpop{left:0; right:auto; width:min(480px, 92vw); padding:14px 16px 16px}
 .gs-hubpop .gs-lbcard-h{margin-top:0}
 .gs-hub-inv{margin-top:12px; padding-top:12px; border-top:1px dashed rgba(var(--ink-rgb),.18)}
-.gs-hub-own{margin:10px 0 0; font-size:12.5px; color:var(--ink-body); display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-.gs-hub-pending{display:flex; align-items:center; gap:10px; padding:10px 12px; margin:0 0 12px; border:1px solid rgba(var(--gold-rgb),.5); background:rgba(var(--gold-rgb),.06); font-size:12.5px; color:var(--ink-body)}
+.gs-hub-own{margin:10px 0 0; font-size:13px; color:var(--ink-body); display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.gs-hub-pending{display:flex; align-items:center; gap:10px; padding:10px 12px; margin:0 0 12px; border:1px solid rgba(var(--gold-rgb),.5); background:rgba(var(--gold-rgb),.06); font-size:13px; color:var(--ink-body)}
 .gs-hub-pending b{color:var(--ink)}
 .gs-hub-pending-r{margin-left:auto; display:flex; gap:8px}
 .gs-lh-norec{padding:16px}
@@ -18809,7 +18816,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-hub-me b{font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
 .gs-rolebadge{font-size:11px; padding:2px 7px; border:1px solid rgba(var(--gold-rgb),.6); color:var(--gold); border-radius:2px; letter-spacing:.06em; flex:none}
 .gs-rolebadge-dim{border-color:rgba(var(--ink-rgb),.3); color:var(--ink-2)}
-.gs-hub-st{margin-left:auto; color:var(--ink-2); font-size:12.5px; display:inline-flex; align-items:center; gap:6px; text-align:right}
+.gs-hub-st{margin-left:auto; color:var(--ink-2); font-size:13px; display:inline-flex; align-items:center; gap:6px; text-align:right}
 .gs-hub-st b{color:var(--ink); font-weight:600}
 .gs-lh-hubh{margin-bottom:10px}
 /* 창 안 실시간 미리보기 (①) */
@@ -18817,7 +18824,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 /* 준비 상태의 자리 띠 (§3.1, 2026-09-05) — 잠긴 벌금 칸 자리에 "이 줄에 누가 있나" */
 .gs-seatstripcell{padding:4px 6px}
 .gs-seatstrip{display:flex; align-items:center; gap:8px; height:40px; padding:0 12px; border-radius:2px;
-  border:1px dashed rgba(var(--kraftdk-rgb),.55); background:rgba(var(--ink-rgb),.04); font-size:12.5px; color:var(--ink-2)}
+  border:1px dashed rgba(var(--kraftdk-rgb),.55); background:rgba(var(--ink-rgb),.04); font-size:13px; color:var(--ink-2)}
 .gs-seatstrip b{font-weight:600; color:var(--ink)}
 /* 띠는 왼쪽 구분선에서 한 뼘 떨어집니다 (2026-09-06 사용자 지적) */
 .gs-seatstripcell .gs-seatstrip{margin-left:10px}
@@ -18826,7 +18833,7 @@ b.gs-rd-name.ph{color:rgba(var(--ink-rgb),.45); font-weight:400}
 .gs-seatstrip-new{border:1px solid rgba(var(--gold-rgb),.85); background:rgba(var(--gold-rgb),.12); color:var(--ink)}
 .gs-seatstrip-empty{opacity:.7}
 .gs-sdot{width:7px; height:7px; border-radius:50%; background:#6fbf73; flex:none}
-.gs-seatstrip-hint{margin-left:auto; font-size:11.5px; color:var(--ink-2)}
+.gs-seatstrip-hint{margin-left:auto; font-size:12px; color:var(--ink-2)}
 .gs-seatstrip .gs-lb-tag{margin-left:2px}
 .gs-lb-tag-host{background:var(--chip-bg); color:var(--chip-fg); border-color:transparent}
 /* 방금 앉은 줄 — 3초 금색으로 밝았다 가라앉습니다 */
@@ -18835,7 +18842,7 @@ tr.gs-row-arrive th.gs-stick{animation:gs-arrive 30s linear forwards}
 @keyframes gs-arrive{0%{box-shadow:inset 2px 0 0 rgba(var(--gold-rgb),1)} 100%{box-shadow:inset 2px 0 0 rgba(var(--gold-rgb),0)}}
 .gs-waitname{display:inline-flex; align-items:center; gap:8px}
 .gs-fly{position:fixed; z-index:200; pointer-events:none; display:inline-flex; align-items:center; gap:8px; padding:4px 8px; margin:-4px -8px;
-  background:var(--paper); border:1px dashed rgba(var(--ink-rgb),.35); font-size:12.5px; color:var(--ink);
+  background:var(--paper); border:1px dashed rgba(var(--ink-rgb),.35); font-size:13px; color:var(--ink);
   transition:transform .34s cubic-bezier(.2,.8,.2,1), opacity .34s}
 .gs-fly b{font-family:'Gowun Batang',serif; font-weight:700; font-size:14px}
 .gs-stchip-rec{border:1px solid rgba(var(--gold-rgb),.6); color:var(--gold)}
@@ -18855,22 +18862,22 @@ tr.gs-row-arrive th.gs-stick{animation:gs-arrive 30s linear forwards}
 .gs-invitegate{padding-top:0; padding-bottom:0; min-height:0}
 .gs-invitegate .gs-invitesec{min-height:100vh; min-height:100dvh; margin-top:0; margin-bottom:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-top:0; padding-bottom:0}
 .gs-invite-brand{font-size:13px; font-weight:800; letter-spacing:.06em; opacity:.6; margin-bottom:14px}
-.gs-note{display:flex; align-items:center; gap:12px; padding:10px 12px; margin-bottom:14px; border:1px solid rgba(var(--ink-rgb),.28); background:rgba(var(--ink-rgb),.05); font-size:12.5px; color:var(--ink-body)}
+.gs-note{display:flex; align-items:center; gap:12px; padding:10px 12px; margin-bottom:14px; border:1px solid rgba(var(--ink-rgb),.28); background:rgba(var(--ink-rgb),.05); font-size:13px; color:var(--ink-body)}
 .gs-note b{color:var(--ink)}
 .gs-note-x{margin-left:auto; font:inherit; font-size:16px; line-height:1; color:var(--ink-2); background:none; border:0; cursor:pointer; padding:0 2px}
 .gs-obs-invcard{margin-top:14px}
 /* 표 아래 사건 줄과 자기 줄 밑의 요청 줄 (2026-09-06) */
 tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb),.2)}
 .gs-waitrows{display:flex; flex-direction:column; gap:6px; margin:10px 0 0}
-.gs-waitline{display:flex; align-items:center; gap:10px; padding:8px 12px; border:1px dashed rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.06); font-size:12.5px; color:var(--ink-body)}
+.gs-waitline{display:flex; align-items:center; gap:10px; padding:8px 12px; border:1px dashed rgba(var(--gold-rgb),.55); background:rgba(var(--gold-rgb),.06); font-size:13px; color:var(--ink-body)}
 .gs-waitline b{font-family:'Gowun Batang',serif; font-weight:700; color:var(--ink); font-size:14px}
 .gs-waitwhy{color:var(--ink-body)}
 .gs-waitacts{margin-left:auto; display:flex; gap:10px; align-items:center}
 .gs-placebtn{border-color:rgba(var(--gold-rgb),.7); color:var(--gold)}
-.gs-subline{display:flex; align-items:center; gap:10px; margin-left:22px; padding:6px 12px; border:1px solid rgba(var(--gold-rgb),.55); border-left:3px solid var(--gold); background:rgba(var(--gold-rgb),.07); font-size:12.5px; color:var(--ink-body)}
+.gs-subline{display:flex; align-items:center; gap:10px; margin-left:22px; padding:6px 12px; border:1px solid rgba(var(--gold-rgb),.55); border-left:3px solid var(--gold); background:rgba(var(--gold-rgb),.07); font-size:13px; color:var(--ink-body)}
 .gs-subline b{font-family:'Gowun Batang',serif; font-weight:700; color:var(--ink)}
 .gs-subarrow{font-family:var(--mono); color:var(--ink-2)}
-.gs-lh-cnt{font-family:var(--mono); font-size:12.5px; color:var(--gold); letter-spacing:0; font-weight:400; margin-left:8px}
+.gs-lh-cnt{font-family:var(--mono); font-size:13px; color:var(--gold); letter-spacing:0; font-weight:400; margin-left:8px}
 /* (폐기 2026-09-06 낮) .gs-lh-foot2 — 시작 전 얼굴의 버튼 줄. 지금은 .gs-lh-acts */
 /* 글자 칸은 입력칸과 같은 글꼴·정렬(Gowun Batang, 오른쪽 맞춤)을 그대로 씁니다 — (버그 기록 2026-09-06) font:inherit·왼쪽 맞춤으로 덮어 이름 글꼴이 바뀌고 왼쪽에 붙었다 */
 .gs-name-ro{cursor:default; background:transparent; border-color:transparent; color:var(--ink); display:block; width:100%}
@@ -18886,7 +18893,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-lh-loginnote{margin-top:14px}
 .gs-invmodal-live{margin:0 0 2px}
 .gs-blocked-acts{justify-content:flex-end; margin-top:12px}
-.gs-lbgensbtn{flex:none; font:inherit; font-size:11.5px; cursor:pointer; padding:5px 9px;
+.gs-lbgensbtn{flex:none; font:inherit; font-size:12px; cursor:pointer; padding:5px 9px;
   display:inline-flex; align-items:center; gap:5px; border-radius:7px;
   color:var(--ink-2); background:transparent; border:1px solid rgba(var(--ink-rgb),.2)}
 .gs-lbgensbtn:hover{color:var(--ink); border-color:var(--kraft-dk);
@@ -18894,16 +18901,16 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-lbgensbtn b{font-family:var(--mono); font-weight:700; color:var(--ink)}
 .gs-seatlist{display:flex; flex-direction:column; gap:6px; margin:12px 0}
 .gs-seatopt{font:inherit; text-align:left; cursor:pointer; padding:10px 13px; border-radius:7px;
-  font-size:13.5px; color:var(--ink-body); background:rgba(var(--ink-rgb),.05);
+  font-size:14px; color:var(--ink-body); background:rgba(var(--ink-rgb),.05);
   border:1px solid rgba(var(--ink-rgb),.16);
   display:flex; align-items:center; justify-content:space-between; gap:10px}
 .gs-seatopt:hover{border-color:var(--gold)}
 .gs-seatopt:disabled{opacity:.55; cursor:default}
 /* 판 도중 합류자의 자리 고르기 — 고르는 줄의 벌금이 같이 보여야 "이어받는다"가 읽힙니다 */
 .gs-seatclaim-lead{margin:10px 0 0; font-size:13px; line-height:1.7; color:var(--ink-body)}
-.gs-seatopt-g{font-style:normal; font-family:var(--mono); font-size:12.5px; color:var(--gold)}
+.gs-seatopt-g{font-style:normal; font-family:var(--mono); font-size:13px; color:var(--gold)}
 .gs-mem-seat{font-size:11px; color:var(--gold); flex:none}
-.gs-key-note{margin:8px 0 0; font-size:12.5px; color:var(--gold)}
+.gs-key-note{margin:8px 0 0; font-size:13px; color:var(--gold)}
 /* 얼림 띠 — 굳었을 뿐 아무것도 지워지지 않았습니다 */
 .gs-slip-hold{border-left-color:var(--gold); background:rgba(var(--gold-rgb),.1)}
 .gs-hit-idle{cursor:default}
@@ -18911,7 +18918,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-lobbybox{padding-top:16px}
 .gs-lb-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:10px}
 .gs-lb-title{margin:0}
-.gs-lb-count{font-size:12.5px; color:var(--ink-2); display:inline-flex; align-items:center}
+.gs-lb-count{font-size:13px; color:var(--ink-2); display:inline-flex; align-items:center}
 .gs-lb-count b{font-size:15px; color:var(--ink)}
 .gs-lb-list{list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:8px}
 .gs-lb-list li{display:inline-flex; align-items:center; gap:7px; padding:8px 13px;
@@ -18923,10 +18930,10 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 
 /* 합류 신청 알림 — 알리고 목록으로 데려가는 역할만 합니다 (§3-4) */
 .gs-joincard{pointer-events:auto; max-width:330px}
-.gs-join-sub{display:block; margin-top:5px; font-size:12.5px; color:var(--ink-body);
+.gs-join-sub{display:block; margin-top:5px; font-size:13px; color:var(--ink-body);
   line-height:1.6}
 .gs-join-id{font-weight:400; color:var(--ink-2); font-size:12px}
-.gs-join-more{margin-left:6px; font-size:11.5px; color:var(--gold)}
+.gs-join-more{margin-left:6px; font-size:12px; color:var(--gold)}
 /* 버튼은 오른쪽 끝 한 선에 (§9-1) — 주 동작이 맨 오른쪽입니다 */
 .gs-join-acts{display:flex; justify-content:flex-end; gap:8px; margin-top:11px}
 /* 지목 초대 카드 — 신청 알림과 같은 자리, 같은 몸입니다. 다른 건 금테 하나뿐입니다:
@@ -18935,11 +18942,11 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 
 /* 함께한 사람 칩 — 목록이 곧 방 찾기입니다 (§3.3). 얼굴 하나가 상태를 말합니다 */
 .gs-mates{display:flex; gap:7px; flex-wrap:wrap}
-.gs-mate{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:13.5px;
+.gs-mate{font:inherit; font-family:'Gowun Batang',serif; font-weight:700; font-size:14px;
   color:var(--ink); background:none; padding:4px 10px; cursor:pointer;
   border:1px solid rgba(var(--ink-rgb),.22); border-radius:7px}
 .gs-mate:hover{border-color:rgba(var(--gold-rgb),.55)}
-.gs-mate i{font-style:normal; font-family:inherit; font-weight:400; font-size:10.5px;
+.gs-mate i{font-style:normal; font-family:inherit; font-weight:400; font-size:11px;
   color:var(--gold); margin-left:5px}
 /* 이미 앉은 사람은 다시 부를 수 있습니다 — 누를 수는 있게 두고 얼굴만 가라앉힙니다 */
 .gs-mate.on{color:var(--ink-2); border-color:rgba(var(--ink-rgb),.14)}
@@ -18949,7 +18956,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-auth-head{display:flex; align-items:center; gap:10px}
 .gs-auth-head h3{margin-right:auto}
 /* 주 버튼은 폭을 다 씁니다 — 이 창에서 할 일이 하나라 고민할 자리가 없습니다 */
-.gs-authgo{display:block; width:100%; margin-top:16px; padding:11px 14px; font-size:13.5px;
+.gs-authgo{display:block; width:100%; margin-top:16px; padding:11px 14px; font-size:14px;
   font-weight:600; text-align:center}
 /* 랜딩의 문 두 장 (§3.11, 2026-09-05) — 그림 대신 얼굴(아이콘·이름·한 줄)이 문입니다.
    ← 뒤로가 분기를 전담하므로 서브 화면에는 다른 문이 없습니다 */
@@ -18959,7 +18966,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px;
   background:rgba(var(--ink-rgb),.04); color:var(--ink)}
 .gs-auth-pcard:hover{border-color:var(--gold); background:rgba(var(--gold-rgb),.07)}
-.gs-auth-pcard b{font-family:'Gowun Batang',serif; font-size:14.5px}
+.gs-auth-pcard b{font-family:'Gowun Batang',serif; font-size:15px}
 .gs-auth-pcard em{font-style:normal; font-size:11px; color:var(--ink-2); line-height:1.65}
 .gs-auth-pcard svg{opacity:.8}
 .gs-auth-back{border:0; background:none; color:var(--ink-2); cursor:pointer;
@@ -18970,16 +18977,16 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   font-weight:700; font-size:26px; text-align:center; letter-spacing:.06em; color:var(--ink);
   border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px; padding:12px 14px;
   background:rgba(var(--ink-rgb),.04)}
-.gs-auth-nickhint{margin:9px 0 0 !important; font-size:11.5px !important;
+.gs-auth-nickhint{margin:9px 0 0 !important; font-size:12px !important;
   color:var(--ink-2) !important; text-align:center}
-.gs-auth-line{margin:14px 0 0 !important; text-align:center; font-size:12.5px !important;
+.gs-auth-line{margin:14px 0 0 !important; text-align:center; font-size:13px !important;
   color:var(--ink-2) !important}
-.gs-auth-linkb{font:inherit; font-size:12.5px; font-weight:600; color:var(--gold);
+.gs-auth-linkb{font:inherit; font-size:13px; font-weight:600; color:var(--gold);
   background:none; border:0; cursor:pointer; padding:0;
   text-decoration:underline; text-underline-offset:3px}
 .gs-auth-linkb:hover{color:var(--ink)}
 /* 가입 경고 한 덩어리 — 겁주는 상자가 아니라 발치의 작은 글씨입니다 */
-.gs-auth-fine{margin:10px 0 0 !important; font-size:11.5px !important; line-height:1.7;
+.gs-auth-fine{margin:10px 0 0 !important; font-size:12px !important; line-height:1.7;
   color:var(--ink-2) !important}
 .gs-field{display:block; margin-top:12px; font-size:11px; letter-spacing:.1em;
   color:var(--ink-2)}
@@ -18988,11 +18995,11 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px; padding:8px 10px;
   background:rgba(var(--ink-rgb),.04)}
 .gs-in-nickbig{width:110px; font-family:'Gowun Batang',serif; font-weight:700; font-size:16px}
-.gs-auth-warn{margin:12px 0 0; color:var(--red); font-size:11.5px; line-height:1.75}
+.gs-auth-warn{margin:12px 0 0; color:var(--red); font-size:12px; line-height:1.75}
 /* 만료 안내는 경고가 아니라 사실이라, 빨강을 안 씁니다 */
-.gs-auth-note{margin:6px 0 0; color:var(--ink-2); font-size:11.5px; line-height:1.75}
+.gs-auth-note{margin:6px 0 0; color:var(--ink-2); font-size:12px; line-height:1.75}
 /* 끼어든 창이 스스로를 변명하는 줄 — 입력칸 위에 한 번만 */
-.gs-auth-why{margin:10px 0 2px; font-size:12.5px; line-height:1.8; color:var(--ink-body);
+.gs-auth-why{margin:10px 0 2px; font-size:13px; line-height:1.8; color:var(--ink-body);
   border-left:2px solid rgba(var(--gold-rgb),.6); background:rgba(var(--gold-rgb),.07);
   padding:8px 11px}
 
@@ -19002,30 +19009,30 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   display:inline-flex; align-items:center; justify-content:center;
   background:var(--chip-bg); color:var(--chip-fg); font-size:14px; font-weight:700;
   font-family:'Gowun Batang',serif}
-.gs-acct-nick2{font-family:'Gowun Batang',serif; font-size:14.5px}
+.gs-acct-nick2{font-family:'Gowun Batang',serif; font-size:15px}
 .gs-acct-badge{font-size:11px; color:var(--ink-2); padding:1px 6px; border-radius:2px;
   border:1px solid rgba(var(--ink-rgb),.28)}
 .gs-acct-idm{font-family:var(--mono); font-size:11px; color:var(--ink-2)}
 .gs-acct-row .gs-acct-acts,.gs-acct-row .gs-acct-nick{margin-left:auto}
-.gs-acct-note{margin:7px 0 0; font-size:11.5px; line-height:1.7; color:var(--ink-2)}
+.gs-acct-note{margin:7px 0 0; font-size:12px; line-height:1.7; color:var(--ink-2)}
 /* 닉 바꾸기·로그아웃이 한 줄. 입력칸은 접혀 있다가 필요할 때만 열립니다 (§9-7) */
 .gs-acct-acts{display:flex; align-items:center; gap:10px}
 .gs-acct-nick{display:flex; align-items:center; gap:7px; flex-wrap:wrap}
 .gs-acct-nick .gs-in-nick{flex:1 1 78px; min-width:0}
-.gs-acct-err{margin:8px 0 0; font-size:11.5px; color:var(--red); line-height:1.6}
+.gs-acct-err{margin:8px 0 0; font-size:12px; color:var(--red); line-height:1.6}
 /* 아이디 정하기 줄 — 문장 왼쪽, 문 오른쪽 (재발급 줄과 같은 문법) */
 .gs-acct-upline{margin-top:10px}
-.gs-obs-life{margin:10px 0 0; font-size:12.5px; color:var(--ink-2)}
+.gs-obs-life{margin:10px 0 0; font-size:13px; color:var(--ink-2)}
 /* 2026-09-19 — [초대] 창의 글머리 두 줄, 방송 설정의 한 줄 안내·연동 줄·받는 길 둘 */
-.gs-invnote-list{margin:2px 0 0; padding:0 0 0 16px; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
-.gs-obs-say{margin:10px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-body)}
+.gs-invnote-list{margin:2px 0 0; padding:0 0 0 16px; font-size:13px; line-height:1.7; color:var(--ink-body)}
+.gs-obs-say{margin:10px 0 0; font-size:13px; line-height:1.7; color:var(--ink-body)}
 /* 발급 뒤 연동 권유 띠 (2026-09-24 사용자 확정, 목업 dclink ③가) — 옅은 Discord 색으로 "여기는 다른 이야기".
    (폐기) 상태 문장과 같은 글씨 한 줄 + 오른쪽 작은 단추 */
 .gs-obs-dcline{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:4px 14px; margin:14px 0 2px; padding:12px 14px;
   background:rgba(88,101,242,.1); border:1px solid rgba(88,101,242,.45); border-left:3px solid #5865f2; border-radius:2px}
 .gs-obs-dcline .gs-obs-dcmark{display:block; grid-row:1 / 3; width:26px; height:26px; color:#5865f2}
 .gs-obs-dcline > span{grid-column:2; font-size:13px; line-height:1.6; color:var(--ink)}
-.gs-obs-dcline > .gs-obs-dcsub{font-size:11.5px; color:var(--ink-2)}
+.gs-obs-dcline > .gs-obs-dcsub{font-size:12px; color:var(--ink-2)}
 .gs-obs-dcline > .gs-btn{grid-column:3; grid-row:1 / 3; height:32px; padding:0 16px; font-size:13px}
 /* 발급 전 — 두 줄 단추 세로 둘 + '또는' (2026-09-24 사용자 확정, 목업 dclink2 ②다). 제목과 설명이 단추 안에 있어 설명의 소속을 묻지 않는다.
    (폐기 2026-09-19) 나란히 두 칸 + 칸 아래 설명(.gs-obs-makenote) — 오른쪽이 비고 설명이 본문처럼 읽혔다 */
@@ -19039,46 +19046,46 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-cl.gs-dcbtn span{color:rgba(255,255,255,.82); opacity:1}
 .gs-cl:not(.gs-dcbtn){grid-template-columns:1fr}
 .gs-cl:not(.gs-dcbtn) b,.gs-cl:not(.gs-dcbtn) span{grid-column:1}
-.gs-obs-or{display:flex; align-items:center; gap:12px; margin:22px 0 2px; font-size:11.5px; color:var(--ink-2); letter-spacing:.08em}
+.gs-obs-or{display:flex; align-items:center; gap:12px; margin:22px 0 2px; font-size:12px; color:var(--ink-2); letter-spacing:.08em}
 .gs-obs-or::before,.gs-obs-or::after{content:""; flex:1; height:1px; background:rgba(var(--ink-rgb),.22)}
 .gs-obs-fine{margin:6px 0 0; font-size:11px; line-height:1.6; color:var(--ink-2)}
 /* Discord 연동 대화상자 (2026-09-24 사용자 확정, 목업 dclink2 ①라) */
-.gs-dc-gains{margin:0; padding:0; list-style:none; font-size:12.5px; line-height:1.85; color:var(--ink-body)}
+.gs-dc-gains{margin:0; padding:0; list-style:none; font-size:13px; line-height:1.85; color:var(--ink-body)}
 .gs-dc-gains li{position:relative; padding-left:14px}
 .gs-dc-gains li::before{content:""; position:absolute; left:2px; top:.78em; width:5px; height:5px; background:#5865f2}
-.gs-dialog p.gs-dc-fine{margin:12px 0 0; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3); font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-dialog p.gs-dc-fine{margin:12px 0 0; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.3); font-size:12px; color:var(--ink-2); line-height:1.7}
 .gs-dc-btns{margin-top:22px}
 .gs-dc-btns .gs-dcbtn{flex-direction:row; gap:7px}
-.gs-obs-life .gs-swaplink{font-size:12.5px}
+.gs-obs-life .gs-swaplink{font-size:13px}
 .gs-obs-discard{margin-left:14px}
 /* 연동 전의 문 (B1′) — 유령 단추 + 실루엣 얼굴 자리 */
-.gs-dcdoor{height:32px; padding:0 12px 0 10px; font-size:12.5px; font-weight:600}
+.gs-dcdoor{height:32px; padding:0 12px 0 10px; font-size:13px; font-weight:600}
 
 /* 공유 설정 창의 계정 줄·명단 */
 .gs-obs-acct{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
   padding:9px 12px; border:1px solid rgba(var(--ink-rgb),.18);
-  background:rgba(var(--ink-rgb),.04); font-size:12.5px}
+  background:rgba(var(--ink-rgb),.04); font-size:13px}
 .gs-obs-acct > b{font-family:'Gowun Batang',serif; font-size:16px}
-.gs-obs-acctid{color:var(--ink-2); font-size:11.5px}
+.gs-obs-acctid{color:var(--ink-2); font-size:12px}
 .gs-in-nick{width:88px; border:1px solid rgba(var(--ink-rgb),.28); border-radius:2px;
-  padding:5px 8px; font-size:12.5px}
+  padding:5px 8px; font-size:13px}
 .gs-obs-logout{margin-left:auto}
-.gs-obs-invleft{font-size:11.5px; color:var(--ink-2); white-space:nowrap}
+.gs-obs-invleft{font-size:12px; color:var(--ink-2); white-space:nowrap}
 .gs-memlist{list-style:none; margin:8px 0 0; padding:0}
-.gs-memlist li{display:flex; align-items:center; gap:8px; padding:7px 11px; font-size:12.5px;
+.gs-memlist li{display:flex; align-items:center; gap:8px; padding:7px 11px; font-size:13px;
   border:1px solid rgba(var(--ink-rgb),.18); border-radius:2px; margin-top:6px}
 .gs-memlist li b{font-family:'Gowun Batang',serif; font-size:15px}
-.gs-mem-id{color:var(--ink-2); font-size:11.5px}
-.gs-mem-req{font-size:10.5px; letter-spacing:.08em; color:var(--gold)}
+.gs-mem-id{color:var(--ink-2); font-size:12px}
+.gs-mem-req{font-size:11px; letter-spacing:.08em; color:var(--gold)}
 .gs-memlist li .gs-btn{margin-left:auto}
 
 /* ── 방 표시 칩 — 머리줄 하나로 "어느 방인가"와 "잘 붙어 있나"를 같이 답합니다 ── */
 .gs-roomdd{position:relative}
-.gs-roomchip{font:inherit; font-size:12.5px; cursor:pointer; height:32px;
+.gs-roomchip{font:inherit; font-size:13px; cursor:pointer; height:32px;
   display:inline-flex; align-items:center; gap:2px; padding:0 10px;
   border:1px solid rgba(var(--gold-rgb),.5); border-radius:7px;
   background:rgba(var(--gold-rgb),.06); color:var(--gold); white-space:nowrap}
-.gs-roomchip b{font-family:'Gowun Batang',serif; font-weight:700; font-size:13.5px; color:var(--gold)}
+.gs-roomchip b{font-family:'Gowun Batang',serif; font-weight:700; font-size:14px; color:var(--gold)}
 .gs-roomchip:hover,.gs-roomchip.on{background:rgba(var(--gold-rgb),.14)}
 /* 문일 때는 눌리는 것처럼 보여야 합니다 — 상태 칩과 같은 몸이되 테두리를 세웁니다 */
 .gs-roomchip-go{gap:7px; color:var(--ink); border-color:var(--gold);
@@ -19106,7 +19113,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.45)}
 /* 주소 밑 계기판 한 줄 (§5.7) — 점 하나 + 문장. 글줄에 흘려 써서 줄바꿈에도
    점이 문장 첫머리에 남습니다. 색은 점이 답합니다 */
-.gs-cast-line{margin:10px 0 0; font-size:12.5px; line-height:1.8; color:var(--ink-body)}
+.gs-cast-line{margin:10px 0 0; font-size:13px; line-height:1.8; color:var(--ink-body)}
 .gs-cast-line .gs-castdot{margin:0 7px 2px 0; vertical-align:middle}
 .gs-roomdot.warn{background:rgba(var(--ink-rgb),.42)}
 .gs-roomdot.off{background:transparent; box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.45)}
@@ -19114,11 +19121,11 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   background:var(--paper); border:1px solid var(--kraft-dk); border-radius:8px; padding:12px 13px;
   box-shadow:0 14px 34px rgba(var(--shadow-rgb),.34)}
 .gs-room-h{margin:0; font-family:'Gowun Batang',serif; font-size:16px; font-weight:700}
-.gs-room-sub{margin:3px 0 0; font-size:11.5px; color:var(--ink-2)}
+.gs-room-sub{margin:3px 0 0; font-size:12px; color:var(--ink-2)}
 .gs-room-mem{margin:7px 0 0; font-size:12px; line-height:1.8; color:var(--ink-body)}
 .gs-room-row{display:flex; align-items:center; gap:7px; margin:9px 0 0; padding-top:9px;
-  font-size:12.5px; border-top:1px solid rgba(var(--ink-rgb),.14)}
-.gs-room-row b{margin-left:auto; font-family:var(--mono); font-size:11.5px; color:var(--ink-2);
+  font-size:13px; border-top:1px solid rgba(var(--ink-rgb),.14)}
+.gs-room-row b{margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--ink-2);
   font-weight:400; word-break:break-all; text-align:right}
 .gs-room-btns{display:flex; align-items:center; gap:10px; margin-top:11px}
 .gs-room-end{margin-left:auto}
@@ -19129,7 +19136,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   font-weight:600; display:flex; align-items:center; gap:7px}
 .gs-room-cnt{margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--gold)}
 .gs-room-sech .gs-obs-why{margin-left:auto; font-size:11px; letter-spacing:0; font-weight:400}
-.gs-room-none{margin:0; font-size:11.5px; color:var(--ink-2); line-height:1.7}
+.gs-room-none{margin:0; font-size:12px; color:var(--ink-2); line-height:1.7}
 .gs-room-sec .gs-lbreq{padding:7px 9px; gap:7px}
 .gs-room-sec .gs-lbreq > b{font-size:15px}
 .gs-room-sec .gs-memlist li{padding:6px 9px; margin-top:5px}
@@ -19153,7 +19160,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* ── 자수 탭 — 항목마다 큰 카드 하나. 방송 화면에서도 읽히게 숫자를 크게 씁니다 ── */
 .gs-conf-who{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px}
 .gs-conf-who > b{font-family:'Gowun Batang',serif; font-size:24px; font-weight:700; color:var(--gold)}
-.gs-conf-tag{font-size:9.5px; letter-spacing:.1em; color:var(--gold); padding:1px 5px;
+.gs-conf-tag{font-size:10px; letter-spacing:.1em; color:var(--gold); padding:1px 5px;
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:2px}
 .gs-conf-sum{margin-left:auto; font-size:12px; color:var(--ink-2)}
 .gs-conf-sum b{font-family:var(--mono); font-size:28px; color:var(--gold); font-weight:400}
@@ -19177,7 +19184,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-cf-price{display:flex; align-items:center; justify-content:center; gap:3px;
   font-size:11px; color:var(--ink-2); margin-top:3px; white-space:nowrap}
 /* 단가에 점선 밑줄은 안 씁니다 — 밑줄은 '고칠 수 있다'는 뜻입니다 (2026-09-06 사용자) */
-.gs-cf-price u{text-decoration:none; font-family:var(--mono); font-size:12.5px; color:var(--gold)}
+.gs-cf-price u{text-decoration:none; font-family:var(--mono); font-size:13px; color:var(--gold)}
 /* 칸 둘레의 틈 — 방장 표의 .gs-hitwrap 여백과 같은 값이라 두 화면의 칸 간격이 같습니다 */
 .gs-cf-body{padding:6px 4px 0}
 /* 칸 — 방장 카운터 표의 .gs-hit 그대로: 안 센 칸은 점선에 옅은 ＋, 한 번이라도 세면 실선에 진한 바탕 */
@@ -19295,11 +19302,11 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
   border:1px solid rgba(var(--ink-rgb),.5); color:var(--ink); cursor:pointer}
 .gs-pc-badge:hover,.gs-pc-badge:focus-visible{border-color:var(--gold); color:var(--gold); outline:0}
 .gs-pc-badge:disabled{opacity:.5; cursor:default}
-.gs-pc-tip{position:absolute; left:50%; top:calc(100% + 7px); transform:translateX(-50%); white-space:nowrap; padding:4px 8px; font-size:11.5px; color:var(--paper); background:var(--ink);
+.gs-pc-tip{position:absolute; left:50%; top:calc(100% + 7px); transform:translateX(-50%); white-space:nowrap; padding:4px 8px; font-size:12px; color:var(--paper); background:var(--ink);
   border-radius:2px; z-index:3; opacity:0; pointer-events:none; transition:opacity .12s}
 .gs-pc-badge:hover .gs-pc-tip,.gs-pc-badge:focus-visible .gs-pc-tip{opacity:1}
 .gs-pc-name{margin-top:12px; max-width:100%; font-family:'Gowun Batang',serif; font-size:17px; color:var(--ink); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.gs-pc-dc{display:inline-flex; align-items:center; gap:6px; margin-top:3px; font-family:var(--mono); font-size:11.5px; color:var(--ink-2)}
+.gs-pc-dc{display:inline-flex; align-items:center; gap:6px; margin-top:3px; font-family:var(--mono); font-size:12px; color:var(--ink-2)}
 /* 이름 고치기 (2026-09-25 사용자 확정, 목업 nick 나) — 이름이 단추: 올리면 점선 밑줄과 연필, 누르면 입력칸 */
 .gs-pc-namebtn{display:inline-flex; align-items:center; gap:6px; max-width:100%; border:0; background:transparent; cursor:text; padding:0 0 1px; border-bottom:1px dashed transparent; font:inherit; color:inherit}
 .gs-pc-namebtn .gs-pc-nametext{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -19312,9 +19319,9 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-nk-row{display:flex; align-items:baseline; gap:12px; padding:6px 0 4px; border-bottom:1px solid rgba(var(--ink-rgb),.35)}
 .gs-nk-row label{flex:none; font-size:11px; letter-spacing:.1em; color:var(--ink-2)}
 .gs-nk-in{flex:1; min-width:0; font-family:'Gowun Batang',serif; font-weight:700; font-size:20px; padding:2px 0}
-.gs-nk-cnt{flex:none; font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--ink-2)}
+.gs-nk-cnt{flex:none; font-variant-numeric:tabular-nums; font-size:12px; color:var(--ink-2)}
 .gs-nk-cap{margin:14px 0 6px; font-size:11px; letter-spacing:.08em; color:var(--ink-2)}
-.gs-nk-note{margin:8px 0 0; font-size:11.5px; line-height:1.7; color:var(--ink-2)}
+.gs-nk-note{margin:8px 0 0; font-size:12px; line-height:1.7; color:var(--ink-2)}
 .gs-nk-table{border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; background:rgba(var(--lift-rgb),.16); padding:2px 10px}
 .gs-nk-r{display:grid; grid-template-columns:44px 1fr 40px 40px 48px; align-items:center; gap:8px; height:52px; border-bottom:1px dotted rgba(var(--ink-rgb),.25)}
 .gs-nk-r:last-child{border-bottom:0}
@@ -19324,14 +19331,14 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-nk-pic .gs-ava{display:block; width:100%; height:100%; border:0; border-radius:0}
 .gs-nk-pic svg{width:22px; height:22px}
 .gs-nk-name{font-family:'Gowun Batang',serif; font-weight:700; font-size:18px; color:var(--ink); display:flex; justify-content:flex-end; align-items:center; gap:8px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.gs-nk-name .gs-metag{font-size:10.5px}
+.gs-nk-name .gs-metag{font-size:11px}
 .gs-nk-name.me{color:var(--gold)}
 .gs-nk-cell{height:32px; border:1px dashed rgba(var(--ink-rgb),.3); border-radius:2px; display:grid; place-items:center; color:rgba(var(--ink-rgb),.4); font-size:13px}
 .gs-nk-sum{font-variant-numeric:tabular-nums; text-align:right; color:var(--gold); font-size:15px}
 /* (폐기 2026-09-25) .gs-nk-msg — 방장 갈래의 초대 메시지 미리보기 */
 .gs-dcmark{display:inline-block; width:14px; height:14px; background:#5865f2}
 .gs-pc-foot{align-self:stretch; display:flex; justify-content:center; margin-top:16px; padding-top:8px; border-top:1px dotted rgba(var(--ink-rgb),.3)}
-.gs-pc-out{display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border:0; border-radius:2px; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer}
+.gs-pc-out{display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border:0; border-radius:2px; background:transparent; font:inherit; font-size:13px; color:var(--ink); cursor:pointer}
 .gs-pc-out:hover{background:rgba(var(--ink-rgb),.06)}
 .gs-pc-out svg{color:var(--ink-2)}
 /* ── (폐기 2026-09-24 사용자 확정) 표 바 .gs-tablebar* · .gs-pty-open · gs-pty-grow — 도구 줄이 한 줄이 되고 들어온 사람은 도착 띠(.gs-arrive)로 갔다.
@@ -19347,8 +19354,8 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-pty{display:inline-flex; align-items:stretch; align-self:stretch; min-width:0; box-sizing:border-box}
 .gs-tablebar .gs-ptybtn{height:auto; align-self:stretch; padding-left:14px; padding-right:16px; border-color:rgba(var(--gold-rgb),.8); color:var(--gold)}
 .gs-ptylab{display:flex; flex-direction:column; align-items:flex-start; gap:4px; line-height:1.15; text-align:left}
-.gs-ptylab-1{display:inline-flex; align-items:center; gap:7px; font-size:13.5px; white-space:nowrap}
-.gs-ptylab-2{font-size:11.5px; font-weight:400; letter-spacing:0; color:var(--ink-2); white-space:nowrap}
+.gs-ptylab-1{display:inline-flex; align-items:center; gap:7px; font-size:14px; white-space:nowrap}
+.gs-ptylab-2{font-size:12px; font-weight:400; letter-spacing:0; color:var(--ink-2); white-space:nowrap}
 .gs-pty-open{align-self:stretch; border:1px solid rgba(var(--gold-rgb),.8); border-radius:2px; background:rgba(var(--gold-rgb),.07); overflow:hidden; animation:gs-pty-grow .45s cubic-bezier(.2,.9,.3,1)}
 .gs-tablebar .gs-pty-open .gs-ptybtn{border:0; border-right:1px solid rgba(var(--gold-rgb),.45); border-radius:0; background:transparent}
 .gs-pty-open .gs-ptybtn:hover,.gs-pty-open .gs-ptybtn:focus-visible{background:rgba(var(--gold-rgb),.16)}
@@ -19358,7 +19365,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-pty-text{display:flex; flex-direction:column; justify-content:center; line-height:1.25; white-space:nowrap; min-width:0; overflow:hidden}
 .gs-pty-l1{font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis}
 .gs-pty-l1 b{font-family:'Gowun Batang',serif; font-weight:700; font-size:15px; display:inline-block; max-width:9em; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom}
-.gs-pty-l2{font-size:12.5px; color:var(--gold); overflow:hidden; text-overflow:ellipsis}
+.gs-pty-l2{font-size:13px; color:var(--gold); overflow:hidden; text-overflow:ellipsis}
 .gs-pty-face{display:inline-grid; place-items:center; flex:none; padding:0; border:0; border-radius:2px; overflow:hidden; background:rgba(var(--ink-rgb),.08); color:rgba(var(--ink-rgb),.4); cursor:grab; touch-action:none}
 .gs-pty-face .gs-ava{display:block; width:100%; height:100%; border:0; border-radius:2px; pointer-events:none}
 .gs-pty-cur{width:40px; height:40px}
@@ -19367,9 +19374,9 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 /* 자리가 모자라면 작은 사진부터 접힌다 — 안 들어가는 사진은 다음 줄로 넘어가 가려진다. 몇 명인지는 첫 줄의 글이 말한다. 글은 맨 나중에 줄임표 */
 .gs-pty-rest{display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; max-height:26px; overflow:hidden; padding-left:10px; border-left:1px solid rgba(var(--ink-rgb),.25); flex:0 1000 auto; min-width:0}
 .gs-pty-more{line-height:26px}
-.gs-pty-more{font-family:var(--mono); font-size:11.5px; color:var(--ink-2); margin-left:2px}
-.gs-tablebar .gs-pty-act{height:28px; padding-left:10px; padding-right:10px; font-size:12.5px; flex:none; white-space:nowrap}
-.gs-pty-textbtn{border:0; background:transparent; padding:0 2px; font:inherit; font-size:12.5px; color:var(--ink-2); text-decoration:underline; text-underline-offset:3px; cursor:pointer; flex:none; white-space:nowrap}
+.gs-pty-more{font-family:var(--mono); font-size:12px; color:var(--ink-2); margin-left:2px}
+.gs-tablebar .gs-pty-act{height:28px; padding-left:10px; padding-right:10px; font-size:13px; flex:none; white-space:nowrap}
+.gs-pty-textbtn{border:0; background:transparent; padding:0 2px; font:inherit; font-size:13px; color:var(--ink-2); text-decoration:underline; text-underline-offset:3px; cursor:pointer; flex:none; white-space:nowrap}
 .gs-pty-textbtn:hover{color:var(--ink)}
 /* 기다리는 사람이 있으면 빈 사진 자리가 금색으로 켜진다 — 누르면 그 줄에 배치. 올리면 놓일 사람이 미리 비친다 */
 .gs-rowi-empty,.gs-rd-empty{position:relative}
@@ -19381,7 +19388,7 @@ tr.gs-subreq td{padding:6px 6px 4px; border-bottom:1px dotted rgba(var(--ink-rgb
 .gs-placing .gs-rowi-empty:hover .gs-slotpre,.gs-placing .gs-rowi-empty:focus-visible .gs-slotpre,.gs-placing .gs-rd-empty:hover .gs-slotpre,.gs-placing .gs-rd-empty:focus-visible .gs-slotpre{opacity:.6}
 /* 표 위의 사진을 끄는 동안 */
 .gs-facedrag{position:fixed; z-index:95; pointer-events:none; display:flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; background:var(--paper); border:1px solid var(--gold); border-radius:2px;
-  box-shadow:0 10px 26px rgba(var(--shadow-rgb),.45); transform:translate(-22px,-22px); color:var(--ink); font-family:'Gowun Batang',serif; font-size:13.5px; font-weight:700}
+  box-shadow:0 10px 26px rgba(var(--shadow-rgb),.45); transform:translate(-22px,-22px); color:var(--ink); font-family:'Gowun Batang',serif; font-size:14px; font-weight:700}
 .gs-facedrag .gs-pty-face{width:34px; height:34px; opacity:1}
 body.gs-facedragging,body.gs-facedragging *{cursor:grabbing !important; user-select:none}
 tr[data-drop] > th,tr[data-drop] > td{background:rgba(var(--gold-rgb),.14) !important}
@@ -19401,7 +19408,7 @@ tr[data-drop] .gs-rowi,.gs-rd[data-drop] .gs-rd-pic{outline:2px solid var(--gold
 /* 머리 줄 30px, 글자·단추를 선 쪽에 붙인다 — [전부 배정]이 34px 라 머리(32px)를 넘쳐 테두리가 선에 닿았다 (2026-09-17) */
 .gs-sp-colhead{display:flex; align-items:flex-end; gap:8px; height:30px; padding-bottom:5px; box-sizing:border-box; border-bottom:1.5px solid var(--ink)}
 .gs-sp-colhead .gs-caplab b{color:var(--gold); font-weight:600; margin-left:4px}
-.gs-sp-colhead .gs-btn{margin-left:auto; height:22px; padding:0 8px; font-size:11.5px; display:inline-flex; align-items:center; margin-bottom:-1px}
+.gs-sp-colhead .gs-btn{margin-left:auto; height:22px; padding:0 8px; font-size:12px; display:inline-flex; align-items:center; margin-bottom:-1px}
 .gs-sp-rows{display:flex; flex-direction:column; max-height:min(460px, 56vh); overflow-y:auto}
 /* 줄 왼쪽 10px — 바뀐 줄의 금색 선과 ≡ 손잡이가 겹치지 않게 (2026-09-17) */
 .gs-sp-row{display:grid; grid-template-columns:16px minmax(0,1fr) 210px 20px; align-items:center; gap:8px; min-height:52px; padding:4px 2px 4px 10px;
@@ -19422,14 +19429,14 @@ button.gs-sp-del:hover{color:var(--red); background:rgba(var(--ink-rgb),.08)}
 .gs-sp-picking .gs-sp-row:hover .gs-sp-slot,.gs-sp-row.gs-sp-over .gs-sp-slot{border-style:solid; border-color:var(--gold); background:rgba(var(--gold-rgb),.14)}
 .gs-sp-picking .gs-sp-row.gs-sp-hostrow{cursor:not-allowed}
 .gs-sp-picking .gs-sp-row.gs-sp-hostrow:hover .gs-sp-slot{background:transparent; border-color:transparent}
-.gs-sp-addrow{display:block; width:100%; margin-top:8px; height:36px; font:inherit; font-size:12.5px; color:var(--ink-2); background:transparent;
+.gs-sp-addrow{display:block; width:100%; margin-top:8px; height:36px; font:inherit; font-size:13px; color:var(--ink-2); background:transparent;
   border:1px dashed rgba(var(--kraftdk-rgb),.9); border-radius:2px; cursor:pointer}
 .gs-sp-addrow:hover{color:var(--ink); border-color:var(--ink)}
 .gs-sp-listwrap{border:1px dashed transparent; border-radius:2px; padding:0 6px 6px; min-width:0}
 .gs-sp-listwrap.gs-sp-drop{border-color:var(--gold)}
 .gs-sp-listwrap.gs-sp-over{border-style:solid; background:rgba(var(--gold-rgb),.12)}
 .gs-sp-list{display:flex; flex-direction:column; gap:6px; max-height:min(460px, 56vh); overflow-y:auto; padding-top:8px}
-.gs-sp-listempty{margin:6px 0 0 !important; font-size:12.5px !important; color:var(--ink-2) !important}
+.gs-sp-listempty{margin:6px 0 0 !important; font-size:13px !important; color:var(--ink-2) !important}
 .gs-sp-person{display:flex; align-items:center; gap:10px; width:100%; height:44px; box-sizing:border-box; padding:0 4px 0 6px; min-width:0;
   border:1px solid rgba(var(--ink-rgb),.3); border-radius:2px; background:var(--paper-2); cursor:grab; touch-action:none; user-select:none}
 .gs-sp-person:hover{border-color:rgba(var(--gold-rgb),.8)}
@@ -19452,18 +19459,18 @@ button.gs-sp-del:hover{color:var(--red); background:rgba(var(--ink-rgb),.08)}
 .gs-sp-invrow .gs-lbstart{margin-left:0}
 .gs-sp-invmeta{display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--ink-2)}
 .gs-sp-colhead2{margin-top:20px}
-.gs .gs-sp-none{margin:12px 2px 0; display:flex; flex-direction:column; font-size:12.5px; color:var(--ink-2); line-height:1.7}
+.gs .gs-sp-none{margin:12px 2px 0; display:flex; flex-direction:column; font-size:13px; color:var(--ink-2); line-height:1.7}
 .gs-sp-focus{animation:gs-sp-focus 1.6s ease-out}
 @keyframes gs-sp-focus{0%,40%{background:rgba(var(--gold-rgb),.16)} 100%{background:transparent}}
 @media (prefers-reduced-motion:reduce){ .gs-sp-focus{animation:none} }
 .gs .gs-sp-inv-h,.gs .gs-sp-inv-b > span{display:block; text-wrap:balance; word-break:keep-all} /* .gs p 의 pretty 보다 세게 */
-.gs-sp-inv-h{margin:0 !important; font-family:'Gowun Batang',serif; font-weight:700; font-size:14.5px !important; color:var(--ink) !important; line-height:1.5 !important}
-.gs-sp-inv-b{margin:6px 0 0 !important; font-size:12.5px !important; color:var(--ink-body) !important; line-height:1.7 !important}
+.gs-sp-inv-h{margin:0 !important; font-family:'Gowun Batang',serif; font-weight:700; font-size:15px !important; color:var(--ink) !important; line-height:1.5 !important}
+.gs-sp-inv-b{margin:6px 0 0 !important; font-size:13px !important; color:var(--ink-body) !important; line-height:1.7 !important}
 .gs-sp-inv-btn{margin-top:12px}
 .gs-sp-inv-foot{margin:18px 0 0 !important; padding-top:10px; border-top:1px dotted rgba(var(--ink-rgb),.26); font-size:12px !important; color:var(--ink-2) !important}
 .gs-sp-ask{margin-top:14px; padding:12px 14px; border:1px solid rgba(var(--gold-rgb),.6); border-radius:2px; background:rgba(var(--gold-rgb),.08)}
 .gs-sp-ask-h{margin:0 !important; font-weight:600; font-size:13px !important; color:var(--ink) !important}
-.gs-sp-ask-b{margin:4px 0 0 !important; font-size:12.5px !important; line-height:1.7 !important}
+.gs-sp-ask-b{margin:4px 0 0 !important; font-size:13px !important; line-height:1.7 !important}
 .gs-sp-ask .gs-dialog-btns{margin-top:10px}
 .gs-sp-ghost{position:fixed; z-index:100; pointer-events:none; display:flex; align-items:center; gap:7px; padding:4px 10px 4px 4px; background:var(--paper);
   border:1px solid var(--gold); border-radius:2px; box-shadow:0 8px 20px rgba(var(--shadow-rgb),.45); font-family:'Gowun Batang',serif; font-weight:700; font-size:14px; color:var(--ink)}
